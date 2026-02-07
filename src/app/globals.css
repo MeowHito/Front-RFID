@@ -1,0 +1,338 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+    /* Dark Theme as default */
+    --background: #0a0a0f;
+    --foreground: #f8fafc;
+    --card: rgba(24, 24, 32, 0.6);
+    --card-solid: #18181f;
+    --card-foreground: #f8fafc;
+    --border: rgba(255, 255, 255, 0.06);
+    --border-hover: rgba(255, 255, 255, 0.12);
+    --muted: rgba(30, 30, 40, 0.8);
+    --muted-foreground: #94a3b8;
+    --accent: #fbbf24;
+    --accent-light: rgba(251, 191, 36, 0.1);
+    --accent-foreground: #0a0a0f;
+    --success: #22c55e;
+    --success-bg: rgba(34, 197, 94, 0.12);
+    --warning: #fbbf24;
+    --warning-bg: rgba(251, 191, 36, 0.12);
+    --error: #f87171;
+    --error-bg: rgba(248, 113, 113, 0.12);
+    --primary: #60a5fa;
+    --primary-bg: rgba(96, 165, 250, 0.12);
+    --glass-blur: blur(24px);
+    --glass-border: rgba(255, 255, 255, 0.08);
+    --spotlight-color: rgba(251, 191, 36, 0.04);
+}
+
+.light {
+    /* Light Theme */
+    --background: #f8fafc;
+    --foreground: #0f172a;
+    --card: rgba(255, 255, 255, 0.7);
+    --card-solid: #ffffff;
+    --card-foreground: #0f172a;
+    --border: rgba(0, 0, 0, 0.08);
+    --border-hover: rgba(0, 0, 0, 0.15);
+    --muted: rgba(241, 245, 249, 0.8);
+    --muted-foreground: #64748b;
+    --accent: #f59e0b;
+    --accent-light: rgba(245, 158, 11, 0.1);
+    --accent-foreground: #ffffff;
+    --success: #10b981;
+    --success-bg: rgba(16, 185, 129, 0.1);
+    --warning: #f59e0b;
+    --warning-bg: rgba(245, 158, 11, 0.1);
+    --error: #ef4444;
+    --error-bg: rgba(239, 68, 68, 0.1);
+    --primary: #3b82f6;
+    --primary-bg: rgba(59, 130, 246, 0.1);
+    --glass-blur: blur(20px);
+    --glass-border: rgba(255, 255, 255, 0.3);
+    --spotlight-color: rgba(245, 158, 11, 0.06);
+}
+
+/* Keep .dark class for Tailwind compatibility */
+.dark {
+    --background: #0a0a0f;
+    --foreground: #f8fafc;
+    --card: rgba(24, 24, 32, 0.6);
+    --card-solid: #18181f;
+    --card-foreground: #f8fafc;
+    --border: rgba(255, 255, 255, 0.06);
+    --border-hover: rgba(255, 255, 255, 0.12);
+    --muted: rgba(30, 30, 40, 0.8);
+    --muted-foreground: #94a3b8;
+    --accent: #fbbf24;
+    --accent-light: rgba(251, 191, 36, 0.1);
+    --accent-foreground: #0a0a0f;
+    --success: #22c55e;
+    --success-bg: rgba(34, 197, 94, 0.12);
+    --warning: #fbbf24;
+    --warning-bg: rgba(251, 191, 36, 0.12);
+    --error: #f87171;
+    --error-bg: rgba(248, 113, 113, 0.12);
+    --primary: #60a5fa;
+    --primary-bg: rgba(96, 165, 250, 0.12);
+    --glass-blur: blur(24px);
+    --glass-border: rgba(255, 255, 255, 0.08);
+    --spotlight-color: rgba(251, 191, 36, 0.04);
+}
+
+body {
+    background: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-prompt), 'Prompt', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* Glassmorphism Card */
+.glass {
+    background: var(--card);
+    backdrop-filter: var(--glass-blur);
+    -webkit-backdrop-filter: var(--glass-blur);
+    border: 1px solid var(--glass-border);
+    box-shadow:
+        0 4px 30px rgba(0, 0, 0, 0.05),
+        inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+.glass-solid {
+    background: var(--card-solid);
+    border: 1px solid var(--border);
+}
+
+/* Hover glow effect */
+.hover-glow {
+    position: relative;
+    transition: all 0.3s ease;
+}
+
+.hover-glow::before {
+    content: '';
+    position: absolute;
+    inset: -2px;
+    background: linear-gradient(135deg, var(--accent-light), transparent, var(--accent-light));
+    border-radius: inherit;
+    opacity: 0;
+    z-index: -1;
+    filter: blur(20px);
+    transition: opacity 0.3s ease;
+}
+
+.hover-glow:hover::before {
+    opacity: 1;
+}
+
+.hover-glow:hover {
+    transform: translateY(-2px);
+    border-color: var(--accent) !important;
+}
+
+/* Interactive card */
+.interactive-card {
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.interactive-card:hover {
+    transform: translateY(-4px) scale(1.01);
+    box-shadow:
+        0 20px 40px rgba(0, 0, 0, 0.08),
+        0 0 0 1px var(--border-hover);
+}
+
+/* Button hover effect */
+.btn-glow {
+    position: relative;
+    overflow: hidden;
+    transition: all 0.3s ease;
+}
+
+.btn-glow::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+    transition: left 0.5s ease;
+}
+
+.btn-glow:hover::after {
+    left: 100%;
+}
+
+.btn-glow:hover {
+    transform: scale(1.02);
+    box-shadow: 0 10px 30px rgba(245, 158, 11, 0.3);
+}
+
+/* Liquid ripple animation */
+@keyframes ripple {
+    0% {
+        transform: scale(0);
+        opacity: 0.5;
+    }
+
+    100% {
+        transform: scale(4);
+        opacity: 0;
+    }
+}
+
+.ripple-effect {
+    position: relative;
+    overflow: hidden;
+}
+
+.ripple-effect::after {
+    content: '';
+    position: absolute;
+    width: 100px;
+    height: 100px;
+    background: radial-gradient(circle, var(--accent-light) 0%, transparent 70%);
+    border-radius: 50%;
+    transform: scale(0);
+    pointer-events: none;
+}
+
+/* Floating animation */
+@keyframes float {
+
+    0%,
+    100% {
+        transform: translateY(0px);
+    }
+
+    50% {
+        transform: translateY(-8px);
+    }
+}
+
+.float-animation {
+    animation: float 4s ease-in-out infinite;
+}
+
+/* Pulse animation */
+@keyframes pulse-soft {
+
+    0%,
+    100% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.6;
+    }
+}
+
+.pulse-animation {
+    animation: pulse-soft 2s ease-in-out infinite;
+}
+
+/* Scale on hover */
+.scale-hover {
+    transition: transform 0.2s ease;
+}
+
+.scale-hover:hover {
+    transform: scale(1.05);
+}
+
+/* Icon bounce */
+.icon-bounce:hover {
+    animation: bounce 0.5s ease;
+}
+
+@keyframes bounce {
+
+    0%,
+    100% {
+        transform: scale(1);
+    }
+
+    50% {
+        transform: scale(1.2);
+    }
+}
+
+/* Row highlight */
+.row-highlight {
+    transition: all 0.2s ease;
+}
+
+.row-highlight:hover {
+    background: var(--accent-light) !important;
+    transform: scale(1.005);
+}
+
+/* Link underline animation */
+.link-underline {
+    position: relative;
+}
+
+.link-underline::after {
+    content: '';
+    position: absolute;
+    bottom: -2px;
+    left: 0;
+    width: 0;
+    height: 2px;
+    background: var(--accent);
+    transition: width 0.3s ease;
+}
+
+.link-underline:hover::after {
+    width: 100%;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: var(--muted);
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--border-hover);
+    border-radius: 4px;
+    transition: background 0.2s;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: var(--muted-foreground);
+}
+
+/* Focus ring */
+*:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+}
+
+/* Selection */
+::selection {
+    background: var(--accent);
+    color: var(--accent-foreground);
+}
+
+/* LIVE badge pulse - text opacity only, no shadow/glow */
+@keyframes pulse-text {
+
+    0%,
+    100% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.4;
+    }
+}
