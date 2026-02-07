@@ -1,13 +1,15 @@
 import axios from 'axios';
 import { SharedResultsResponse, RunnerDetailsResponse, FilterOptions } from '@/types';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+// Production API URL - Vercel should set NEXT_PUBLIC_API_URL during build
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://3.26.160.149';
 
 const api = axios.create({
     baseURL: API_URL,
     headers: {
         'Content-Type': 'application/json',
     },
+    withCredentials: false, // Disable credentials for cross-origin
 });
 
 export const getSharedResults = async (
