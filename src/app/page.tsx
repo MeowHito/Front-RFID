@@ -57,9 +57,11 @@ export default function Home() {
 
   const loadCampaigns = async () => {
     try {
-      const response = await api.get('/campaigns');
+      // Use local API route to avoid mixed content (HTTPS -> HTTP) issue
+      const response = await fetch('/api/campaigns');
+      const data = await response.json();
       // API returns { data: Campaign[], total: number }
-      const campaignData = response.data?.data || response.data || [];
+      const campaignData = data?.data || data || [];
       setCampaigns(Array.isArray(campaignData) ? campaignData : []);
     } catch (error) {
       console.error('Failed to load campaigns:', error);
@@ -186,54 +188,54 @@ export default function Home() {
             {isAuthenticated ? (
               <div className="hidden sm:flex items-center gap-2">
                 <div className="relative">
-                <button
-                  onClick={() => setShowUserMenu(!showUserMenu)}
-                  className="flex items-center gap-2 px-3 py-2 rounded-xl glass scale-hover"
-                >
-                  <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-bold text-sm overflow-hidden">
-                    {user?.avatarUrl ? (
-                      <img src={user.avatarUrl} alt="" className="w-full h-full object-cover" />
-                    ) : (
-                      user?.firstName?.[0] || user?.email?.[0]?.toUpperCase() || 'U'
-                    )}
-                  </div>
-                  <span className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>
-                    {user?.firstName || user?.email?.split('@')[0]}
-                  </span>
-                </button>
-                {showUserMenu && (
-                  <div className="absolute right-0 mt-2 w-48 glass rounded-xl shadow-lg py-2 z-50">
-                    <div className="px-4 py-2 border-b" style={{ borderColor: 'var(--border)' }}>
-                      <p className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>{user?.firstName} {user?.lastName}</p>
-                      <p className="text-xs" style={{ color: 'var(--muted-foreground)' }}>{user?.email}</p>
+                  <button
+                    onClick={() => setShowUserMenu(!showUserMenu)}
+                    className="flex items-center gap-2 px-3 py-2 rounded-xl glass scale-hover"
+                  >
+                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-bold text-sm overflow-hidden">
+                      {user?.avatarUrl ? (
+                        <img src={user.avatarUrl} alt="" className="w-full h-full object-cover" />
+                      ) : (
+                        user?.firstName?.[0] || user?.email?.[0]?.toUpperCase() || 'U'
+                      )}
                     </div>
-                    {isAdmin && (
+                    <span className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>
+                      {user?.firstName || user?.email?.split('@')[0]}
+                    </span>
+                  </button>
+                  {showUserMenu && (
+                    <div className="absolute right-0 mt-2 w-48 glass rounded-xl shadow-lg py-2 z-50">
+                      <div className="px-4 py-2 border-b" style={{ borderColor: 'var(--border)' }}>
+                        <p className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>{user?.firstName} {user?.lastName}</p>
+                        <p className="text-xs" style={{ color: 'var(--muted-foreground)' }}>{user?.email}</p>
+                      </div>
+                      {isAdmin && (
+                        <Link
+                          href="/admin/events"
+                          onClick={() => setShowUserMenu(false)}
+                          className="block w-full text-left px-4 py-2 text-sm hover:bg-black/10 transition-colors"
+                          style={{ color: 'var(--foreground)' }}
+                        >
+                          📋 {language === 'th' ? 'จัดการกิจกรรม' : 'Manage Events'}
+                        </Link>
+                      )}
                       <Link
-                        href="/admin/events"
+                        href="/profile"
                         onClick={() => setShowUserMenu(false)}
                         className="block w-full text-left px-4 py-2 text-sm hover:bg-black/10 transition-colors"
                         style={{ color: 'var(--foreground)' }}
                       >
-                        📋 {language === 'th' ? 'จัดการกิจกรรม' : 'Manage Events'}
+                        ⚙️ {language === 'th' ? 'ตั้งค่าโปรไฟล์' : 'Profile Settings'}
                       </Link>
-                    )}
-                    <Link
-                      href="/profile"
-                      onClick={() => setShowUserMenu(false)}
-                      className="block w-full text-left px-4 py-2 text-sm hover:bg-black/10 transition-colors"
-                      style={{ color: 'var(--foreground)' }}
-                    >
-                      ⚙️ {language === 'th' ? 'ตั้งค่าโปรไฟล์' : 'Profile Settings'}
-                    </Link>
-                    <button
-                      onClick={() => { logout(); setShowUserMenu(false); }}
-                      className="w-full text-left px-4 py-2 text-sm hover:bg-black/10 transition-colors"
-                      style={{ color: 'var(--error)' }}
-                    >
-                      {language === 'th' ? 'ออกจากระบบ' : 'Logout'}
-                    </button>
-                  </div>
-                )}
+                      <button
+                        onClick={() => { logout(); setShowUserMenu(false); }}
+                        className="w-full text-left px-4 py-2 text-sm hover:bg-black/10 transition-colors"
+                        style={{ color: 'var(--error)' }}
+                      >
+                        {language === 'th' ? 'ออกจากระบบ' : 'Logout'}
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
             ) : (
