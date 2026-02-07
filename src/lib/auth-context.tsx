@@ -66,8 +66,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }, []);
 
     const login = async (email: string, password: string) => {
-        const response = await api.post('/auth/login', { email, password });
-        const { access_token, user: userData } = response.data;
+        // Use local API proxy to avoid mixed content (HTTPS -> HTTP) issue
+        const response = await fetch('/api/auth/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, password }),
+        });
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.message || 'Login failed');
+        }
+
+        const { access_token, user: userData } = await response.json();
 
         // Store in localStorage
         localStorage.setItem('auth_token', access_token);
@@ -97,24 +108,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const updateProfile = async (data: UpdateProfileData) => {
         if (!user) throw new Error('Not authenticated');
-        
+
         const response = await api.put(`/users/profile/${user.uuid}`, data);
         const updatedUser = { ...user, ...response.data };
-        
+
         localStorage.setItem('auth_user', JSON.stringify(updatedUser));
         setUser(updatedUser);
     };
 
     const updateAvatar = async (file: File) => {
         if (!user) throw new Error('Not authenticated');
-        
+
         const formData = new FormData();
         formData.append('avatar', file);
-        
+
         const response = await api.post(`/users/avatar/${user.uuid}`, formData, {
             headers: { 'Content-Type': 'multipart/form-data' }
         });
-        
+
         const updatedUser = { ...user, avatarUrl: response.data.avatarUrl };
         localStorage.setItem('auth_user', JSON.stringify(updatedUser));
         setUser(updatedUser);
@@ -122,7 +133,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const updatePassword = async (oldPassword: string, newPassword: string) => {
         if (!user) throw new Error('Not authenticated');
-        
+
         await api.post('/users/update-password', {
             uuid: user.uuid,
             opw: oldPassword,
