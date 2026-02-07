@@ -108,7 +108,7 @@ export default function ActivityCard({
                     </a>
                 </div>
 
-                {/* Categories Table - Mobile */}
+                {/* Categories Table  Mobile */}
                 <div className="border-t border-gray-100 dark:border-gray-700">
                     <div className="overflow-x-auto overflow-y-auto max-h-[280px]">
                         <table className="w-full text-xs min-w-[550px]">
