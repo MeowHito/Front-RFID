@@ -11,7 +11,7 @@ const prompt = Prompt({
   weight: ["300", "400", "500", "600", "700", "800"],
   display: "swap",
 });
-
+  
 export const metadata: Metadata = {
   title: "RFID Timing System",
   description: "ระบบจับเวลาวิ่งแบบ Real-time ด้วยเทคโนโลยี RFID",

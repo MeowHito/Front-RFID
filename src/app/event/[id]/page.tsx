@@ -2,65 +2,43 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import Image from 'next/image';
 import { useParams } from 'next/navigation';
 import { useTheme } from '@/lib/theme-context';
 import { useLanguage } from '@/lib/language-context';
-import CursorSpotlight from '@/components/CursorSpotlight';
+import { RunnersList, Runner } from '@/components/RunnerCard';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+
+// Campaign interface from MongoDB
+interface RaceCategory {
+    name: string;
+    distance: string;
+    elevation?: string;
+    raceType?: string;
+    badgeColor: string;
+}
 
 interface Campaign {
     _id: string;
     uuid: string;
     name: string;
-    shortName?: string;
-    description?: string;
+    nameTh?: string;
+    nameEn?: string;
     eventDate: string;
     eventEndDate?: string;
     location: string;
-    pictureUrl?: string;
-    status: string;
+    locationTh?: string;
+    locationEn?: string;
     categories: RaceCategory[];
-}
-
-interface RaceCategory {
-    name: string;
-    distance: string;
-    startTime: string;
-    cutoff: string;
-    elevation?: string;
-    raceType?: string;
-    badgeColor: string;
     status: string;
 }
 
-interface Runner {
-    _id: string;
-    bib: string;
-    firstName: string;
-    lastName: string;
-    firstNameTh?: string;
-    lastNameTh?: string;
-    gender: string;
-    category: string;
-    ageGroup: string;
-    age?: number;
-    status: string;
-    netTime?: number;
-    elapsedTime?: number;
-    overallRank?: number;
-    genderRank?: number;
-    ageGroupRank?: number;
-    categoryRank?: number;
-    nationality?: string;
-    team?: string;
-    teamName?: string;
-}
+// Runner interface (imported from RunnerCard component)
+// Using Runner interface from RunnerCard.tsx which matches MongoDB schema
 
-export default function EventDashboardPage() {
-    const { theme, toggleTheme } = useTheme();
-    const { language, t } = useLanguage();
+export default function ResultPage() {
+    const { theme } = useTheme();
+    const { language } = useLanguage();
     const params = useParams();
     const eventId = params.id as string;
 
@@ -68,48 +46,53 @@ export default function EventDashboardPage() {
     const [runners, setRunners] = useState<Runner[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
-
+    const [genderFilter, setGenderFilter] = useState<'ALL' | 'M' | 'F'>('ALL');
     const [searchQuery, setSearchQuery] = useState('');
-    const [filterStatus, setFilterStatus] = useState('all');
-    const [filterGender, setFilterGender] = useState('all');
-    const [filterCategory, setFilterCategory] = useState('all');
-    const [selectedRunner, setSelectedRunner] = useState<Runner | null>(null);
+    const [showGenRank, setShowGenRank] = useState(true);
+    const [showCatRank, setShowCatRank] = useState(true);
 
-    const [currentTime, setCurrentTime] = useState(new Date());
-
-    useEffect(() => {
-        const timer = setInterval(() => setCurrentTime(new Date()), 1000);
-        return () => clearInterval(timer);
-    }, []);
-
+    // Fetch data on mount
     useEffect(() => {
         if (eventId) {
-            fetchEventData();
+            fetchData();
         }
     }, [eventId]);
 
-    async function fetchEventData() {
+    async function fetchData() {
         try {
             setLoading(true);
             setError(null);
 
-            const [campaignRes, runnersRes] = await Promise.all([
-                fetch(`${API_URL}/campaigns/${eventId}`),
-                fetch(`${API_URL}/runners?campaignId=${eventId}`)
-            ]);
+            // Debug: log API URL and event ID
+            console.log('Fetching event:', eventId);
+            console.log('API URL:', `${API_URL}/campaigns/${eventId}`);
+
+            // Fetch campaign data
+            const campaignRes = await fetch(`${API_URL}/campaigns/${eventId}`);
+            console.log('Campaign response status:', campaignRes.status);
 
             if (!campaignRes.ok) {
+                const errorText = await campaignRes.text();
+                console.error('Campaign error:', errorText);
                 throw new Error(language === 'th' ? 'ไม่พบข้อมูลกิจกรรม' : 'Event not found');
             }
-
             const campaignData = await campaignRes.json();
+            console.log('Campaign data:', campaignData);
             setCampaign(campaignData);
 
+            // Fetch runners via public-api (no auth required)
+            const runnersRes = await fetch(`${API_URL}/public-api/campaign/getAllParticipantByEvent?id=${eventId}`);
+            console.log('Runners response status:', runnersRes.status);
+
             if (runnersRes.ok) {
-                const runnersData = await runnersRes.json();
-                setRunners(runnersData || []);
+                const runnersResponse = await runnersRes.json();
+                console.log('Runners data:', runnersResponse);
+                // public-api returns { status: {...}, data: { data: [...], total: N } }
+                const runnersData = runnersResponse?.data?.data || runnersResponse?.data || [];
+                setRunners(runnersData);
             }
         } catch (err: unknown) {
+            console.error('Fetch error:', err);
             const errorMessage = err instanceof Error ? err.message : 'Error loading event';
             setError(errorMessage);
         } finally {
@@ -117,367 +100,330 @@ export default function EventDashboardPage() {
         }
     }
 
+    // Format time from milliseconds
     function formatTime(ms: number | undefined): string {
-        if (!ms) return '-';
+        if (!ms) return '--:--:--';
         const hours = Math.floor(ms / 3600000);
         const minutes = Math.floor((ms % 3600000) / 60000);
         const seconds = Math.floor((ms % 60000) / 1000);
         return `${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
     }
 
-    function formatDate(dateString: string) {
+    // Format date
+    function formatDate(dateString: string): string {
         const date = new Date(dateString);
         return date.toLocaleDateString(language === 'th' ? 'th-TH' : 'en-US', {
-            day: '2-digit',
-            month: 'long',
+            day: 'numeric',
+            month: 'short',
             year: 'numeric'
         });
     }
 
-    function getCountryCode(countryCode: string): string {
-        if (!countryCode) return 'xx';
-        const codeMap: Record<string, string> = {
-            'THAILAND': 'TH', 'THAI': 'TH', 'ไทย': 'TH',
-            'USA': 'US', 'UNITED STATES': 'US',
-            'UK': 'GB', 'JAPAN': 'JP', 'CHINA': 'CN',
-            'SINGAPORE': 'SG', 'MALAYSIA': 'MY',
-        };
-        let code = countryCode.toUpperCase();
-        if (codeMap[code]) code = codeMap[code];
-        return code.length === 2 ? code : 'xx';
+    // Get status color classes
+    function getStatusColor(status: string): { text: string; bg: string } {
+        switch (status) {
+            case 'finished':
+                return { text: 'text-green-600', bg: 'bg-green-600' };
+            case 'in_progress':
+                return { text: 'text-orange-500', bg: 'bg-orange-500' };
+            case 'dnf':
+                return { text: 'text-red-500', bg: 'bg-red-600' };
+            case 'dns':
+                return { text: 'text-gray-400', bg: 'bg-gray-400' };
+            default:
+                return { text: 'text-slate-400', bg: 'bg-slate-400' };
+        }
     }
 
+    // Get status label
+    function getStatusLabel(status: string): string {
+        const labels: Record<string, string> = {
+            finished: 'FINISH',
+            in_progress: 'RACING',
+            dnf: 'DNF',
+            dns: 'DNS',
+            not_started: 'NOT STARTED'
+        };
+        return labels[status] || status.toUpperCase();
+    }
+
+    // Filter runners
     const filteredRunners = runners.filter(runner => {
+        const matchesGender = genderFilter === 'ALL' || runner.gender === genderFilter;
         const matchesSearch = searchQuery === '' ||
             runner.firstName.toLowerCase().includes(searchQuery.toLowerCase()) ||
             runner.lastName.toLowerCase().includes(searchQuery.toLowerCase()) ||
             runner.bib.includes(searchQuery);
-        const matchesStatus = filterStatus === 'all' || runner.status === filterStatus;
-        const matchesGender = filterGender === 'all' || runner.gender === filterGender;
-        const matchesCategory = filterCategory === 'all' || runner.category === filterCategory;
-        return matchesSearch && matchesStatus && matchesGender && matchesCategory;
+        return matchesGender && matchesSearch;
     });
 
+    // Stats
     const stats = {
-        total: runners.length,
+        started: runners.length,
+        racing: runners.filter(r => r.status === 'in_progress').length,
         finished: runners.filter(r => r.status === 'finished').length,
-        running: runners.filter(r => r.status === 'in_progress').length,
-        dns: runners.filter(r => r.status === 'dns').length,
+        dnf: runners.filter(r => r.status === 'dnf' || r.status === 'dns').length
     };
 
+    // Loading state
     if (loading) {
         return (
             <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--background)' }}>
                 <div className="text-center">
-                    <div className="w-16 h-16 glass rounded-2xl flex items-center justify-center mx-auto mb-4">
-                        <div className="w-8 h-8 border-3 rounded-full animate-spin" style={{ borderColor: 'var(--border)', borderTopColor: 'var(--accent)' }}></div>
-                    </div>
+                    <div className="w-12 h-12 border-4 border-green-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
                     <p style={{ color: 'var(--muted-foreground)' }}>
-                        {language === 'th' ? 'กำลังโหลดข้อมูล...' : 'Loading...'}
+                        {language === 'th' ? 'กำลังโหลด...' : 'Loading...'}
                     </p>
                 </div>
             </div>
         );
     }
 
+    // Error state
     if (error || !campaign) {
         return (
             <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--background)' }}>
-                <div className="glass p-8 rounded-2xl max-w-md text-center">
-                    <div className="text-4xl mb-4">😔</div>
+                <div className="text-center p-8 rounded-xl" style={{ background: 'var(--card)' }}>
+                    <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <svg className="h-8 w-8 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                        </svg>
+                    </div>
                     <h2 className="text-xl font-semibold mb-2" style={{ color: 'var(--foreground)' }}>
-                        {language === 'th' ? 'ไม่พบข้อมูล' : 'Not Found'}
+                        {language === 'th' ? 'ไม่พบกิจกรรม' : 'Event Not Found'}
                     </h2>
-                    <p className="mb-4" style={{ color: 'var(--muted-foreground)' }}>{error}</p>
-                    <Link href="/" className="inline-block py-2 px-4 rounded-xl" style={{ background: 'var(--accent)', color: 'var(--accent-foreground)' }}>
-                        {language === 'th' ? 'กลับหน้าแรก' : 'Back to Home'}
+                    <p className="mb-6" style={{ color: 'var(--muted-foreground)' }}>
+                        {error || (language === 'th' ? 'กิจกรรมนี้ไม่มีอยู่ในระบบ' : 'This event does not exist')}
+                    </p>
+                    <Link href="/" className="text-green-500 hover:text-green-600 font-medium">
+                        ← {language === 'th' ? 'กลับหน้าหลัก' : 'Back to Home'}
                     </Link>
                 </div>
             </div>
         );
     }
 
+    const displayName = language === 'th' ? (campaign.nameTh || campaign.name) : (campaign.nameEn || campaign.name);
+    const displayLocation = language === 'th' ? (campaign.locationTh || campaign.location) : (campaign.location);
+
     return (
-        <div className="min-h-screen" style={{ background: 'var(--background)' }}>
-            <CursorSpotlight size={600} />
-
+        <div className="min-h-screen text-slate-800 overflow-hidden" style={{ background: theme === 'dark' ? '#0f172a' : '#f8fafc' }}>
             {/* Header */}
-            <header className="sticky top-0 z-50 glass">
-                <div className="max-w-7xl mx-auto px-6 py-3 flex items-center justify-between">
-                    <Link href="/" className="flex items-center gap-3">
-                        <Image
-                            src={theme === 'dark' ? '/logo-white.png' : '/logo-black.png'}
-                            alt="RACETIME"
-                            width={120}
-                            height={40}
-                            className="h-10 w-auto"
-                        />
-                    </Link>
-
-                    <div className="flex items-center gap-4">
-                        <div className="flex items-center gap-2 px-4 py-2 glass rounded-full">
-                            <span className="relative flex h-2 w-2">
-                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75" style={{ background: 'var(--success)' }}></span>
-                                <span className="relative inline-flex rounded-full h-2 w-2" style={{ background: 'var(--success)' }}></span>
-                            </span>
-                            <span className="text-sm font-medium" style={{ color: 'var(--success)' }}>Live</span>
-                            <span className="text-sm font-mono" style={{ color: 'var(--muted-foreground)' }}>
-                                {currentTime.toLocaleTimeString(language === 'th' ? 'th-TH' : 'en-US')}
-                            </span>
+            <header className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-700 px-4 py-3 shadow-sm">
+                <div className="max-w-full mx-auto flex justify-between items-center">
+                    <div className="flex items-center gap-3">
+                        <Link href="/" className="text-lg font-black italic text-slate-900 dark:text-white border-r pr-3 border-slate-300 dark:border-slate-600 hover:opacity-80 transition">
+                            ACTION <span className="text-green-600 font-bold uppercase not-italic">Live</span>
+                        </Link>
+                        <div>
+                            <h1 className="text-sm font-bold leading-tight text-slate-900 dark:text-white">{displayName}</h1>
+                            <p className="text-[10px] text-slate-400 font-medium">
+                                {formatDate(campaign.eventDate)} | {displayLocation}
+                            </p>
                         </div>
-                        <button onClick={toggleTheme} className="p-2.5 rounded-xl glass">
-                            <span className="text-lg">{theme === 'dark' ? '☀️' : '🌙'}</span>
-                        </button>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        {/* Gender Filter */}
+                        <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-lg mr-2">
+                            <button
+                                onClick={() => setGenderFilter('ALL')}
+                                className={`px-3 py-1 text-[10px] font-bold rounded-md transition-all ${genderFilter === 'ALL' ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900' : 'text-slate-600 dark:text-slate-400'}`}
+                            >
+                                {language === 'th' ? 'ทั้งหมด' : 'All'}
+                            </button>
+                            <button
+                                onClick={() => setGenderFilter('M')}
+                                className={`px-3 py-1 text-[10px] font-bold rounded-md transition-all ${genderFilter === 'M' ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900' : 'text-slate-600 dark:text-slate-400'}`}
+                            >
+                                {language === 'th' ? 'ชาย' : 'Male'}
+                            </button>
+                            <button
+                                onClick={() => setGenderFilter('F')}
+                                className={`px-3 py-1 text-[10px] font-bold rounded-md transition-all ${genderFilter === 'F' ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900' : 'text-slate-600 dark:text-slate-400'}`}
+                            >
+                                {language === 'th' ? 'หญิง' : 'Female'}
+                            </button>
+                        </div>
+
+                        {/* Search */}
+                        <div className="relative hidden sm:block">
+                            <svg className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                            </svg>
+                            <input
+                                type="text"
+                                placeholder={language === 'th' ? 'BIB หรือ ชื่อ...' : 'BIB or Name...'}
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                                className="pl-9 pr-4 py-1.5 bg-slate-100 dark:bg-slate-800 border-none rounded-lg text-xs w-48 outline-none focus:ring-1 focus:ring-green-500 transition-all text-slate-800 dark:text-white"
+                            />
+                        </div>
+
+                        {/* Column Toggle */}
+                        <div className="relative group">
+                            <button className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-slate-50 dark:hover:bg-slate-700 transition flex items-center gap-2">
+                                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                                </svg>
+                                {language === 'th' ? 'คอลัมน์' : 'Columns'}
+                            </button>
+                            <div className="hidden group-hover:block absolute right-0 top-full mt-1 bg-white dark:bg-slate-800 min-w-[160px] shadow-lg border border-slate-200 dark:border-slate-600 rounded-lg z-30 p-2">
+                                <p className="text-[10px] font-bold text-slate-400 uppercase mb-2 px-2">
+                                    {language === 'th' ? 'ตั้งค่าการแสดงผล' : 'Display Settings'}
+                                </p>
+                                <label className="flex items-center gap-2 px-2 py-1 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700 rounded">
+                                    <input type="checkbox" checked={showGenRank} onChange={(e) => setShowGenRank(e.target.checked)} />
+                                    <span className="text-xs text-slate-700 dark:text-slate-300">Gender Rank</span>
+                                </label>
+                                <label className="flex items-center gap-2 px-2 py-1 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700 rounded">
+                                    <input type="checkbox" checked={showCatRank} onChange={(e) => setShowCatRank(e.target.checked)} />
+                                    <span className="text-xs text-slate-700 dark:text-slate-300">Category Rank</span>
+                                </label>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </header>
 
-            <main className="relative z-10 max-w-7xl mx-auto px-6 py-6">
-                {/* Event Info Header */}
-                <div className="glass rounded-2xl p-6 mb-6">
-                    <div className="flex flex-col md:flex-row gap-6">
-                        {campaign.pictureUrl && (
-                            <div className="w-full md:w-48 h-32 rounded-xl overflow-hidden shrink-0">
-                                <img src={campaign.pictureUrl} alt={campaign.name} className="w-full h-full object-cover" />
-                            </div>
-                        )}
-                        <div className="flex-1">
-                            <h1 className="text-2xl md:text-3xl font-bold mb-2" style={{ color: 'var(--foreground)' }}>
-                                {campaign.name}
-                            </h1>
-                            <div className="flex flex-wrap gap-4 text-sm" style={{ color: 'var(--muted-foreground)' }}>
-                                <span>📍 {campaign.location}</span>
-                                <span>📅 {formatDate(campaign.eventDate)}</span>
-                            </div>
-                            {campaign.categories && campaign.categories.length > 0 && (
-                                <div className="flex flex-wrap gap-2 mt-3">
-                                    {campaign.categories.map((cat, idx) => (
-                                        <span key={idx} className="px-2 py-1 rounded text-xs font-bold text-white" style={{ backgroundColor: cat.badgeColor }}>
-                                            {cat.name} - {cat.distance}
-                                        </span>
-                                    ))}
-                                </div>
-                            )}
-                        </div>
+            {/* Stats Bar */}
+            <div className="bg-slate-900 text-slate-400 px-4 py-2">
+                <div className="max-w-full mx-auto flex gap-6 text-[11px] font-bold uppercase tracking-wider overflow-x-auto whitespace-nowrap">
+                    <div className="flex items-center">
+                        <span className="text-slate-500 mr-1">Started:</span>
+                        <span className="text-white">{stats.started}</span>
+                    </div>
+                    <div className="flex items-center">
+                        <span className="w-2 h-2 rounded-full bg-orange-500 mr-1.5"></span>
+                        Racing: <span className="text-white ml-1">{stats.racing}</span>
+                    </div>
+                    <div className="flex items-center">
+                        <span className="w-2 h-2 rounded-full bg-green-500 mr-1.5"></span>
+                        Finished: <span className="text-white ml-1">{stats.finished}</span>
+                    </div>
+                    <div className="flex items-center">
+                        <span className="w-2 h-2 rounded-full bg-red-500 mr-1.5"></span>
+                        DNF/DNS: <span className="text-white ml-1">{stats.dnf}</span>
                     </div>
                 </div>
+            </div>
 
-                {/* Stats */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-                    <div className="glass rounded-xl p-4 text-center">
-                        <div className="text-2xl font-bold" style={{ color: 'var(--foreground)' }}>{stats.total}</div>
-                        <div className="text-sm" style={{ color: 'var(--muted-foreground)' }}>
-                            {language === 'th' ? 'ผู้เข้าแข่งขัน' : 'Participants'}
-                        </div>
-                    </div>
-                    <div className="glass rounded-xl p-4 text-center">
-                        <div className="text-2xl font-bold" style={{ color: 'var(--success)' }}>{stats.finished}</div>
-                        <div className="text-sm" style={{ color: 'var(--muted-foreground)' }}>
-                            {language === 'th' ? 'จบแล้ว' : 'Finished'}
-                        </div>
-                    </div>
-                    <div className="glass rounded-xl p-4 text-center">
-                        <div className="text-2xl font-bold" style={{ color: 'var(--warning)' }}>{stats.running}</div>
-                        <div className="text-sm" style={{ color: 'var(--muted-foreground)' }}>
-                            {language === 'th' ? 'กำลังวิ่ง' : 'Running'}
-                        </div>
-                    </div>
-                    <div className="glass rounded-xl p-4 text-center">
-                        <div className="text-2xl font-bold" style={{ color: 'var(--error)' }}>{stats.dns}</div>
-                        <div className="text-sm" style={{ color: 'var(--muted-foreground)' }}>DNS/DNF</div>
-                    </div>
-                </div>
-
-                {/* Search & Filters */}
-                <div className="grid grid-cols-1 md:grid-cols-5 gap-3 mb-6">
-                    <div className="md:col-span-2 relative">
-                        <svg className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" style={{ color: 'var(--muted-foreground)' }}>
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                        </svg>
-                        <input
-                            type="text"
-                            placeholder={language === 'th' ? 'ค้นหา BIB หรือชื่อ...' : 'Search BIB or Name...'}
-                            value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
-                            className="w-full pl-12 pr-4 py-3 rounded-xl glass focus:outline-none"
-                            style={{ color: 'var(--foreground)' }}
-                        />
-                    </div>
-                    <select value={filterCategory} onChange={(e) => setFilterCategory(e.target.value)} className="px-4 py-3 rounded-xl glass" style={{ color: 'var(--foreground)' }}>
-                        <option value="all">{language === 'th' ? 'ประเภท: ทั้งหมด' : 'Category: All'}</option>
-                        {campaign.categories?.map((cat, idx) => (
-                            <option key={idx} value={cat.name}>{cat.name}</option>
-                        ))}
-                    </select>
-                    <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} className="px-4 py-3 rounded-xl glass" style={{ color: 'var(--foreground)' }}>
-                        <option value="all">{language === 'th' ? 'สถานะ: ทั้งหมด' : 'Status: All'}</option>
-                        <option value="finished">{language === 'th' ? 'จบแล้ว' : 'Finished'}</option>
-                        <option value="in_progress">{language === 'th' ? 'กำลังวิ่ง' : 'Running'}</option>
-                        <option value="dns">DNS</option>
-                        <option value="dnf">DNF</option>
-                    </select>
-                    <select value={filterGender} onChange={(e) => setFilterGender(e.target.value)} className="px-4 py-3 rounded-xl glass" style={{ color: 'var(--foreground)' }}>
-                        <option value="all">{language === 'th' ? 'เพศ: ทั้งหมด' : 'Gender: All'}</option>
-                        <option value="M">{language === 'th' ? 'ชาย' : 'Male'}</option>
-                        <option value="F">{language === 'th' ? 'หญิง' : 'Female'}</option>
-                    </select>
-                </div>
-
-                {/* Results Table */}
-                <div className="glass rounded-2xl overflow-hidden">
-                    <div className="overflow-x-auto">
-                        <table className="w-full">
-                            <thead>
-                                <tr style={{ background: 'var(--card-bg)' }}>
-                                    <th className="px-4 py-3 text-left text-sm font-bold" style={{ color: 'var(--foreground)' }}>
-                                        {language === 'th' ? 'อันดับ' : 'Rank'}
-                                    </th>
-                                    <th className="px-4 py-3 text-left text-sm font-bold" style={{ color: 'var(--foreground)' }}>BIB</th>
-                                    <th className="px-4 py-3 text-left text-sm font-bold" style={{ color: 'var(--foreground)' }}>
-                                        {language === 'th' ? 'ชื่อ-นามสกุล' : 'Full Name'}
-                                    </th>
-                                    <th className="px-4 py-3 text-left text-sm font-bold" style={{ color: 'var(--foreground)' }}>
-                                        {language === 'th' ? 'สัญชาติ' : 'Nationality'}
-                                    </th>
-                                    <th className="px-4 py-3 text-left text-sm font-bold" style={{ color: 'var(--foreground)' }}>
-                                        {language === 'th' ? 'เพศ' : 'Gender'}
-                                    </th>
-                                    <th className="px-4 py-3 text-left text-sm font-bold" style={{ color: 'var(--foreground)' }}>
-                                        {language === 'th' ? 'กลุ่มอายุ' : 'Age Group'}
-                                    </th>
-                                    <th className="px-4 py-3 text-left text-sm font-bold" style={{ color: 'var(--foreground)' }}>
-                                        {language === 'th' ? 'สถานะ' : 'Status'}
-                                    </th>
-                                    <th className="px-4 py-3 text-left text-sm font-bold" style={{ color: 'var(--foreground)' }}>
-                                        {language === 'th' ? 'เวลา' : 'Elapsed Time'}
-                                    </th>
-                                    <th className="px-4 py-3 text-center text-sm font-bold" style={{ color: 'var(--foreground)' }}>
-                                        {language === 'th' ? 'รายละเอียด' : 'Details'}
-                                    </th>
+            {/* Main Table */}
+            <main className="p-0 sm:p-4">
+                <div className="bg-white dark:bg-slate-800 rounded-none sm:rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden" style={{ height: 'calc(100vh - 180px)', overflowY: 'auto' }}>
+                    <table className="w-full text-left border-collapse">
+                        <thead>
+                            <tr className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter sticky top-0 bg-white dark:bg-slate-800 z-20 border-b-2 border-slate-100 dark:border-slate-700">
+                                <th className="py-3 px-4 text-center w-12">Rank</th>
+                                {showGenRank && <th className="py-3 px-2 text-center w-12">Gen</th>}
+                                {showCatRank && <th className="py-3 px-2 text-center w-12">Cat</th>}
+                                <th className="py-3 px-2">Runner</th>
+                                <th className="py-3 px-2 text-center">Gender</th>
+                                <th className="py-3 px-2">Status / Last CP</th>
+                                <th className="py-3 px-2">Time</th>
+                                <th className="py-3 px-2 hidden md:table-cell">Est. Finish</th>
+                                <th className="py-3 px-4 text-right">Progress</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-50 dark:divide-slate-700">
+                            {filteredRunners.length === 0 ? (
+                                <tr>
+                                    <td colSpan={9} className="py-12 text-center text-slate-400">
+                                        {language === 'th' ? 'ยังไม่มีข้อมูลนักวิ่ง' : 'No runners data yet'}
+                                    </td>
                                 </tr>
-                            </thead>
-                            <tbody>
-                                {filteredRunners.length === 0 ? (
-                                    <tr>
-                                        <td colSpan={9} className="px-4 py-8 text-center" style={{ color: 'var(--muted-foreground)' }}>
-                                            {language === 'th' ? 'ไม่พบข้อมูลผู้เข้าแข่งขัน' : 'No participants found'}
-                                        </td>
-                                    </tr>
-                                ) : (
-                                    filteredRunners.map((runner, idx) => (
-                                        <tr key={runner._id} className="border-t" style={{ borderColor: 'var(--border)' }}>
-                                            <td className="px-4 py-3">
-                                                <span className="font-bold" style={{ color: 'var(--foreground)' }}>
-                                                    {runner.overallRank || idx + 1}
+                            ) : (
+                                filteredRunners.map((runner, index) => {
+                                    const colors = getStatusColor(runner.status);
+                                    const rank = runner.overallRank || index + 1;
+                                    const totalDistance = 100; // Will be dynamic later
+
+                                    return (
+                                        <tr key={runner._id} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors cursor-pointer group border-l-4 border-transparent hover:border-green-500">
+                                            <td className="py-3 px-4 text-center">
+                                                <span className={`text-base font-black ${rank <= 3 ? (rank === 1 ? 'text-green-600' : 'text-slate-600 dark:text-slate-300') : 'text-slate-300 dark:text-slate-500'}`}>
+                                                    {rank}
                                                 </span>
                                             </td>
-                                            <td className="px-4 py-3">
-                                                <span className="font-mono font-bold px-2 py-1 rounded" style={{ background: 'var(--accent)', color: 'var(--accent-foreground)' }}>
-                                                    {runner.bib}
-                                                </span>
-                                            </td>
-                                            <td className="px-4 py-3" style={{ color: 'var(--foreground)' }}>
-                                                {language === 'th' && runner.firstNameTh
-                                                    ? `${runner.firstNameTh} ${runner.lastNameTh || ''}`
-                                                    : `${runner.firstName} ${runner.lastName}`
-                                                }
-                                            </td>
-                                            <td className="px-4 py-3">
-                                                <div className="flex items-center gap-2">
-                                                    <img
-                                                        src={`https://flagcdn.com/w20/${getCountryCode(runner.nationality || '').toLowerCase()}.png`}
-                                                        alt=""
-                                                        className="w-5 h-auto"
-                                                        onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-                                                    />
-                                                    <span style={{ color: 'var(--muted-foreground)' }}>{runner.nationality || '-'}</span>
+                                            {showGenRank && (
+                                                <td className="py-3 px-2 text-center">
+                                                    <span className="text-xs font-bold text-slate-500">{runner.genderRank || '-'}</span>
+                                                </td>
+                                            )}
+                                            {showCatRank && (
+                                                <td className="py-3 px-2 text-center">
+                                                    <span className="text-xs font-bold text-slate-500">{runner.categoryRank || '-'}</span>
+                                                </td>
+                                            )}
+                                            <td className="py-3 px-2">
+                                                <div className="flex items-center gap-3">
+                                                    <div className="relative">
+                                                        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-slate-200 to-slate-300 dark:from-slate-600 dark:to-slate-700 flex items-center justify-center text-xs font-bold text-slate-600 dark:text-slate-200">
+                                                            {runner.firstName.charAt(0)}{runner.lastName.charAt(0)}
+                                                        </div>
+                                                        {runner.status === 'in_progress' && (
+                                                            <span className="w-2 h-2 rounded-full bg-green-500 absolute -bottom-0.5 -right-0.5 animate-pulse border border-white"></span>
+                                                        )}
+                                                    </div>
+                                                    <div>
+                                                        <span className="block font-bold text-sm text-slate-800 dark:text-white leading-none uppercase">
+                                                            {runner.firstName} {runner.lastName}
+                                                            <span className="ml-2 bg-slate-700 text-white px-1.5 py-0.5 rounded text-[10px] font-bold">#{runner.bib}</span>
+                                                        </span>
+                                                        <span className="text-[10px] text-slate-400 font-medium">
+                                                            {runner.nationality || '🏃'} | {runner.category || 'Open'}
+                                                        </span>
+                                                    </div>
                                                 </div>
                                             </td>
-                                            <td className="px-4 py-3" style={{ color: 'var(--foreground)' }}>
-                                                {runner.gender === 'M' ? '👨' : '👩'} {runner.gender}
-                                            </td>
-                                            <td className="px-4 py-3" style={{ color: 'var(--muted-foreground)' }}>
-                                                {runner.ageGroup || '-'}
-                                            </td>
-                                            <td className="px-4 py-3">
-                                                <span className={`px-2 py-1 rounded text-xs font-bold ${
-                                                    runner.status === 'finished' ? 'bg-green-500/20 text-green-500' :
-                                                    runner.status === 'in_progress' ? 'bg-yellow-500/20 text-yellow-500' :
-                                                    'bg-red-500/20 text-red-500'
-                                                }`}>
-                                                    {runner.status === 'finished' ? (language === 'th' ? 'จบ' : 'Finished') :
-                                                     runner.status === 'in_progress' ? (language === 'th' ? 'วิ่ง' : 'Running') :
-                                                     runner.status?.toUpperCase() || '-'}
+                                            <td className="py-3 px-2 text-center">
+                                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${runner.gender === 'M' ? 'text-blue-500 bg-blue-50 dark:bg-blue-900/30' : 'text-pink-500 bg-pink-50 dark:bg-pink-900/30'}`}>
+                                                    {runner.gender}
                                                 </span>
                                             </td>
-                                            <td className="px-4 py-3 font-mono" style={{ color: 'var(--foreground)' }}>
-                                                {formatTime(runner.elapsedTime || runner.netTime)}
+                                            <td className="py-3 px-2">
+                                                <span className={`block font-bold text-[11px] ${colors.text} leading-none mb-1`}>
+                                                    {getStatusLabel(runner.status)}
+                                                </span>
+                                                <span className="text-[10px] text-slate-400 uppercase font-medium">
+                                                    {runner.latestCheckpoint || '-'}
+                                                </span>
                                             </td>
-                                            <td className="px-4 py-3 text-center">
-                                                <button
-                                                    onClick={() => setSelectedRunner(runner)}
-                                                    className="px-3 py-1 rounded-lg text-sm"
-                                                    style={{ background: 'var(--accent)', color: 'var(--accent-foreground)' }}
-                                                >
-                                                    {language === 'th' ? 'ดู' : 'View'}
-                                                </button>
+                                            <td className="py-3 px-2">
+                                                <span className="text-sm font-bold text-slate-900 dark:text-white">
+                                                    {formatTime(runner.netTime)}
+                                                </span>
+                                            </td>
+                                            <td className="py-3 px-2 hidden md:table-cell">
+                                                <span className={`text-[11px] ${runner.status === 'finished' ? 'text-slate-300' : 'text-blue-500 bg-blue-50 dark:bg-blue-900/30 px-1.5 py-0.5 rounded font-bold'}`}>
+                                                    {runner.latestCheckpoint || '--'}
+                                                </span>
+                                            </td>
+                                            <td className="py-3 px-4 text-right">
+                                                <div className="flex flex-col items-end">
+                                                    <span className="font-bold text-xs text-slate-600 dark:text-slate-300">
+                                                        {runner.category || 'Open'}
+                                                    </span>
+                                                </div>
                                             </td>
                                         </tr>
-                                    ))
-                                )}
-                            </tbody>
-                        </table>
-                    </div>
+                                    );
+                                })
+                            )}
+                        </tbody>
+                    </table>
                 </div>
             </main>
 
-            {/* Runner Details Modal */}
-            {selectedRunner && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.5)' }}>
-                    <div className="glass rounded-2xl p-6 max-w-lg w-full max-h-[80vh] overflow-y-auto">
-                        <div className="flex justify-between items-start mb-4">
-                            <h3 className="text-xl font-bold" style={{ color: 'var(--foreground)' }}>
-                                {language === 'th' ? 'รายละเอียดนักวิ่ง' : 'Runner Details'}
-                            </h3>
-                            <button onClick={() => setSelectedRunner(null)} className="text-2xl" style={{ color: 'var(--muted-foreground)' }}>×</button>
-                        </div>
-                        <div className="space-y-3">
-                            <div className="flex justify-between">
-                                <span style={{ color: 'var(--muted-foreground)' }}>BIB</span>
-                                <span className="font-bold" style={{ color: 'var(--foreground)' }}>{selectedRunner.bib}</span>
-                            </div>
-                            <div className="flex justify-between">
-                                <span style={{ color: 'var(--muted-foreground)' }}>{language === 'th' ? 'ชื่อ' : 'Name'}</span>
-                                <span style={{ color: 'var(--foreground)' }}>{selectedRunner.firstName} {selectedRunner.lastName}</span>
-                            </div>
-                            <div className="flex justify-between">
-                                <span style={{ color: 'var(--muted-foreground)' }}>{language === 'th' ? 'ประเภท' : 'Category'}</span>
-                                <span style={{ color: 'var(--foreground)' }}>{selectedRunner.category}</span>
-                            </div>
-                            <div className="flex justify-between">
-                                <span style={{ color: 'var(--muted-foreground)' }}>{language === 'th' ? 'กลุ่มอายุ' : 'Age Group'}</span>
-                                <span style={{ color: 'var(--foreground)' }}>{selectedRunner.ageGroup}</span>
-                            </div>
-                            <div className="flex justify-between">
-                                <span style={{ color: 'var(--muted-foreground)' }}>{language === 'th' ? 'อันดับรวม' : 'Overall Rank'}</span>
-                                <span className="font-bold" style={{ color: 'var(--foreground)' }}>{selectedRunner.overallRank || '-'}</span>
-                            </div>
-                            <div className="flex justify-between">
-                                <span style={{ color: 'var(--muted-foreground)' }}>{language === 'th' ? 'อันดับเพศ' : 'Gender Rank'}</span>
-                                <span style={{ color: 'var(--foreground)' }}>{selectedRunner.genderRank || '-'}</span>
-                            </div>
-                            <div className="flex justify-between">
-                                <span style={{ color: 'var(--muted-foreground)' }}>{language === 'th' ? 'เวลาสุทธิ' : 'Net Time'}</span>
-                                <span className="font-mono font-bold" style={{ color: 'var(--foreground)' }}>{formatTime(selectedRunner.netTime)}</span>
-                            </div>
-                            <div className="flex justify-between">
-                                <span style={{ color: 'var(--muted-foreground)' }}>{language === 'th' ? 'ทีม' : 'Team'}</span>
-                                <span style={{ color: 'var(--foreground)' }}>{selectedRunner.team || selectedRunner.teamName || '-'}</span>
-                            </div>
-                        </div>
-                    </div>
+            {/* Footer */}
+            <footer className="bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-700 px-4 py-2 fixed bottom-0 w-full flex justify-between items-center z-30">
+                <p className="text-[9px] font-bold text-slate-300 uppercase tracking-widest">ACTION TIMING © 2026</p>
+                <div className="flex gap-4">
+                    <span className="text-[9px] text-green-500 font-bold uppercase animate-pulse">
+                        <span className="inline-block w-1.5 h-1.5 rounded-full bg-green-500 mr-1"></span>
+                        Connected
+                    </span>
                 </div>
-            )}
+            </footer>
         </div>
     );
 }
