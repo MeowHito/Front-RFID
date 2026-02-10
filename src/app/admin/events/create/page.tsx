@@ -1,10 +1,9 @@
 'use client';
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useLanguage } from '@/lib/language-context';
 import ImageCropModal from '@/components/ImageCropModal';
-import api from '@/lib/api';
 import AdminLayout from '../../AdminLayout';
 
 interface RaceCategory {
@@ -44,13 +43,18 @@ const THEME_OPTIONS = [
     { value: 'road', label: 'Road Marathon (น้ำเงิน)', labelEn: 'Road Marathon (Blue)' },
 ];
 
-export default function CreateEventPage() {
+function CreateEventForm() {
     const { language } = useLanguage();
     const router = useRouter();
+    const searchParams = useSearchParams();
+    const editId = searchParams.get('edit');
+    const isEdit = !!editId;
+
     const [saving, setSaving] = useState(false);
     const [toastMessage, setToastMessage] = useState<string | null>(null);
     const [cropModalOpen, setCropModalOpen] = useState(false);
     const [rawImage, setRawImage] = useState<string>('');
+    const [loadingEdit, setLoadingEdit] = useState(false);
 
     const [form, setForm] = useState<CreateEventForm>({
         name: '',
@@ -69,6 +73,47 @@ export default function CreateEventPage() {
         status: 'upcoming',
         categories: [],
     });
+
+    // Load campaign data when editing
+    useEffect(() => {
+        if (!editId) return;
+        setLoadingEdit(true);
+        fetch(`/api/campaigns/${editId}`)
+            .then(res => res.json())
+            .then(data => {
+                const campaign = data;
+                setForm({
+                    name: campaign.name || '',
+                    shortName: campaign.shortName || '',
+                    description: campaign.description || '',
+                    eventDate: campaign.eventDate ? campaign.eventDate.slice(0, 10) : '',
+                    location: campaign.location || '',
+                    pictureUrl: campaign.pictureUrl || '',
+                    organizerName: campaign.organizerName || '',
+                    organizerContact: campaign.organizerContact || '',
+                    organizerPhone: campaign.organizerPhone || '',
+                    organizerEmail: campaign.organizerEmail || '',
+                    organizerWebsite: campaign.organizerWebsite || '',
+                    eventManager: campaign.eventManager || '',
+                    themeType: campaign.themeType || 'utmb',
+                    status: campaign.status || 'upcoming',
+                    categories: (campaign.categories || []).map((cat: RaceCategory) => ({
+                        name: cat.name || '',
+                        distance: cat.distance || '',
+                        startTime: cat.startTime || '06:00',
+                        cutoff: cat.cutoff || '',
+                        elevation: cat.elevation || '',
+                        raceType: cat.raceType || '',
+                        badgeColor: cat.badgeColor || '#dc2626',
+                        status: cat.status || 'wait',
+                        itra: cat.itra ?? '',
+                        utmbIndex: cat.utmbIndex || '',
+                    })),
+                });
+            })
+            .catch(err => console.error('Failed to load campaign:', err))
+            .finally(() => setLoadingEdit(false));
+    }, [editId]);
 
     const updateField = (field: keyof CreateEventForm, value: string) => {
         setForm(prev => ({ ...prev, [field]: value }));
@@ -156,8 +201,10 @@ export default function CreateEventPage() {
             if (form.status) payload.status = form.status;
             if (cleanCategories.length > 0) payload.categories = cleanCategories;
             // Use API proxy route to work on both localhost and Vercel
-            const res = await fetch('/api/campaigns', {
-                method: 'POST',
+            const url = isEdit ? `/api/campaigns/${editId}` : '/api/campaigns';
+            const method = isEdit ? 'PUT' : 'POST';
+            const res = await fetch(url, {
+                method,
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload),
             });
@@ -166,32 +213,57 @@ export default function CreateEventPage() {
                 console.error('Backend error:', errData);
                 throw new Error(`Failed: ${res.status}`);
             }
-            setToastMessage(language === 'th' ? 'สร้างกิจกรรมสำเร็จ!' : 'Event created successfully!');
+            setToastMessage(language === 'th'
+                ? (isEdit ? 'บันทึกการแก้ไขสำเร็จ!' : 'สร้างกิจกรรมสำเร็จ!')
+                : (isEdit ? 'Changes saved!' : 'Event created successfully!'));
             setTimeout(() => {
                 router.push('/admin/events');
             }, 1500);
         } catch (error) {
-            console.error('Failed to create event:', error);
-            setToastMessage(language === 'th' ? 'เกิดข้อผิดพลาด' : 'Failed to create event');
+            console.error('Failed to save event:', error);
+            setToastMessage(language === 'th' ? 'เกิดข้อผิดพลาด' : 'Failed to save event');
         } finally {
             setSaving(false);
             setTimeout(() => setToastMessage(null), 3000);
         }
     };
 
+    if (loadingEdit) {
+        return (
+            <AdminLayout
+                breadcrumbItems={[
+                    { label: 'แอดมิน', labelEn: 'Admin', href: '/admin' },
+                    { label: 'อีเวนท์', labelEn: 'Events', href: '/admin/events' },
+                    { label: 'กำลังโหลด...', labelEn: 'Loading...' }
+                ]}
+                pageTitle=""
+            >
+                <div style={{ textAlign: 'center', padding: 60, color: '#999' }}>
+                    {language === 'th' ? 'กำลังโหลดข้อมูล...' : 'Loading data...'}
+                </div>
+            </AdminLayout>
+        );
+    }
+
     return (
         <AdminLayout
             breadcrumbItems={[
                 { label: 'แอดมิน', labelEn: 'Admin', href: '/admin' },
                 { label: 'อีเวนท์', labelEn: 'Events', href: '/admin/events' },
-                { label: 'สร้างกิจกรรมใหม่', labelEn: 'Create New Event' }
+                { label: isEdit ? 'แก้ไขกิจกรรม' : 'สร้างกิจกรรมใหม่', labelEn: isEdit ? 'Edit Event' : 'Create New Event' }
             ]}
-            pageTitle={language === 'th' ? 'กรอกข้อมูลเพื่อสร้างกิจกรรมใหม่ในระบบ' : 'Fill in the details to create a new event'}
+            pageTitle={language === 'th'
+                ? (isEdit ? 'แก้ไขข้อมูลกิจกรรม' : 'กรอกข้อมูลเพื่อสร้างกิจกรรมใหม่ในระบบ')
+                : (isEdit ? 'Edit event details' : 'Fill in the details to create a new event')
+            }
         >
             {/* Page Header */}
             <div className="create-event-header">
                 <h1 className="create-event-title">
-                    {language === 'th' ? 'สร้างกิจกรรมใหม่' : 'Create New Event'}
+                    {language === 'th'
+                        ? (isEdit ? 'แก้ไขกิจกรรม' : 'สร้างกิจกรรมใหม่')
+                        : (isEdit ? 'Edit Event' : 'Create New Event')
+                    }
                 </h1>
                 <div className="create-event-actions">
                     <button className="btn-ce btn-ce-cancel" onClick={() => router.push('/admin/events')}>
@@ -559,5 +631,13 @@ export default function CreateEventPage() {
                 onCancel={() => setCropModalOpen(false)}
             />
         </AdminLayout>
+    );
+}
+
+export default function CreateEventPage() {
+    return (
+        <Suspense fallback={<div style={{ textAlign: 'center', padding: 60, color: '#999' }}>Loading...</div>}>
+            <CreateEventForm />
+        </Suspense>
     );
 }
