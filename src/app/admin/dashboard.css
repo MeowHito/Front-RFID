@@ -1,6 +1,36 @@
 /* Admin Dashboard Styles - AdminLTE Style */
 @import url('https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&display=swap');
 
+/* Force light mode for dashboard — override dark mode */
+.admin-dashboard,
+.admin-dashboard *,
+.admin-dashboard *::before,
+.admin-dashboard *::after {
+    color-scheme: light;
+}
+
+.admin-dashboard {
+    color: #333 !important;
+}
+
+.admin-dashboard table,
+.admin-dashboard th,
+.admin-dashboard td,
+.admin-dashboard p,
+.admin-dashboard span,
+.admin-dashboard label,
+.admin-dashboard h1,
+.admin-dashboard h2,
+.admin-dashboard h3,
+.admin-dashboard div {
+    color: inherit;
+}
+
+.admin-dashboard-content {
+    color: #333 !important;
+    background: #ecf0f5 !important;
+}
+
 /* CSS Variables */
 :root {
     --admin-primary: #00a65a;

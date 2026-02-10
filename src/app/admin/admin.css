@@ -1,5 +1,55 @@
 /* Admin Panel Styles - AdminLTE Flat UI */
 
+/* Force light mode for ALL admin pages — override dark mode */
+.admin-container,
+.admin-container *,
+.admin-container *::before,
+.admin-container *::after {
+    color-scheme: light;
+}
+
+.admin-container {
+    color: #333 !important;
+    background-color: #ecf0f5 !important;
+}
+
+.admin-container table,
+.admin-container th,
+.admin-container td,
+.admin-container p,
+.admin-container span,
+.admin-container label,
+.admin-container h1,
+.admin-container h2,
+.admin-container h3,
+.admin-container h4,
+.admin-container h5,
+.admin-container h6,
+.admin-container div,
+.admin-container a,
+.admin-container button,
+.admin-container input,
+.admin-container select,
+.admin-container textarea {
+    color: inherit;
+}
+
+.admin-container .content-box,
+.admin-container .admin-card,
+.admin-container .modal-content {
+    background: #fff !important;
+    color: #333 !important;
+}
+
+.admin-container .data-table th {
+    color: #333 !important;
+    background-color: #f5f7fa !important;
+}
+
+.admin-container .data-table td {
+    color: #333 !important;
+}
+
 /* CSS Variables for AdminLTE Theme */
 :root {
     --header-bg: #00a65a;
