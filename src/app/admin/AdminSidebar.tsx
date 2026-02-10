@@ -113,10 +113,10 @@ export default function AdminSidebar() {
         <aside className="main-sidebar">
             <ul className="sidebar-menu">
                 {menuSections.map((section, sIdx) => (
-                    <li key={sIdx} className="sidebar-section">
-                        <li className="sidebar-header">
+                    <div key={sIdx} className="sidebar-section">
+                        <span className="sidebar-header">
                             {language === 'th' ? section.header : section.headerEn}
-                        </li>
+                        </span>
                         {section.items.map((item) => (
                             <li key={item.href} className={isActive(item.href) ? 'active' : ''}>
                                 <Link href={item.href}>
@@ -130,7 +130,7 @@ export default function AdminSidebar() {
                                 </Link>
                             </li>
                         ))}
-                    </li>
+                    </div>
                 ))}
             </ul>
         </aside>
