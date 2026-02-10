@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useLanguage } from '@/lib/language-context';
+import ImageCropModal from '@/components/ImageCropModal';
 import api from '@/lib/api';
 import AdminLayout from '../../AdminLayout';
 
@@ -48,6 +49,8 @@ export default function CreateEventPage() {
     const router = useRouter();
     const [saving, setSaving] = useState(false);
     const [toastMessage, setToastMessage] = useState<string | null>(null);
+    const [cropModalOpen, setCropModalOpen] = useState(false);
+    const [rawImage, setRawImage] = useState<string>('');
 
     const [form, setForm] = useState<CreateEventForm>({
         name: '',
@@ -99,16 +102,19 @@ export default function CreateEventPage() {
         }));
     };
 
-    // Image upload
+    // Image upload — open interactive crop modal
     const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (file) {
             const reader = new FileReader();
             reader.onload = (ev) => {
-                setForm(prev => ({ ...prev, pictureUrl: ev.target?.result as string }));
+                setRawImage(ev.target?.result as string);
+                setCropModalOpen(true);
             };
             reader.readAsDataURL(file);
         }
+        // Reset input so same file can be selected again
+        e.target.value = '';
     };
 
     // Save
@@ -121,17 +127,45 @@ export default function CreateEventPage() {
 
         setSaving(true);
         try {
-            await api.post('/campaigns', {
+            // Send pictureUrl (base64 is OK — body limit is 10MB)
+            const pictureUrl = form.pictureUrl || undefined;
+            // Clean up categories: convert itra to number, filter out empty entries
+            const cleanCategories = form.categories
+                .filter(cat => cat.name || cat.distance) // skip totally empty rows
+                .map(cat => ({
+                    name: cat.name || 'Unnamed',
+                    distance: cat.distance || '0 KM',
+                    startTime: cat.startTime || '06:00',
+                    cutoff: cat.cutoff || '-',
+                    badgeColor: cat.badgeColor || '#dc2626',
+                    ...(cat.elevation && { elevation: cat.elevation }),
+                    ...(cat.raceType && { raceType: cat.raceType }),
+                    ...(cat.status && { status: cat.status }),
+                    ...(cat.itra && { itra: Number(cat.itra) || undefined }),
+                    ...(cat.utmbIndex && { utmbIndex: cat.utmbIndex }),
+                }));
+            const payload: Record<string, unknown> = {
                 name: form.name,
-                shortName: form.shortName,
-                description: form.description,
                 eventDate: form.eventDate,
-                location: form.location,
-                pictureUrl: form.pictureUrl,
-                organizerName: form.organizerName,
-                status: form.status,
-                categories: form.categories,
+            };
+            if (form.shortName) payload.shortName = form.shortName;
+            if (form.description) payload.description = form.description;
+            if (form.location) payload.location = form.location;
+            if (pictureUrl) payload.pictureUrl = pictureUrl;
+            if (form.organizerName) payload.organizerName = form.organizerName;
+            if (form.status) payload.status = form.status;
+            if (cleanCategories.length > 0) payload.categories = cleanCategories;
+            // Use API proxy route to work on both localhost and Vercel
+            const res = await fetch('/api/campaigns', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
             });
+            if (!res.ok) {
+                const errData = await res.json().catch(() => ({}));
+                console.error('Backend error:', errData);
+                throw new Error(`Failed: ${res.status}`);
+            }
             setToastMessage(language === 'th' ? 'สร้างกิจกรรมสำเร็จ!' : 'Event created successfully!');
             setTimeout(() => {
                 router.push('/admin/events');
@@ -195,6 +229,7 @@ export default function CreateEventPage() {
                         <div
                             className="ce-upload-box"
                             onClick={() => document.getElementById('cover-upload')?.click()}
+                            style={{ aspectRatio: '16/8', minHeight: 'auto', padding: form.pictureUrl ? 0 : 20 }}
                         >
                             {form.pictureUrl ? (
                                 <img src={form.pictureUrl} alt="Cover" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
@@ -211,18 +246,7 @@ export default function CreateEventPage() {
                         </div>
                         <input id="cover-upload" type="file" accept="image/*" style={{ display: 'none' }} onChange={handleImageUpload} />
                     </div>
-                    <div className="ce-form-group">
-                        <label className="ce-label">
-                            {language === 'th' ? 'ภาพหน้าปก e-slip (595x100px)' : 'E-slip Cover (595x100px)'}
-                        </label>
-                        <div className="ce-upload-box">
-                            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#bbb" strokeWidth="2">
-                                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                                <polyline points="14 2 14 8 20 8" />
-                            </svg>
-                            <span>{language === 'th' ? 'คลิกอัปโหลดรูป e-slip' : 'Click to upload e-slip'}</span>
-                        </div>
-                    </div>
+
                 </div>
             </div>
 
@@ -523,6 +547,17 @@ export default function CreateEventPage() {
                     </div>
                 </div>
             )}
+
+            {/* Image Crop Modal */}
+            <ImageCropModal
+                isOpen={cropModalOpen}
+                imageSrc={rawImage}
+                onCrop={(croppedDataUrl) => {
+                    setForm(prev => ({ ...prev, pictureUrl: croppedDataUrl }));
+                    setCropModalOpen(false);
+                }}
+                onCancel={() => setCropModalOpen(false)}
+            />
         </AdminLayout>
     );
 }

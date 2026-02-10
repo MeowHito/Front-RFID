@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { useLanguage } from '@/lib/language-context';
+import ImageCropModal from '@/components/ImageCropModal';
 import '../admin.css';
 
 // Race category type
@@ -70,6 +71,8 @@ export default function EventDetailsModal({ isOpen, onClose, event, onSave }: Ev
     const [saving, setSaving] = useState(false);
     const [saveMessage, setSaveMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
     const [categoryAddedNotification, setCategoryAddedNotification] = useState<string | null>(null);
+    const [cropModalOpen, setCropModalOpen] = useState(false);
+    const [rawImage, setRawImage] = useState<string>('');
     const pictureInputRef = useRef<HTMLInputElement>(null);
 
     // Sync campaign data when modal opens
@@ -124,11 +127,14 @@ export default function EventDetailsModal({ isOpen, onClose, event, onSave }: Ev
         const file = e.target.files?.[0];
         if (file) {
             const reader = new FileReader();
-            reader.onload = (event) => {
-                setFormData(prev => ({ ...prev, pictureUrl: event.target?.result as string }));
+            reader.onload = (ev) => {
+                setRawImage(ev.target?.result as string);
+                setCropModalOpen(true);
             };
             reader.readAsDataURL(file);
         }
+        // Reset input so same file can be selected again
+        e.target.value = '';
     };
 
     // Category management
@@ -219,20 +225,29 @@ export default function EventDetailsModal({ isOpen, onClose, event, onSave }: Ev
 
                 {/* Body */}
                 <div className="modal-body event-form-body">
-                    {/* Banner Image */}
+                    {/* Banner Image — 16:8 aspect ratio */}
                     <div className="form-group">
                         <label className="form-label">
-                            {language === 'th' ? 'ภาพหน้าปกกิจกรรม' : 'Campaign Banner Image'}
+                            {language === 'th' ? 'ภาพหน้าปกกิจกรรม (16:8)' : 'Campaign Banner Image (16:8)'}
                         </label>
                         <div
                             className="image-upload-box"
                             onClick={() => pictureInputRef.current?.click()}
-                            style={{ height: '150px', width: '100%' }}
+                            style={{ height: 'auto', width: '100%', aspectRatio: '16/8', position: 'relative' }}
                         >
                             {formData.pictureUrl ? (
-                                <img src={formData.pictureUrl} alt="Banner" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                <>
+                                    <img src={formData.pictureUrl} alt="Banner" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                    <div style={{
+                                        position: 'absolute', bottom: 8, right: 8,
+                                        background: 'rgba(0,0,0,0.6)', color: '#fff',
+                                        padding: '4px 10px', borderRadius: 4, fontSize: 11, cursor: 'pointer'
+                                    }}>
+                                        {language === 'th' ? '📷 เปลี่ยนรูป' : '📷 Change'}
+                                    </div>
+                                </>
                             ) : (
-                                <span className="upload-placeholder">+ {language === 'th' ? 'อัปโหลดรูป' : 'Upload Image'}</span>
+                                <span className="upload-placeholder">+ {language === 'th' ? 'อัปโหลดรูป (16:8)' : 'Upload Image (16:8)'}</span>
                             )}
                         </div>
                         <input
@@ -588,6 +603,17 @@ export default function EventDetailsModal({ isOpen, onClose, event, onSave }: Ev
                     </button>
                 </div>
             </div>
+
+            {/* Image Crop Modal */}
+            <ImageCropModal
+                isOpen={cropModalOpen}
+                imageSrc={rawImage}
+                onCrop={(croppedDataUrl) => {
+                    setFormData(prev => ({ ...prev, pictureUrl: croppedDataUrl }));
+                    setCropModalOpen(false);
+                }}
+                onCancel={() => setCropModalOpen(false)}
+            />
         </div>
     );
 }

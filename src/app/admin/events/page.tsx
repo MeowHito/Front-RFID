@@ -53,7 +53,7 @@ export default function EventsPage() {
     const [certificateModalOpen, setCertificateModalOpen] = useState(false);
     const [detailsModalOpen, setDetailsModalOpen] = useState(false);
     const [selectedCampaign, setSelectedCampaign] = useState<Campaign | null>(null);
-    const [isCreating, setIsCreating] = useState(false);
+
     const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
     const [campaignToDelete, setCampaignToDelete] = useState<Campaign | null>(null);
     const [deleting, setDeleting] = useState(false);
@@ -125,18 +125,14 @@ export default function EventsPage() {
         setCertificateModalOpen(true);
     };
 
-    const openDetailsModal = (campaign: Campaign | null = null, creating = false) => {
+    const openDetailsModal = (campaign: Campaign) => {
         setSelectedCampaign(campaign);
-        setIsCreating(creating);
         setDetailsModalOpen(true);
     };
 
     const handleSaveCampaignDetails = async (data: Partial<Campaign>) => {
         try {
-            if (isCreating) {
-                // Create new campaign
-                await api.post('/campaigns', data);
-            } else if (data._id) {
+            if (data._id) {
                 // Update existing campaign
                 await api.put(`/campaigns/${data._id}`, data);
             }
@@ -199,9 +195,7 @@ export default function EventsPage() {
                             <option value="active">{language === 'th' ? 'เปิดใช้งาน' : 'Active'}</option>
                             <option value="inactive">{language === 'th' ? 'ปิดใช้งาน' : 'Inactive'}</option>
                         </select>
-                        <button className="btn-add-event" onClick={() => openDetailsModal(null, true)}>
-                            <span>+</span>
-                        </button>
+
                     </div>
                 </div>
 
@@ -497,20 +491,20 @@ export default function EventsPage() {
                             </p>
                         </div>
                         <div className="modal-footer" style={{ justifyContent: 'center', gap: '1rem' }}>
-                            <button 
-                                className="btn-secondary" 
+                            <button
+                                className="btn-secondary"
                                 onClick={() => setDeleteConfirmOpen(false)}
                                 disabled={deleting}
                             >
                                 {language === 'th' ? 'ยกเลิก' : 'Cancel'}
                             </button>
-                            <button 
+                            <button
                                 className="btn-danger"
                                 onClick={handleDeleteCampaign}
                                 disabled={deleting}
                                 style={{ background: '#dc2626', color: '#fff', padding: '0.5rem 1.5rem', borderRadius: '6px', border: 'none', cursor: 'pointer' }}
                             >
-                                {deleting 
+                                {deleting
                                     ? (language === 'th' ? 'กำลังลบ...' : 'Deleting...')
                                     : (language === 'th' ? 'ลบกิจกรรม' : 'Delete Event')
                                 }

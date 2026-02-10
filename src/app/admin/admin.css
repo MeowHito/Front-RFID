@@ -2067,7 +2067,7 @@
 
 .btn-ce-add {
     background: #333;
-    color: white;
+    color: white !important;
     border: none;
     padding: 5px 12px;
     border-radius: 3px;
@@ -2081,6 +2081,7 @@
 
 .btn-ce-add:hover {
     background: #555;
+    color: white !important;
 }
 
 /* Cards with colored top borders */
