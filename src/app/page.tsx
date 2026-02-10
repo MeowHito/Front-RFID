@@ -163,26 +163,6 @@ export default function Home() {
           </nav>
 
           <div className="flex items-center gap-2">
-            {/* Language Toggle */}
-            <button
-              onClick={() => setLanguage(language === 'th' ? 'en' : 'th')}
-              className="p-2 rounded-xl glass scale-hover"
-              title={language === 'th' ? 'Switch to English' : 'เปลี่ยนเป็นภาษาไทย'}
-            >
-              {language === 'th' ? (
-                <img src="https://flagcdn.com/w40/us.png" alt="EN" className="w-5 h-3.5 object-cover rounded" />
-              ) : (
-                <img src="https://flagcdn.com/w40/th.png" alt="TH" className="w-5 h-3.5 object-cover rounded" />
-              )}
-            </button>
-
-            {/* Theme Toggle */}
-            <button
-              onClick={toggleTheme}
-              className="p-2 rounded-xl glass scale-hover"
-            >
-              <span className="text-base">{theme === 'dark' ? '☀️' : '🌙'}</span>
-            </button>
 
             {/* Desktop Auth */}
             {isAuthenticated ? (
@@ -227,6 +207,33 @@ export default function Home() {
                       >
                         ⚙️ {language === 'th' ? 'ตั้งค่าโปรไฟล์' : 'Profile Settings'}
                       </Link>
+                      {/* Language & Theme Toggles */}
+                      <div className="border-t border-b my-1" style={{ borderColor: 'var(--border)' }}>
+                        <div className="flex items-center justify-between px-4 py-2.5">
+                          <span className="text-xs font-medium" style={{ color: 'var(--muted-foreground)' }}>🌐 {language === 'th' ? 'ภาษา' : 'Language'}</span>
+                          <div className="flex items-center gap-2">
+                            <span className={`text-xs font-semibold ${language === 'th' ? 'opacity-100' : 'opacity-40'}`} style={{ color: 'var(--foreground)' }}>TH</span>
+                            <label className="relative inline-block w-9 h-5 cursor-pointer">
+                              <input type="checkbox" className="sr-only peer" checked={language === 'en'} onChange={() => setLanguage(language === 'th' ? 'en' : 'th')} />
+                              <span className="absolute inset-0 rounded-full transition-colors peer-checked:bg-blue-500" style={{ background: language === 'en' ? '#3b82f6' : '#d1d5db' }}></span>
+                              <span className="absolute left-0.5 top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform" style={{ transform: language === 'en' ? 'translateX(16px)' : 'translateX(0)' }}></span>
+                            </label>
+                            <span className={`text-xs font-semibold ${language === 'en' ? 'opacity-100' : 'opacity-40'}`} style={{ color: 'var(--foreground)' }}>EN</span>
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-between px-4 py-2.5">
+                          <span className="text-xs font-medium" style={{ color: 'var(--muted-foreground)' }}>{theme === 'dark' ? '🌙' : '☀️'} {language === 'th' ? 'ธีม' : 'Theme'}</span>
+                          <div className="flex items-center gap-2">
+                            <span className={`text-xs font-semibold ${theme === 'light' ? 'opacity-100' : 'opacity-40'}`} style={{ color: 'var(--foreground)' }}>☀️</span>
+                            <label className="relative inline-block w-9 h-5 cursor-pointer">
+                              <input type="checkbox" className="sr-only peer" checked={theme === 'dark'} onChange={toggleTheme} />
+                              <span className="absolute inset-0 rounded-full transition-colors" style={{ background: theme === 'dark' ? '#6366f1' : '#d1d5db' }}></span>
+                              <span className="absolute left-0.5 top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform" style={{ transform: theme === 'dark' ? 'translateX(16px)' : 'translateX(0)' }}></span>
+                            </label>
+                            <span className={`text-xs font-semibold ${theme === 'dark' ? 'opacity-100' : 'opacity-40'}`} style={{ color: 'var(--foreground)' }}>🌙</span>
+                          </div>
+                        </div>
+                      </div>
                       <button
                         onClick={() => { logout(); setShowUserMenu(false); }}
                         className="w-full text-left px-4 py-2 text-sm hover:bg-black/10 transition-colors"
@@ -239,13 +246,33 @@ export default function Home() {
                 </div>
               </div>
             ) : (
-              <Link
-                href="/login"
-                className="hidden sm:block px-4 py-2 text-sm font-medium rounded-xl btn-glow text-center min-w-[100px]"
-                style={{ background: 'var(--accent)', color: 'var(--accent-foreground)' }}
-              >
-                {t('nav.login')}
-              </Link>
+              <div className="hidden sm:flex items-center gap-2">
+                {/* Language/Theme for non-authenticated */}
+                <button
+                  onClick={() => setLanguage(language === 'th' ? 'en' : 'th')}
+                  className="p-2 rounded-xl glass scale-hover"
+                  title={language === 'th' ? 'Switch to English' : 'เปลี่ยนเป็นภาษาไทย'}
+                >
+                  {language === 'th' ? (
+                    <img src="https://flagcdn.com/w40/us.png" alt="EN" className="w-5 h-3.5 object-cover rounded" />
+                  ) : (
+                    <img src="https://flagcdn.com/w40/th.png" alt="TH" className="w-5 h-3.5 object-cover rounded" />
+                  )}
+                </button>
+                <button
+                  onClick={toggleTheme}
+                  className="p-2 rounded-xl glass scale-hover"
+                >
+                  <span className="text-base">{theme === 'dark' ? '☀️' : '🌙'}</span>
+                </button>
+                <Link
+                  href="/login"
+                  className="px-4 py-2 text-sm font-medium rounded-xl btn-glow text-center min-w-[100px]"
+                  style={{ background: 'var(--accent)', color: 'var(--accent-foreground)' }}
+                >
+                  {t('nav.login')}
+                </Link>
+              </div>
             )}
 
             {/* Mobile Menu Button */}
