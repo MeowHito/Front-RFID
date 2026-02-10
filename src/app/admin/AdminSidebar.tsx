@@ -1,5 +1,6 @@
 'use client';
 
+import React from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
@@ -34,7 +35,8 @@ const menuSections: MenuSection[] = [
         headerEn: 'RACE CONFIG',
         items: [
             { href: '/admin/categories', label: 'ประเภทการแข่งขัน', labelEn: 'Race Categories', icon: 'layer-group' },
-            { href: '/admin/routes', label: 'เส้นทาง & Cut-off', labelEn: 'Routes & Cut-off', icon: 'map-location-dot' },
+            { href: '/admin/checkpoints', label: 'จัดการจุด Checkpoint', labelEn: 'Manage Checkpoints', icon: 'map-location-dot' },
+            { href: '/admin/checkpoints/create', label: 'เพิ่มจุด Checkpoint', labelEn: 'Add Checkpoint', icon: 'circle-plus', iconColor: '#00a65a' },
         ]
     },
     {
@@ -77,7 +79,7 @@ const menuSections: MenuSection[] = [
 // Simple SVG icons mapped by name
 function SidebarIcon({ name, color }: { name: string; color?: string }) {
     const style = color ? { color } : {};
-    const icons: Record<string, JSX.Element> = {
+    const icons: Record<string, React.ReactElement> = {
         'calendar-check': <svg style={style} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /><path d="M9 16l2 2 4-4" /></svg>,
         'circle-plus': <svg style={style} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="16" /><line x1="8" y1="12" x2="16" y2="12" /></svg>,
         'layer-group': <svg style={style} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="12 2 2 7 12 12 22 7 12 2" /><polyline points="2 17 12 22 22 17" /><polyline points="2 12 12 17 22 12" /></svg>,

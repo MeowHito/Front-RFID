@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import Image from 'next/image';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { useTheme } from '@/lib/theme-context';
@@ -18,12 +18,17 @@ export default function LoginPage() {
     const [loading, setLoading] = useState(false);
     const [focusedField, setFocusedField] = useState<string | null>(null);
 
-    if (isAuthenticated) {
-        if (isAdmin) {
-            router.push('/admin');
-        } else {
-            router.push('/');
+    useEffect(() => {
+        if (isAuthenticated) {
+            if (isAdmin) {
+                router.push('/admin');
+            } else {
+                router.push('/');
+            }
         }
+    }, [isAuthenticated, isAdmin, router]);
+
+    if (isAuthenticated) {
         return null;
     }
 

@@ -69,10 +69,10 @@ export default function CategoriesPage() {
                             {(() => {
                                 let idx = 0;
                                 return campaigns.flatMap((c) =>
-                                    (c.categories || []).map((cat) => {
+                                    (c.categories || []).map((cat, catIdx) => {
                                         idx++;
                                         return (
-                                            <tr key={`${c._id}-${cat.name}`}>
+                                            <tr key={`${c._id}-${catIdx}-${cat.name}`}>
                                                 <td style={{ textAlign: 'center' }}>{idx}</td>
                                                 <td>{c.name}</td>
                                                 <td style={{ fontWeight: 500 }}>{cat.name}</td>

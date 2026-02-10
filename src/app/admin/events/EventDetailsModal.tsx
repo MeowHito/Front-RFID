@@ -232,7 +232,11 @@ export default function EventDetailsModal({ isOpen, onClose, event, onSave }: Ev
                         </label>
                         <div
                             className="image-upload-box"
-                            onClick={() => pictureInputRef.current?.click()}
+                            onClick={() => {
+                                if (!formData.pictureUrl) {
+                                    pictureInputRef.current?.click();
+                                }
+                            }}
                             style={{ height: 'auto', width: '100%', aspectRatio: '16/8', position: 'relative' }}
                         >
                             {formData.pictureUrl ? (
@@ -240,10 +244,37 @@ export default function EventDetailsModal({ isOpen, onClose, event, onSave }: Ev
                                     <img src={formData.pictureUrl} alt="Banner" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                                     <div style={{
                                         position: 'absolute', bottom: 8, right: 8,
-                                        background: 'rgba(0,0,0,0.6)', color: '#fff',
-                                        padding: '4px 10px', borderRadius: 4, fontSize: 11, cursor: 'pointer'
+                                        display: 'flex', gap: 6,
                                     }}>
-                                        {language === 'th' ? '📷 เปลี่ยนรูป' : '📷 Change'}
+                                        <button
+                                            type="button"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setRawImage(formData.pictureUrl || '');
+                                                setCropModalOpen(true);
+                                            }}
+                                            style={{
+                                                background: 'rgba(0,0,0,0.7)', color: '#fff',
+                                                padding: '4px 10px', borderRadius: 4, fontSize: 11,
+                                                cursor: 'pointer', border: 'none',
+                                            }}
+                                        >
+                                            {language === 'th' ? '✂️ ปรับขนาด/ครอป' : '✂️ Crop/Resize'}
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                pictureInputRef.current?.click();
+                                            }}
+                                            style={{
+                                                background: 'rgba(0,0,0,0.7)', color: '#fff',
+                                                padding: '4px 10px', borderRadius: 4, fontSize: 11,
+                                                cursor: 'pointer', border: 'none',
+                                            }}
+                                        >
+                                            {language === 'th' ? '📷 เปลี่ยนรูป' : '📷 Change'}
+                                        </button>
                                     </div>
                                 </>
                             ) : (

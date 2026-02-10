@@ -1,36 +1,39 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { useParams } from 'next/navigation';
 import { useTheme } from '@/lib/theme-context';
 import { useLanguage } from '@/lib/language-context';
 
-// Campaign interface from MongoDB
-interface RaceCategory {
-    name: string;
-    distance: string;
-    elevation?: string;
-    raceType?: string;
-    badgeColor: string;
-}
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
 interface Campaign {
     _id: string;
     uuid: string;
     name: string;
-    nameTh?: string;
-    nameEn?: string;
+    shortName?: string;
+    description?: string;
     eventDate: string;
     eventEndDate?: string;
     location: string;
-    locationTh?: string;
-    locationEn?: string;
+    pictureUrl?: string;
+    status: string;
     categories: RaceCategory[];
+}
+
+interface RaceCategory {
+    name: string;
+    distance: string;
+    startTime: string;
+    cutoff: string;
+    elevation?: string;
+    raceType?: string;
+    badgeColor: string;
     status: string;
 }
 
-// Runner interface matching MongoDB schema
 interface Runner {
     _id: string;
     bib: string;
@@ -39,20 +42,33 @@ interface Runner {
     firstNameTh?: string;
     lastNameTh?: string;
     gender: string;
-    ageGroup?: string;
-    category?: string;
+    category: string;
+    ageGroup: string;
+    age?: number;
     status: string;
-    overallRank?: number;
-    genderRank?: number;
-    categoryRank?: number;
-    latestCheckpoint?: string;
     netTime?: number;
     elapsedTime?: number;
+    overallRank?: number;
+    genderRank?: number;
+    ageGroupRank?: number;
+    categoryRank?: number;
     nationality?: string;
+    team?: string;
+    teamName?: string;
+    latestCheckpoint?: string;
 }
 
-export default function ResultPage() {
-    const { theme } = useTheme();
+interface TimingRecord {
+    _id: string;
+    runnerId: string;
+    checkpoint: string;
+    scanTime: string;
+    splitTime?: number;
+    elapsedTime?: number;
+}
+
+export default function EventDashboardPage() {
+    const { theme, toggleTheme } = useTheme();
     const { language } = useLanguage();
     const params = useParams();
     const eventId = params.id as string;
@@ -61,42 +77,48 @@ export default function ResultPage() {
     const [runners, setRunners] = useState<Runner[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
-    const [genderFilter, setGenderFilter] = useState<'ALL' | 'M' | 'F'>('ALL');
+
     const [searchQuery, setSearchQuery] = useState('');
-    const [categoryFilter, setCategoryFilter] = useState('ALL');
+    const [filterGender, setFilterGender] = useState('ALL');
+    const [filterCategory, setFilterCategory] = useState('ALL');
+    const [selectedRunner, setSelectedRunner] = useState<Runner | null>(null);
+    const [runnerTimings, setRunnerTimings] = useState<TimingRecord[]>([]);
+
+    // Column visibility
     const [showGenRank, setShowGenRank] = useState(true);
     const [showCatRank, setShowCatRank] = useState(true);
 
-    // Fetch data on mount
+    const [currentTime, setCurrentTime] = useState(new Date());
+
     useEffect(() => {
-        if (eventId) {
-            fetchData();
-        }
+        const timer = setInterval(() => setCurrentTime(new Date()), 1000);
+        return () => clearInterval(timer);
+    }, []);
+
+    useEffect(() => {
+        if (eventId) fetchEventData();
     }, [eventId]);
 
-    async function fetchData() {
+    async function fetchEventData() {
         try {
             setLoading(true);
             setError(null);
 
-            // Fetch campaign data via proxy API
-            const campaignRes = await fetch(`/api/campaigns/${eventId}`);
-            if (!campaignRes.ok) {
-                throw new Error(language === 'th' ? 'ไม่พบข้อมูลกิจกรรม' : 'Event not found');
-            }
+            const [campaignRes, runnersRes] = await Promise.all([
+                fetch(`${API_URL}/campaigns/${eventId}`),
+                fetch(`${API_URL}/runners?campaignId=${eventId}`)
+            ]);
+
+            if (!campaignRes.ok) throw new Error(language === 'th' ? 'ไม่พบข้อมูลกิจกรรม' : 'Event not found');
+
             const campaignData = await campaignRes.json();
             setCampaign(campaignData);
 
-            // Fetch runners via proxy API
-            const runnersRes = await fetch(`/api/runners?id=${eventId}`);
             if (runnersRes.ok) {
-                const runnersResponse = await runnersRes.json();
-                // public-api returns { status: {...}, data: { data: [...], total: N } }
-                const runnersData = runnersResponse?.data?.data || runnersResponse?.data || [];
-                setRunners(runnersData);
+                const runnersData = await runnersRes.json();
+                setRunners(runnersData || []);
             }
         } catch (err: unknown) {
-            console.error('Fetch error:', err);
             const errorMessage = err instanceof Error ? err.message : 'Error loading event';
             setError(errorMessage);
         } finally {
@@ -104,187 +126,217 @@ export default function ResultPage() {
         }
     }
 
-    // Format time from milliseconds
+    async function fetchRunnerTimings(runnerId: string) {
+        try {
+            const res = await fetch(`${API_URL}/timing/runner/${eventId}/${runnerId}`);
+            if (res.ok) {
+                const data = await res.json();
+                setRunnerTimings(data || []);
+            }
+        } catch {
+            setRunnerTimings([]);
+        }
+    }
+
     function formatTime(ms: number | undefined): string {
-        if (!ms) return '--:--:--';
+        if (!ms) return '-';
         const hours = Math.floor(ms / 3600000);
         const minutes = Math.floor((ms % 3600000) / 60000);
         const seconds = Math.floor((ms % 60000) / 1000);
         return `${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
     }
 
-    // Format date
-    function formatDate(dateString: string): string {
+    function formatDate(dateString: string) {
         const date = new Date(dateString);
         return date.toLocaleDateString(language === 'th' ? 'th-TH' : 'en-US', {
-            day: 'numeric',
-            month: 'short',
+            day: '2-digit',
+            month: 'long',
             year: 'numeric'
         });
     }
 
-    // Get status color classes
-    function getStatusColor(status: string): { text: string; bg: string } {
+    function getStatusColor(status: string) {
         switch (status) {
-            case 'finished':
-                return { text: 'text-green-600', bg: 'bg-green-600' };
-            case 'in_progress':
-                return { text: 'text-orange-500', bg: 'bg-orange-500' };
-            case 'dnf':
-                return { text: 'text-red-500', bg: 'bg-red-600' };
-            case 'dns':
-                return { text: 'text-gray-400', bg: 'bg-gray-400' };
-            default:
-                return { text: 'text-slate-400', bg: 'bg-slate-400' };
+            case 'finished': return { text: 'var(--success)', bg: 'var(--success)' };
+            case 'in_progress': return { text: 'var(--warning)', bg: 'var(--warning)' };
+            case 'dnf': return { text: 'var(--error)', bg: 'var(--error)' };
+            case 'dns': return { text: 'var(--error)', bg: 'var(--error)' };
+            default: return { text: 'var(--muted-foreground)', bg: 'var(--muted-foreground)' };
         }
     }
 
-    // Get status label
-    function getStatusLabel(status: string): string {
-        const labels: Record<string, string> = {
-            finished: 'FINISH',
-            in_progress: 'RACING',
-            dnf: 'DNF',
-            dns: 'DNS',
-            not_started: 'NOT STARTED'
-        };
-        return labels[status] || status.toUpperCase();
+    function getStatusLabel(status: string) {
+        switch (status) {
+            case 'finished': return 'FINISH';
+            case 'in_progress': return 'RACING';
+            case 'dnf': return 'DNF';
+            case 'dns': return 'DNS';
+            case 'not_started': return language === 'th' ? 'ยังไม่เริ่ม' : 'NOT STARTED';
+            default: return status?.toUpperCase() || '-';
+        }
     }
 
-    // Filter runners
-    const filteredRunners = runners.filter(runner => {
-        const matchesGender = genderFilter === 'ALL' || runner.gender === genderFilter;
-        const matchesCategory = categoryFilter === 'ALL' || runner.category === categoryFilter;
-        const query = searchQuery.toLowerCase();
-        const matchesSearch = searchQuery === '' ||
-            runner.firstName?.toLowerCase().includes(query) ||
-            runner.lastName?.toLowerCase().includes(query) ||
-            runner.firstNameTh?.toLowerCase().includes(query) ||
-            runner.lastNameTh?.toLowerCase().includes(query) ||
-            runner.bib?.includes(searchQuery);
-        return matchesGender && matchesSearch && matchesCategory;
-    });
+    const filteredRunners = useMemo(() => {
+        return runners
+            .filter(runner => {
+                const matchesSearch = searchQuery === '' ||
+                    runner.firstName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                    runner.lastName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                    runner.bib.includes(searchQuery);
+                const matchesGender = filterGender === 'ALL' || runner.gender === filterGender;
+                const matchesCategory = filterCategory === 'ALL' || runner.category === filterCategory;
+                return matchesSearch && matchesGender && matchesCategory;
+            })
+            .sort((a, b) => {
+                // Sort by rank (finished first, then in_progress, then others)
+                const statusOrder: Record<string, number> = { 'finished': 0, 'in_progress': 1, 'not_started': 2, 'dns': 3, 'dnf': 4 };
+                const statusDiff = (statusOrder[a.status] ?? 5) - (statusOrder[b.status] ?? 5);
+                if (statusDiff !== 0) return statusDiff;
+                if (a.overallRank && b.overallRank) return a.overallRank - b.overallRank;
+                return 0;
+            });
+    }, [runners, searchQuery, filterGender, filterCategory]);
 
-    // Stats
-    const stats = {
-        started: runners.length,
-        racing: runners.filter(r => r.status === 'in_progress').length,
+    const stats = useMemo(() => ({
+        total: runners.length,
         finished: runners.filter(r => r.status === 'finished').length,
-        dnf: runners.filter(r => r.status === 'dnf' || r.status === 'dns').length
+        racing: runners.filter(r => r.status === 'in_progress').length,
+        dnf: runners.filter(r => r.status === 'dnf' || r.status === 'dns').length,
+    }), [runners]);
+
+    const categories = useMemo(() => {
+        const cats = new Set(runners.map(r => r.category));
+        return Array.from(cats);
+    }, [runners]);
+
+    const handleViewRunner = (runner: Runner) => {
+        setSelectedRunner(runner);
+        fetchRunnerTimings(runner._id);
     };
 
-    // Get unique categories from campaign
-    const categories = campaign?.categories || [];
+    // Theme-based styles
+    const isDark = theme === 'dark';
 
-    // Loading state
     if (loading) {
         return (
-            <div className="min-h-screen flex items-center justify-center" style={{ background: theme === 'dark' ? '#0f172a' : '#f8fafc' }}>
+            <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--background)' }}>
                 <div className="text-center">
-                    <div className="w-12 h-12 border-4 border-green-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-                    <p className={theme === 'dark' ? 'text-slate-400' : 'text-slate-500'}>
-                        {language === 'th' ? 'กำลังโหลด...' : 'Loading...'}
+                    <div className="w-16 h-16 glass rounded-2xl flex items-center justify-center mx-auto mb-4">
+                        <div className="w-8 h-8 border-3 rounded-full animate-spin" style={{ borderColor: 'var(--border)', borderTopColor: 'var(--accent)' }}></div>
+                    </div>
+                    <p style={{ color: 'var(--muted-foreground)' }}>
+                        {language === 'th' ? 'กำลังโหลดข้อมูล...' : 'Loading...'}
                     </p>
                 </div>
             </div>
         );
     }
 
-    // Error state
     if (error || !campaign) {
         return (
-            <div className="min-h-screen flex items-center justify-center" style={{ background: theme === 'dark' ? '#0f172a' : '#f8fafc' }}>
-                <div className={`text-center p-8 rounded-xl ${theme === 'dark' ? 'bg-slate-800' : 'bg-white'} shadow-lg`}>
-                    <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                        <svg className="h-8 w-8 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                        </svg>
-                    </div>
-                    <h2 className={`text-xl font-semibold mb-2 ${theme === 'dark' ? 'text-white' : 'text-slate-900'}`}>
-                        {language === 'th' ? 'ไม่พบกิจกรรม' : 'Event Not Found'}
+            <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--background)' }}>
+                <div className="glass p-8 rounded-2xl max-w-md text-center">
+                    <div className="text-4xl mb-4">😔</div>
+                    <h2 className="text-xl font-semibold mb-2" style={{ color: 'var(--foreground)' }}>
+                        {language === 'th' ? 'ไม่พบข้อมูล' : 'Not Found'}
                     </h2>
-                    <p className={`mb-6 ${theme === 'dark' ? 'text-slate-400' : 'text-slate-500'}`}>
-                        {error || (language === 'th' ? 'กิจกรรมนี้ไม่มีอยู่ในระบบ' : 'This event does not exist')}
-                    </p>
-                    <Link href="/" className="text-green-500 hover:text-green-600 font-medium">
-                        ← {language === 'th' ? 'กลับหน้าหลัก' : 'Back to Home'}
+                    <p className="mb-4" style={{ color: 'var(--muted-foreground)' }}>{error}</p>
+                    <Link href="/" className="inline-block py-2 px-4 rounded-xl" style={{ background: 'var(--accent)', color: 'var(--accent-foreground)' }}>
+                        {language === 'th' ? 'กลับหน้าแรก' : 'Back to Home'}
                     </Link>
                 </div>
             </div>
         );
     }
 
-    const displayName = language === 'th' ? (campaign.nameTh || campaign.name) : (campaign.nameEn || campaign.name);
-    const displayLocation = language === 'th' ? (campaign.locationTh || campaign.location) : (campaign.location);
-
-    const isDark = theme === 'dark';
-
     return (
-        <div className="min-h-screen overflow-hidden" style={{ background: isDark ? '#0f172a' : '#f8fafc', color: isDark ? '#e2e8f0' : '#1e293b' }}>
-
-            {/* ═══ Header ═══ */}
-            <header className={`${isDark ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'} border-b px-4 py-2 shadow-sm relative z-30`}>
+        <div className="min-h-screen overflow-hidden" style={{ background: isDark ? '#0f172a' : '#f8fafc', color: isDark ? '#f8fafc' : '#1e293b' }}>
+            {/* Header */}
+            <header className="px-4 py-2 shadow-sm relative z-30" style={{
+                background: isDark ? 'rgba(15,23,42,0.95)' : 'rgba(255,255,255,0.95)',
+                borderBottom: `1px solid ${isDark ? 'rgba(255,255,255,0.08)' : '#e2e8f0'}`,
+                backdropFilter: 'blur(12px)'
+            }}>
                 <div className="max-w-full mx-auto flex items-center justify-between">
                     <div className="flex items-center gap-3">
-                        <Link href="/" className={`text-lg font-black italic ${isDark ? 'text-white' : 'text-slate-900'} border-r pr-3 ${isDark ? 'border-slate-600' : 'border-slate-300'} hover:opacity-80 transition`}>
-                            ACTION <span className="text-green-600 font-bold uppercase not-italic">Live</span>
+                        <Link href="/" className="flex items-center">
+                            <Image
+                                src={isDark ? '/logo-white.png' : '/logo-black.png'}
+                                alt="RACETIME"
+                                width={100}
+                                height={32}
+                                className="h-8 w-auto"
+                            />
                         </Link>
-                        <div>
-                            <h1 className={`text-sm font-bold leading-tight ${isDark ? 'text-white' : 'text-slate-900'}`}>{displayName}</h1>
-                            <p className="text-[10px] text-slate-400 font-medium">
-                                {formatDate(campaign.eventDate)} | {displayLocation}
+                        <div className="border-l pl-3" style={{ borderColor: isDark ? 'rgba(255,255,255,0.1)' : '#e2e8f0' }}>
+                            <span className="text-lg font-black italic" style={{ color: isDark ? '#f8fafc' : '#0f172a' }}>
+                                RACETIME <span className="font-bold uppercase not-italic" style={{ color: 'var(--success)' }}>Live</span>
+                            </span>
+                        </div>
+                        <div className="hidden sm:block">
+                            <h1 className="text-sm font-bold leading-tight" style={{ color: isDark ? '#f8fafc' : '#0f172a' }}>{campaign.name}</h1>
+                            <p className="text-[10px] font-medium" style={{ color: isDark ? '#94a3b8' : '#94a3b8' }}>
+                                {formatDate(campaign.eventDate)} | {campaign.location}
                             </p>
                         </div>
                     </div>
 
-                    {/* Stats in header */}
-                    <div className="hidden md:flex gap-4 text-[10px] font-bold uppercase tracking-wider items-center px-3 py-1.5">
-                        <div className="flex items-center text-slate-500">
-                            Started: <span className={`${isDark ? 'text-white' : 'text-slate-900'} ml-1`}>{stats.started}</span>
+                    <div className="flex gap-4 text-[10px] font-bold uppercase tracking-wider items-center px-3 py-1.5">
+                        <div className="flex items-center" style={{ color: isDark ? '#94a3b8' : '#64748b' }}>
+                            Started: <span className="ml-1" style={{ color: isDark ? '#f8fafc' : '#0f172a' }}>{stats.total}</span>
                         </div>
-                        <div className="flex items-center text-green-600">
-                            <span className="w-1.5 h-1.5 rounded-full bg-green-500 mr-1.5 animate-pulse"></span>
-                            Racing: <span className={`${isDark ? 'text-white' : 'text-slate-900'} ml-1`}>{stats.racing}</span>
+                        <div className="hidden sm:flex items-center" style={{ color: 'var(--success)' }}>
+                            <span className="w-1.5 h-1.5 rounded-full mr-1.5" style={{ background: 'var(--success)' }}></span>
+                            Racing: <span className="ml-1" style={{ color: isDark ? '#f8fafc' : '#0f172a' }}>{stats.racing}</span>
                         </div>
-                        <div className="flex items-center text-blue-600">
-                            <span className="w-1.5 h-1.5 rounded-full bg-blue-500 mr-1.5"></span>
-                            Fin: <span className={`${isDark ? 'text-white' : 'text-slate-900'} ml-1`}>{stats.finished}</span>
+                        <div className="hidden sm:flex items-center" style={{ color: 'var(--primary)' }}>
+                            <span className="w-1.5 h-1.5 rounded-full mr-1.5" style={{ background: 'var(--primary)' }}></span>
+                            Fin: <span className="ml-1" style={{ color: isDark ? '#f8fafc' : '#0f172a' }}>{stats.finished}</span>
                         </div>
-                        <div className="flex items-center text-red-500">
-                            <span className="w-1.5 h-1.5 rounded-full bg-red-500 mr-1.5"></span>
-                            DNF: <span className={`${isDark ? 'text-white' : 'text-slate-900'} ml-1`}>{stats.dnf}</span>
+                        <div className="hidden sm:flex items-center" style={{ color: 'var(--error)' }}>
+                            <span className="w-1.5 h-1.5 rounded-full mr-1.5" style={{ background: 'var(--error)' }}></span>
+                            DNF: <span className="ml-1" style={{ color: isDark ? '#f8fafc' : '#0f172a' }}>{stats.dnf}</span>
                         </div>
+                        <button onClick={toggleTheme} className="p-1.5 rounded-lg" style={{ background: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)' }}>
+                            <span className="text-sm">{isDark ? '☀️' : '🌙'}</span>
+                        </button>
                     </div>
                 </div>
             </header>
 
-            {/* ═══ Filter / Toolbar Bar ═══ */}
-            <div className={`${isDark ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'} border-b px-4 py-2 flex flex-wrap items-center justify-between gap-3`}>
-                {/* Distance / Category Filter */}
+            {/* Filter Bar */}
+            <div className="px-4 py-2 flex flex-wrap items-center justify-between gap-3" style={{
+                background: isDark ? 'rgba(15,23,42,0.9)' : 'rgba(255,255,255,0.9)',
+                borderBottom: `1px solid ${isDark ? 'rgba(255,255,255,0.06)' : '#e2e8f0'}`
+            }}>
                 <div className="flex items-center gap-3">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase whitespace-nowrap hidden sm:inline">
-                        {language === 'th' ? 'ระยะ:' : 'Distance:'}
+                    <span className="text-[10px] font-bold uppercase whitespace-nowrap" style={{ color: isDark ? '#64748b' : '#94a3b8' }}>
+                        {language === 'th' ? 'ประเภท:' : 'Distance:'}
                     </span>
-                    <div className="flex gap-2 flex-wrap">
+                    <div className="flex gap-1.5 flex-wrap">
                         <button
-                            onClick={() => setCategoryFilter('ALL')}
-                            className={`px-4 py-1.5 rounded-full border text-[11px] font-bold shadow-sm transition-all ${categoryFilter === 'ALL'
-                                    ? (isDark ? 'bg-white text-slate-900 border-white' : 'bg-slate-900 text-white border-slate-900')
-                                    : (isDark ? 'bg-slate-800 text-slate-400 border-slate-600 hover:bg-slate-700' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50')
-                                }`}
+                            onClick={() => setFilterCategory('ALL')}
+                            className="px-3 py-1 rounded-full text-[11px] font-bold transition-all"
+                            style={{
+                                background: filterCategory === 'ALL' ? (isDark ? '#f8fafc' : '#1e293b') : 'transparent',
+                                color: filterCategory === 'ALL' ? (isDark ? '#0f172a' : '#fff') : (isDark ? '#94a3b8' : '#64748b'),
+                                border: `1px solid ${filterCategory === 'ALL' ? (isDark ? '#f8fafc' : '#1e293b') : (isDark ? 'rgba(255,255,255,0.1)' : '#e2e8f0')}`
+                            }}
                         >
                             {language === 'th' ? 'ทั้งหมด' : 'ALL'}
                         </button>
-                        {categories.map((cat) => (
+                        {categories.map(cat => (
                             <button
-                                key={cat.name}
-                                onClick={() => setCategoryFilter(cat.name)}
-                                className={`px-4 py-1.5 rounded-full border text-[11px] font-bold shadow-sm transition-all ${categoryFilter === cat.name
-                                        ? (isDark ? 'bg-white text-slate-900 border-white' : 'bg-slate-900 text-white border-slate-900')
-                                        : (isDark ? 'bg-slate-800 text-slate-400 border-slate-600 hover:bg-slate-700' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50')
-                                    }`}
+                                key={cat}
+                                onClick={() => setFilterCategory(cat)}
+                                className="px-3 py-1 rounded-full text-[11px] font-bold transition-all"
+                                style={{
+                                    background: filterCategory === cat ? (isDark ? '#f8fafc' : '#1e293b') : 'transparent',
+                                    color: filterCategory === cat ? (isDark ? '#0f172a' : '#fff') : (isDark ? '#94a3b8' : '#64748b'),
+                                    border: `1px solid ${filterCategory === cat ? (isDark ? '#f8fafc' : '#1e293b') : (isDark ? 'rgba(255,255,255,0.1)' : '#e2e8f0')}`
+                                }}
                             >
-                                {cat.distance || cat.name}
+                                {cat}
                             </button>
                         ))}
                     </div>
@@ -292,26 +344,25 @@ export default function ResultPage() {
 
                 <div className="flex items-center gap-3">
                     {/* Gender Filter */}
-                    <div className={`flex ${isDark ? 'bg-slate-800' : 'bg-slate-100'} p-1 rounded-lg`}>
-                        {(['ALL', 'M', 'F'] as const).map((g) => (
+                    <div className="flex p-0.5 rounded-lg" style={{ background: isDark ? 'rgba(255,255,255,0.05)' : '#f1f5f9' }}>
+                        {(['ALL', 'M', 'F'] as const).map(g => (
                             <button
                                 key={g}
-                                onClick={() => setGenderFilter(g)}
-                                className={`px-3 py-1 text-[10px] font-bold rounded-md transition-all whitespace-nowrap ${genderFilter === g
-                                        ? (isDark ? 'bg-white text-slate-900' : 'bg-slate-900 text-white')
-                                        : (isDark ? 'text-slate-400' : 'text-slate-600')
-                                    }`}
+                                onClick={() => setFilterGender(g)}
+                                className="px-3 py-1 text-[10px] font-bold rounded-md transition-all whitespace-nowrap"
+                                style={{
+                                    background: filterGender === g ? (isDark ? '#f8fafc' : '#1e293b') : 'transparent',
+                                    color: filterGender === g ? (isDark ? '#0f172a' : '#fff') : (isDark ? '#94a3b8' : '#64748b')
+                                }}
                             >
-                                {g === 'ALL' ? (language === 'th' ? 'ทั้งหมด' : 'All') :
-                                    g === 'M' ? (language === 'th' ? 'ชาย' : 'Male') :
-                                        (language === 'th' ? 'หญิง' : 'Female')}
+                                {g === 'ALL' ? (language === 'th' ? 'ทั้งหมด' : 'All') : g === 'M' ? (language === 'th' ? 'ชาย' : 'Male') : (language === 'th' ? 'หญิง' : 'Female')}
                             </button>
                         ))}
                     </div>
 
                     {/* Search */}
-                    <div className="relative">
-                        <svg className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <div className="relative hidden sm:block">
+                        <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" style={{ color: isDark ? '#64748b' : '#94a3b8' }}>
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                         </svg>
                         <input
@@ -319,227 +370,168 @@ export default function ResultPage() {
                             placeholder={language === 'th' ? 'BIB หรือ ชื่อ...' : 'BIB or Name...'}
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
-                            className={`pl-9 pr-4 py-1.5 ${isDark ? 'bg-slate-800 text-white placeholder-slate-500' : 'bg-slate-100 text-slate-800 placeholder-slate-400'} border-none rounded-lg text-xs w-48 outline-none focus:ring-2 focus:ring-green-500 transition-all`}
+                            className="pl-8 pr-4 py-1.5 rounded-lg text-xs w-44 outline-none transition-all"
+                            style={{
+                                background: isDark ? 'rgba(255,255,255,0.05)' : '#f1f5f9',
+                                color: isDark ? '#f8fafc' : '#0f172a',
+                                border: 'none'
+                            }}
                         />
                     </div>
 
                     {/* Column Toggle */}
-                    <div className="relative group">
-                        <button className={`${isDark ? 'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'} border px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-2`}>
-                            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-                            </svg>
-                            {language === 'th' ? 'คอลัมน์' : 'Columns'}
-                        </button>
-                        <div className={`hidden group-hover:block absolute right-0 top-full mt-1 ${isDark ? 'bg-slate-800 border-slate-600' : 'bg-white border-slate-200'} min-w-[160px] shadow-lg border rounded-lg z-30 p-2`}>
-                            <p className="text-[10px] font-bold text-slate-400 uppercase mb-2 px-2">
-                                {language === 'th' ? 'ตั้งค่าการแสดงผล' : 'Display Settings'}
-                            </p>
-                            <label className={`flex items-center gap-2 px-2 py-1 cursor-pointer ${isDark ? 'hover:bg-slate-700' : 'hover:bg-slate-50'} rounded`}>
-                                <input type="checkbox" checked={showGenRank} onChange={(e) => setShowGenRank(e.target.checked)} />
-                                <span className={`text-xs ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>Gender Rank</span>
-                            </label>
-                            <label className={`flex items-center gap-2 px-2 py-1 cursor-pointer ${isDark ? 'hover:bg-slate-700' : 'hover:bg-slate-50'} rounded`}>
-                                <input type="checkbox" checked={showCatRank} onChange={(e) => setShowCatRank(e.target.checked)} />
-                                <span className={`text-xs ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>Category Rank</span>
-                            </label>
-                        </div>
+                    <div className="hidden md:flex items-center gap-2">
+                        <label className="flex items-center gap-1 cursor-pointer text-[10px]" style={{ color: isDark ? '#94a3b8' : '#64748b' }}>
+                            <input type="checkbox" checked={showGenRank} onChange={(e) => setShowGenRank(e.target.checked)} className="w-3 h-3" />
+                            Gen
+                        </label>
+                        <label className="flex items-center gap-1 cursor-pointer text-[10px]" style={{ color: isDark ? '#94a3b8' : '#64748b' }}>
+                            <input type="checkbox" checked={showCatRank} onChange={(e) => setShowCatRank(e.target.checked)} className="w-3 h-3" />
+                            Cat
+                        </label>
                     </div>
                 </div>
             </div>
 
-            {/* ═══ Mobile Stats Bar ═══ */}
-            <div className="md:hidden bg-slate-900 text-slate-400 px-4 py-2">
-                <div className="flex gap-4 text-[10px] font-bold uppercase tracking-wider overflow-x-auto whitespace-nowrap">
-                    <div className="flex items-center">
-                        <span className="text-slate-500 mr-1">Started:</span>
-                        <span className="text-white">{stats.started}</span>
-                    </div>
-                    <div className="flex items-center">
-                        <span className="w-1.5 h-1.5 rounded-full bg-green-500 mr-1 animate-pulse"></span>
-                        Racing: <span className="text-white ml-1">{stats.racing}</span>
-                    </div>
-                    <div className="flex items-center">
-                        <span className="w-1.5 h-1.5 rounded-full bg-blue-500 mr-1"></span>
-                        Fin: <span className="text-white ml-1">{stats.finished}</span>
-                    </div>
-                    <div className="flex items-center">
-                        <span className="w-1.5 h-1.5 rounded-full bg-red-500 mr-1"></span>
-                        DNF: <span className="text-white ml-1">{stats.dnf}</span>
-                    </div>
-                </div>
-            </div>
-
-            {/* ═══ Results Table ═══ */}
-            <main className="p-0 sm:p-4" style={{ paddingBottom: '48px' }}>
-                <div
-                    className={`${isDark ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'} rounded-none sm:rounded-xl shadow-sm border overflow-hidden`}
-                    style={{ height: 'calc(100vh - 160px)', overflowY: 'auto' }}
-                >
-                    {/* Mobile card view */}
-                    <div className="sm:hidden divide-y divide-slate-100">
-                        {filteredRunners.length === 0 ? (
-                            <div className={`py-12 text-center ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>
-                                <svg className="h-12 w-12 mx-auto mb-3 opacity-30" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.172 16.172a4 4 0 015.656 0M21 12a9 9 0 11-18 0 9 9 0 0118 0zM9 10a1 1 0 11-2 0 1 1 0 012 0zm8 0a1 1 0 11-2 0 1 1 0 012 0z" />
-                                </svg>
-                                {language === 'th' ? 'ยังไม่มีข้อมูลนักวิ่ง' : 'No runners data yet'}
-                            </div>
-                        ) : (
-                            filteredRunners.map((runner, index) => {
-                                const colors = getStatusColor(runner.status);
-                                const rank = runner.overallRank || index + 1;
-                                return (
-                                    <div key={runner._id} className={`px-4 py-3 ${isDark ? 'hover:bg-slate-700/50' : 'hover:bg-green-50'} transition-colors`}>
-                                        <div className="flex items-center gap-3">
-                                            <span className={`text-lg font-black w-8 text-center ${rank <= 3 ? (rank === 1 ? 'text-green-600' : 'text-slate-500') : 'text-slate-300'}`}>
-                                                {rank}
-                                            </span>
-                                            <div className="relative">
-                                                <div className={`w-10 h-10 rounded-full ${isDark ? 'bg-gradient-to-br from-slate-600 to-slate-700' : 'bg-gradient-to-br from-slate-200 to-slate-300'} flex items-center justify-center text-xs font-bold ${isDark ? 'text-slate-200' : 'text-slate-600'}`}>
-                                                    {runner.firstName?.charAt(0)}{runner.lastName?.charAt(0)}
-                                                </div>
-                                                {runner.status === 'in_progress' && (
-                                                    <span className="w-2.5 h-2.5 rounded-full bg-green-500 absolute -bottom-0.5 -right-0.5 animate-pulse border-2 border-white"></span>
-                                                )}
-                                            </div>
-                                            <div className="flex-1 min-w-0">
-                                                <div className="flex items-center gap-2">
-                                                    <span className={`font-bold text-sm ${isDark ? 'text-white' : 'text-slate-800'} uppercase truncate`}>
-                                                        {runner.firstName} {runner.lastName}
-                                                    </span>
-                                                    <span className="bg-slate-800 text-white px-1.5 py-0.5 rounded text-[9px] font-extrabold tracking-wide border border-slate-600 shrink-0">
-                                                        #{runner.bib}
-                                                    </span>
-                                                </div>
-                                                <div className="flex items-center gap-2 text-[10px] text-slate-400 font-medium mt-0.5">
-                                                    <span className={`font-bold px-1.5 py-0.5 rounded ${runner.gender === 'M' ? 'text-blue-500 bg-blue-50' : 'text-pink-500 bg-pink-50'}`}>
-                                                        {runner.gender}
-                                                    </span>
-                                                    <span>{runner.nationality || '🏃'}</span>
-                                                    <span>{runner.category || 'Open'}</span>
-                                                </div>
-                                            </div>
-                                            <div className="text-right shrink-0">
-                                                <span className={`block font-bold text-[11px] ${colors.text}`}>{getStatusLabel(runner.status)}</span>
-                                                <span className={`block text-sm font-bold ${isDark ? 'text-white' : 'text-slate-900'} mt-0.5`}>
-                                                    {formatTime(runner.netTime)}
-                                                </span>
-                                            </div>
-                                        </div>
-                                    </div>
-                                );
-                            })
-                        )}
-                    </div>
-
-                    {/* Desktop table view */}
-                    <table className="w-full text-left border-collapse hidden sm:table">
+            {/* Results Table */}
+            <main className="p-0 sm:p-3">
+                <div className="sm:rounded-xl shadow-sm overflow-auto" style={{
+                    background: isDark ? 'rgba(15,23,42,0.8)' : '#fff',
+                    border: `1px solid ${isDark ? 'rgba(255,255,255,0.06)' : '#e2e8f0'}`,
+                    height: 'calc(100vh - 150px)'
+                }}>
+                    <table className="w-full text-left border-collapse">
                         <thead>
-                            <tr className={`text-[10px] font-bold text-slate-400 uppercase tracking-tighter sticky top-0 ${isDark ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-100'} z-20 border-b-2`}>
+                            <tr className="text-[10px] font-bold uppercase tracking-tighter sticky top-0 z-20" style={{
+                                background: isDark ? '#0f172a' : '#fff',
+                                color: isDark ? '#64748b' : '#94a3b8',
+                                borderBottom: `2px solid ${isDark ? 'rgba(255,255,255,0.06)' : '#f1f5f9'}`
+                            }}>
                                 <th className="py-3 px-4 text-center w-12">Rank</th>
                                 {showGenRank && <th className="py-3 px-2 text-center w-12">Gen</th>}
                                 {showCatRank && <th className="py-3 px-2 text-center w-12">Cat</th>}
-                                <th className="py-3 px-2">Runner</th>
-                                <th className="py-3 px-2 text-center">Gender</th>
-                                <th className="py-3 px-2">Status / Last CP</th>
-                                <th className="py-3 px-2">Time</th>
-                                <th className="py-3 px-2 hidden lg:table-cell">Category</th>
-                                <th className="py-3 px-4 text-right">BIB</th>
+                                <th className="py-3 px-2">{language === 'th' ? 'นักวิ่ง' : 'Runner'}</th>
+                                <th className="py-3 px-2 text-center">{language === 'th' ? 'เพศ' : 'Gender'}</th>
+                                <th className="py-3 px-2">{language === 'th' ? 'สถานะ' : 'Status'}</th>
+                                <th className="py-3 px-2">{language === 'th' ? 'จุดล่าสุด' : 'Last CP'}</th>
+                                <th className="py-3 px-2">{language === 'th' ? 'เวลา' : 'Time'}</th>
+                                <th className="py-3 px-4 text-center">{language === 'th' ? 'ดู' : 'View'}</th>
                             </tr>
                         </thead>
-                        <tbody className={`divide-y ${isDark ? 'divide-slate-700' : 'divide-slate-50'}`}>
+                        <tbody>
                             {filteredRunners.length === 0 ? (
                                 <tr>
-                                    <td colSpan={9} className={`py-12 text-center ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>
-                                        <svg className="h-12 w-12 mx-auto mb-3 opacity-30" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.172 16.172a4 4 0 015.656 0M21 12a9 9 0 11-18 0 9 9 0 0118 0zM9 10a1 1 0 11-2 0 1 1 0 012 0zm8 0a1 1 0 11-2 0 1 1 0 012 0z" />
-                                        </svg>
-                                        <p className="text-sm font-medium">{language === 'th' ? 'ยังไม่มีข้อมูลนักวิ่ง' : 'No runners data yet'}</p>
-                                        <p className="text-xs mt-1">{language === 'th' ? 'ลองปรับตัวกรองหรือคำค้นหา' : 'Try adjusting your filters or search term'}</p>
+                                    <td colSpan={showGenRank && showCatRank ? 9 : showGenRank || showCatRank ? 8 : 7} className="px-4 py-12 text-center" style={{ color: 'var(--muted-foreground)' }}>
+                                        {language === 'th' ? 'ไม่พบข้อมูลผู้เข้าแข่งขัน' : 'No participants found'}
                                     </td>
                                 </tr>
                             ) : (
-                                filteredRunners.map((runner, index) => {
-                                    const colors = getStatusColor(runner.status);
-                                    const rank = runner.overallRank || index + 1;
+                                filteredRunners.map((runner, idx) => {
+                                    const statusColors = getStatusColor(runner.status);
+                                    const displayName = language === 'th' && runner.firstNameTh
+                                        ? `${runner.firstNameTh} ${runner.lastNameTh || ''}`
+                                        : `${runner.firstName} ${runner.lastName}`;
+                                    const rank = runner.overallRank || idx + 1;
 
                                     return (
                                         <tr
                                             key={runner._id}
-                                            className={`${isDark ? 'hover:bg-slate-700/50' : 'hover:bg-slate-50'} transition-colors cursor-pointer group border-l-4 border-transparent hover:border-green-500`}
+                                            className="cursor-pointer transition-colors"
+                                            onClick={() => handleViewRunner(runner)}
+                                            style={{
+                                                borderBottom: `1px solid ${isDark ? 'rgba(255,255,255,0.03)' : '#f8fafc'}`,
+                                                borderLeft: '4px solid transparent'
+                                            }}
+                                            onMouseEnter={(e) => {
+                                                e.currentTarget.style.background = isDark ? 'rgba(34,197,94,0.05)' : '#f0fdf4';
+                                                e.currentTarget.style.borderLeftColor = 'var(--success)';
+                                            }}
+                                            onMouseLeave={(e) => {
+                                                e.currentTarget.style.background = 'transparent';
+                                                e.currentTarget.style.borderLeftColor = 'transparent';
+                                            }}
                                         >
-                                            {/* Rank */}
                                             <td className="py-3 px-4 text-center">
-                                                <span className={`text-base font-black ${rank <= 3 ? (rank === 1 ? 'text-green-600' : (isDark ? 'text-slate-300' : 'text-slate-600')) : (isDark ? 'text-slate-500' : 'text-slate-300')}`}>
+                                                <span className="text-base font-black" style={{
+                                                    color: rank <= 3 ? (rank === 1 ? 'var(--success)' : (isDark ? '#f8fafc' : '#334155')) : (isDark ? '#475569' : '#cbd5e1')
+                                                }}>
                                                     {rank}
                                                 </span>
                                             </td>
-                                            {/* Gender Rank */}
                                             {showGenRank && (
                                                 <td className="py-3 px-2 text-center">
-                                                    <span className="text-xs font-bold text-slate-500">{runner.genderRank || '-'}</span>
+                                                    <span className="text-xs font-bold" style={{ color: isDark ? '#94a3b8' : '#64748b' }}>
+                                                        {runner.genderRank || '-'}
+                                                    </span>
                                                 </td>
                                             )}
-                                            {/* Category Rank */}
                                             {showCatRank && (
                                                 <td className="py-3 px-2 text-center">
-                                                    <span className="text-xs font-bold text-slate-500">{runner.categoryRank || '-'}</span>
+                                                    <span className="text-xs font-bold" style={{ color: isDark ? '#94a3b8' : '#64748b' }}>
+                                                        {runner.categoryRank || '-'}
+                                                    </span>
                                                 </td>
                                             )}
-                                            {/* Runner */}
                                             <td className="py-3 px-2">
                                                 <div className="flex items-center gap-3">
                                                     <div className="relative">
-                                                        <div className={`w-8 h-8 rounded-full ${isDark ? 'bg-gradient-to-br from-slate-600 to-slate-700 text-slate-200' : 'bg-gradient-to-br from-slate-200 to-slate-300 text-slate-600'} flex items-center justify-center text-xs font-bold`}>
-                                                            {runner.firstName?.charAt(0)}{runner.lastName?.charAt(0)}
+                                                        <div className="w-8 h-8 rounded-full flex items-center justify-center text-white font-bold text-sm"
+                                                            style={{ background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)' }}>
+                                                            {runner.firstName?.[0] || '?'}
                                                         </div>
                                                         {runner.status === 'in_progress' && (
-                                                            <span className="w-2 h-2 rounded-full bg-green-500 absolute -bottom-0.5 -right-0.5 animate-pulse border border-white"></span>
+                                                            <span className="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full animate-pulse" style={{ background: 'var(--success)', border: '1.5px solid white' }}></span>
                                                         )}
                                                     </div>
                                                     <div>
-                                                        <span className={`block font-bold text-sm ${isDark ? 'text-white' : 'text-slate-800'} leading-none uppercase mb-1`}>
-                                                            {runner.firstName} {runner.lastName}
+                                                        <span className="block font-bold text-sm leading-none uppercase mb-1" style={{ color: isDark ? '#f8fafc' : '#1e293b' }}>
+                                                            {displayName}
                                                         </span>
-                                                        <span className="text-[10px] text-slate-400 font-medium flex items-center gap-1.5">
-                                                            {runner.nationality || '🏃'} | {runner.category || 'Open'}
+                                                        <span className="text-[10px] font-medium flex items-center gap-1.5" style={{ color: isDark ? '#64748b' : '#94a3b8' }}>
+                                                            <span className="px-1.5 py-0.5 rounded text-[10px] font-black tracking-wider"
+                                                                style={{
+                                                                    background: isDark ? '#1e293b' : '#0f172a',
+                                                                    color: '#f8fafc',
+                                                                    border: `1px solid ${isDark ? '#334155' : '#334155'}`
+                                                                }}>
+                                                                #{runner.bib}
+                                                            </span>
+                                                            {runner.nationality || ''} | {runner.category}
                                                         </span>
                                                     </div>
                                                 </div>
                                             </td>
-                                            {/* Gender */}
-                                            <td className="py-3 px-2 text-center">
-                                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${runner.gender === 'M' ? (isDark ? 'text-blue-400 bg-blue-900/30' : 'text-blue-500 bg-blue-50') : (isDark ? 'text-pink-400 bg-pink-900/30' : 'text-pink-500 bg-pink-50')}`}>
-                                                    {runner.gender}
-                                                </span>
+                                            <td className="py-3 px-2 text-center text-[10px] font-bold" style={{
+                                                color: runner.gender === 'M' ? '#3b82f6' : '#ec4899'
+                                            }}>
+                                                {runner.gender}
                                             </td>
-                                            {/* Status / Last CP */}
                                             <td className="py-3 px-2">
-                                                <span className={`block font-bold text-[11px] ${colors.text} leading-none mb-1`}>
+                                                <span className="block font-bold text-[11px] leading-none mb-1" style={{ color: statusColors.text }}>
                                                     {getStatusLabel(runner.status)}
                                                 </span>
-                                                <span className="text-[10px] text-slate-400 uppercase font-medium">
+                                                <span className="text-[10px] uppercase font-medium" style={{ color: isDark ? '#64748b' : '#94a3b8' }}>
                                                     {runner.latestCheckpoint || '-'}
                                                 </span>
                                             </td>
-                                            {/* Time */}
                                             <td className="py-3 px-2">
-                                                <span className={`text-sm font-bold ${isDark ? 'text-white' : 'text-slate-900'}`}>
-                                                    {formatTime(runner.netTime)}
+                                                <span className="text-[10px] uppercase font-medium" style={{ color: isDark ? '#64748b' : '#94a3b8' }}>
+                                                    {runner.latestCheckpoint || '-'}
                                                 </span>
                                             </td>
-                                            {/* Category */}
-                                            <td className="py-3 px-2 hidden lg:table-cell">
-                                                <span className={`text-[11px] font-bold px-2 py-0.5 rounded ${isDark ? 'bg-slate-700 text-slate-300' : 'bg-slate-100 text-slate-600'}`}>
-                                                    {runner.category || 'Open'}
+                                            <td className="py-3 px-2">
+                                                <span className="text-sm font-bold" style={{ color: isDark ? '#f8fafc' : '#0f172a' }}>
+                                                    {formatTime(runner.elapsedTime || runner.netTime)}
                                                 </span>
                                             </td>
-                                            {/* BIB */}
-                                            <td className="py-3 px-4 text-right">
-                                                <span className="bg-slate-800 text-slate-100 px-2 py-0.5 rounded text-[10px] font-extrabold tracking-wide border border-slate-600 shadow-sm">
-                                                    #{runner.bib}
-                                                </span>
+                                            <td className="py-3 px-4 text-center">
+                                                <button
+                                                    className="px-2 py-1 rounded-lg text-xs font-bold"
+                                                    style={{ background: 'var(--accent)', color: 'var(--accent-foreground)' }}
+                                                    onClick={(e) => { e.stopPropagation(); handleViewRunner(runner); }}
+                                                >
+                                                    {language === 'th' ? 'ดู' : 'View'}
+                                                </button>
                                             </td>
                                         </tr>
                                     );
@@ -550,24 +542,82 @@ export default function ResultPage() {
                 </div>
             </main>
 
-            {/* ═══ Footer ═══ */}
-            <footer className={`${isDark ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'} border-t px-4 py-2 fixed bottom-0 w-full flex justify-between items-center z-30`}>
-                <p className="text-[9px] font-bold text-slate-300 uppercase tracking-widest">ACTION TIMING © 2026</p>
-                <div className="flex gap-4">
-                    <span className="text-[9px] text-green-500 font-bold uppercase animate-pulse">
-                        <span className="inline-block w-1.5 h-1.5 rounded-full bg-green-500 mr-1"></span>
-                        Connected
+            {/* Footer */}
+            <footer className="px-4 py-2 fixed bottom-0 w-full flex justify-between items-center z-30" style={{
+                background: isDark ? 'rgba(15,23,42,0.95)' : 'rgba(255,255,255,0.95)',
+                borderTop: `1px solid ${isDark ? 'rgba(255,255,255,0.06)' : '#e2e8f0'}`,
+                backdropFilter: 'blur(12px)'
+            }}>
+                <p className="text-[9px] font-bold uppercase tracking-widest" style={{ color: isDark ? '#334155' : '#cbd5e1' }}>
+                    RACETIME &copy; 2026
+                </p>
+                <div className="flex gap-4 items-center">
+                    <span className="text-[9px] font-bold uppercase" style={{ color: isDark ? '#94a3b8' : '#64748b' }}>
+                        {filteredRunners.length} / {runners.length} {language === 'th' ? 'คน' : 'runners'}
+                    </span>
+                    <span className="text-[9px] font-bold uppercase animate-pulse" style={{ color: 'var(--success)' }}>
+                        ● Connected
+                    </span>
+                    <span className="text-[10px] font-mono" style={{ color: isDark ? '#64748b' : '#94a3b8' }}>
+                        {currentTime.toLocaleTimeString(language === 'th' ? 'th-TH' : 'en-US')}
                     </span>
                 </div>
             </footer>
 
-            {/* Custom scrollbar styles */}
-            <style jsx>{`
-                div::-webkit-scrollbar { width: 4px; }
-                div::-webkit-scrollbar-track { background: transparent; }
-                div::-webkit-scrollbar-thumb { background: ${isDark ? '#334155' : '#cbd5e1'}; border-radius: 4px; }
-                div::-webkit-scrollbar-thumb:hover { background: ${isDark ? '#475569' : '#94a3b8'}; }
-            `}</style>
+            {/* Runner Details Modal */}
+            {selectedRunner && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.6)' }} onClick={() => setSelectedRunner(null)}>
+                    <div className="rounded-2xl p-6 max-w-lg w-full max-h-[80vh] overflow-y-auto" onClick={e => e.stopPropagation()} style={{
+                        background: isDark ? '#1e293b' : '#fff',
+                        border: `1px solid ${isDark ? 'rgba(255,255,255,0.1)' : '#e2e8f0'}`
+                    }}>
+                        <div className="flex justify-between items-start mb-4">
+                            <h3 className="text-xl font-bold" style={{ color: isDark ? '#f8fafc' : '#0f172a' }}>
+                                {language === 'th' ? 'รายละเอียดนักวิ่ง' : 'Runner Details'}
+                            </h3>
+                            <button onClick={() => setSelectedRunner(null)} className="text-2xl" style={{ color: isDark ? '#94a3b8' : '#64748b' }}>×</button>
+                        </div>
+
+                        <div className="space-y-3">
+                            {[
+                                { label: 'BIB', value: selectedRunner.bib },
+                                { label: language === 'th' ? 'ชื่อ' : 'Name', value: `${selectedRunner.firstName} ${selectedRunner.lastName}` },
+                                { label: language === 'th' ? 'ประเภท' : 'Category', value: selectedRunner.category },
+                                { label: language === 'th' ? 'กลุ่มอายุ' : 'Age Group', value: selectedRunner.ageGroup },
+                                { label: language === 'th' ? 'สถานะ' : 'Status', value: getStatusLabel(selectedRunner.status) },
+                                { label: language === 'th' ? 'อันดับรวม' : 'Overall Rank', value: selectedRunner.overallRank || '-' },
+                                { label: language === 'th' ? 'อันดับเพศ' : 'Gender Rank', value: selectedRunner.genderRank || '-' },
+                                { label: language === 'th' ? 'เวลาสุทธิ' : 'Net Time', value: formatTime(selectedRunner.netTime) },
+                                { label: language === 'th' ? 'ทีม' : 'Team', value: selectedRunner.team || selectedRunner.teamName || '-' },
+                            ].map((item, i) => (
+                                <div key={i} className="flex justify-between py-1" style={{ borderBottom: `1px solid ${isDark ? 'rgba(255,255,255,0.05)' : '#f1f5f9'}` }}>
+                                    <span style={{ color: isDark ? '#94a3b8' : '#64748b' }}>{item.label}</span>
+                                    <span className="font-bold" style={{ color: isDark ? '#f8fafc' : '#0f172a' }}>{item.value}</span>
+                                </div>
+                            ))}
+                        </div>
+
+                        {/* Timing Records */}
+                        {runnerTimings.length > 0 && (
+                            <div className="mt-4">
+                                <h4 className="font-bold text-sm mb-2" style={{ color: isDark ? '#f8fafc' : '#0f172a' }}>
+                                    {language === 'th' ? 'บันทึกเวลา' : 'Timing Records'}
+                                </h4>
+                                <div className="space-y-1">
+                                    {runnerTimings.map((record) => (
+                                        <div key={record._id} className="flex justify-between text-sm py-1" style={{ borderBottom: `1px solid ${isDark ? 'rgba(255,255,255,0.05)' : '#f1f5f9'}` }}>
+                                            <span style={{ color: isDark ? '#94a3b8' : '#64748b' }}>{record.checkpoint}</span>
+                                            <span className="font-mono" style={{ color: isDark ? '#f8fafc' : '#0f172a' }}>
+                                                {record.elapsedTime ? formatTime(record.elapsedTime) : new Date(record.scanTime).toLocaleTimeString()}
+                                            </span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
