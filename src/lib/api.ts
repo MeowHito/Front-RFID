@@ -2,7 +2,7 @@ import axios from 'axios';
 import { SharedResultsResponse, RunnerDetailsResponse, FilterOptions } from '@/types';
 
 // Production API URL - Vercel should set NEXT_PUBLIC_API_URL during build
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://3.26.160.149';
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://3.26.160.149:3001';
 
 const api = axios.create({
     baseURL: API_URL,
