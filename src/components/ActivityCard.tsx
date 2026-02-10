@@ -69,7 +69,7 @@ export default function ActivityCard({
 
     return (
         <Link href={link} className="block">
-            <div className="bg-white dark:bg-[#1e1e2a] rounded-lg shadow-md border border-gray-200 dark:border-[#3a3a4a] overflow-hidden mb-5 transition-all hover:shadow-lg cursor-pointer">
+            <div className="bg-white dark:bg-[#1e1e2a] rounded-lg overflow-hidden mb-5 transition-all hover:shadow-md cursor-pointer">
                 {/* ===== MOBILE LAYOUT ===== */}
                 <div className="block md:hidden">
                     {/* Cover Image 16:9 */}
@@ -166,10 +166,10 @@ export default function ActivityCard({
                 </div>
 
                 {/* ===== DESKTOP LAYOUT ===== */}
-                <div className="hidden md:flex md:flex-row transition-all duration-300 hover:shadow-xl" style={{ borderLeft: `5px solid ${color}`, height: '180px' }}>
-                    {/* Left: Cover Image 16:9 with countdown */}
+                <div className="hidden md:flex md:flex-row transition-all duration-300 hover:shadow-sm">
+                    {/* Left: Cover Image 16:8 with countdown */}
                     <div className="relative shrink-0" style={{ width: '32%', maxWidth: '300px' }}>
-                        <div style={{ aspectRatio: '16/9', width: '100%', overflow: 'hidden' }}>
+                        <div style={{ aspectRatio: '16/8', width: '100%', overflow: 'hidden' }}>
                             <img src={imageUrl} alt={displayTitle} className="w-full h-full object-cover" />
                         </div>
                         {countdown && (
