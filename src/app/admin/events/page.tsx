@@ -64,9 +64,10 @@ export default function EventsPage() {
 
     const loadCampaigns = async () => {
         try {
-            const res = await api.get('/campaigns');
+            const res = await fetch('/api/campaigns');
+            const json = await res.json();
             // API returns { data: Campaign[], total: number }
-            const campaignData = res.data?.data || res.data || [];
+            const campaignData = json?.data || json || [];
             setCampaigns(Array.isArray(campaignData) ? campaignData : []);
         } catch (error) {
             console.error('Failed to load campaigns:', error);
@@ -133,8 +134,13 @@ export default function EventsPage() {
     const handleSaveCampaignDetails = async (data: Partial<Campaign>) => {
         try {
             if (data._id) {
-                // Update existing campaign
-                await api.put(`/campaigns/${data._id}`, data);
+                // Update existing campaign via proxy
+                const res = await fetch(`/api/campaigns/${data._id}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data),
+                });
+                if (!res.ok) throw new Error(`PUT failed: ${res.status}`);
             }
             loadCampaigns();
             setDetailsModalOpen(false);
@@ -157,7 +163,10 @@ export default function EventsPage() {
         if (!campaignToDelete) return;
         setDeleting(true);
         try {
-            await api.delete(`/campaigns/${campaignToDelete._id}`);
+            const res = await fetch(`/api/campaigns/${campaignToDelete._id}`, {
+                method: 'DELETE',
+            });
+            if (!res.ok) throw new Error(`DELETE failed: ${res.status}`);
             setToastMessage(language === 'th' ? 'ลบกิจกรรมสำเร็จ!' : 'Event deleted successfully!');
             loadCampaigns();
             setDeleteConfirmOpen(false);
