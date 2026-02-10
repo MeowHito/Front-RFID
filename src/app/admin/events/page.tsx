@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from 'react';
 import { useLanguage } from '@/lib/language-context';
-import api from '@/lib/api';
 import AdminLayout from '../AdminLayout';
 import RFIDDashboardModal from './RFIDDashboardModal';
 import CertificateFormModal from './CertificateFormModal';
@@ -64,9 +63,11 @@ export default function EventsPage() {
 
     const loadCampaigns = async () => {
         try {
-            const res = await api.get('/campaigns');
+            const res = await fetch('/api/campaigns', { cache: 'no-store' });
+            if (!res.ok) throw new Error('Failed to fetch');
+            const json = await res.json();
             // API returns { data: Campaign[], total: number }
-            const campaignData = res.data?.data || res.data || [];
+            const campaignData = json?.data || json || [];
             setCampaigns(Array.isArray(campaignData) ? campaignData : []);
         } catch (error) {
             console.error('Failed to load campaigns:', error);
@@ -94,11 +95,13 @@ export default function EventsPage() {
         try {
             // For isDraft: when isDraft is false, the event is published (visible on main page)
             // When isDraft is true, it's hidden from the main page
-            if (field === 'isDraft') {
-                await api.put(`/campaigns/${campaignId}`, { isDraft: newValue });
-            } else {
-                await api.put(`/campaigns/${campaignId}`, { [field]: newValue });
-            }
+            const body = field === 'isDraft' ? { isDraft: newValue } : { [field]: newValue };
+            const res = await fetch(`/api/campaigns/${campaignId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body),
+            });
+            if (!res.ok) throw new Error('Failed to update');
         } catch (error) {
             console.error('Failed to update toggle:', error);
             // Revert on failure
@@ -123,7 +126,12 @@ export default function EventsPage() {
         ));
 
         try {
-            await api.put(`/campaigns/${campaignId}/status`, { status: newStatus });
+            const res = await fetch(`/api/campaigns/${campaignId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ status: newStatus }),
+            });
+            if (!res.ok) throw new Error('Failed to update status');
         } catch (error) {
             console.error('Failed to update status:', error);
             setCampaigns(prev => prev.map(c =>
@@ -178,11 +186,21 @@ export default function EventsPage() {
     const handleSaveCampaignDetails = async (data: Partial<Campaign>) => {
         try {
             if (isCreating) {
-                // Create new campaign
-                await api.post('/campaigns', data);
+                // Create new campaign via API proxy
+                const res = await fetch('/api/campaigns', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data),
+                });
+                if (!res.ok) throw new Error('Failed to create');
             } else if (data._id) {
-                // Update existing campaign
-                await api.put(`/campaigns/${data._id}`, data);
+                // Update existing campaign via API proxy
+                const res = await fetch(`/api/campaigns/${data._id}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data),
+                });
+                if (!res.ok) throw new Error('Failed to update');
             }
             loadCampaigns();
             setDetailsModalOpen(false);
@@ -205,7 +223,8 @@ export default function EventsPage() {
         if (!campaignToDelete) return;
         setDeleting(true);
         try {
-            await api.delete(`/campaigns/${campaignToDelete._id}`);
+            const res = await fetch(`/api/campaigns/${campaignToDelete._id}`, { method: 'DELETE' });
+            if (!res.ok) throw new Error('Failed to delete');
             setToastMessage(language === 'th' ? 'ลบกิจกรรมสำเร็จ!' : 'Event deleted successfully!');
             loadCampaigns();
             setDeleteConfirmOpen(false);

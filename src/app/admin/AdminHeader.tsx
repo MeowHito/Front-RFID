@@ -50,11 +50,41 @@ export default function AdminHeader() {
                         className="profile-btn"
                         onClick={() => setProfileOpen(!profileOpen)}
                     >
-                        <img
-                            src={user?.avatarUrl || `https://ui-avatars.com/api/?name=${user?.firstName || 'Admin'}+${user?.lastName || 'User'}&background=random`}
-                            alt="Avatar"
-                            style={{ width: 28, height: 28, borderRadius: '50%' }}
-                        />
+                        <div style={{
+                            width: 28,
+                            height: 28,
+                            borderRadius: '50%',
+                            overflow: 'hidden',
+                            flexShrink: 0,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            background: user?.avatarUrl ? 'transparent' : undefined,
+                        }}>
+                            {user?.avatarUrl ? (
+                                <img
+                                    src={user.avatarUrl}
+                                    alt="Avatar"
+                                    style={{
+                                        width: '100%',
+                                        height: '100%',
+                                        objectFit: 'cover',
+                                        borderRadius: '50%',
+                                    }}
+                                />
+                            ) : (
+                                <img
+                                    src={`https://ui-avatars.com/api/?name=${encodeURIComponent(user?.firstName || 'Admin')}+${encodeURIComponent(user?.lastName || 'User')}&background=random`}
+                                    alt="Avatar"
+                                    style={{
+                                        width: '100%',
+                                        height: '100%',
+                                        objectFit: 'cover',
+                                        borderRadius: '50%',
+                                    }}
+                                />
+                            )}
+                        </div>
                         <span>{user?.firstName || 'Admin'}</span>
                         <svg width="10" height="10" viewBox="0 0 12 12" fill="none">
                             <path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
@@ -63,9 +93,11 @@ export default function AdminHeader() {
                     {profileOpen && (
                         <div className="profile-menu">
                             <div className="profile-menu-header">
-                                <div className="profile-avatar">
+                                <div className="profile-avatar" style={{
+                                    background: user?.avatarUrl ? 'transparent' : undefined,
+                                }}>
                                     {user?.avatarUrl ? (
-                                        <img src={user.avatarUrl} alt="Avatar" />
+                                        <img src={user.avatarUrl} alt="Avatar" style={{ objectFit: 'cover' }} />
                                     ) : (
                                         <span>{user?.firstName?.charAt(0) || 'A'}</span>
                                     )}

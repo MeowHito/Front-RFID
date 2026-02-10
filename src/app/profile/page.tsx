@@ -193,7 +193,7 @@ export default function ProfilePage() {
                             <div 
                                 onClick={handleAvatarClick}
                                 className="w-28 h-28 sm:w-32 sm:h-32 rounded-full overflow-hidden cursor-pointer relative group"
-                                style={{ background: 'var(--muted)' }}
+                                style={{ background: user.avatarUrl ? 'transparent' : 'var(--muted)' }}
                             >
                                 {user.avatarUrl ? (
                                     <img src={user.avatarUrl} alt="Avatar" className="w-full h-full object-cover" />

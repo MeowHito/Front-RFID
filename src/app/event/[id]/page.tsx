@@ -7,8 +7,6 @@ import { useParams } from 'next/navigation';
 import { useTheme } from '@/lib/theme-context';
 import { useLanguage } from '@/lib/language-context';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
-
 interface Campaign {
     _id: string;
     uuid: string;
@@ -104,20 +102,29 @@ export default function EventDashboardPage() {
             setLoading(true);
             setError(null);
 
-            // Use API proxy routes to avoid Mixed Content (HTTPS → HTTP) issues
+            // Use Next.js API proxy routes (no direct backend calls)
             const [campaignRes, runnersRes] = await Promise.all([
-                fetch(`${API_URL}/api/campaigns/${eventId}`),
-                fetch(`${API_URL}/api/runners?id=${eventId}`)
+                fetch(`/api/campaigns/${eventId}`, { cache: 'no-store' }),
+                fetch(`/api/runners?id=${eventId}`, { cache: 'no-store' })
             ]);
 
-            if (!campaignRes.ok) throw new Error(language === 'th' ? 'ไม่พบข้อมูลกิจกรรม' : 'Event not found');
+            if (!campaignRes.ok) {
+                throw new Error(language === 'th' ? 'ไม่พบข้อมูลกิจกรรม' : 'Event not found');
+            }
 
             const campaignData = await campaignRes.json();
             setCampaign(campaignData);
 
             if (runnersRes.ok) {
                 const runnersData = await runnersRes.json();
-                setRunners(runnersData || []);
+                // Backend public API returns { status, data: { data: Runner[], total } }
+                const list =
+                    (runnersData?.data?.data as Runner[]) ||
+                    (runnersData?.data as Runner[]) ||
+                    (Array.isArray(runnersData) ? runnersData : []);
+                setRunners(Array.isArray(list) ? list : []);
+            } else {
+                setRunners([]);
             }
         } catch (err: unknown) {
             const errorMessage = err instanceof Error ? err.message : 'Error loading event';
@@ -129,10 +136,14 @@ export default function EventDashboardPage() {
 
     async function fetchRunnerTimings(runnerId: string) {
         try {
-            const res = await fetch(`${API_URL}/api/timing/runner/${eventId}/${runnerId}`);
+            const res = await fetch(`/api/timing/runner/${eventId}/${runnerId}`, {
+                cache: 'no-store',
+            });
             if (res.ok) {
                 const data = await res.json();
                 setRunnerTimings(data || []);
+            } else {
+                setRunnerTimings([]);
             }
         } catch {
             setRunnerTimings([]);

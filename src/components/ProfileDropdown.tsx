@@ -31,7 +31,12 @@ export default function ProfileDropdown() {
                 onClick={() => setOpen(!open)}
                 className="flex items-center gap-2 px-3 py-2 rounded-xl glass scale-hover"
             >
-                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-bold text-sm overflow-hidden">
+                <div
+                    className="w-8 h-8 rounded-full flex items-center justify-center text-white font-bold text-sm overflow-hidden"
+                    style={{
+                        background: user?.avatarUrl ? 'transparent' : 'linear-gradient(135deg, #3b82f6, #9333ea)',
+                    }}
+                >
                     {user?.avatarUrl ? (
                         <img src={user.avatarUrl} alt="" className="w-full h-full object-cover" />
                     ) : (

@@ -28,6 +28,7 @@ interface UpdateProfileData {
     lastName?: string;
     username?: string;
     phone?: string;
+    avatarUrl?: string;
 }
 
 interface AuthContextType {
@@ -41,6 +42,7 @@ interface AuthContextType {
     updateProfile: (data: UpdateProfileData) => Promise<void>;
     updateAvatar: (file: File) => Promise<void>;
     updatePassword: (oldPassword: string, newPassword: string) => Promise<void>;
+    refreshUser: () => Promise<void>;
     logout: () => void;
 }
 
@@ -106,12 +108,46 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUser(userData);
     };
 
+    const refreshUser = async () => {
+        if (!user) return;
+        try {
+            const res = await fetch(`/api/users/profile/${user.uuid}`);
+            if (res.ok) {
+                const freshData = await res.json();
+                const updatedUser = {
+                    ...user,
+                    firstName: freshData.firstName || user.firstName,
+                    lastName: freshData.lastName || user.lastName,
+                    username: freshData.username || user.username,
+                    phone: freshData.phone || user.phone,
+                    avatarUrl: freshData.avatarUrl || user.avatarUrl,
+                    email: freshData.email || user.email,
+                    role: freshData.role || user.role,
+                };
+                localStorage.setItem('auth_user', JSON.stringify(updatedUser));
+                setUser(updatedUser);
+            }
+        } catch (err) {
+            console.error('Failed to refresh user:', err);
+        }
+    };
+
     const updateProfile = async (data: UpdateProfileData) => {
         if (!user) throw new Error('Not authenticated');
 
-        const response = await api.put(`/users/profile/${user.uuid}`, data);
-        const updatedUser = { ...user, ...response.data };
+        const res = await fetch(`/api/users/profile/${user.uuid}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data),
+        });
 
+        if (!res.ok) {
+            const err = await res.json();
+            throw new Error(err.error || 'Failed to update profile');
+        }
+
+        const responseData = await res.json();
+        const updatedUser = { ...user, ...responseData };
         localStorage.setItem('auth_user', JSON.stringify(updatedUser));
         setUser(updatedUser);
     };
@@ -122,11 +158,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const formData = new FormData();
         formData.append('avatar', file);
 
-        const response = await api.post(`/users/avatar/${user.uuid}`, formData, {
-            headers: { 'Content-Type': 'multipart/form-data' }
+        const res = await fetch(`/api/users/avatar/${user.uuid}`, {
+            method: 'POST',
+            body: formData,
         });
 
-        const updatedUser = { ...user, avatarUrl: response.data.avatarUrl };
+        if (!res.ok) {
+            const err = await res.json();
+            throw new Error(err.error || 'Failed to upload avatar');
+        }
+
+        const responseData = await res.json();
+        const updatedUser = { ...user, avatarUrl: responseData.avatarUrl };
         localStorage.setItem('auth_user', JSON.stringify(updatedUser));
         setUser(updatedUser);
     };
@@ -134,10 +177,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const updatePassword = async (oldPassword: string, newPassword: string) => {
         if (!user) throw new Error('Not authenticated');
 
-        await api.post('/users/update-password', {
-            uuid: user.uuid,
-            opw: oldPassword,
-            npw: newPassword
+        await fetch('/api/users/update-password', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                uuid: user.uuid,
+                opw: oldPassword,
+                npw: newPassword,
+            }),
         });
     };
 
@@ -164,6 +211,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         updateProfile,
         updateAvatar,
         updatePassword,
+        refreshUser,
         logout,
     };
 

@@ -3,7 +3,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useLanguage } from '@/lib/language-context';
-import api from '@/lib/api';
 import AdminLayout from '../../../AdminLayout';
 
 interface EventData {
@@ -87,28 +86,39 @@ export default function CategoriesPage() {
     const loadData = async () => {
         try {
             setLoading(true);
-            // Load campaign data
-            const campaignRes = await api.get(`/campaigns/${eventId}`);
-            setCampaign(campaignRes.data);
+            // Load campaign data via API proxy
+            const campaignRes = await fetch(`/api/campaigns/${eventId}`, { cache: 'no-store' });
+            if (campaignRes.ok) {
+                const campaignData = await campaignRes.json();
+                setCampaign(campaignData);
+            }
 
-            // Load events for this campaign
-            const eventsRes = await api.get(`/events/by-campaign/${eventId}`);
-            const eventsData = eventsRes.data || [];
-            setEvents(Array.isArray(eventsData) ? eventsData : []);
+            // Load events for this campaign via API proxy
+            const eventsRes = await fetch(`/api/events/by-campaign/${eventId}`, { cache: 'no-store' });
+            if (eventsRes.ok) {
+                const eventsData = await eventsRes.json();
+                setEvents(Array.isArray(eventsData) ? eventsData : []);
+            }
 
             // Load checkpoints for this campaign
             try {
-                const cpRes = await api.get(`/checkpoints/campaign/${eventId}`);
-                setCheckpoints(Array.isArray(cpRes.data) ? cpRes.data : []);
+                const cpRes = await fetch(`/api/checkpoints/campaign/${eventId}`, { cache: 'no-store' });
+                if (cpRes.ok) {
+                    const cpData = await cpRes.json();
+                    setCheckpoints(Array.isArray(cpData) ? cpData : []);
+                }
             } catch {
                 setCheckpoints([]);
             }
 
             // Load all campaigns for checkpoint creation tab
             try {
-                const allCampRes = await api.get('/campaigns');
-                const campData = allCampRes.data?.data || allCampRes.data || [];
-                setAllCampaigns(Array.isArray(campData) ? campData : []);
+                const allCampRes = await fetch('/api/campaigns', { cache: 'no-store' });
+                if (allCampRes.ok) {
+                    const allCampData = await allCampRes.json();
+                    const campData = allCampData?.data || allCampData || [];
+                    setAllCampaigns(Array.isArray(campData) ? campData : []);
+                }
             } catch {
                 setAllCampaigns([]);
             }
@@ -128,11 +138,15 @@ export default function CategoriesPage() {
 
     const loadMappings = async () => {
         try {
-            const mappingPromises = events.map(ev =>
-                api.get(`/checkpoints/mapping/event/${ev._id}`).catch(() => ({ data: [] }))
-            );
+            const mappingPromises = events.map(async ev => {
+                try {
+                    const res = await fetch(`/api/checkpoints/mapping/event/${ev._id}`, { cache: 'no-store' });
+                    if (res.ok) return await res.json();
+                    return [];
+                } catch { return []; }
+            });
             const results = await Promise.all(mappingPromises);
-            const allMappings = results.flatMap(r => r.data || []);
+            const allMappings = results.flat();
             setCheckpointMappings(allMappings);
         } catch {
             setCheckpointMappings([]);
@@ -144,7 +158,12 @@ export default function CategoriesPage() {
         const newVal = !ev.isAutoFix;
         setEvents(prev => prev.map(e => e._id === ev._id ? { ...e, isAutoFix: newVal } : e));
         try {
-            await api.put(`/events/${ev._id}/autofix`, { isAutoFix: newVal });
+            const res = await fetch(`/api/events/${ev._id}/autofix`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ isAutoFix: newVal }),
+            });
+            if (!res.ok) throw new Error('Failed');
         } catch (error) {
             console.error('Failed to toggle autofix:', error);
             setEvents(prev => prev.map(e => e._id === ev._id ? { ...e, isAutoFix: !newVal } : e));
@@ -156,7 +175,12 @@ export default function CategoriesPage() {
         const newVal = !ev.isFinished;
         setEvents(prev => prev.map(e => e._id === ev._id ? { ...e, isFinished: newVal } : e));
         try {
-            await api.put(`/events/${ev._id}/finished`, { isFinished: newVal });
+            const res = await fetch(`/api/events/${ev._id}/finished`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ isFinished: newVal }),
+            });
+            if (!res.ok) throw new Error('Failed');
         } catch (error) {
             console.error('Failed to toggle finished:', error);
             setEvents(prev => prev.map(e => e._id === ev._id ? { ...e, isFinished: !newVal } : e));
@@ -187,7 +211,12 @@ export default function CategoriesPage() {
         const newActive = !cp.active;
         setCheckpoints(prev => prev.map(c => c._id === cp._id ? { ...c, active: newActive } : c));
         try {
-            await api.put(`/checkpoints/${cp._id}`, { active: newActive });
+            const res = await fetch(`/api/checkpoints/${cp._id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ active: newActive }),
+            });
+            if (!res.ok) throw new Error('Failed');
         } catch (error) {
             console.error('Failed to toggle checkpoint:', error);
             setCheckpoints(prev => prev.map(c => c._id === cp._id ? { ...c, active: !newActive } : c));
@@ -202,7 +231,12 @@ export default function CategoriesPage() {
     // Save checkpoint mappings
     const handleSaveMappings = async () => {
         try {
-            await api.put('/checkpoints/mapping/bulk', checkpointMappings);
+            const res = await fetch('/api/checkpoints/mapping/bulk', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(checkpointMappings),
+            });
+            if (!res.ok) throw new Error('Failed');
             showToast(language === 'th' ? 'บันทึกสำเร็จ!' : 'Saved successfully!');
         } catch (error) {
             console.error('Failed to save mappings:', error);
@@ -238,7 +272,12 @@ export default function CategoriesPage() {
                 description: cp.type // Store rfid/manual as description for reference
             }));
 
-            await api.post('/checkpoints/bulk', checkpointsToCreate);
+            const res = await fetch('/api/checkpoints', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(checkpointsToCreate),
+            });
+            if (!res.ok) throw new Error('Failed to create');
             showToast(language === 'th' ? 'สร้างจุด Checkpoint สำเร็จ!' : 'Checkpoints created!');
             setNewCheckpoints([]);
             loadData(); // Reload data
