@@ -70,9 +70,9 @@ export default function ActivityCard({
         <div className="bg-white dark:bg-[#1e1e2a] rounded-lg shadow-md mb-5 transition-all hover:shadow-lg">
             {/* ===== MOBILE LAYOUT ===== */}
             <div className="block md:hidden">
-                {/* Cover Image 16:8 (2:1) */}
-                <div className="relative w-full overflow-hidden rounded-t-lg" style={{ aspectRatio: '2/1' }}>
-                    <img src={imageUrl} alt={displayTitle} className="w-full h-full object-cover" />
+                {/* Cover Image: fixed 16:8, image fills entire area */}
+                <div className="relative w-full overflow-hidden rounded-t-lg" style={{ aspectRatio: '16/8', minHeight: 0 }}>
+                    <img src={imageUrl} alt={displayTitle} className="absolute inset-0 w-full h-full object-cover" />
                     {countdown && (
                         <div className="absolute top-3 left-3 bg-black/75 text-white px-2 py-1.5 rounded-md flex items-center gap-0.5 backdrop-blur-sm">
                             <div className="text-center px-1.5 border-r border-white/30">
@@ -165,12 +165,10 @@ export default function ActivityCard({
             </div>
 
             {/* ===== DESKTOP LAYOUT ===== */}
-            <div className="hidden md:flex md:flex-row" style={{ borderLeft: `5px solid ${color}`, height: '160px' }}>
-                {/* Left: Cover Image 16:8 (2:1) with countdown */}
-                <div className="relative shrink-0 overflow-hidden" style={{ width: '30%', maxWidth: '280px' }}>
-                    <div style={{ aspectRatio: '2/1', width: '100%', overflow: 'hidden' }}>
-                        <img src={imageUrl} alt={displayTitle} className="w-full h-full object-cover" style={{ pointerEvents: 'none' }} />
-                    </div>
+            <div className="hidden md:flex md:flex-row" style={{ borderLeft: `5px solid ${color}`, height: 160 }}>
+                {/* Left: Cover Image fixed 16:8 — image fills card height (160px → width 320px) */}
+                <div className="relative shrink-0 overflow-hidden" style={{ width: 320, height: 160 }}>
+                    <img src={imageUrl} alt={displayTitle} className="absolute inset-0 w-full h-full object-cover" style={{ pointerEvents: 'none' }} />
                     {countdown && (
                         <div className="absolute top-2 left-2 bg-black/70 text-white p-1 rounded flex items-center gap-0.5 backdrop-blur-sm z-10">
                             <div className="text-center px-1.5 border-r border-white/30 min-w-[28px]">
