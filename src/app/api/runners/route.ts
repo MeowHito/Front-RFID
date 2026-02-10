@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-const BACKEND_URL = process.env.BACKEND_URL || 'http://3.26.160.149';
+const BACKEND_URL = process.env.BACKEND_URL || 'http://3.26.160.149:3001';
 
 export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);

@@ -26,7 +26,7 @@ const menuSections: MenuSection[] = [
         headerEn: 'MAIN NAVIGATION',
         items: [
             { href: '/admin/events', label: 'จัดการอีเวนต์', labelEn: 'Manage Events', icon: 'calendar-check', iconColor: '' },
-            { href: '/admin/events?create=true', label: 'สร้างกิจกรรมใหม่', labelEn: 'Create New Event', icon: 'circle-plus', iconColor: '#00a65a' },
+            { href: '/admin/events/create', label: 'สร้างกิจกรรมใหม่', labelEn: 'Create New Event', icon: 'circle-plus', iconColor: '#00a65a' },
         ]
     },
     {

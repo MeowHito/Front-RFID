@@ -263,30 +263,70 @@
     color: var(--danger-color);
 }
 
-/* Language Selector */
-.lang-selector {
+/* Language Toggle in Profile Dropdown */
+.lang-toggle-row {
     display: flex;
     align-items: center;
-    gap: 4px;
+    justify-content: center;
+    gap: 10px;
+    padding: 10px 16px;
 }
 
-.lang-btn {
-    padding: 3px 6px;
-    background: none;
-    border: none;
+.lang-label {
+    font-size: 13px;
+    font-weight: 500;
+    color: #999;
+    transition: color 0.2s;
+}
+
+.lang-label.active {
+    color: #00a65a;
+    font-weight: 700;
+}
+
+.lang-toggle-switch {
+    position: relative;
+    width: 44px;
+    height: 22px;
     cursor: pointer;
-    font-size: 12px;
-    color: rgba(255, 255, 255, 0.7);
 }
 
-.lang-btn.active {
-    color: #fff;
-    font-weight: 600;
+.lang-toggle-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
 }
 
-.lang-divider {
-    color: rgba(255, 255, 255, 0.3);
-    font-size: 12px;
+.lang-toggle-slider {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: #ccc;
+    border-radius: 22px;
+    transition: 0.3s;
+}
+
+.lang-toggle-slider::before {
+    content: '';
+    position: absolute;
+    width: 18px;
+    height: 18px;
+    left: 2px;
+    bottom: 2px;
+    background: #fff;
+    border-radius: 50%;
+    transition: 0.3s;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+.lang-toggle-switch input:checked+.lang-toggle-slider {
+    background: #00a65a;
+}
+
+.lang-toggle-switch input:checked+.lang-toggle-slider::before {
+    transform: translateX(22px);
 }
 
 /* ==================== */
@@ -1967,6 +2007,258 @@
 }
 
 /* ==================== */
+/* ==================== */
+/* Create Event Page */
+/* ==================== */
+
+.create-event-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+}
+
+.create-event-title {
+    font-size: 22px;
+    font-weight: 500;
+    color: #333;
+}
+
+.create-event-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.btn-ce {
+    padding: 8px 20px;
+    border-radius: 3px;
+    border: none;
+    cursor: pointer;
+    font-weight: 500;
+    font-size: 14px;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-family: 'Prompt', sans-serif;
+}
+
+.btn-ce-save {
+    background: var(--header-bg);
+    color: white;
+}
+
+.btn-ce-save:hover {
+    background: #008d4c;
+}
+
+.btn-ce-save:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.btn-ce-cancel {
+    background: #ddd;
+    color: #333;
+}
+
+.btn-ce-cancel:hover {
+    background: #ccc;
+}
+
+.btn-ce-add {
+    background: #333;
+    color: white;
+    border: none;
+    padding: 5px 12px;
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: 12px;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-family: 'Prompt', sans-serif;
+}
+
+.btn-ce-add:hover {
+    background: #555;
+}
+
+/* Cards with colored top borders */
+.ce-card {
+    background: #fff;
+    border-top: 3px solid #d2d6de;
+    border-radius: 3px;
+    box-shadow: 0 1px 1px rgba(0, 0, 0, 0.1);
+    margin-bottom: 15px;
+    padding: 12px 15px;
+}
+
+.ce-card-info {
+    border-top-color: #00c0ef;
+}
+
+.ce-card-success {
+    border-top-color: #00a65a;
+}
+
+.ce-card-warning {
+    border-top-color: #f39c12;
+}
+
+.ce-card-danger {
+    border-top-color: #dd4b39;
+}
+
+.ce-card-header {
+    font-size: 16px;
+    font-weight: 600;
+    margin-bottom: 12px;
+    border-bottom: 1px solid #f4f4f4;
+    padding-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: #333;
+}
+
+/* Form Grid */
+.ce-form-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px 15px;
+}
+
+.ce-form-group {
+    margin-bottom: 8px;
+}
+
+.ce-form-group.ce-full {
+    grid-column: span 2;
+}
+
+.ce-label {
+    display: block;
+    margin-bottom: 3px;
+    font-weight: 700;
+    color: #555;
+    font-size: 13.5px;
+}
+
+.ce-input,
+.ce-select,
+.ce-textarea {
+    width: 100%;
+    padding: 6px 10px;
+    border: 1px solid var(--border-color);
+    border-radius: 0;
+    outline: none;
+    font-family: 'Prompt', sans-serif;
+    font-size: 14px;
+    height: 35px;
+    color: #333;
+    background: #fff;
+}
+
+.ce-textarea {
+    height: auto;
+    min-height: 70px;
+    resize: vertical;
+}
+
+.ce-input:focus,
+.ce-select:focus,
+.ce-textarea:focus {
+    border-color: var(--header-bg);
+}
+
+.ce-input-sm {
+    height: 30px;
+    font-size: 12px;
+    padding: 2px 6px;
+}
+
+.ce-select-sm {
+    height: 30px;
+    font-size: 12px;
+    padding: 2px 5px;
+}
+
+/* Upload Box */
+.ce-upload-box {
+    border: 2px dashed #ddd;
+    background: #fafafa;
+    padding: 20px;
+    text-align: center;
+    cursor: pointer;
+    border-radius: 4px;
+    transition: 0.3s;
+    min-height: 100px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    overflow: hidden;
+}
+
+.ce-upload-box:hover {
+    border-color: #bbb;
+    background: #f0f0f0;
+}
+
+.ce-upload-box span {
+    font-size: 13px;
+    color: #999;
+}
+
+/* Distance Table */
+.ce-distance-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.ce-distance-table th {
+    background: #f9f9f9;
+    padding: 8px 10px;
+    text-align: left;
+    border-bottom: 2px solid #eee;
+    font-size: 12px;
+    color: #777;
+    text-transform: uppercase;
+    font-weight: 600;
+}
+
+.ce-distance-table td {
+    padding: 5px 6px;
+    border-bottom: 1px solid #f4f4f4;
+    vertical-align: middle;
+}
+
+.ce-badge-input {
+    width: 65px;
+    background: #eee;
+    border: none;
+    text-align: center;
+    font-weight: bold;
+    text-transform: uppercase;
+    font-size: 11px;
+    padding: 4px;
+    height: 30px;
+    font-family: 'Prompt', sans-serif;
+    color: #333;
+}
+
+.ce-delete-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 4px;
+}
+
+.ce-delete-btn:hover {
+    opacity: 0.7;
+}
+
 /* Responsive */
 /* ==================== */
 
@@ -2010,5 +2302,19 @@
 
     .active-event-display {
         display: none;
+    }
+
+    .ce-form-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .ce-form-group.ce-full {
+        grid-column: span 1;
+    }
+
+    .create-event-header {
+        flex-direction: column;
+        gap: 10px;
+        align-items: flex-start;
     }
 }

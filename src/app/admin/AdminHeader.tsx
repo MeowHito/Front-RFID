@@ -76,21 +76,32 @@ export default function AdminHeader() {
                                 </div>
                             </div>
                             <div className="profile-menu-divider"></div>
-                            <Link href="/admin/profile" className="profile-menu-item" onClick={() => setProfileOpen(false)}>
-                                {language === 'th' ? 'แก้ไขโปรไฟล์' : 'Edit Profile'}
+                            <Link href="/admin/events" className="profile-menu-item" onClick={() => setProfileOpen(false)}>
+                                {language === 'th' ? 'จัดการกิจกรรม' : 'Manage Events'}
                             </Link>
+                            <Link href="/admin/profile" className="profile-menu-item" onClick={() => setProfileOpen(false)}>
+                                {language === 'th' ? 'ตั้งค่าโปรไฟล์' : 'Profile Settings'}
+                            </Link>
+                            <div className="profile-menu-divider"></div>
+                            {/* Language Toggle */}
+                            <div className="lang-toggle-row">
+                                <span className={`lang-label ${language === 'th' ? 'active' : ''}`}>TH</span>
+                                <label className="lang-toggle-switch">
+                                    <input
+                                        type="checkbox"
+                                        checked={language === 'en'}
+                                        onChange={() => setLanguage(language === 'th' ? 'en' : 'th')}
+                                    />
+                                    <span className="lang-toggle-slider"></span>
+                                </label>
+                                <span className={`lang-label ${language === 'en' ? 'active' : ''}`}>EN</span>
+                            </div>
+                            <div className="profile-menu-divider"></div>
                             <button className="profile-menu-item logout" onClick={logout}>
                                 {language === 'th' ? 'ออกจากระบบ' : 'Logout'}
                             </button>
                         </div>
                     )}
-                </div>
-
-                {/* Language Selector */}
-                <div className="lang-selector">
-                    <button className={`lang-btn ${language === 'th' ? 'active' : ''}`} onClick={() => setLanguage('th')}>TH</button>
-                    <span className="lang-divider">|</span>
-                    <button className={`lang-btn ${language === 'en' ? 'active' : ''}`} onClick={() => setLanguage('en')}>EN</button>
                 </div>
             </div>
         </header>
