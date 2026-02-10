@@ -3,7 +3,6 @@
 import Link from 'next/link';
 import Image from 'next/image';
 import { useEffect, useState } from 'react';
-import api from '@/lib/api';
 import { useTheme } from '@/lib/theme-context';
 import { useLanguage } from '@/lib/language-context';
 import { useAuth } from '@/lib/auth-context';
@@ -58,9 +57,12 @@ export default function Home() {
 
   const loadCampaigns = async () => {
     try {
-      const response = await api.get('/campaigns');
+      // Use proxy route (/api/campaigns) to avoid Mixed Content (HTTPS → HTTP) errors on Vercel
+      const response = await fetch('/api/campaigns');
+      if (!response.ok) throw new Error('Failed to fetch campaigns');
+      const responseData = await response.json();
       // API returns { data: Campaign[], total: number }
-      const campaignData = response.data?.data || response.data || [];
+      const campaignData = responseData?.data || responseData || [];
       const allCampaigns = Array.isArray(campaignData) ? campaignData : [];
       // Filter out draft campaigns - only show published events to users
       const publishedCampaigns = allCampaigns.filter((c: Campaign & { isDraft?: boolean }) => !c.isDraft);

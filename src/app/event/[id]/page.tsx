@@ -7,7 +7,7 @@ import { useParams } from 'next/navigation';
 import { useTheme } from '@/lib/theme-context';
 import { useLanguage } from '@/lib/language-context';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
 
 interface Campaign {
     _id: string;
@@ -104,9 +104,10 @@ export default function EventDashboardPage() {
             setLoading(true);
             setError(null);
 
+            // Use API proxy routes to avoid Mixed Content (HTTPS → HTTP) issues
             const [campaignRes, runnersRes] = await Promise.all([
-                fetch(`${API_URL}/campaigns/${eventId}`),
-                fetch(`${API_URL}/runners?campaignId=${eventId}`)
+                fetch(`${API_URL}/api/campaigns/${eventId}`),
+                fetch(`${API_URL}/api/runners?id=${eventId}`)
             ]);
 
             if (!campaignRes.ok) throw new Error(language === 'th' ? 'ไม่พบข้อมูลกิจกรรม' : 'Event not found');
@@ -128,7 +129,7 @@ export default function EventDashboardPage() {
 
     async function fetchRunnerTimings(runnerId: string) {
         try {
-            const res = await fetch(`${API_URL}/timing/runner/${eventId}/${runnerId}`);
+            const res = await fetch(`${API_URL}/api/timing/runner/${eventId}/${runnerId}`);
             if (res.ok) {
                 const data = await res.json();
                 setRunnerTimings(data || []);
