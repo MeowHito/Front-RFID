@@ -9,6 +9,7 @@ import { useLanguage } from '@/lib/language-context';
 import { useAuth } from '@/lib/auth-context';
 import CursorSpotlight from '@/components/CursorSpotlight';
 import ActivityCard from '@/components/ActivityCard';
+import ProfileDropdown from '@/components/ProfileDropdown';
 
 // Race category from backend
 interface RaceCategory {
@@ -49,7 +50,7 @@ export default function Home() {
   const { user, isAuthenticated, isAdmin, logout } = useAuth();
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showUserMenu, setShowUserMenu] = useState(false);
+
 
   useEffect(() => {
     loadCampaigns();
@@ -167,83 +168,7 @@ export default function Home() {
             {/* Desktop Auth */}
             {isAuthenticated ? (
               <div className="hidden sm:flex items-center gap-2">
-                <div className="relative">
-                  <button
-                    onClick={() => setShowUserMenu(!showUserMenu)}
-                    className="flex items-center gap-2 px-3 py-2 rounded-xl glass scale-hover"
-                  >
-                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-bold text-sm overflow-hidden">
-                      {user?.avatarUrl ? (
-                        <img src={user.avatarUrl} alt="" className="w-full h-full object-cover" />
-                      ) : (
-                        user?.firstName?.[0] || user?.email?.[0]?.toUpperCase() || 'U'
-                      )}
-                    </div>
-                    <span className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>
-                      {user?.firstName || user?.email?.split('@')[0]}
-                    </span>
-                  </button>
-                  {showUserMenu && (
-                    <div className="absolute right-0 mt-2 w-48 glass rounded-xl shadow-lg py-2 z-50">
-                      <div className="px-4 py-2 border-b" style={{ borderColor: 'var(--border)' }}>
-                        <p className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>{user?.firstName} {user?.lastName}</p>
-                        <p className="text-xs" style={{ color: 'var(--muted-foreground)' }}>{user?.email}</p>
-                      </div>
-                      {isAdmin && (
-                        <Link
-                          href="/admin/events"
-                          onClick={() => setShowUserMenu(false)}
-                          className="block w-full text-left px-4 py-2 text-sm hover:bg-black/10 transition-colors"
-                          style={{ color: 'var(--foreground)' }}
-                        >
-                          📋 {language === 'th' ? 'จัดการกิจกรรม' : 'Manage Events'}
-                        </Link>
-                      )}
-                      <Link
-                        href="/profile"
-                        onClick={() => setShowUserMenu(false)}
-                        className="block w-full text-left px-4 py-2 text-sm hover:bg-black/10 transition-colors"
-                        style={{ color: 'var(--foreground)' }}
-                      >
-                        ⚙️ {language === 'th' ? 'ตั้งค่าโปรไฟล์' : 'Profile Settings'}
-                      </Link>
-                      {/* Language & Theme Toggles */}
-                      <div className="border-t border-b my-1" style={{ borderColor: 'var(--border)' }}>
-                        <div className="flex items-center justify-between px-4 py-2.5">
-                          <span className="text-xs font-medium" style={{ color: 'var(--muted-foreground)' }}>🌐 {language === 'th' ? 'ภาษา' : 'Language'}</span>
-                          <div className="flex items-center gap-2">
-                            <span className={`text-xs font-semibold ${language === 'th' ? 'opacity-100' : 'opacity-40'}`} style={{ color: 'var(--foreground)' }}>TH</span>
-                            <label className="relative inline-block w-9 h-5 cursor-pointer">
-                              <input type="checkbox" className="sr-only peer" checked={language === 'en'} onChange={() => setLanguage(language === 'th' ? 'en' : 'th')} />
-                              <span className="absolute inset-0 rounded-full transition-colors peer-checked:bg-blue-500" style={{ background: language === 'en' ? '#3b82f6' : '#d1d5db' }}></span>
-                              <span className="absolute left-0.5 top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform" style={{ transform: language === 'en' ? 'translateX(16px)' : 'translateX(0)' }}></span>
-                            </label>
-                            <span className={`text-xs font-semibold ${language === 'en' ? 'opacity-100' : 'opacity-40'}`} style={{ color: 'var(--foreground)' }}>EN</span>
-                          </div>
-                        </div>
-                        <div className="flex items-center justify-between px-4 py-2.5">
-                          <span className="text-xs font-medium" style={{ color: 'var(--muted-foreground)' }}>{theme === 'dark' ? '🌙' : '☀️'} {language === 'th' ? 'ธีม' : 'Theme'}</span>
-                          <div className="flex items-center gap-2">
-                            <span className={`text-xs font-semibold ${theme === 'light' ? 'opacity-100' : 'opacity-40'}`} style={{ color: 'var(--foreground)' }}>☀️</span>
-                            <label className="relative inline-block w-9 h-5 cursor-pointer">
-                              <input type="checkbox" className="sr-only peer" checked={theme === 'dark'} onChange={toggleTheme} />
-                              <span className="absolute inset-0 rounded-full transition-colors" style={{ background: theme === 'dark' ? '#6366f1' : '#d1d5db' }}></span>
-                              <span className="absolute left-0.5 top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform" style={{ transform: theme === 'dark' ? 'translateX(16px)' : 'translateX(0)' }}></span>
-                            </label>
-                            <span className={`text-xs font-semibold ${theme === 'dark' ? 'opacity-100' : 'opacity-40'}`} style={{ color: 'var(--foreground)' }}>🌙</span>
-                          </div>
-                        </div>
-                      </div>
-                      <button
-                        onClick={() => { logout(); setShowUserMenu(false); }}
-                        className="w-full text-left px-4 py-2 text-sm hover:bg-black/10 transition-colors"
-                        style={{ color: 'var(--error)' }}
-                      >
-                        {language === 'th' ? 'ออกจากระบบ' : 'Logout'}
-                      </button>
-                    </div>
-                  )}
-                </div>
+                <ProfileDropdown />
               </div>
             ) : (
               <div className="hidden sm:flex items-center gap-2">
