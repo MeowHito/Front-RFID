@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { useLanguage } from '@/lib/language-context';
 import AdminLayout from '../AdminLayout';
 import RFIDDashboardModal from './RFIDDashboardModal';
@@ -44,6 +45,7 @@ interface Campaign {
 
 export default function EventsPage() {
     const { language } = useLanguage();
+    const router = useRouter();
     const [campaigns, setCampaigns] = useState<Campaign[]>([]);
     const [loading, setLoading] = useState(true);
     const [filter, setFilter] = useState('ทั้งหมด');
@@ -59,6 +61,8 @@ export default function EventsPage() {
     const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
     const [campaignToDelete, setCampaignToDelete] = useState<Campaign | null>(null);
     const [deleting, setDeleting] = useState(false);
+    const [featuredConfirmOpen, setFeaturedConfirmOpen] = useState(false);
+    const [featuredTargetId, setFeaturedTargetId] = useState<string | null>(null);
 
     const loadCampaigns = async () => {
         try {
@@ -172,6 +176,7 @@ export default function EventsPage() {
         const campaign = campaigns.find(c => c._id === campaignId);
         if (!campaign) return;
         const isCurrentlyFeatured = campaign.isFeatured ?? false;
+
         if (isCurrentlyFeatured) {
             setCampaigns(prev => prev.map(c => ({ ...c, isFeatured: false })));
             try {
@@ -200,6 +205,22 @@ export default function EventsPage() {
         } catch (error) {
             loadCampaigns();
         }
+    };
+
+    const openFeaturedConfirm = (campaignId: string) => {
+        setFeaturedTargetId(campaignId);
+        setFeaturedConfirmOpen(true);
+    };
+
+    const closeFeaturedConfirm = () => {
+        setFeaturedConfirmOpen(false);
+        setFeaturedTargetId(null);
+    };
+
+    const handleConfirmFeaturedChange = () => {
+        if (!featuredTargetId) return;
+        handleToggleFeatured(featuredTargetId);
+        closeFeaturedConfirm();
     };
 
     const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -299,6 +320,11 @@ export default function EventsPage() {
         }
     };
 
+    const featuredTargetCampaign = featuredTargetId
+        ? campaigns.find(c => c._id === featuredTargetId)
+        : null;
+    const featuredIsCurrentlyOn = featuredTargetCampaign?.isFeatured ?? false;
+
     return (
         <AdminLayout
             breadcrumbItems={[
@@ -320,7 +346,11 @@ export default function EventsPage() {
                     <button type="button" className="btn-query" onClick={() => loadCampaigns()}>
                         Q {language === 'th' ? 'ค้นหา' : 'Search'}
                     </button>
-                    <button className="btn-add-event" onClick={() => openDetailsModal(null, true)} title={language === 'th' ? 'สร้างกิจกรรมใหม่' : 'New event'}>
+                    <button
+                        className="btn-add-event"
+                        onClick={() => router.push('/admin/events/create')}
+                        title={language === 'th' ? 'สร้างกิจกรรมใหม่' : 'New event'}
+                    >
                         <span>+</span>
                     </button>
                 </div>
@@ -357,7 +387,7 @@ export default function EventsPage() {
                                                 <button
                                                     type="button"
                                                     className="event-tool-btn event-tool-edit"
-                                                    onClick={() => openDetailsModal(campaign)}
+                                                    onClick={() => router.push(`/admin/events/create?edit=${campaign._id}`)}
                                                     title={language === 'th' ? 'แก้ไขกิจกรรม' : 'Edit event'}
                                                 >
                                                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -368,7 +398,7 @@ export default function EventsPage() {
                                                 <button
                                                     type="button"
                                                     className={`event-tool-btn event-tool-trophy ${(campaign.isFeatured ?? false) ? 'gold' : ''}`}
-                                                    onClick={() => handleToggleFeatured(campaign._id)}
+                                                    onClick={() => openFeaturedConfirm(campaign._id)}
                                                     title={language === 'th' ? 'เปิดปิดสีถ้วยรางวัล (กิจกรรมที่เลือกจะแสดงบนหัวเว็บ)' : 'Toggle featured (shown in header)'}
                                                 >
                                                     <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="1.5">
@@ -455,6 +485,54 @@ export default function EventsPage() {
                 event={selectedCampaign}
                 onSave={handleSaveCampaignDetails}
             />
+
+            {/* Featured Event Confirmation Modal */}
+            {featuredConfirmOpen && (
+                <div className="modal-overlay" onClick={closeFeaturedConfirm}>
+                    <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '420px' }}>
+                        <div className="modal-header">
+                            <h2 className="modal-title">
+                                {language === 'th' ? 'ยืนยันการเปลี่ยน Event หลัก' : 'Confirm featured event'}
+                            </h2>
+                            <button className="modal-close" onClick={closeFeaturedConfirm}>×</button>
+                        </div>
+                        <div className="modal-body" style={{ textAlign: 'center', padding: '1.75rem' }}>
+                            <div style={{ fontSize: '2.5rem', marginBottom: '1rem' }}>⭐</div>
+                            <p style={{ marginBottom: '0.5rem', fontWeight: 'bold' }}>
+                                {featuredIsCurrentlyOn
+                                    ? (language === 'th'
+                                        ? 'ต้องการยกเลิกการตั้งกิจกรรมนี้เป็น Event หลักหรือไม่?'
+                                        : 'Remove this event from being the main event?')
+                                    : (language === 'th'
+                                        ? 'ต้องการตั้งกิจกรรมนี้เป็น Event หลักบนหัวเว็บหรือไม่?'
+                                        : 'Set this event as the main event in the header?')}
+                            </p>
+                            {featuredTargetCampaign && (
+                                <p style={{ color: '#666', fontSize: '0.9rem', marginTop: '0.5rem' }}>
+                                    <strong>{featuredTargetCampaign.name}</strong>
+                                </p>
+                            )}
+                        </div>
+                        <div className="modal-footer" style={{ justifyContent: 'center', gap: '1rem' }}>
+                            <button
+                                className="btn-secondary"
+                                onClick={closeFeaturedConfirm}
+                            >
+                                {language === 'th' ? 'ยกเลิก' : 'Cancel'}
+                            </button>
+                            <button
+                                className="btn-primary"
+                                onClick={handleConfirmFeaturedChange}
+                                style={{ background: '#00a65a', color: '#fff', padding: '0.5rem 1.5rem', borderRadius: '6px', border: 'none', cursor: 'pointer' }}
+                            >
+                                {featuredIsCurrentlyOn
+                                    ? (language === 'th' ? 'ยืนยันการยกเลิก' : 'Confirm remove')
+                                    : (language === 'th' ? 'ยืนยันการตั้งค่า' : 'Confirm set')}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Delete Confirmation Modal */}
             {deleteConfirmOpen && (
