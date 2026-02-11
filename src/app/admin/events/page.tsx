@@ -36,6 +36,8 @@ interface Campaign {
     status: string;
     isDraft?: boolean;
     allowRFIDSync?: boolean;
+    isApproveCertificate?: boolean;
+    isFeatured?: boolean;
     categories: RaceCategory[];
     organizerName?: string;
 }
@@ -45,6 +47,7 @@ export default function EventsPage() {
     const [campaigns, setCampaigns] = useState<Campaign[]>([]);
     const [loading, setLoading] = useState(true);
     const [filter, setFilter] = useState('ทั้งหมด');
+    const [searchQuery, setSearchQuery] = useState('');
     const [copiedLink, setCopiedLink] = useState<string | null>(null);
 
     // Modal states
@@ -57,16 +60,13 @@ export default function EventsPage() {
     const [campaignToDelete, setCampaignToDelete] = useState<Campaign | null>(null);
     const [deleting, setDeleting] = useState(false);
 
-    useEffect(() => {
-        loadCampaigns();
-    }, []);
-
     const loadCampaigns = async () => {
         try {
-            const res = await fetch('/api/campaigns', { cache: 'no-store' });
+            const params = new URLSearchParams();
+            if (searchQuery.trim()) params.set('search', searchQuery.trim());
+            const res = await fetch(`/api/campaigns?${params.toString()}`, { cache: 'no-store' });
             if (!res.ok) throw new Error('Failed to fetch');
             const json = await res.json();
-            // API returns { data: Campaign[], total: number }
             const campaignData = json?.data || json || [];
             setCampaigns(Array.isArray(campaignData) ? campaignData : []);
         } catch (error) {
@@ -75,6 +75,14 @@ export default function EventsPage() {
             setLoading(false);
         }
     };
+
+    useEffect(() => {
+        const t = setTimeout(() => {
+            setLoading(true);
+            loadCampaigns();
+        }, 300);
+        return () => clearTimeout(t);
+    }, [searchQuery]);
 
     const formatDate = (dateString: string) => {
         const date = new Date(dateString);
@@ -116,7 +124,6 @@ export default function EventsPage() {
         const campaign = campaigns.find(c => c._id === campaignId);
         if (!campaign) return;
         
-        // Cycle status: upcoming -> active -> live -> finished -> upcoming
         const statusOrder = ['upcoming', 'active', 'live', 'finished'];
         const currentIdx = statusOrder.indexOf(campaign.status || 'upcoming');
         const newStatus = statusOrder[(currentIdx + 1) % statusOrder.length];
@@ -137,6 +144,61 @@ export default function EventsPage() {
             setCampaigns(prev => prev.map(c =>
                 c._id === campaignId ? { ...c, status: campaign.status } : c
             ));
+        }
+    };
+
+    const handleToggleCertificate = async (campaignId: string) => {
+        const campaign = campaigns.find(c => c._id === campaignId);
+        if (!campaign) return;
+        const newValue = !(campaign.isApproveCertificate ?? false);
+        setCampaigns(prev => prev.map(c =>
+            c._id === campaignId ? { ...c, isApproveCertificate: newValue } : c
+        ));
+        try {
+            const res = await fetch(`/api/campaigns/${campaignId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ isApproveCertificate: newValue }),
+            });
+            if (!res.ok) throw new Error('Failed to update');
+        } catch (error) {
+            setCampaigns(prev => prev.map(c =>
+                c._id === campaignId ? { ...c, isApproveCertificate: campaign.isApproveCertificate } : c
+            ));
+        }
+    };
+
+    const handleToggleFeatured = async (campaignId: string) => {
+        const campaign = campaigns.find(c => c._id === campaignId);
+        if (!campaign) return;
+        const isCurrentlyFeatured = campaign.isFeatured ?? false;
+        if (isCurrentlyFeatured) {
+            setCampaigns(prev => prev.map(c => ({ ...c, isFeatured: false })));
+            try {
+                await fetch(`/api/campaigns/${campaignId}/featured`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ value: false }),
+                });
+                window.dispatchEvent(new CustomEvent('admin-featured-updated'));
+            } catch (e) {
+                loadCampaigns();
+            }
+            return;
+        }
+        setCampaigns(prev => prev.map(c =>
+            c._id === campaignId ? { ...c, isFeatured: true } : { ...c, isFeatured: false }
+        ));
+        try {
+            const res = await fetch(`/api/campaigns/${campaignId}/featured`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ value: true }),
+            });
+            if (!res.ok) throw new Error('Failed to set featured');
+            window.dispatchEvent(new CustomEvent('admin-featured-updated'));
+        } catch (error) {
+            loadCampaigns();
         }
     };
 
@@ -246,82 +308,25 @@ export default function EventsPage() {
             pageTitle={language === 'th' ? 'จัดการข้อมูลอีเวนท์และประเภทการแข่งขันของคุณ' : 'Manage your events and competition categories'}
         >
             <div className="admin-card">
-                {/* Header */}
-                <div className="events-header">
-                    <h2 className="events-title">
-                        {language === 'th' ? 'กิจกรรมทั้งหมด' : 'All Events'} ( {campaigns.length} )
-                    </h2>
-                    <div className="events-toolbar">
-                        <select
-                            className="admin-form-select"
-                            value={filter}
-                            onChange={(e) => setFilter(e.target.value)}
-                            style={{ width: '200px' }}
-                        >
-                            <option value="ทั้งหมด">{language === 'th' ? 'ทั้งหมด' : 'All'}</option>
-                            <option value="active">{language === 'th' ? 'เปิดใช้งาน' : 'Active'}</option>
-                            <option value="inactive">{language === 'th' ? 'ปิดใช้งาน' : 'Inactive'}</option>
-                        </select>
-                        <button className="btn-add-event" onClick={() => openDetailsModal(null, true)}>
-                            <span>+</span>
-                        </button>
-                    </div>
+                {/* Search */}
+                <div className="events-table-toolbar">
+                    <input
+                        type="text"
+                        className="events-search-input"
+                        placeholder={language === 'th' ? 'ค้นหาชื่อกิจกรรม...' : 'Search event name...'}
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                    />
+                    <button type="button" className="btn-query" onClick={() => loadCampaigns()}>
+                        Q {language === 'th' ? 'ค้นหา' : 'Search'}
+                    </button>
+                    <button className="btn-add-event" onClick={() => openDetailsModal(null, true)} title={language === 'th' ? 'สร้างกิจกรรมใหม่' : 'New event'}>
+                        <span>+</span>
+                    </button>
                 </div>
 
-                {/* Action Icons Legend */}
-                <div className="events-action-bar">
-                    <div className="action-icon-group">
-                        <button className="action-icon-btn" title={language === 'th' ? 'แดชบอร์ด RFID' : 'RFID Dashboard'}>
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
-                                <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
-                            </svg>
-                        </button>
-                        <button className="action-icon-btn" title={language === 'th' ? 'คัดลอกลิงก์ ChipCode' : 'Copy ChipCode Link'}>
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
-                                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-                            </svg>
-                        </button>
-                        <button className="action-icon-btn" title={language === 'th' ? 'คัดลอกลิงก์ Realtime' : 'Copy Realtime Link'}>
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                <circle cx="12" cy="12" r="10" />
-                                <polyline points="12 6 12 12 16 14" />
-                            </svg>
-                        </button>
-                        <button className="action-icon-btn" title={language === 'th' ? 'แบบฟอร์มใบรับรอง' : 'Certificate Form'}>
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
-                                <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
-                            </svg>
-                        </button>
-                        <span className="action-icon-label">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-                                <circle cx="9" cy="7" r="4" />
-                                <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-                                <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-                            </svg>
-                            6 {language === 'th' ? 'ระยะ/ประเภท' : 'Categories'}
-                        </span>
-                        <button className="action-icon-btn" title={language === 'th' ? 'ดูรายละเอียด' : 'View Details'}>
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                <circle cx="12" cy="12" r="10" />
-                                <line x1="12" y1="16" x2="12" y2="12" />
-                                <line x1="12" y1="8" x2="12.01" y2="8" />
-                            </svg>
-                        </button>
-                        <button className="action-icon-btn edit" title={language === 'th' ? 'แก้ไข' : 'Edit'}>
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-                                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-                            </svg>
-                        </button>
-                    </div>
-                </div>
-
-                {/* Events List */}
-                <div className="events-list">
+                {/* Events Table */}
+                <div className="events-table-wrap">
                     {loading ? (
                         <div className="events-loading">
                             {language === 'th' ? 'กำลังโหลด...' : 'Loading...'}
@@ -331,65 +336,77 @@ export default function EventsPage() {
                             {language === 'th' ? 'ยังไม่มีกิจกรรม' : 'No events yet'}
                         </div>
                     ) : (
-                        campaigns.map((campaign) => (
-                            <div key={campaign._id} className="event-card">
-                                {/* Event Image */}
-                                <div className="event-image">
-                                    {campaign.pictureUrl ? (
-                                        <img src={campaign.pictureUrl} alt={campaign.name} />
-                                    ) : (
-                                        <div className="event-image-placeholder">
-                                            <span>🏃</span>
-                                        </div>
-                                    )}
-                                </div>
-
-                                {/* Event Info */}
-                                <div className="event-info">
-                                    <h3 className="event-name">{campaign.name}</h3>
-                                    <div className="event-meta">
-                                        <span className="event-date">
-                                            <strong>{language === 'th' ? 'วันที่จัด' : 'Date'}:</strong> {formatDate(campaign.eventDate)}
-                                        </span>
-                                    </div>
-                                    <div className="event-meta">
-                                        <span className="event-location">
-                                            <strong>{language === 'th' ? 'สถานที่จัด' : 'Location'}:</strong> {campaign.location || '-'}
-                                        </span>
-                                    </div>
-                                    {campaign.categories && campaign.categories.length > 0 && (
-                                        <div className="event-categories">
-                                            {campaign.categories.map((cat: RaceCategory, idx: number) => (
-                                                <span key={idx} className="event-category-tag" style={{ backgroundColor: cat.badgeColor, color: '#fff' }}>{cat.name}</span>
-                                            ))}
-                                        </div>
-                                    )}
-                                    <div className="event-sync-info">
-                                        <span className="sync-date">⏱️ {formatDate(new Date().toISOString())}</span>
-                                        <span className={`sync-status ${campaign.allowRFIDSync ? 'active' : ''}`}>
-                                            {campaign.allowRFIDSync ? '✓' : '○'} {language === 'th' ? 'ซิงค์ข้อมูล RFID' : 'Sync RFID'}
-                                        </span>
-                                    </div>
-                                </div>
-
-                                {/* Event Actions - Right Side */}
-                                <div className="event-actions">
-                                    {/* Toggles */}
-                                    <div className="event-toggles">
-                                        <div className="toggle-group">
-                                            <span className="toggle-label">{language === 'th' ? 'ซิงค์ RFID' : 'RFID Sync'}</span>
-                                            <label className="toggle-switch">
+                        <table className="data-table events-data-table">
+                            <thead>
+                                <tr>
+                                    <th className="col-tools">{language === 'th' ? 'Tools' : 'Tools'}</th>
+                                    <th className="col-id">ID</th>
+                                    <th className="col-name">{language === 'th' ? 'ชื่อกิจกรรม' : 'Event Name'}</th>
+                                    <th className="col-date">{language === 'th' ? 'วันที่' : 'Date'}</th>
+                                    <th className="col-mode">{language === 'th' ? 'โหมด' : 'Mode'}</th>
+                                    <th className="col-cert">{language === 'th' ? 'ใบเซอร์' : 'Certificate'}</th>
+                                    <th className="col-rfid">RFID Sync</th>
+                                    <th className="col-status">{language === 'th' ? 'สถานะ' : 'Status'}</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {campaigns.map((campaign) => (
+                                    <tr key={campaign._id}>
+                                        <td className="col-tools">
+                                            <div className="event-row-tools">
+                                                <button
+                                                    type="button"
+                                                    className="event-tool-btn event-tool-edit"
+                                                    onClick={() => openDetailsModal(campaign)}
+                                                    title={language === 'th' ? 'แก้ไขกิจกรรม' : 'Edit event'}
+                                                >
+                                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                                        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                                                        <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                                                    </svg>
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    className={`event-tool-btn event-tool-trophy ${(campaign.isFeatured ?? false) ? 'gold' : ''}`}
+                                                    onClick={() => handleToggleFeatured(campaign._id)}
+                                                    title={language === 'th' ? 'เปิดปิดสีถ้วยรางวัล (กิจกรรมที่เลือกจะแสดงบนหัวเว็บ)' : 'Toggle featured (shown in header)'}
+                                                >
+                                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="1.5">
+                                                        <path d="M12 2L15 8.5L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L9 8.5L12 2Z" />
+                                                    </svg>
+                                                </button>
+                                            </div>
+                                        </td>
+                                        <td className="col-id">{String(campaign._id).slice(-6)}</td>
+                                        <td className="col-name">{campaign.name} {campaign.location ? campaign.location : ''}</td>
+                                        <td className="col-date">{formatDate(campaign.eventDate)}</td>
+                                        <td className="col-mode">
+                                            <span className={`mode-badge ${campaign.isDraft ? 'test' : 'real'}`}>
+                                                {campaign.isDraft ? 'TEST' : 'REAL'}
+                                            </span>
+                                        </td>
+                                        <td className="col-cert">
+                                            <label className="toggle-switch small">
                                                 <input
                                                     type="checkbox"
-                                                    checked={campaign.allowRFIDSync || false}
+                                                    checked={campaign.isApproveCertificate ?? false}
+                                                    onChange={() => handleToggleCertificate(campaign._id)}
+                                                />
+                                                <span className="toggle-slider"></span>
+                                            </label>
+                                        </td>
+                                        <td className="col-rfid">
+                                            <label className="toggle-switch small">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={campaign.allowRFIDSync ?? false}
                                                     onChange={() => handleToggleSync(campaign._id, 'allowRFIDSync')}
                                                 />
                                                 <span className="toggle-slider"></span>
                                             </label>
-                                        </div>
-                                        <div className="toggle-group">
-                                            <span className="toggle-label">{language === 'th' ? 'เผยแพร่' : 'Published'}</span>
-                                            <label className="toggle-switch">
+                                        </td>
+                                        <td className="col-status">
+                                            <label className="toggle-switch small">
                                                 <input
                                                     type="checkbox"
                                                     checked={!campaign.isDraft}
@@ -397,109 +414,11 @@ export default function EventsPage() {
                                                 />
                                                 <span className="toggle-slider"></span>
                                             </label>
-                                        </div>
-                                    </div>
-
-                                    {/* Action Icons Row */}
-                                    <div className="event-action-icons">
-                                        <button
-                                            className="action-icon-btn"
-                                            onClick={() => openRfidModal(campaign)}
-                                            data-tooltip={language === 'th' ? 'แดชบอร์ด RFID' : 'RFID Dashboard'}
-                                        >
-                                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                                <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
-                                                <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
-                                            </svg>
-                                        </button>
-                                        <button
-                                            className={`action-icon-btn ${copiedLink === `chip-${campaign._id}` ? 'copied' : ''}`}
-                                            onClick={() => copyToClipboard(getChipCodeLink(campaign._id), `chip-${campaign._id}`, 'chipcode')}
-                                            data-tooltip={language === 'th' ? 'คัดลอก ChipCode' : 'Copy ChipCode'}
-                                        >
-                                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                                <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
-                                                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-                                            </svg>
-                                        </button>
-                                        <button
-                                            className={`action-icon-btn ${copiedLink === `rt-${campaign._id}` ? 'copied' : ''}`}
-                                            onClick={() => copyToClipboard(getRealtimeLink(campaign._id), `rt-${campaign._id}`, 'realtime')}
-                                            data-tooltip={language === 'th' ? 'คัดลอก Realtime' : 'Copy Realtime'}
-                                        >
-                                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                                <circle cx="12" cy="12" r="10" />
-                                                <polyline points="12 6 12 12 16 14" />
-                                            </svg>
-                                        </button>
-                                        <button
-                                            className="action-icon-btn"
-                                            onClick={() => openCertificateModal(campaign)}
-                                            data-tooltip={language === 'th' ? 'ใบรับรอง' : 'Certificate'}
-                                        >
-                                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                                <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
-                                                <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
-                                            </svg>
-                                        </button>
-                                        <button
-                                            className="action-category-count"
-                                            onClick={() => openDetailsModal(campaign)}
-                                            data-tooltip={language === 'th' ? 'ดูประเภทการแข่งขัน' : 'View Categories'}
-                                        >
-                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-                                                <circle cx="9" cy="7" r="4" />
-                                                <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-                                                <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-                                            </svg>
-                                            {campaign.categories?.length || 0} {language === 'th' ? 'ระยะ/ประเภท' : 'Cat'}
-                                        </button>
-                                        <button
-                                            className="action-icon-btn"
-                                            onClick={() => openDetailsModal(campaign)}
-                                            data-tooltip={language === 'th' ? 'ดูรายละเอียด' : 'View Details'}
-                                        >
-                                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                                <circle cx="12" cy="12" r="10" />
-                                                <line x1="12" y1="16" x2="12" y2="12" />
-                                                <line x1="12" y1="8" x2="12.01" y2="8" />
-                                            </svg>
-                                        </button>
-                                        <button
-                                            className="action-icon-btn edit"
-                                            onClick={() => openDetailsModal(campaign)}
-                                            data-tooltip={language === 'th' ? 'แก้ไข' : 'Edit'}
-                                        >
-                                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-                                                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-                                            </svg>
-                                        </button>
-                                        <button
-                                            className="action-icon-btn delete"
-                                            onClick={() => openDeleteConfirm(campaign)}
-                                            data-tooltip={language === 'th' ? 'ลบ' : 'Delete'}
-                                        >
-                                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                                <polyline points="3 6 5 6 21 6" />
-                                                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                                                <line x1="10" y1="11" x2="10" y2="17" />
-                                                <line x1="14" y1="11" x2="14" y2="17" />
-                                            </svg>
-                                        </button>
-                                    </div>
-
-                                    {/* Status */}
-                                    <div className="event-status-row">
-                                        <span className="status-label">{language === 'th' ? 'สถานะ' : 'Status'}</span>
-                                        <span className={`status-badge ${campaign.status || 'draft'}`}>
-                                            {campaign.status || 'draft'}
-                                        </span>
-                                    </div>
-                                </div>
-                            </div>
-                        ))
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
                     )}
                 </div>
             </div>

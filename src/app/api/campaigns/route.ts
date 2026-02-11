@@ -2,9 +2,15 @@ import { NextRequest, NextResponse } from 'next/server';
 
 const BACKEND_URL = process.env.BACKEND_URL || 'http://3.26.160.149:3001';
 
-export async function GET() {
+export async function GET(request: NextRequest) {
     try {
-        const res = await fetch(`${BACKEND_URL}/campaigns`, {
+        const { searchParams } = new URL(request.url);
+        const query = new URLSearchParams();
+        const search = searchParams.get('search');
+        if (search) query.set('search', search);
+        const qs = query.toString();
+        const url = `${BACKEND_URL}/campaigns${qs ? `?${qs}` : ''}`;
+        const res = await fetch(url, {
             headers: {
                 'Content-Type': 'application/json',
             },

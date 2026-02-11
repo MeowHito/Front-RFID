@@ -5,11 +5,40 @@ import { useLanguage } from '@/lib/language-context';
 import { useAuth } from '@/lib/auth-context';
 import { useState, useRef, useEffect } from 'react';
 
+interface FeaturedCampaign {
+    _id: string;
+    name: string;
+    uuid?: string;
+}
+
 export default function AdminHeader() {
     const { language, setLanguage } = useLanguage();
     const { user, logout } = useAuth();
     const [profileOpen, setProfileOpen] = useState(false);
+    const [featured, setFeatured] = useState<FeaturedCampaign | null>(null);
     const dropdownRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        async function loadFeatured() {
+            try {
+                const res = await fetch('/api/campaigns/featured', { cache: 'no-store' });
+                if (res.ok) {
+                    const data = await res.json();
+                    setFeatured(data && data._id ? data : null);
+                }
+            } catch (_) {
+                setFeatured(null);
+            }
+        }
+        loadFeatured();
+        const onFeaturedUpdated = () => loadFeatured();
+        window.addEventListener('admin-featured-updated', onFeaturedUpdated);
+        const interval = setInterval(loadFeatured, 30000);
+        return () => {
+            window.removeEventListener('admin-featured-updated', onFeaturedUpdated);
+            clearInterval(interval);
+        };
+    }, []);
 
     useEffect(() => {
         function handleClickOutside(event: MouseEvent) {
@@ -21,15 +50,29 @@ export default function AdminHeader() {
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
 
+    const eventIdShort = featured ? String(featured._id).slice(-6) : null;
+    const displayEventName = featured
+        ? featured.name
+        : (language === 'th' ? 'ยังไม่ได้เลือกกิจกรรม' : 'No event selected');
+
     return (
         <header className="admin-header">
             <div className="header-left-group">
                 <Link href="/" className="brand-logo">
-                    ACTION <span className="">ADMIN</span>
+                    ACTION <span className="brand-highlight">ADMIN</span>
                 </Link>
                 <div className="header-divider"></div>
                 <div className="active-event-display">
-                    <span className="event-name-header">RFID Timing Manager</span>
+                    {eventIdShort != null && (
+                        <span className="event-id-badge">{eventIdShort}</span>
+                    )}
+                    <span className="event-name-header">{displayEventName}</span>
+                    <Link href="/admin/events" className="header-btn-change" title={language === 'th' ? 'เปลี่ยนกิจกรรม' : 'Change event'}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path d="M7 17L17 7M17 7H7M17 7V17" />
+                        </svg>
+                        {language === 'th' ? 'เปลี่ยน' : 'Change'}
+                    </Link>
                 </div>
             </div>
 
