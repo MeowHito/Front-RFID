@@ -36,7 +36,7 @@ const menuSections: MenuSection[] = [
         items: [
             { href: '/admin/categories', label: 'ประเภทการแข่งขัน', labelEn: 'Race Categories', icon: 'layer-group' },
             { href: '/admin/checkpoints', label: 'จัดการจุด Checkpoint', labelEn: 'Manage Checkpoints', icon: 'map-location-dot' },
-            { href: '/admin/checkpoints/create', label: 'เพิ่มจุด Checkpoint', labelEn: 'Add Checkpoint', icon: 'circle-plus', iconColor: '#00a65a' },
+            { href: '/admin/checkpoints/create', label: 'เส้นทาง & Mapping', labelEn: 'Route & Mapping', icon: 'map-location-dot', iconColor: '#00a65a' },
         ]
     },
     {

@@ -718,6 +718,39 @@
     left: 16px;
 }
 
+/* Table inputs for Route & Mapping */
+.table-input {
+    width: 100%;
+    padding: 4px 8px;
+    border: 1px solid #ddd;
+    border-radius: 3px;
+    font-family: inherit;
+    font-size: 13px;
+    text-align: center;
+}
+.table-input:focus {
+    border-color: #3c8dbc;
+    outline: none;
+    box-shadow: 0 0 3px rgba(60,141,188,0.2);
+}
+.table-select {
+    width: 100%;
+    padding: 4px 5px;
+    border: 1px solid #ddd;
+    border-radius: 3px;
+    font-family: inherit;
+    font-size: 12px;
+    cursor: pointer;
+}
+.badge-dist {
+    background: #eee;
+    padding: 2px 6px;
+    border-radius: 10px;
+    font-size: 10px;
+    font-weight: bold;
+    color: #555;
+}
+
 /* ==================== */
 /* Form Styles */
 /* ==================== */
