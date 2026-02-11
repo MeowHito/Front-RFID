@@ -367,7 +367,7 @@
 .admin-body {
     display: flex;
     flex: 1;
-    overflow: hidden;
+    min-height: calc(100vh - 50px);
 }
 
 /* ==================== */
@@ -383,9 +383,7 @@
     flex-direction: column;
     padding-top: 0;
     flex-shrink: 0;
-    height: calc(100vh - 50px);
-    position: sticky;
-    top: 50px;
+    min-height: calc(100vh - 50px);
 }
 
 /* Legacy sidebar compat */
@@ -398,9 +396,7 @@
     flex-direction: column;
     padding-top: 0;
     flex-shrink: 0;
-    height: calc(100vh - 50px);
-    position: sticky;
-    top: 50px;
+    min-height: calc(100vh - 50px);
 }
 
 .sidebar-profile {

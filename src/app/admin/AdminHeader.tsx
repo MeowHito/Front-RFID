@@ -59,7 +59,7 @@ export default function AdminHeader() {
         <header className="admin-header">
             <div className="header-left-group">
                 <Link href="/" className="brand-logo">
-                    ACTION <span className="brand-highlight">ADMIN</span>
+                    ACTION <span className="text-blue-500">ADMIN</span>
                 </Link>
                 <div className="header-divider"></div>
                 <div className="active-event-display">

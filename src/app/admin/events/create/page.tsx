@@ -252,13 +252,10 @@ function CreateEventForm() {
                 { label: 'อีเวนท์', labelEn: 'Events', href: '/admin/events' },
                 { label: isEdit ? 'แก้ไขกิจกรรม' : 'สร้างกิจกรรมใหม่', labelEn: isEdit ? 'Edit Event' : 'Create New Event' }
             ]}
-            pageTitle={language === 'th'
-                ? (isEdit ? 'แก้ไขข้อมูลกิจกรรม' : 'กรอกข้อมูลเพื่อสร้างกิจกรรมใหม่ในระบบ')
-                : (isEdit ? 'Edit event details' : 'Fill in the details to create a new event')
-            }
         >
-            {/* Page Header */}
-            <div className="create-event-header">
+            <div className="admin-card">
+                {/* Page Header */}
+                <div className="create-event-header">
                 <h1 className="create-event-title">
                     {language === 'th'
                         ? (isEdit ? 'แก้ไขกิจกรรม' : 'สร้างกิจกรรมใหม่')
@@ -281,10 +278,10 @@ function CreateEventForm() {
                         }
                     </button>
                 </div>
-            </div>
+                </div>
 
-            {/* Card 1: Images & Media (Warning/Yellow) */}
-            <div className="ce-card ce-card-warning">
+                {/* Card 1: Images & Media (Warning/Yellow) */}
+                <div className="ce-card ce-card-warning">
                 <div className="ce-card-header">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#f39c12" strokeWidth="2">
                         <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
@@ -322,8 +319,8 @@ function CreateEventForm() {
                 </div>
             </div>
 
-            {/* Card 2: General Info (Info/Blue) */}
-            <div className="ce-card ce-card-info">
+                {/* Card 2: General Info (Info/Blue) */}
+                <div className="ce-card ce-card-info">
                 <div className="ce-card-header">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#00c0ef" strokeWidth="2">
                         <circle cx="12" cy="12" r="10" />
@@ -398,8 +395,8 @@ function CreateEventForm() {
                 </div>
             </div>
 
-            {/* Card 3: Distance Table (Success/Green) */}
-            <div className="ce-card ce-card-success">
+                {/* Card 3: Distance Table (Success/Green) */}
+                <div className="ce-card ce-card-success">
                 <div className="ce-card-header" style={{ justifyContent: 'space-between' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#00a65a" strokeWidth="2">
@@ -539,8 +536,8 @@ function CreateEventForm() {
                 </div>
             </div>
 
-            {/* Card 4: Organizer (Danger/Red) */}
-            <div className="ce-card ce-card-danger">
+                {/* Card 4: Organizer (Danger/Red) */}
+                <div className="ce-card ce-card-danger">
                 <div className="ce-card-header">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#dd4b39" strokeWidth="2">
                         <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
@@ -610,26 +607,27 @@ function CreateEventForm() {
                 </div>
             </div>
 
-            {/* Toast */}
-            {toastMessage && (
-                <div className="toast-container">
-                    <div className="toast toast-success">
-                        <span className="toast-icon">✓</span>
-                        <span className="toast-message">{toastMessage}</span>
+                {/* Toast */}
+                {toastMessage && (
+                    <div className="toast-container">
+                        <div className="toast toast-success">
+                            <span className="toast-icon">✓</span>
+                            <span className="toast-message">{toastMessage}</span>
+                        </div>
                     </div>
-                </div>
-            )}
+                )}
 
-            {/* Image Crop Modal */}
-            <ImageCropModal
-                isOpen={cropModalOpen}
-                imageSrc={rawImage}
-                onCrop={(croppedDataUrl) => {
-                    setForm(prev => ({ ...prev, pictureUrl: croppedDataUrl }));
-                    setCropModalOpen(false);
-                }}
-                onCancel={() => setCropModalOpen(false)}
-            />
+                {/* Image Crop Modal */}
+                <ImageCropModal
+                    isOpen={cropModalOpen}
+                    imageSrc={rawImage}
+                    onCrop={(croppedDataUrl) => {
+                        setForm(prev => ({ ...prev, pictureUrl: croppedDataUrl }));
+                        setCropModalOpen(false);
+                    }}
+                    onCancel={() => setCropModalOpen(false)}
+                />
+            </div>
         </AdminLayout>
     );
 }
