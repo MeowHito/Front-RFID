@@ -54,30 +54,25 @@ export default function ManageCheckpointsPage() {
 
     const hasUnsavedChanges = dirtyIds.size > 0 || newRows.length > 0;
 
-    // Load campaigns
+    // Load campaigns and featured in parallel (one less round-trip)
     useEffect(() => {
-        fetch('/api/campaigns', { cache: 'no-store' })
-            .then(res => res.json())
-            .then(json => {
+        let cancelled = false;
+        Promise.all([
+            fetch('/api/campaigns', { cache: 'no-store' }).then(r => r.json()),
+            fetch('/api/campaigns/featured', { cache: 'no-store' }).then(r => r.ok ? r.json() : null),
+        ])
+            .then(([json, featured]) => {
+                if (cancelled) return;
                 const list = Array.isArray(json) ? json : json?.data || [];
                 setCampaigns(list);
-            })
-            .catch(() => setCampaigns([]))
-            .finally(() => setLoading(false));
-    }, []);
-
-    // Auto-select featured campaign (starred event) when opening the page
-    useEffect(() => {
-        if (!campaigns.length || selectedCampaignId) return;
-        fetch('/api/campaigns/featured', { cache: 'no-store' })
-            .then(res => res.ok ? res.json() : null)
-            .then(data => {
-                if (data && data._id && campaigns.some(c => c._id === data._id)) {
-                    setSelectedCampaignId(data._id);
+                if (featured?._id && list.some((c: Campaign) => c._id === featured._id)) {
+                    setSelectedCampaignId(featured._id);
                 }
             })
-            .catch(() => undefined);
-    }, [campaigns, selectedCampaignId]);
+            .catch(() => { if (!cancelled) setCampaigns([]); })
+            .finally(() => { if (!cancelled) setLoading(false); });
+        return () => { cancelled = true; };
+    }, []);
 
     // Load checkpoints when campaign changes
     useEffect(() => {
