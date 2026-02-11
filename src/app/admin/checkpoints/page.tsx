@@ -48,6 +48,19 @@ export default function ManageCheckpointsPage() {
             .finally(() => setLoading(false));
     }, []);
 
+    // Auto-select featured campaign (starred event) when opening the page
+    useEffect(() => {
+        if (!campaigns.length || selectedCampaignId) return;
+        fetch('/api/campaigns/featured', { cache: 'no-store' })
+            .then(res => res.ok ? res.json() : null)
+            .then(data => {
+                if (data && data._id && campaigns.some(c => c._id === data._id)) {
+                    setSelectedCampaignId(data._id);
+                }
+            })
+            .catch(() => undefined);
+    }, [campaigns, selectedCampaignId]);
+
     // Load checkpoints when campaign changes
     useEffect(() => {
         if (!selectedCampaignId) return;

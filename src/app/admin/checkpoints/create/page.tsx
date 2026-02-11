@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { useLanguage } from '@/lib/language-context';
 import AdminLayout from '../../AdminLayout';
 import '../../admin.css';
+import { useRouter } from 'next/navigation';
 
 interface RaceCategory {
     name: string;
@@ -33,6 +34,7 @@ const TYPE_OPTIONS = ['rfid', 'manual', 'start', 'finish'];
 
 export default function CreateCheckpointPage() {
     const { language } = useLanguage();
+    const router = useRouter();
     const [campaigns, setCampaigns] = useState<Campaign[]>([]);
     const [selectedCampaignId, setSelectedCampaignId] = useState<string>('');
     const [selectedCategoryName, setSelectedCategoryName] = useState<string>('');
@@ -56,16 +58,35 @@ export default function CreateCheckpointPage() {
         setTimeout(() => setToast(null), 3000);
     };
 
-    // Load campaigns
+    // Load campaigns and auto-select featured one if exists
     useEffect(() => {
-        fetch('/api/campaigns', { cache: 'no-store' })
-            .then(res => res.json())
-            .then(json => {
+        async function loadCampaignsAndSelectFeatured() {
+            try {
+                const res = await fetch('/api/campaigns', { cache: 'no-store' });
+                const json = await res.json();
                 const list = Array.isArray(json) ? json : json?.data || [];
                 setCampaigns(list);
-            })
-            .catch(() => setCampaigns([]))
-            .finally(() => setLoading(false));
+
+                // Try to select featured campaign as default
+                try {
+                    const fRes = await fetch('/api/campaigns/featured', { cache: 'no-store' });
+                    if (fRes.ok) {
+                        const featured = await fRes.json();
+                        if (featured && featured._id && list.some((c: Campaign) => c._id === featured._id)) {
+                            setSelectedCampaignId(featured._id);
+                            setStep('category');
+                        }
+                    }
+                } catch {
+                    // ignore auto-select error
+                }
+            } catch {
+                setCampaigns([]);
+            } finally {
+                setLoading(false);
+            }
+        }
+        loadCampaignsAndSelectFeatured();
     }, []);
 
     // Load existing checkpoints from DB
@@ -287,8 +308,7 @@ export default function CreateCheckpointPage() {
     };
 
     const handleCancel = () => {
-        setStep('category');
-        setCheckpoints([]);
+        router.push('/admin/checkpoints');
     };
 
     const newCount = checkpoints.filter(cp => cp.isNew).length;

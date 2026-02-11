@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useLanguage } from '@/lib/language-context';
 import AdminLayout from '../../../AdminLayout';
 
@@ -57,14 +57,23 @@ interface CheckpointMapping {
 export default function CategoriesPage() {
     const params = useParams();
     const router = useRouter();
+    const searchParams = useSearchParams();
     const eventId = params.eventId as string;
     const { language } = useLanguage();
+    const initialTabParam = searchParams.get('tab');
+    const initialTab: 'events' | 'checkpoints' | 'addCheckpoints' =
+        initialTabParam === 'checkpoints'
+            ? 'checkpoints'
+            : initialTabParam === 'addCheckpoints'
+                ? 'addCheckpoints'
+                : 'events';
+
     const [campaign, setCampaign] = useState<CampaignData | null>(null);
     const [events, setEvents] = useState<EventData[]>([]);
     const [checkpoints, setCheckpoints] = useState<Checkpoint[]>([]);
     const [checkpointMappings, setCheckpointMappings] = useState<CheckpointMapping[]>([]);
     const [loading, setLoading] = useState(true);
-    const [activeTab, setActiveTab] = useState<'events' | 'checkpoints' | 'addCheckpoints'>('events');
+    const [activeTab, setActiveTab] = useState<'events' | 'checkpoints' | 'addCheckpoints'>(initialTab);
     const [toastMessage, setToastMessage] = useState<string | null>(null);
     const [draggedIdx, setDraggedIdx] = useState<number | null>(null);
 

@@ -8,32 +8,31 @@ import '../admin.css';
 interface Category {
     name: string;
     distance?: string;
-    type?: string;
+    raceType?: string;
 }
 
 interface Campaign {
     _id: string;
     name: string;
     categories?: Category[];
-    startDate?: string;
-    endDate?: string;
 }
 
 export default function CategoriesPage() {
     const { language } = useLanguage();
-    const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+    const [campaign, setCampaign] = useState<Campaign | null>(null);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        fetch('/api/campaigns')
-            .then(res => res.json())
+        fetch('/api/campaigns/featured', { cache: 'no-store' })
+            .then(res => res.ok ? res.json() : null)
             .then(data => {
-                const list = Array.isArray(data) ? data : data.data || [];
-                setCampaigns(list);
+                setCampaign(data && data._id ? data : null);
             })
-            .catch(() => setCampaigns([]))
+            .catch(() => setCampaign(null))
             .finally(() => setLoading(false));
     }, []);
+
+    const hasCategories = !!campaign && Array.isArray(campaign.categories) && campaign.categories.length > 0;
 
     return (
         <AdminLayout>
@@ -46,58 +45,60 @@ export default function CategoriesPage() {
             <div className="content-box">
                 <div className="events-header">
                     <h2 className="events-title">
-                        {language === 'th' ? 'ประเภทการแข่งขันทั้งหมด' : 'All Race Categories'}
+                        {language === 'th' ? 'ประเภทการแข่งขัน (Event หลัก)' : 'Race Categories (Featured Event)'}
                     </h2>
                 </div>
 
                 {loading ? (
-                    <div className="events-loading">Loading...</div>
-                ) : campaigns.length === 0 ? (
-                    <div className="events-empty">{language === 'th' ? 'ไม่มีข้อมูล' : 'No data'}</div>
+                    <div className="events-loading">
+                        {language === 'th' ? 'กำลังโหลด...' : 'Loading...'}
+                    </div>
+                ) : !campaign ? (
+                    <div className="events-empty" style={{ padding: 40, textAlign: 'center' }}>
+                        <p style={{ marginBottom: 8 }}>
+                            {language === 'th'
+                                ? 'ยังไม่ได้เลือกกิจกรรมหลัก'
+                                : 'No featured event selected yet.'}
+                        </p>
+                        <p style={{ fontSize: 13, color: '#777' }}>
+                            {language === 'th'
+                                ? 'กรุณาไปที่หน้า \"จัดการอีเวนต์\" และกดไอคอนถ้วยรางวัลสีทอง เพื่อเลือกกิจกรรมหลัก'
+                                : 'Go to \"Manage Events\" and click the gold trophy icon to choose the main event.'}
+                        </p>
+                    </div>
+                ) : !hasCategories ? (
+                    <div className="events-empty" style={{ padding: 40, textAlign: 'center' }}>
+                        <p style={{ marginBottom: 8 }}>
+                            {language === 'th'
+                                ? `กิจกรรม \"${campaign.name}\" ยังไม่มีประเภทการแข่งขัน`
+                                : `Event \"${campaign.name}\" has no race categories yet.`}
+                        </p>
+                    </div>
                 ) : (
                     <table className="data-table">
                         <thead>
                             <tr>
                                 <th>#</th>
-                                <th>{language === 'th' ? 'ชื่ออีเวนต์' : 'Event'}</th>
                                 <th>{language === 'th' ? 'ชื่อประเภท' : 'Category Name'}</th>
                                 <th>{language === 'th' ? 'ระยะทาง' : 'Distance'}</th>
                                 <th>{language === 'th' ? 'ประเภท' : 'Type'}</th>
                             </tr>
                         </thead>
                         <tbody>
-                            {(() => {
-                                let idx = 0;
-                                return campaigns.flatMap((c) =>
-                                    (c.categories || []).map((cat, catIdx) => {
-                                        idx++;
-                                        return (
-                                            <tr key={`${c._id}-${catIdx}-${cat.name}`}>
-                                                <td style={{ textAlign: 'center' }}>{idx}</td>
-                                                <td>{c.name}</td>
-                                                <td style={{ fontWeight: 500 }}>{cat.name}</td>
-                                                <td style={{ textAlign: 'center' }}>
-                                                    {cat.distance ? (
-                                                        <span className="dist-badge bg-blue">{cat.distance}</span>
-                                                    ) : '-'}
-                                                </td>
-                                                <td style={{ textAlign: 'center' }}>
-                                                    {cat.type ? (
-                                                        <span className={`badge-${cat.type === 'test' ? 'test' : 'real'}`}>{cat.type}</span>
-                                                    ) : '-'}
-                                                </td>
-                                            </tr>
-                                        );
-                                    })
-                                );
-                            })()}
-                            {campaigns.every(c => !c.categories || c.categories.length === 0) && (
-                                <tr>
-                                    <td colSpan={5} style={{ textAlign: 'center', padding: 30, color: '#999' }}>
-                                        {language === 'th' ? 'ไม่มีประเภทการแข่งขัน' : 'No categories found'}
+                            {campaign.categories!.map((cat, idx) => (
+                                <tr key={`${campaign._id}-${idx}-${cat.name}`}>
+                                    <td style={{ textAlign: 'center' }}>{idx + 1}</td>
+                                    <td style={{ fontWeight: 500 }}>{cat.name}</td>
+                                    <td style={{ textAlign: 'center' }}>
+                                        {cat.distance ? (
+                                            <span className="dist-badge bg-blue">{cat.distance}</span>
+                                        ) : '-'}
+                                    </td>
+                                    <td style={{ textAlign: 'center' }}>
+                                        {cat.raceType || '-'}
                                     </td>
                                 </tr>
-                            )}
+                            ))}
                         </tbody>
                     </table>
                 )}
