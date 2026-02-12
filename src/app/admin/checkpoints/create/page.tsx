@@ -356,7 +356,15 @@ export default function RouteMappingPage() {
                                 <thead>
                                     <tr>
                                         <th style={{ width: 50 }}>{language === 'th' ? 'ลำดับ' : 'Order'}</th>
-                                        <th style={{ textAlign: 'left' }}>{language === 'th' ? 'ชื่อจุด (Checkpoint Name)' : 'Checkpoint Name'}</th>
+                                        <th
+                                            style={{
+                                                textAlign: 'left',
+                                                width: 260,
+                                                maxWidth: 260,
+                                            }}
+                                        >
+                                            {language === 'th' ? 'ชื่อจุด (Checkpoint Name)' : 'Checkpoint Name'}
+                                        </th>
                                         <th style={{ width: 90 }}>{language === 'th' ? 'KM สะสม' : 'Cumul. KM'}</th>
                                         <th style={{ width: 120 }}>{language === 'th' ? 'ประเภท' : 'Type'}</th>
                                         <th style={{ width: 160 }}>Cut-off</th>
@@ -377,7 +385,18 @@ export default function RouteMappingPage() {
                                         return (
                                             <tr key={cp._id} style={isDirty ? { background: '#fffbeb' } : undefined}>
                                                 <td style={{ textAlign: 'center' }}>{cp.orderNum}</td>
-                                                <td style={{ textAlign: 'left' }}>{cp.name}</td>
+                                                <td
+                                                    style={{
+                                                        textAlign: 'left',
+                                                        maxWidth: 260,
+                                                        whiteSpace: 'nowrap',
+                                                        overflow: 'hidden',
+                                                        textOverflow: 'ellipsis',
+                                                    }}
+                                                    title={cp.name}
+                                                >
+                                                    {cp.name}
+                                                </td>
                                                 <td>
                                                     <input
                                                         type="number"
