@@ -52,7 +52,44 @@ export default function ManageCheckpointsPage() {
     interface NewRow { localId: string; name: string; type: string; orderNum: number; description: string; readerId: string; active: boolean; }
     const [newRows, setNewRows] = useState<NewRow[]>([]);
 
+    // Drag-and-drop reorder state
+    const [dragIdx, setDragIdx] = useState<number | null>(null);
+    const [overIdx, setOverIdx] = useState<number | null>(null);
+
     const hasUnsavedChanges = dirtyIds.size > 0 || newRows.length > 0;
+
+    // Drag-and-drop handlers
+    const handleDragStart = (idx: number) => {
+        setDragIdx(idx);
+    };
+    const handleDragOver = (e: React.DragEvent, idx: number) => {
+        e.preventDefault();
+        setOverIdx(idx);
+    };
+    const handleDrop = (idx: number) => {
+        if (dragIdx === null || dragIdx === idx) {
+            setDragIdx(null);
+            setOverIdx(null);
+            return;
+        }
+        const sorted = checkpoints.slice().sort((a, b) => a.orderNum - b.orderNum);
+        const [moved] = sorted.splice(dragIdx, 1);
+        sorted.splice(idx, 0, moved);
+        // Reassign orderNum for all and mark them dirty
+        const updated = sorted.map((cp, i) => ({ ...cp, orderNum: i + 1 }));
+        setCheckpoints(updated);
+        setDirtyIds(prev => {
+            const next = new Set(prev);
+            updated.forEach(cp => next.add(cp._id));
+            return next;
+        });
+        setDragIdx(null);
+        setOverIdx(null);
+    };
+    const handleDragEnd = () => {
+        setDragIdx(null);
+        setOverIdx(null);
+    };
 
     // Load campaigns and featured in parallel (one less round-trip)
     useEffect(() => {
@@ -401,69 +438,6 @@ export default function ManageCheckpointsPage() {
                 ) : (
                     <>
                         {/* Campaign selected - show checkpoints */}
-                            <div className="events-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                                <button
-                                    onClick={handleBackToCampaigns}
-                                    style={{
-                                        padding: '6px 12px', borderRadius: 6, border: '1px solid #d1d5db',
-                                        background: '#fff', color: '#374151', fontSize: 13, cursor: 'pointer',
-                                        fontWeight: 600,
-                                    }}
-                                >
-                                    ← {language === 'th' ? 'กลับ' : 'Back'}
-                                </button>
-                                <h2 className="events-title" style={{ margin: 0 }}>
-                                    {(() => { const c = getSelectedCampaign(); return language === 'th' ? (c?.nameTh || c?.name) : (c?.nameEn || c?.name); })()}
-                                    {' - '}
-                                    {language === 'th' ? 'จุด Checkpoint' : 'Checkpoints'} ({checkpoints.length})
-                                </h2>
-                            </div>
-                            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                                <button
-                                    onClick={handleAddNewRow}
-                                    style={{
-                                        padding: '6px 16px', borderRadius: 6, border: 'none',
-                                        background: '#22c55e', color: '#fff', fontWeight: 600, fontSize: 14,
-                                        cursor: 'pointer',
-                                    }}
-                                >
-                                    + {language === 'th' ? 'เพิ่มจุด' : 'Add'}
-                                </button>
-                                <button
-                                    onClick={handleSaveAll}
-                                    disabled={saving || !hasUnsavedChanges}
-                                    style={{
-                                        display: 'inline-flex', alignItems: 'center', gap: 6,
-                                        padding: '6px 20px', borderRadius: 6, border: 'none',
-                                        background: hasUnsavedChanges ? '#3b82f6' : '#9ca3af',
-                                        color: '#fff', fontWeight: 600, fontSize: 14,
-                                        cursor: hasUnsavedChanges ? 'pointer' : 'not-allowed',
-                                        opacity: saving ? 0.7 : 1,
-                                        transition: 'all 0.2s',
-                                    }}
-                                >
-                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                        <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
-                                        <polyline points="17 21 17 13 7 13 7 21" />
-                                        <polyline points="7 3 7 8 15 8" />
-                                    </svg>
-                                    {saving
-                                        ? (language === 'th' ? 'กำลังบันทึก...' : 'Saving...')
-                                        : (language === 'th' ? 'บันทึก' : 'Save')
-                                    }
-                                    {hasUnsavedChanges && !saving && (
-                                        <span style={{
-                                            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                                            background: '#fff', color: '#3b82f6', borderRadius: '50%',
-                                            width: 18, height: 18, fontSize: 11, fontWeight: 700,
-                                        }}>
-                                            {dirtyIds.size + newRows.length}
-                                        </span>
-                                    )}
-                                </button>
-                            </div>
-                        </div>
 
                         {loadingCheckpoints ? (
                             <div className="events-loading">Loading...</div>
@@ -567,9 +541,22 @@ export default function ManageCheckpointsPage() {
                                                 const badge = getModeBadgeStyle(isEditing ? editModeType : displayMode);
                                                 const isDirty = dirtyIds.has(cp._id);
                                                 return (
-                                                    <tr key={cp._id} style={isDirty ? { background: '#fffbeb' } : undefined}>
+                                                    <tr
+                                                        key={cp._id}
+                                                        draggable
+                                                        onDragStart={() => handleDragStart(idx)}
+                                                        onDragOver={(e) => handleDragOver(e, idx)}
+                                                        onDrop={() => handleDrop(idx)}
+                                                        onDragEnd={handleDragEnd}
+                                                        style={{
+                                                            ...(isDirty ? { background: '#fffbeb' } : {}),
+                                                            ...(overIdx === idx && dragIdx !== null && dragIdx !== idx ? { borderTop: '2px solid #3b82f6' } : {}),
+                                                            opacity: dragIdx === idx ? 0.5 : 1,
+                                                            transition: 'opacity 0.15s',
+                                                        }}
+                                                    >
                                                         <td>
-                                                            <span style={{ color: '#ccc', fontSize: 16 }}>⋮⋮</span>
+                                                            <span style={{ color: '#aaa', fontSize: 16, cursor: 'grab' }}>⋮⋮</span>
                                                         </td>
                                                         <td>{isEditing ? (
                                                             <input

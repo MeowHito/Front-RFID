@@ -31,6 +31,7 @@ interface Checkpoint {
     readerId?: string;
     kmCumulative?: number;
     cutoffTime?: string;
+    distanceMappings?: string[];
 }
 
 export default function RouteMappingPage() {
@@ -111,6 +112,20 @@ export default function RouteMappingPage() {
         markDirty(cpId);
     };
 
+    // Toggle distance mapping for a checkpoint
+    const toggleDistanceMapping = (cpId: string, categoryName: string) => {
+        setCheckpoints(prev => prev.map(cp => {
+            if (cp._id !== cpId) return cp;
+            const current = cp.distanceMappings || [];
+            const has = current.includes(categoryName);
+            const updated = has
+                ? current.filter(n => n !== categoryName)
+                : [...current, categoryName];
+            return { ...cp, distanceMappings: updated };
+        }));
+        markDirty(cpId);
+    };
+
     // Toggle active
     const handleToggle = (cp: Checkpoint) => {
         updateCheckpoint(cp._id, { active: !cp.active });
@@ -153,6 +168,7 @@ export default function RouteMappingPage() {
                         readerId: cp.readerId,
                         kmCumulative: cp.kmCumulative,
                         cutoffTime: cp.cutoffTime,
+                        distanceMappings: cp.distanceMappings || [],
                     }),
                 });
                 if (!res.ok) throw new Error('Failed');
@@ -176,22 +192,27 @@ export default function RouteMappingPage() {
         }
     };
 
-    // Pull checkpoint from manage page (navigate)
+    // Navigate to checkpoint management page
     const handlePullFromInventory = () => {
         window.location.href = '/admin/checkpoints';
     };
 
-    // Get which categories share a checkpoint (all in the campaign share it)
-    const getSharedBadges = (cp: Checkpoint) => {
-        if (!categories.length) return [];
-        // All checkpoints belong to the campaign, shared across all categories
-        return categories.map(c => c.name);
+    // Check if checkpoint is enabled for the selected category
+    const isEnabledForCategory = (cp: Checkpoint, categoryName: string) => {
+        if (!cp.distanceMappings || cp.distanceMappings.length === 0) {
+            // If no mappings set, default to all enabled
+            return true;
+        }
+        return cp.distanceMappings.includes(categoryName);
     };
 
-    // Cutoff style
-    const getCutoffStyle = (val?: string) => {
-        if (!val || val === '-' || val === '') return { color: '#ccc' };
-        return { color: '#dd4b39', fontWeight: 600 as const };
+    // Get shared badges for a checkpoint
+    const getSharedBadges = (cp: Checkpoint) => {
+        if (!categories.length) return [];
+        if (!cp.distanceMappings || cp.distanceMappings.length === 0) {
+            return categories.map(c => c.name);
+        }
+        return cp.distanceMappings;
     };
 
     const getCampaignDisplayName = () => {
@@ -232,7 +253,7 @@ export default function RouteMappingPage() {
                             display: 'inline-flex', alignItems: 'center', gap: 5,
                         }}
                     >
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 11 12 14 22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></svg>
                         {language === 'th' ? 'จัดการคลัง CP หลัก' : 'Manage CP Inventory'}
                     </button>
                     <button
@@ -247,9 +268,9 @@ export default function RouteMappingPage() {
                         }}
                     >
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                            <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
-                            <polyline points="17 21 17 13 7 13 7 21"/>
-                            <polyline points="7 3 7 8 15 8"/>
+                            <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+                            <polyline points="17 21 17 13 7 13 7 21" />
+                            <polyline points="7 3 7 8 15 8" />
                         </svg>
                         {saving ? (language === 'th' ? 'กำลังบันทึก...' : 'Saving...') : (language === 'th' ? 'บันทึกแผนที่เส้นทาง' : 'Save Route Map')}
                         {hasUnsavedChanges && !saving && (
@@ -304,11 +325,11 @@ export default function RouteMappingPage() {
                                 </select>
                             </div>
                             <button onClick={handleRefresh} className="btn btn-query" style={{ fontSize: 13, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" /></svg>
                                 {language === 'th' ? 'รีเฟรช' : 'Refresh'}
                             </button>
                             <button onClick={handlePullFromInventory} className="btn btn-query" style={{ background: '#3c8dbc', marginLeft: 'auto', fontSize: 13, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="16" /><line x1="8" y1="12" x2="16" y2="12" /></svg>
                                 {language === 'th' ? 'ดึงจุดตรวจจากคลัง' : 'Pull from inventory'}
                             </button>
                         </div>
@@ -338,7 +359,7 @@ export default function RouteMappingPage() {
                                         <th style={{ textAlign: 'left' }}>{language === 'th' ? 'ชื่อจุด (Checkpoint Name)' : 'Checkpoint Name'}</th>
                                         <th style={{ width: 90 }}>{language === 'th' ? 'KM สะสม' : 'Cumul. KM'}</th>
                                         <th style={{ width: 120 }}>{language === 'th' ? 'ประเภท' : 'Type'}</th>
-                                        <th style={{ width: 100 }}>Cut-off</th>
+                                        <th style={{ width: 160 }}>Cut-off</th>
                                         <th style={{ width: 140, textAlign: 'left' }}>{language === 'th' ? 'ระยะร่วม' : 'Shared'}</th>
                                         <th style={{ width: 60 }}>{language === 'th' ? 'ใช้งาน' : 'Active'}</th>
                                         <th style={{ width: 45 }}>{language === 'th' ? 'ลบ' : 'Del'}</th>
@@ -350,13 +371,13 @@ export default function RouteMappingPage() {
                                         const shared = getSharedBadges(cp);
                                         const isStart = cp.type === 'start';
                                         const isFinish = cp.type === 'finish';
-                                        const cutoffStyle = getCutoffStyle(cp.cutoffTime);
+                                        const hasCutoff = cp.cutoffTime && cp.cutoffTime !== '-' && cp.cutoffTime !== '';
                                         const kmHasValue = cp.kmCumulative !== undefined && cp.kmCumulative !== null && cp.kmCumulative > 0;
 
                                         return (
                                             <tr key={cp._id} style={isDirty ? { background: '#fffbeb' } : undefined}>
                                                 <td style={{ textAlign: 'center' }}>{cp.orderNum}</td>
-                                                <td><strong>{cp.name}</strong></td>
+                                                <td style={{ textAlign: 'left' }}>{cp.name}</td>
                                                 <td>
                                                     <input
                                                         type="number"
@@ -373,7 +394,7 @@ export default function RouteMappingPage() {
                                                             borderRadius: 3, fontFamily: 'inherit', fontSize: 13,
                                                             textAlign: 'center',
                                                             color: kmHasValue ? '#3c8dbc' : undefined,
-                                                            fontWeight: kmHasValue ? 700 : undefined,
+                                                            fontWeight: kmHasValue ? 600 : undefined,
                                                         }}
                                                     />
                                                 </td>
@@ -394,44 +415,55 @@ export default function RouteMappingPage() {
                                                 </td>
                                                 <td>
                                                     {isStart ? (
-                                                        <input
-                                                            type="text"
-                                                            disabled
-                                                            value="-"
-                                                            style={{
-                                                                width: '100%', padding: '4px 8px', border: '1px solid #ddd',
-                                                                borderRadius: 3, fontSize: 13, textAlign: 'center',
-                                                                background: '#f9f9f9', color: '#ccc',
-                                                            }}
-                                                        />
+                                                        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                                            <span style={{ color: '#ccc', fontSize: 13 }}>—</span>
+                                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ccc" strokeWidth="2"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>
+                                                        </div>
                                                     ) : (
                                                         <input
-                                                            type="time"
+                                                            type="datetime-local"
                                                             className="table-input"
                                                             defaultValue={cp.cutoffTime || ''}
                                                             key={`cutoff-${cp._id}-${cp.cutoffTime}`}
                                                             onChange={e => updateCheckpoint(cp._id, { cutoffTime: e.target.value })}
                                                             style={{
-                                                                width: '100%', padding: '4px 8px', border: '1px solid #ddd',
-                                                                borderRadius: 3, fontFamily: 'inherit', fontSize: 13,
-                                                                textAlign: 'center',
-                                                                ...cutoffStyle,
+                                                                width: '100%', padding: '3px 4px', border: '1px solid #ddd',
+                                                                borderRadius: 3, fontFamily: 'inherit', fontSize: 12,
+                                                                color: hasCutoff ? '#dd4b39' : '#999',
+                                                                fontWeight: hasCutoff ? 600 : 400,
                                                             }}
                                                         />
                                                     )}
                                                 </td>
                                                 <td style={{ overflow: 'hidden' }}>
-                                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}>
-                                                        {shared.length > 0 ? shared.map((name, i) => (
-                                                            <span key={i} style={{
-                                                                background: '#eee', padding: '1px 5px', borderRadius: 8,
-                                                                fontSize: 9, fontWeight: 700, color: '#555',
-                                                                whiteSpace: 'nowrap', maxWidth: 60, overflow: 'hidden', textOverflow: 'ellipsis',
-                                                                display: 'inline-block',
-                                                            }}>
-                                                                {name}
-                                                            </span>
-                                                        )) : (
+                                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
+                                                        {categories.length > 0 ? categories.map((cat, i) => {
+                                                            const isEnabled = isEnabledForCategory(cp, cat.name);
+                                                            return (
+                                                                <span
+                                                                    key={i}
+                                                                    onClick={() => toggleDistanceMapping(cp._id, cat.name)}
+                                                                    style={{
+                                                                        background: isEnabled ? '#e0f2fe' : '#f3f4f6',
+                                                                        color: isEnabled ? '#0369a1' : '#9ca3af',
+                                                                        padding: '1px 6px', borderRadius: 8,
+                                                                        fontSize: 9, fontWeight: 600,
+                                                                        whiteSpace: 'nowrap',
+                                                                        display: 'inline-block',
+                                                                        cursor: 'pointer',
+                                                                        border: isEnabled ? '1px solid #7dd3fc' : '1px solid #e5e7eb',
+                                                                        transition: 'all 0.15s',
+                                                                        userSelect: 'none',
+                                                                    }}
+                                                                    title={isEnabled
+                                                                        ? (language === 'th' ? `คลิกเพื่อปิดใช้งาน ${cat.name}` : `Click to disable ${cat.name}`)
+                                                                        : (language === 'th' ? `คลิกเพื่อเปิดใช้งาน ${cat.name}` : `Click to enable ${cat.name}`)
+                                                                    }
+                                                                >
+                                                                    {cat.name}
+                                                                </span>
+                                                            );
+                                                        }) : (
                                                             <span style={{ color: '#ccc', fontSize: 11 }}>-</span>
                                                         )}
                                                     </div>
@@ -446,9 +478,9 @@ export default function RouteMappingPage() {
                                                 <td style={{ textAlign: 'center' }}>
                                                     {(isStart || isFinish) ? (
                                                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ccc" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                                            <circle cx="12" cy="12" r="10"/>
-                                                            <line x1="15" y1="9" x2="9" y2="15"/>
-                                                            <line x1="9" y1="9" x2="15" y2="15"/>
+                                                            <circle cx="12" cy="12" r="10" />
+                                                            <line x1="15" y1="9" x2="9" y2="15" />
+                                                            <line x1="9" y1="9" x2="15" y2="15" />
                                                         </svg>
                                                     ) : (
                                                         <button
@@ -460,8 +492,8 @@ export default function RouteMappingPage() {
                                                             title={language === 'th' ? 'ลบ' : 'Delete'}
                                                         >
                                                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                                                <polyline points="3 6 5 6 21 6"/>
-                                                                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                                                                <polyline points="3 6 5 6 21 6" />
+                                                                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
                                                             </svg>
                                                         </button>
                                                     )}
@@ -479,13 +511,14 @@ export default function RouteMappingPage() {
                             border: '1px dashed #d2d6de', borderRadius: 3,
                         }}>
                             <h4 style={{ fontSize: 12, marginBottom: 8, color: '#3c8dbc', display: 'flex', alignItems: 'center', gap: 6 }}>
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 18h6M10 22h4M12 2a7 7 0 0 1 4 12.9V17a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1v-2.1A7 7 0 0 1 12 2z"/></svg>
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 18h6M10 22h4M12 2a7 7 0 0 1 4 12.9V17a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1v-2.1A7 7 0 0 1 12 2z" /></svg>
                                 {language === 'th' ? 'วิธีจัดการจุดตรวจร่วมกัน (Mapping System)' : 'How Checkpoint Mapping Works'}
                             </h4>
                             <ul style={{ fontSize: 11, color: '#666', marginLeft: 20, lineHeight: 1.6 }}>
                                 <li><strong>KM {language === 'th' ? 'สะสม' : 'Cumulative'}:</strong> {language === 'th' ? 'ระบุระยะทางแยกตามระยะทางจริงที่นักวิ่งประเภทนี้ต้องวิ่งถึงจุดตรวจนั้นๆ' : 'Specify the actual distance runners in this category must cover to reach this checkpoint'}</li>
                                 <li><strong>{language === 'th' ? 'ประเภทจุด' : 'Point Type'}:</strong> {language === 'th' ? 'กำหนดบทบาทของ CP เฉพาะระยะนี้ (เช่น ระยะสั้นอาจใช้ CP กลางป่าเป็นจุด FINISH ได้)' : 'Define the role of each CP for this distance (e.g., a mid-course CP can serve as FINISH for shorter distances)'}</li>
                                 <li><strong>Cut-off:</strong> {language === 'th' ? 'กำหนดเวลาตัดตัวนักกีฬา หากเกินเวลานี้สถานะนักกีฬาจะถูกเปลี่ยนเป็น DNF/OTL อัตโนมัติ' : 'Set the cutoff time. Athletes exceeding this time will be automatically marked DNF/OTL'}</li>
+                                <li><strong>{language === 'th' ? 'ระยะร่วม' : 'Shared Distances'}:</strong> {language === 'th' ? 'คลิกที่ชื่อระยะเพื่อเปิด/ปิดการใช้งานจุดนี้สำหรับระยะนั้นๆ แต่ละระยะสามารถเลือกใช้จุดต่างกันได้' : 'Click distance names to toggle checkpoint usage per distance. Each distance can use different checkpoints.'}</li>
                             </ul>
                         </div>
                     </>
