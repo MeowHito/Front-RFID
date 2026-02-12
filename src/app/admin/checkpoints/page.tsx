@@ -376,7 +376,7 @@ export default function ManageCheckpointsPage() {
                 <a href="/admin/events" className="breadcrumb-link">Admin</a>
                 <span className="breadcrumb-separator">/</span>
                 <span className="breadcrumb-current">
-                    {language === 'th' ? 'จัดการจุด Checkpoint' : 'Manage Checkpoints'}
+                    {language === 'th' ? 'สร้างจุด Checkpoint' : 'Manage Checkpoints'}
                 </span>
             </div>
 
