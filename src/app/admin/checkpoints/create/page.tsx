@@ -46,6 +46,10 @@ export default function RouteMappingPage() {
     const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
     const [dirtyIds, setDirtyIds] = useState<Set<string>>(new Set());
 
+    // Popup state for selecting checkpoints from inventory per distance
+    const [pickerOpen, setPickerOpen] = useState(false);
+    const [pickerSelectedIds, setPickerSelectedIds] = useState<Set<string>>(new Set());
+
     const hasUnsavedChanges = dirtyIds.size > 0;
 
     const showToast = (message: string, type: 'success' | 'error') => {
@@ -192,28 +196,79 @@ export default function RouteMappingPage() {
         }
     };
 
-    // Navigate to checkpoint management page
-    const handlePullFromInventory = () => {
+    // Navigate to checkpoint management page (master inventory)
+    const handleManageInventory = () => {
         window.location.href = '/admin/checkpoints';
+    };
+
+    // Open popup to pick checkpoints from inventory for the current distance
+    const handleOpenPicker = () => {
+        if (!selectedCategory) {
+            showToast(language === 'th' ? 'กรุณาเลือกระยะทางก่อน' : 'Please select a distance first', 'error');
+            return;
+        }
+        const initial = new Set(
+            checkpoints
+                .filter(cp => isEnabledForCategory(cp, selectedCategory))
+                .map(cp => cp._id)
+        );
+        setPickerSelectedIds(initial);
+        setPickerOpen(true);
+    };
+
+    const handleTogglePickerItem = (cpId: string) => {
+        setPickerSelectedIds(prev => {
+            const next = new Set(prev);
+            if (next.has(cpId)) next.delete(cpId); else next.add(cpId);
+            return next;
+        });
+    };
+
+    const handleApplyPickerSelection = () => {
+        if (!selectedCategory) {
+            setPickerOpen(false);
+            return;
+        }
+        const currentCategory = selectedCategory;
+        const changedIds: string[] = [];
+
+        setCheckpoints(prev =>
+            prev.map(cp => {
+                const current = cp.distanceMappings || [];
+                const has = current.includes(currentCategory);
+                const shouldHave = pickerSelectedIds.has(cp._id);
+                if (has === shouldHave) return cp;
+                changedIds.push(cp._id);
+                const updated = shouldHave
+                    ? [...current, currentCategory]
+                    : current.filter(name => name !== currentCategory);
+                return { ...cp, distanceMappings: updated };
+            })
+        );
+
+        if (changedIds.length > 0) {
+            setDirtyIds(prev => {
+                const next = new Set(prev);
+                changedIds.forEach(id => next.add(id));
+                return next;
+            });
+        }
+
+        setPickerOpen(false);
     };
 
     // Check if checkpoint is enabled for the selected category
     const isEnabledForCategory = (cp: Checkpoint, categoryName: string) => {
         if (!cp.distanceMappings || cp.distanceMappings.length === 0) {
-            // If no mappings set, default to all enabled
-            return true;
+            // If no mappings set, treat as not used for any distance
+            return false;
         }
         return cp.distanceMappings.includes(categoryName);
     };
 
-    // Get shared badges for a checkpoint
-    const getSharedBadges = (cp: Checkpoint) => {
-        if (!categories.length) return [];
-        if (!cp.distanceMappings || cp.distanceMappings.length === 0) {
-            return categories.map(c => c.name);
-        }
-        return cp.distanceMappings;
-    };
+    const visibleCheckpoints = checkpoints.filter(cp =>
+        selectedCategory ? isEnabledForCategory(cp, selectedCategory) : false
+    );
 
     const getCampaignDisplayName = () => {
         if (!campaign) return '';
@@ -246,7 +301,7 @@ export default function RouteMappingPage() {
                 </div>
                 <div style={{ display: 'flex', gap: 5 }}>
                     <button
-                        onClick={handlePullFromInventory}
+                        onClick={handleManageInventory}
                         style={{
                             padding: '6px 12px', borderRadius: 3, border: '1px solid #ccc',
                             background: '#fff', color: '#333', cursor: 'pointer', fontSize: 13,
@@ -283,6 +338,187 @@ export default function RouteMappingPage() {
                     </button>
                 </div>
             </div>
+
+            {/* Inventory picker popup */}
+            {pickerOpen && (
+                <div
+                    style={{
+                        position: 'fixed',
+                        inset: 0,
+                        background: 'rgba(0,0,0,0.35)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        zIndex: 9998,
+                    }}
+                    onClick={() => setPickerOpen(false)}
+                >
+                    <div
+                        onClick={e => e.stopPropagation()}
+                        style={{
+                            width: 'min(700px, 95vw)',
+                            maxHeight: '80vh',
+                            background: '#fff',
+                            borderRadius: 10,
+                            boxShadow: '0 18px 45px rgba(0,0,0,0.25)',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            overflow: 'hidden',
+                        }}
+                    >
+                        <div style={{ padding: '12px 18px', borderBottom: '1px solid #e5e7eb', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <div>
+                                <h3 style={{ margin: 0, fontSize: 15, fontWeight: 600 }}>
+                                    {language === 'th' ? 'เลือกจุด Checkpoint จากคลัง' : 'Select Checkpoints from Inventory'}
+                                </h3>
+                                <p style={{ margin: '2px 0 0', fontSize: 12, color: '#6b7280' }}>
+                                    {selectedCategory
+                                        ? (language === 'th'
+                                            ? `ระยะที่กำลังตั้งค่า: ${selectedCategory}`
+                                            : `Configuring distance: ${selectedCategory}`)
+                                        : (language === 'th'
+                                            ? 'กรุณาเลือกระยะทางด้านบนก่อน'
+                                            : 'Please select a distance above')}
+                                </p>
+                            </div>
+                            <button
+                                onClick={() => setPickerOpen(false)}
+                                style={{
+                                    border: 'none',
+                                    background: 'transparent',
+                                    cursor: 'pointer',
+                                    color: '#6b7280',
+                                    padding: 4,
+                                }}
+                            >
+                                ✕
+                            </button>
+                        </div>
+
+                        <div style={{ padding: '10px 18px', borderBottom: '1px solid #e5e7eb', fontSize: 12, color: '#6b7280' }}>
+                            {language === 'th'
+                                ? 'ติ๊กเลือกจุดจากคลัง CP หลักที่ต้องการใช้ในระยะนี้ แล้วกดบันทึกด้านล่าง'
+                                : 'Tick checkpoints from the master inventory to use for this distance, then click Save below.'}
+                        </div>
+
+                        <div style={{ padding: '10px 18px', overflowY: 'auto' }}>
+                            {checkpoints.length === 0 ? (
+                                <div style={{ textAlign: 'center', padding: 30 }}>
+                                    <p style={{ fontSize: 40, margin: '0 0 8px' }}>📍</p>
+                                    <p style={{ fontSize: 13, color: '#6b7280', margin: 0 }}>
+                                        {language === 'th'
+                                            ? 'ยังไม่มีจุด Checkpoint ในคลังสำหรับกิจกรรมนี้'
+                                            : 'No checkpoints in inventory for this campaign yet.'}
+                                    </p>
+                                    <button
+                                        onClick={handleManageInventory}
+                                        style={{
+                                            marginTop: 12,
+                                            padding: '7px 18px',
+                                            borderRadius: 6,
+                                            border: 'none',
+                                            background: '#3b82f6',
+                                            color: '#fff',
+                                            fontSize: 13,
+                                            fontWeight: 600,
+                                            cursor: 'pointer',
+                                        }}
+                                    >
+                                        {language === 'th' ? 'ไปเพิ่มจุดในคลัง' : 'Go to checkpoint inventory'}
+                                    </button>
+                                </div>
+                            ) : (
+                                <table className="data-table" style={{ width: '100%', tableLayout: 'fixed' }}>
+                                    <thead>
+                                        <tr>
+                                            <th style={{ width: 40 }} />
+                                            <th style={{ width: 60 }}>{language === 'th' ? 'ลำดับ' : 'Order'}</th>
+                                            <th style={{ textAlign: 'left' }}>{language === 'th' ? 'ชื่อจุด' : 'Checkpoint'}</th>
+                                            <th style={{ width: 90 }}>{language === 'th' ? 'ประเภท' : 'Type'}</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {checkpoints
+                                            .slice()
+                                            .sort((a, b) => a.orderNum - b.orderNum)
+                                            .map(cp => {
+                                                const checked = pickerSelectedIds.has(cp._id);
+                                                return (
+                                                    <tr key={cp._id} style={checked ? { background: '#eff6ff' } : undefined}>
+                                                        <td style={{ textAlign: 'center' }}>
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={checked}
+                                                                onChange={() => handleTogglePickerItem(cp._id)}
+                                                            />
+                                                        </td>
+                                                        <td style={{ textAlign: 'center', fontSize: 12 }}>{cp.orderNum}</td>
+                                                        <td
+                                                            style={{
+                                                                textAlign: 'left',
+                                                                maxWidth: 320,
+                                                                whiteSpace: 'nowrap',
+                                                                overflow: 'hidden',
+                                                                textOverflow: 'ellipsis',
+                                                                fontSize: 13,
+                                                                fontWeight: 500,
+                                                            }}
+                                                            title={cp.name}
+                                                        >
+                                                            {cp.name}
+                                                        </td>
+                                                        <td style={{ textAlign: 'center', fontSize: 11 }}>
+                                                            {cp.type?.toUpperCase?.() || '-'}
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            })}
+                                    </tbody>
+                                </table>
+                            )}
+                        </div>
+
+                        <div style={{ padding: '10px 18px', borderTop: '1px solid #e5e7eb', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <span style={{ fontSize: 12, color: '#6b7280' }}>
+                                {language === 'th'
+                                    ? `เลือกแล้ว ${pickerSelectedIds.size} จุด`
+                                    : `Selected ${pickerSelectedIds.size} checkpoint(s)`}
+                            </span>
+                            <div style={{ display: 'flex', gap: 8 }}>
+                                <button
+                                    onClick={() => setPickerOpen(false)}
+                                    style={{
+                                        padding: '6px 14px',
+                                        borderRadius: 6,
+                                        border: '1px solid #d1d5db',
+                                        background: '#fff',
+                                        fontSize: 13,
+                                        cursor: 'pointer',
+                                        color: '#4b5563',
+                                    }}
+                                >
+                                    {language === 'th' ? 'ยกเลิก' : 'Cancel'}
+                                </button>
+                                <button
+                                    onClick={handleApplyPickerSelection}
+                                    style={{
+                                        padding: '6px 16px',
+                                        borderRadius: 6,
+                                        border: 'none',
+                                        background: '#16a34a',
+                                        color: '#fff',
+                                        fontSize: 13,
+                                        fontWeight: 600,
+                                        cursor: 'pointer',
+                                    }}
+                                >
+                                    {language === 'th' ? 'บันทึกการเลือก' : 'Save selection'}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             <div className="content-box">
                 {loading ? (
@@ -328,7 +564,7 @@ export default function RouteMappingPage() {
                                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" /></svg>
                                 {language === 'th' ? 'รีเฟรช' : 'Refresh'}
                             </button>
-                            <button onClick={handlePullFromInventory} className="btn btn-query" style={{ background: '#3c8dbc', marginLeft: 'auto', fontSize: 13, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                            <button onClick={handleOpenPicker} className="btn btn-query" style={{ background: '#3c8dbc', marginLeft: 'auto', fontSize: 13, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
                                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="16" /><line x1="8" y1="12" x2="16" y2="12" /></svg>
                                 {language === 'th' ? 'ดึงจุดตรวจจากคลัง' : 'Pull from inventory'}
                             </button>
@@ -343,12 +579,37 @@ export default function RouteMappingPage() {
                                 <p style={{ color: '#999' }}>
                                     {language === 'th' ? 'ยังไม่มีจุด Checkpoint สำหรับกิจกรรมนี้' : 'No checkpoints for this event'}
                                 </p>
-                                <button onClick={handlePullFromInventory} style={{
+                                <button onClick={handleManageInventory} style={{
                                     display: 'inline-block', marginTop: 12, padding: '8px 20px',
                                     borderRadius: 6, background: '#3c8dbc', color: '#fff', border: 'none',
                                     fontWeight: 600, cursor: 'pointer',
                                 }}>
                                     {language === 'th' ? 'ไปเพิ่มจุด Checkpoint' : 'Add Checkpoints'}
+                                </button>
+                            </div>
+                        ) : visibleCheckpoints.length === 0 ? (
+                            <div style={{ textAlign: 'center', padding: 40 }}>
+                                <p style={{ fontSize: 48, marginBottom: 12 }}>🧭</p>
+                                <p style={{ color: '#999', marginBottom: 8 }}>
+                                    {language === 'th'
+                                        ? 'ระยะนี้ยังไม่ได้เลือกจุด Checkpoint จากคลัง'
+                                        : 'No checkpoints selected from inventory for this distance yet.'}
+                                </p>
+                                <button
+                                    onClick={handleOpenPicker}
+                                    style={{
+                                        display: 'inline-block',
+                                        marginTop: 4,
+                                        padding: '8px 20px',
+                                        borderRadius: 6,
+                                        background: '#3c8dbc',
+                                        color: '#fff',
+                                        border: 'none',
+                                        fontWeight: 600,
+                                        cursor: 'pointer',
+                                    }}
+                                >
+                                    {language === 'th' ? 'ดึงจุดตรวจจากคลัง' : 'Pull from inventory'}
                                 </button>
                             </div>
                         ) : (
@@ -373,9 +634,8 @@ export default function RouteMappingPage() {
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {checkpoints.map((cp) => {
+                                    {visibleCheckpoints.map((cp) => {
                                         const isDirty = dirtyIds.has(cp._id);
-                                        const shared = getSharedBadges(cp);
                                         const isStart = cp.type === 'start';
                                         const isFinish = cp.type === 'finish';
                                         const hasCutoff = cp.cutoffTime && cp.cutoffTime !== '-' && cp.cutoffTime !== '';
@@ -497,13 +757,13 @@ export default function RouteMappingPage() {
                         }}>
                             <h4 style={{ fontSize: 12, marginBottom: 8, color: '#3c8dbc', display: 'flex', alignItems: 'center', gap: 6 }}>
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 18h6M10 22h4M12 2a7 7 0 0 1 4 12.9V17a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1v-2.1A7 7 0 0 1 12 2z" /></svg>
-                                {language === 'th' ? 'วิธีจัดการจุดตรวจร่วมกัน (Mapping System)' : 'How Checkpoint Mapping Works'}
+                                {language === 'th' ? 'วิธีตั้งค่า Checkpoint Mapping' : 'How Checkpoint Mapping Works'}
                             </h4>
                             <ul style={{ fontSize: 11, color: '#666', marginLeft: 20, lineHeight: 1.6 }}>
-                                <li><strong>KM {language === 'th' ? 'สะสม' : 'Cumulative'}:</strong> {language === 'th' ? 'ระบุระยะทางแยกตามระยะทางจริงที่นักวิ่งประเภทนี้ต้องวิ่งถึงจุดตรวจนั้นๆ' : 'Specify the actual distance runners in this category must cover to reach this checkpoint'}</li>
-                                <li><strong>{language === 'th' ? 'ประเภทจุด' : 'Point Type'}:</strong> {language === 'th' ? 'กำหนดบทบาทของ CP เฉพาะระยะนี้ (เช่น ระยะสั้นอาจใช้ CP กลางป่าเป็นจุด FINISH ได้)' : 'Define the role of each CP for this distance (e.g., a mid-course CP can serve as FINISH for shorter distances)'}</li>
-                                <li><strong>Cut-off:</strong> {language === 'th' ? 'กำหนดเวลาตัดตัวนักกีฬา หากเกินเวลานี้สถานะนักกีฬาจะถูกเปลี่ยนเป็น DNF/OTL อัตโนมัติ' : 'Set the cutoff time. Athletes exceeding this time will be automatically marked DNF/OTL'}</li>
-                                <li><strong>{language === 'th' ? 'ระยะร่วม' : 'Shared Distances'}:</strong> {language === 'th' ? 'คลิกที่ชื่อระยะเพื่อเปิด/ปิดการใช้งานจุดนี้สำหรับระยะนั้นๆ แต่ละระยะสามารถเลือกใช้จุดต่างกันได้' : 'Click distance names to toggle checkpoint usage per distance. Each distance can use different checkpoints.'}</li>
+                                <li><strong>KM {language === 'th' ? 'สะสม' : 'Cumulative'}:</strong> {language === 'th' ? 'ระบุระยะทางจริงที่นักวิ่งของระยะนี้ต้องวิ่งถึงจุดตรวจนั้น ๆ' : 'Specify the actual distance runners in this category must cover to reach this checkpoint.'}</li>
+                                <li><strong>{language === 'th' ? 'ประเภทจุด' : 'Point Type'}:</strong> {language === 'th' ? 'กำหนดบทบาทของ CP เช่น START / CHECKPOINT / FINISH' : 'Define the role of each CP such as START / CHECKPOINT / FINISH.'}</li>
+                                <li><strong>Cut-off:</strong> {language === 'th' ? 'กำหนดเวลาตัดตัวนักกีฬา หากเกินเวลานี้สถานะนักกีฬาจะถูกเปลี่ยนเป็น DNF/OTL อัตโนมัติ' : 'Set the cutoff time. Athletes exceeding this time will be automatically marked DNF/OTL.'}</li>
+                                <li><strong>{language === 'th' ? 'ดึงจุดจากคลัง' : 'Pull from inventory'}:</strong> {language === 'th' ? 'เลือกระยะทางด้านบน แล้วกดปุ่ม "ดึงจุดตรวจจากคลัง" เพื่อเลือกจุดที่ต้องการใช้ในระยะนั้น จากนั้นจึงบันทึกแผนที่เส้นทาง' : 'Select a distance above, click "Pull from inventory" to choose which checkpoints to use for that distance, then save the route map.'}</li>
                             </ul>
                         </div>
                     </>
