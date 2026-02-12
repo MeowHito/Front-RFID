@@ -368,7 +368,6 @@ export default function RouteMappingPage() {
                                         <th style={{ width: 90 }}>{language === 'th' ? 'KM สะสม' : 'Cumul. KM'}</th>
                                         <th style={{ width: 120 }}>{language === 'th' ? 'ประเภท' : 'Type'}</th>
                                         <th style={{ width: 160 }}>Cut-off</th>
-                                        <th style={{ width: 140, textAlign: 'left' }}>{language === 'th' ? 'ระยะร่วม' : 'Shared'}</th>
                                         <th style={{ width: 60 }}>{language === 'th' ? 'ใช้งาน' : 'Active'}</th>
                                         <th style={{ width: 45 }}>{language === 'th' ? 'ลบ' : 'Del'}</th>
                                     </tr>
@@ -453,39 +452,6 @@ export default function RouteMappingPage() {
                                                             }}
                                                         />
                                                     )}
-                                                </td>
-                                                <td style={{ overflow: 'hidden' }}>
-                                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
-                                                        {categories.length > 0 ? categories.map((cat, i) => {
-                                                            const isEnabled = isEnabledForCategory(cp, cat.name);
-                                                            return (
-                                                                <span
-                                                                    key={i}
-                                                                    onClick={() => toggleDistanceMapping(cp._id, cat.name)}
-                                                                    style={{
-                                                                        background: isEnabled ? '#e0f2fe' : '#f3f4f6',
-                                                                        color: isEnabled ? '#0369a1' : '#9ca3af',
-                                                                        padding: '1px 6px', borderRadius: 8,
-                                                                        fontSize: 9, fontWeight: 600,
-                                                                        whiteSpace: 'nowrap',
-                                                                        display: 'inline-block',
-                                                                        cursor: 'pointer',
-                                                                        border: isEnabled ? '1px solid #7dd3fc' : '1px solid #e5e7eb',
-                                                                        transition: 'all 0.15s',
-                                                                        userSelect: 'none',
-                                                                    }}
-                                                                    title={isEnabled
-                                                                        ? (language === 'th' ? `คลิกเพื่อปิดใช้งาน ${cat.name}` : `Click to disable ${cat.name}`)
-                                                                        : (language === 'th' ? `คลิกเพื่อเปิดใช้งาน ${cat.name}` : `Click to enable ${cat.name}`)
-                                                                    }
-                                                                >
-                                                                    {cat.name}
-                                                                </span>
-                                                            );
-                                                        }) : (
-                                                            <span style={{ color: '#ccc', fontSize: 11 }}>-</span>
-                                                        )}
-                                                    </div>
                                                 </td>
                                                 <td style={{ textAlign: 'center' }}>
                                                     <div
