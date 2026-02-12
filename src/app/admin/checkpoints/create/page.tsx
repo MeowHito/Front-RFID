@@ -50,6 +50,16 @@ export default function RouteMappingPage() {
     const [pickerOpen, setPickerOpen] = useState(false);
     const [pickerSelectedIds, setPickerSelectedIds] = useState<Set<string>>(new Set());
 
+    // Drag-and-drop reorder state (per distance view)
+    const [dragIdx, setDragIdx] = useState<number | null>(null);
+    const [overIdx, setOverIdx] = useState<number | null>(null);
+
+    // Delete confirmation modal state
+    const [deleteConfirm, setDeleteConfirm] = useState<{ open: boolean; checkpoint: Checkpoint | null }>({
+        open: false,
+        checkpoint: null,
+    });
+
     const hasUnsavedChanges = dirtyIds.size > 0;
 
     const showToast = (message: string, type: 'success' | 'error') => {
@@ -135,9 +145,17 @@ export default function RouteMappingPage() {
         updateCheckpoint(cp._id, { active: !cp.active });
     };
 
-    // Delete checkpoint
-    const handleDelete = async (cp: Checkpoint) => {
-        if (!confirm(language === 'th' ? `ต้องการลบ "${cp.name}" ?` : `Delete "${cp.name}"?`)) return;
+    // Open delete confirmation modal
+    const handleDeleteClick = (cp: Checkpoint) => {
+        setDeleteConfirm({ open: true, checkpoint: cp });
+    };
+
+    // Confirm delete and execute
+    const handleDeleteConfirm = async () => {
+        if (!deleteConfirm.checkpoint) return;
+        const cp = deleteConfirm.checkpoint;
+        setDeleteConfirm({ open: false, checkpoint: null });
+        
         try {
             const res = await fetch(`/api/checkpoints/${cp._id}`, { method: 'DELETE' });
             if (!res.ok) throw new Error('Failed');
@@ -148,51 +166,101 @@ export default function RouteMappingPage() {
         }
     };
 
+    // Cancel delete
+    const handleDeleteCancel = () => {
+        setDeleteConfirm({ open: false, checkpoint: null });
+    };
+
     // Save all dirty checkpoints
     const handleSaveAll = async () => {
         if (!hasUnsavedChanges) {
             showToast(language === 'th' ? 'ไม่มีการเปลี่ยนแปลง' : 'No changes', 'success');
             return;
         }
+
+        // Validate orderNum uniqueness for all checkpoints (not just visible)
+        const allCheckpoints = [...checkpoints];
+        const orderNums = new Map<number, string>();
+        for (const cp of allCheckpoints) {
+            if (orderNums.has(cp.orderNum)) {
+                const existingId = orderNums.get(cp.orderNum);
+                if (existingId !== cp._id) {
+                    showToast(
+                        language === 'th'
+                            ? `ลำดับ ${cp.orderNum} ซ้ำกัน กรุณาแก้ไขก่อนบันทึก`
+                            : `Order number ${cp.orderNum} is duplicated. Please fix before saving.`,
+                        'error'
+                    );
+                    setSaving(false);
+                    return;
+                }
+            }
+            orderNums.set(cp.orderNum, cp._id);
+        }
+
+        if (dirtyIds.size === 0) {
+            showToast(language === 'th' ? 'ไม่มีการเปลี่ยนแปลง' : 'No changes', 'success');
+            setSaving(false);
+            return;
+        }
+
         setSaving(true);
         let ok = 0, fail = 0;
-        for (const cpId of dirtyIds) {
+        const savePromises = Array.from(dirtyIds).map(async (cpId) => {
             const cp = checkpoints.find(c => c._id === cpId);
-            if (!cp) continue;
+            if (!cp) return { success: false };
             try {
+                const payload = {
+                    name: cp.name,
+                    type: cp.type,
+                    orderNum: cp.orderNum,
+                    active: cp.active,
+                    description: cp.description,
+                    readerId: cp.readerId || '',
+                    kmCumulative: cp.kmCumulative,
+                    cutoffTime: cp.cutoffTime,
+                    distanceMappings: cp.distanceMappings || [],
+                };
                 const res = await fetch(`/api/checkpoints/${cpId}`, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        name: cp.name,
-                        type: cp.type,
-                        orderNum: cp.orderNum,
-                        active: cp.active,
-                        description: cp.description,
-                        readerId: cp.readerId,
-                        kmCumulative: cp.kmCumulative,
-                        cutoffTime: cp.cutoffTime,
-                        distanceMappings: cp.distanceMappings || [],
-                    }),
+                    body: JSON.stringify(payload),
                 });
-                if (!res.ok) throw new Error('Failed');
-                ok++;
-            } catch { fail++; }
-        }
+                if (!res.ok) {
+                    const errorText = await res.text();
+                    console.error(`Save failed for ${cpId}:`, errorText, payload);
+                    return { success: false };
+                }
+                return { success: true };
+            } catch (err) {
+                console.error(`Error saving checkpoint ${cpId}:`, err);
+                return { success: false };
+            }
+        });
+
+        const results = await Promise.all(savePromises);
+        ok = results.filter(r => r.success).length;
+        fail = results.filter(r => !r.success).length;
         setSaving(false);
         setDirtyIds(new Set());
+
+        // Reload checkpoints from backend after save
+        if (campaign?._id) {
+            try {
+                const res = await fetch(`/api/checkpoints/campaign/${campaign._id}`, { cache: 'no-store' });
+                const json = await res.json();
+                const list: Checkpoint[] = Array.isArray(json) ? json : [];
+                list.sort((a, b) => a.orderNum - b.orderNum);
+                setCheckpoints(list);
+            } catch (err) {
+                console.error('Error reloading checkpoints:', err);
+            }
+        }
+
         if (fail === 0) {
             showToast(language === 'th' ? `บันทึกสำเร็จ ${ok} รายการ` : `Saved ${ok} item(s)`, 'success');
         } else {
             showToast(language === 'th' ? `สำเร็จ ${ok}, ล้มเหลว ${fail}` : `Saved ${ok}, failed ${fail}`, 'error');
-        }
-    };
-
-    // Refresh from DB
-    const handleRefresh = () => {
-        if (campaign?._id) {
-            if (hasUnsavedChanges && !confirm(language === 'th' ? 'มีการเปลี่ยนแปลงที่ยังไม่บันทึก ต้องการรีเฟรชหรือไม่?' : 'Unsaved changes will be lost. Refresh?')) return;
-            loadCheckpoints(campaign._id);
         }
     };
 
@@ -224,37 +292,119 @@ export default function RouteMappingPage() {
         });
     };
 
-    const handleApplyPickerSelection = () => {
+    const handleApplyPickerSelection = async () => {
         if (!selectedCategory) {
             setPickerOpen(false);
             return;
         }
         const currentCategory = selectedCategory;
         const changedIds: string[] = [];
+        const updates: Array<{ cp: Checkpoint; newMappings: string[] }> = [];
 
-        setCheckpoints(prev =>
-            prev.map(cp => {
-                const current = cp.distanceMappings || [];
-                const has = current.includes(currentCategory);
-                const shouldHave = pickerSelectedIds.has(cp._id);
-                if (has === shouldHave) return cp;
+        // Calculate which checkpoints need to be updated
+        checkpoints.forEach(cp => {
+            const current = cp.distanceMappings || [];
+            const has = current.includes(currentCategory);
+            const shouldHave = pickerSelectedIds.has(cp._id);
+            if (has !== shouldHave) {
                 changedIds.push(cp._id);
                 const updated = shouldHave
                     ? [...current, currentCategory]
                     : current.filter(name => name !== currentCategory);
-                return { ...cp, distanceMappings: updated };
-            })
-        );
+                updates.push({ cp, newMappings: updated });
+            }
+        });
 
-        if (changedIds.length > 0) {
-            setDirtyIds(prev => {
-                const next = new Set(prev);
-                changedIds.forEach(id => next.add(id));
-                return next;
-            });
+        if (changedIds.length === 0) {
+            showToast(
+                language === 'th'
+                    ? 'ไม่มีการเปลี่ยนแปลง'
+                    : 'No changes',
+                'success'
+            );
+            setPickerOpen(false);
+            return;
         }
 
-        setPickerOpen(false);
+        // Show saving state
+        setSaving(true);
+        showToast(
+            language === 'th'
+                ? `กำลังบันทึก ${changedIds.length} จุด...`
+                : `Saving ${changedIds.length} checkpoint(s)...`,
+            'success'
+        );
+
+        // Save all changed checkpoints to database immediately
+        let ok = 0;
+        let fail = 0;
+
+        const savePromises = updates.map(async ({ cp, newMappings }) => {
+            try {
+                const payload = {
+                    name: cp.name,
+                    type: cp.type,
+                    orderNum: cp.orderNum,
+                    active: cp.active,
+                    description: cp.description,
+                    readerId: cp.readerId || '',
+                    kmCumulative: cp.kmCumulative,
+                    cutoffTime: cp.cutoffTime,
+                    distanceMappings: newMappings,
+                };
+                const res = await fetch(`/api/checkpoints/${cp._id}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload),
+                });
+                if (!res.ok) {
+                    const errorText = await res.text();
+                    console.error(`Save failed for ${cp._id}:`, errorText);
+                    return { success: false };
+                }
+                return { success: true };
+            } catch (err) {
+                console.error(`Error saving checkpoint ${cp._id}:`, err);
+                return { success: false };
+            }
+        });
+
+        const results = await Promise.all(savePromises);
+        ok = results.filter(r => r.success).length;
+        fail = results.filter(r => !r.success).length;
+
+        setSaving(false);
+        setPickerOpen(false); // Close popup after saving
+
+        // Reload checkpoints from backend to get fresh data
+        if (campaign?._id) {
+            try {
+                const res = await fetch(`/api/checkpoints/campaign/${campaign._id}`, { cache: 'no-store' });
+                const json = await res.json();
+                const list: Checkpoint[] = Array.isArray(json) ? json : [];
+                list.sort((a, b) => a.orderNum - b.orderNum);
+                setCheckpoints(list);
+                setDirtyIds(new Set()); // Clear dirty flags since we just saved
+            } catch (err) {
+                console.error('Error reloading checkpoints:', err);
+            }
+        }
+
+        if (fail === 0) {
+            showToast(
+                language === 'th'
+                    ? `บันทึกสำเร็จ ${ok} จุด`
+                    : `Saved ${ok} checkpoint(s) successfully`,
+                'success'
+            );
+        } else {
+            showToast(
+                language === 'th'
+                    ? `บันทึกสำเร็จ ${ok} จุด, ล้มเหลว ${fail} จุด`
+                    : `Saved ${ok} checkpoint(s), failed ${fail} checkpoint(s)`,
+                'error'
+            );
+        }
     };
 
     // Check if checkpoint is enabled for the selected category
@@ -269,6 +419,69 @@ export default function RouteMappingPage() {
     const visibleCheckpoints = checkpoints.filter(cp =>
         selectedCategory ? isEnabledForCategory(cp, selectedCategory) : false
     );
+
+    // Drag-and-drop handlers for visible checkpoints
+    const handleDragStart = (idx: number) => {
+        setDragIdx(idx);
+    };
+
+    const handleDragOver = (e: any, idx: number) => {
+        e.preventDefault();
+        setOverIdx(idx);
+    };
+
+    const handleDrop = (idx: number) => {
+        if (dragIdx === null || dragIdx === idx) {
+            setDragIdx(null);
+            setOverIdx(null);
+            return;
+        }
+
+        const visibleSorted = [...visibleCheckpoints].sort((a, b) => a.orderNum - b.orderNum);
+        const fromId = visibleSorted[dragIdx]?._id;
+        const toId = visibleSorted[idx]?._id;
+
+        if (!fromId || !toId) {
+            setDragIdx(null);
+            setOverIdx(null);
+            return;
+        }
+
+        const allSorted = [...checkpoints].sort((a, b) => a.orderNum - b.orderNum);
+        const fromIndex = allSorted.findIndex(cp => cp._id === fromId);
+        const toIndex = allSorted.findIndex(cp => cp._id === toId);
+
+        if (fromIndex === -1 || toIndex === -1) {
+            setDragIdx(null);
+            setOverIdx(null);
+            return;
+        }
+
+        const [moved] = allSorted.splice(fromIndex, 1);
+        allSorted.splice(toIndex, 0, moved);
+
+        const updated = allSorted.map((cp, i) => ({ ...cp, orderNum: i + 1 }));
+        setCheckpoints(updated);
+        setDirtyIds(prev => {
+            const next = new Set(prev);
+            visibleSorted.forEach(cp => next.add(cp._id));
+            return next;
+        });
+
+        setDragIdx(null);
+        setOverIdx(null);
+    };
+
+    const handleDragEnd = () => {
+        setDragIdx(null);
+        setOverIdx(null);
+    };
+
+    const getModeBadgeStyle = (mode: 'rfid' | 'manual') => {
+        return mode === 'manual'
+            ? { bg: '#fef3c7', text: '#b45309', border: '#fbbf24' }
+            : { bg: '#e0f2fe', text: '#0369a1', border: '#38bdf8' };
+    };
 
     const getCampaignDisplayName = () => {
         if (!campaign) return '';
@@ -289,6 +502,82 @@ export default function RouteMappingPage() {
                 </div>
             )}
 
+            {/* Delete Confirmation Modal */}
+            {deleteConfirm.open && deleteConfirm.checkpoint && (
+                <div
+                    style={{
+                        position: 'fixed',
+                        inset: 0,
+                        background: 'rgba(0,0,0,0.5)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        zIndex: 10000,
+                    }}
+                    onClick={handleDeleteCancel}
+                >
+                    <div
+                        onClick={e => e.stopPropagation()}
+                        style={{
+                            background: '#fff',
+                            borderRadius: 10,
+                            padding: '24px',
+                            maxWidth: 400,
+                            width: '90%',
+                            boxShadow: '0 10px 40px rgba(0,0,0,0.2)',
+                        }}
+                    >
+                        <h3 style={{ margin: '0 0 12px', fontSize: 18, fontWeight: 600, color: '#333' }}>
+                            {language === 'th' ? 'ยืนยันการลบ' : 'Confirm Delete'}
+                        </h3>
+                        <p style={{ margin: '0 0 20px', fontSize: 14, color: '#666', lineHeight: 1.6 }}>
+                            {language === 'th'
+                                ? `คุณแน่ใจหรือไม่ว่าต้องการลบจุด Checkpoint "${deleteConfirm.checkpoint.name}"?`
+                                : `Are you sure you want to delete checkpoint "${deleteConfirm.checkpoint.name}"?`
+                            }
+                        </p>
+                        <p style={{ margin: '0 0 20px', fontSize: 13, color: '#ef4444', fontWeight: 500 }}>
+                            {language === 'th'
+                                ? '⚠️ การลบนี้ไม่สามารถยกเลิกได้'
+                                : '⚠️ This action cannot be undone'
+                            }
+                        </p>
+                        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+                            <button
+                                onClick={handleDeleteCancel}
+                                style={{
+                                    padding: '8px 20px',
+                                    borderRadius: 6,
+                                    border: '1px solid #d1d5db',
+                                    background: '#fff',
+                                    color: '#4b5563',
+                                    fontSize: 14,
+                                    fontWeight: 500,
+                                    cursor: 'pointer',
+                                }}
+                            >
+                                {language === 'th' ? 'ยกเลิก' : 'Cancel'}
+                            </button>
+                            <button
+                                onClick={handleDeleteConfirm}
+                                style={{
+                                    padding: '8px 20px',
+                                    borderRadius: 6,
+                                    border: 'none',
+                                    background: '#ef4444',
+                                    color: '#fff',
+                                    fontSize: 14,
+                                    fontWeight: 600,
+                                    cursor: 'pointer',
+                                }}
+                            >
+                                {language === 'th' ? 'ลบ' : 'Delete'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* Page header */}
             <div style={{ marginBottom: 15, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexWrap: 'wrap', gap: 10 }}>
                 <div>
@@ -301,26 +590,19 @@ export default function RouteMappingPage() {
                 </div>
                 <div style={{ display: 'flex', gap: 5 }}>
                     <button
-                        onClick={handleManageInventory}
-                        style={{
-                            padding: '6px 12px', borderRadius: 3, border: '1px solid #ccc',
-                            background: '#fff', color: '#333', cursor: 'pointer', fontSize: 13,
-                            display: 'inline-flex', alignItems: 'center', gap: 5,
-                        }}
-                    >
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 11 12 14 22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></svg>
-                        {language === 'th' ? 'จัดการคลัง CP หลัก' : 'Manage CP Inventory'}
-                    </button>
-                    <button
                         onClick={handleSaveAll}
-                        disabled={saving || !hasUnsavedChanges}
+                        disabled={saving || !hasUnsavedChanges || dirtyIds.size === 0}
                         style={{
                             padding: '6px 12px', borderRadius: 3, border: 'none',
-                            background: hasUnsavedChanges ? '#666' : '#999', color: '#fff',
-                            cursor: hasUnsavedChanges ? 'pointer' : 'not-allowed', fontSize: 13,
+                            background: (hasUnsavedChanges && dirtyIds.size > 0) ? '#666' : '#999', color: '#fff',
+                            cursor: (hasUnsavedChanges && dirtyIds.size > 0 && !saving) ? 'pointer' : 'not-allowed', fontSize: 13,
                             display: 'inline-flex', alignItems: 'center', gap: 5,
                             opacity: saving ? 0.7 : 1,
                         }}
+                        title={!hasUnsavedChanges || dirtyIds.size === 0
+                            ? (language === 'th' ? 'ไม่มีข้อมูลที่ต้องบันทึก' : 'No changes to save')
+                            : (language === 'th' ? `บันทึก ${dirtyIds.size} จุด` : `Save ${dirtyIds.size} checkpoint(s)`)
+                        }
                     >
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                             <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
@@ -434,7 +716,7 @@ export default function RouteMappingPage() {
                                             <th style={{ width: 40 }} />
                                             <th style={{ width: 60 }}>{language === 'th' ? 'ลำดับ' : 'Order'}</th>
                                             <th style={{ textAlign: 'left' }}>{language === 'th' ? 'ชื่อจุด' : 'Checkpoint'}</th>
-                                            <th style={{ width: 90 }}>{language === 'th' ? 'ประเภท' : 'Type'}</th>
+                                            <th style={{ width: 120 }}>{language === 'th' ? 'Timing Method' : 'Timing Method'}</th>
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -468,7 +750,9 @@ export default function RouteMappingPage() {
                                                             {cp.name}
                                                         </td>
                                                         <td style={{ textAlign: 'center', fontSize: 11 }}>
-                                                            {cp.type?.toUpperCase?.() || '-'}
+                                                            {(cp.description === 'manual' || cp.description === 'rfid')
+                                                                ? cp.description.toUpperCase()
+                                                                : 'RFID'}
                                                         </td>
                                                     </tr>
                                                 );
@@ -501,18 +785,23 @@ export default function RouteMappingPage() {
                                 </button>
                                 <button
                                     onClick={handleApplyPickerSelection}
+                                    disabled={saving}
                                     style={{
                                         padding: '6px 16px',
                                         borderRadius: 6,
                                         border: 'none',
-                                        background: '#16a34a',
+                                        background: saving ? '#9ca3af' : '#16a34a',
                                         color: '#fff',
                                         fontSize: 13,
                                         fontWeight: 600,
-                                        cursor: 'pointer',
+                                        cursor: saving ? 'not-allowed' : 'pointer',
+                                        opacity: saving ? 0.7 : 1,
                                     }}
                                 >
-                                    {language === 'th' ? 'บันทึกการเลือก' : 'Save selection'}
+                                    {saving
+                                        ? (language === 'th' ? 'กำลังบันทึก...' : 'Saving...')
+                                        : (language === 'th' ? 'บันทึกการเลือก' : 'Save selection')
+                                    }
                                 </button>
                             </div>
                         </div>
@@ -522,19 +811,18 @@ export default function RouteMappingPage() {
 
             <div className="content-box">
                 {loading ? (
-                    <div style={{ textAlign: 'center', padding: 40, color: '#999' }}>Loading...</div>
+                    <div style={{ textAlign: 'center', padding: 30, color: '#999', fontSize: 13 }}>Loading...</div>
                 ) : !campaign ? (
-                    <div style={{ textAlign: 'center', padding: 40 }}>
-                        <p style={{ fontSize: 48, marginBottom: 12 }}>⭐</p>
-                        <p style={{ color: '#999' }}>
+                    <div style={{ padding: 24 }}>
+                        <p style={{ color: '#666', marginBottom: 8, fontSize: 14 }}>
                             {language === 'th'
-                                ? 'กรุณาเลือกกิจกรรมหลัก (กดดาว) ที่หน้าจัดการอีเวนต์ก่อน'
-                                : 'Please select a featured event first from the Events page'}
+                                ? 'ยังไม่ได้เลือกกิจกรรมหลัก กรุณาไปที่หน้าอีเวนต์แล้วกดดาวที่กิจกรรมที่ต้องการตั้งค่า Checkpoint.'
+                                : 'No featured event selected. Please go to the Events page and star the campaign you want to configure checkpoints for.'}
                         </p>
                         <a href="/admin/events" style={{
-                            display: 'inline-block', marginTop: 12, padding: '8px 20px',
+                            display: 'inline-block', marginTop: 4, padding: '6px 16px',
                             borderRadius: 6, background: '#3b82f6', color: '#fff',
-                            fontWeight: 600, textDecoration: 'none',
+                            fontWeight: 600, textDecoration: 'none', fontSize: 13,
                         }}>
                             {language === 'th' ? 'ไปหน้าจัดการอีเวนต์' : 'Go to Events'}
                         </a>
@@ -560,13 +848,9 @@ export default function RouteMappingPage() {
                                     ))}
                                 </select>
                             </div>
-                            <button onClick={handleRefresh} className="btn btn-query" style={{ fontSize: 13, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" /></svg>
-                                {language === 'th' ? 'รีเฟรช' : 'Refresh'}
-                            </button>
                             <button onClick={handleOpenPicker} className="btn btn-query" style={{ background: '#3c8dbc', marginLeft: 'auto', fontSize: 13, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
                                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="16" /><line x1="8" y1="12" x2="16" y2="12" /></svg>
-                                {language === 'th' ? 'ดึงจุดตรวจจากคลัง' : 'Pull from inventory'}
+                                {language === 'th' ? 'ดึงจุด Checkpoint' : 'Pull checkpoints'}
                             </button>
                         </div>
 
@@ -592,7 +876,7 @@ export default function RouteMappingPage() {
                                 <p style={{ fontSize: 48, marginBottom: 12 }}>🧭</p>
                                 <p style={{ color: '#999', marginBottom: 8 }}>
                                     {language === 'th'
-                                        ? 'ระยะนี้ยังไม่ได้เลือกจุด Checkpoint จากคลัง'
+                                        ? 'ระยะนี้ยังไม่ได้ดึงจุด Checkpoint มาใช้งาน'
                                         : 'No checkpoints selected from inventory for this distance yet.'}
                                 </p>
                                 <button
@@ -609,7 +893,7 @@ export default function RouteMappingPage() {
                                         cursor: 'pointer',
                                     }}
                                 >
-                                    {language === 'th' ? 'ดึงจุดตรวจจากคลัง' : 'Pull from inventory'}
+                                    {language === 'th' ? 'ดึงจุด Checkpoint' : 'Pull checkpoints'}
                                 </button>
                             </div>
                         ) : (
@@ -627,22 +911,43 @@ export default function RouteMappingPage() {
                                             {language === 'th' ? 'ชื่อจุด (Checkpoint Name)' : 'Checkpoint Name'}
                                         </th>
                                         <th style={{ width: 90 }}>{language === 'th' ? 'KM สะสม' : 'Cumul. KM'}</th>
-                                        <th style={{ width: 120 }}>{language === 'th' ? 'ประเภท' : 'Type'}</th>
+                                        <th style={{ width: 190 }}>{language === 'th' ? 'Timing Method / Reader ID' : 'Timing Method / Reader ID'}</th>
                                         <th style={{ width: 160 }}>Cut-off</th>
                                         <th style={{ width: 60 }}>{language === 'th' ? 'ใช้งาน' : 'Active'}</th>
                                         <th style={{ width: 45 }}>{language === 'th' ? 'ลบ' : 'Del'}</th>
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {visibleCheckpoints.map((cp) => {
+                                    {visibleCheckpoints
+                                        .slice()
+                                        .sort((a, b) => a.orderNum - b.orderNum)
+                                        .map((cp, idx) => {
                                         const isDirty = dirtyIds.has(cp._id);
                                         const isStart = cp.type === 'start';
                                         const isFinish = cp.type === 'finish';
                                         const hasCutoff = cp.cutoffTime && cp.cutoffTime !== '-' && cp.cutoffTime !== '';
                                         const kmHasValue = cp.kmCumulative !== undefined && cp.kmCumulative !== null && cp.kmCumulative > 0;
+                                        const mode: 'rfid' | 'manual' =
+                                            (cp.description === 'manual' || cp.description === 'rfid') ? cp.description : 'rfid';
+                                        const badge = getModeBadgeStyle(mode);
 
                                         return (
-                                            <tr key={cp._id} style={isDirty ? { background: '#fffbeb' } : undefined}>
+                                            <tr
+                                                key={cp._id}
+                                                draggable
+                                                onDragStart={() => handleDragStart(idx)}
+                                                onDragOver={(e) => handleDragOver(e, idx)}
+                                                onDrop={() => handleDrop(idx)}
+                                                onDragEnd={handleDragEnd}
+                                                style={{
+                                                    ...(isDirty ? { background: '#fffbeb' } : {}),
+                                                    ...(overIdx === idx && dragIdx !== null && dragIdx !== idx
+                                                        ? { borderTop: '2px solid #3b82f6' }
+                                                        : {}),
+                                                    opacity: dragIdx === idx ? 0.5 : 1,
+                                                    transition: 'opacity 0.15s',
+                                                }}
+                                            >
                                                 <td style={{ textAlign: 'center' }}>{cp.orderNum}</td>
                                                 <td
                                                     style={{
@@ -677,19 +982,48 @@ export default function RouteMappingPage() {
                                                     />
                                                 </td>
                                                 <td>
-                                                    <select
-                                                        className="table-select"
-                                                        value={cp.type}
-                                                        onChange={e => updateCheckpoint(cp._id, { type: e.target.value })}
-                                                        style={{
-                                                            width: '100%', padding: '4px 5px', border: '1px solid #ddd',
-                                                            borderRadius: 3, fontFamily: 'inherit', fontSize: 12, cursor: 'pointer',
-                                                        }}
-                                                    >
-                                                        <option value="start">START</option>
-                                                        <option value="checkpoint">CHECKPOINT</option>
-                                                        <option value="finish">FINISH</option>
-                                                    </select>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
+                                                        <select
+                                                            value={mode}
+                                                            onChange={e => {
+                                                                const newMode = e.target.value as 'rfid' | 'manual';
+                                                                updateCheckpoint(cp._id, {
+                                                                    description: newMode,
+                                                                    readerId: newMode === 'manual' ? '' : (cp.readerId || ''),
+                                                                });
+                                                            }}
+                                                            style={{
+                                                                padding: '4px 8px',
+                                                                borderRadius: 6,
+                                                                border: `1px solid ${badge.border}`,
+                                                                background: badge.bg,
+                                                                color: badge.text,
+                                                                fontSize: 12,
+                                                                fontWeight: 600,
+                                                                cursor: 'pointer',
+                                                                minWidth: 80,
+                                                            }}
+                                                        >
+                                                            <option value="rfid">RFID</option>
+                                                            <option value="manual">Manual</option>
+                                                        </select>
+                                                        <input
+                                                            type="text"
+                                                            placeholder="Reader ID"
+                                                            value={cp.readerId || ''}
+                                                            onChange={e => updateCheckpoint(cp._id, { readerId: e.target.value })}
+                                                            disabled={mode === 'manual'}
+                                                            style={{
+                                                                width: 100,
+                                                                padding: '4px 8px',
+                                                                borderRadius: 4,
+                                                                border: '1px solid #d1d5db',
+                                                                fontSize: 12,
+                                                                background: mode === 'manual' ? '#f5f5f5' : '#fff',
+                                                                opacity: mode === 'manual' ? 0.5 : 1,
+                                                            }}
+                                                        />
+                                                    </div>
                                                 </td>
                                                 <td>
                                                     {isStart ? (
@@ -729,7 +1063,7 @@ export default function RouteMappingPage() {
                                                         </svg>
                                                     ) : (
                                                         <button
-                                                            onClick={() => handleDelete(cp)}
+                                                            onClick={() => handleDeleteClick(cp)}
                                                             style={{
                                                                 background: 'none', border: 'none', cursor: 'pointer',
                                                                 color: '#dd4b39', padding: 4,
@@ -761,9 +1095,9 @@ export default function RouteMappingPage() {
                             </h4>
                             <ul style={{ fontSize: 11, color: '#666', marginLeft: 20, lineHeight: 1.6 }}>
                                 <li><strong>KM {language === 'th' ? 'สะสม' : 'Cumulative'}:</strong> {language === 'th' ? 'ระบุระยะทางจริงที่นักวิ่งของระยะนี้ต้องวิ่งถึงจุดตรวจนั้น ๆ' : 'Specify the actual distance runners in this category must cover to reach this checkpoint.'}</li>
-                                <li><strong>{language === 'th' ? 'ประเภทจุด' : 'Point Type'}:</strong> {language === 'th' ? 'กำหนดบทบาทของ CP เช่น START / CHECKPOINT / FINISH' : 'Define the role of each CP such as START / CHECKPOINT / FINISH.'}</li>
+                                <li><strong>{language === 'th' ? 'Timing Method / Reader ID' : 'Timing Method / Reader ID'}:</strong> {language === 'th' ? 'เลือกวิธีจับเวลา (RFID / Manual) และกำหนด Reader ID สำหรับแต่ละจุด' : 'Choose timing method (RFID / Manual) and set Reader ID for each checkpoint.'}</li>
                                 <li><strong>Cut-off:</strong> {language === 'th' ? 'กำหนดเวลาตัดตัวนักกีฬา หากเกินเวลานี้สถานะนักกีฬาจะถูกเปลี่ยนเป็น DNF/OTL อัตโนมัติ' : 'Set the cutoff time. Athletes exceeding this time will be automatically marked DNF/OTL.'}</li>
-                                <li><strong>{language === 'th' ? 'ดึงจุดจากคลัง' : 'Pull from inventory'}:</strong> {language === 'th' ? 'เลือกระยะทางด้านบน แล้วกดปุ่ม "ดึงจุดตรวจจากคลัง" เพื่อเลือกจุดที่ต้องการใช้ในระยะนั้น จากนั้นจึงบันทึกแผนที่เส้นทาง' : 'Select a distance above, click "Pull from inventory" to choose which checkpoints to use for that distance, then save the route map.'}</li>
+                                <li><strong>{language === 'th' ? 'ดึงจุด Checkpoint' : 'Pull checkpoints'}:</strong> {language === 'th' ? 'เลือกระยะทางด้านบน แล้วกดปุ่ม "ดึงจุด Checkpoint" เพื่อเลือกจุดที่ต้องการใช้ในระยะนั้น จากนั้นจึงบันทึกแผนที่เส้นทาง' : 'Select a distance above, click "Pull checkpoints" to choose which checkpoints to use for that distance, then save the route map.'}</li>
                             </ul>
                         </div>
                     </>

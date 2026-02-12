@@ -16,6 +16,7 @@ interface Checkpoint {
     description?: string;
     readerId?: string;
     location?: string;
+    distanceMappings?: string[];
 }
 
 interface Campaign {
@@ -208,10 +209,11 @@ export default function ManageCheckpointsPage() {
     };
 
     const handleDeleteCheckpoint = async (checkpoint: Checkpoint) => {
-        if (!confirm(language === 'th'
-            ? `ต้องการลบจุด "${checkpoint.name}" หรือไม่?`
-            : `Delete checkpoint "${checkpoint.name}"?`
-        )) return;
+        const confirmMessage = language === 'th'
+            ? `คุณแน่ใจหรือไม่ว่าต้องการลบจุด Checkpoint "${checkpoint.name}"?\n\nการลบนี้ไม่สามารถยกเลิกได้`
+            : `Are you sure you want to delete checkpoint "${checkpoint.name}"?\n\nThis action cannot be undone.`;
+        
+        if (!confirm(confirmMessage)) return;
 
         try {
             const res = await fetch(`/api/checkpoints/${checkpoint._id}`, { method: 'DELETE' });
@@ -277,19 +279,34 @@ export default function ManageCheckpointsPage() {
         let successCount = 0;
         let errorCount = 0;
 
-        // Collect reader ID values from uncontrolled inputs
-        const currentCheckpoints = [...checkpoints];
-        for (const cp of currentCheckpoints) {
-            const inputEl = document.getElementById(`rid-input-${cp._id}`) as HTMLInputElement | null;
-            if (inputEl) {
-                const inputVal = inputEl.value.trim();
-                if (inputVal !== (cp.readerId || '')) {
-                    cp.readerId = inputVal || undefined;
-                    dirtyIds.add(cp._id);
-                }
+        // Validate orderNum uniqueness
+        const orderNums = new Map<number, string>();
+        for (const cp of checkpoints) {
+            if (orderNums.has(cp.orderNum) && orderNums.get(cp.orderNum) !== cp._id) {
+                showToast(
+                    language === 'th'
+                        ? `ลำดับ ${cp.orderNum} ซ้ำกัน กรุณาแก้ไขก่อนบันทึก`
+                        : `Order number ${cp.orderNum} is duplicated. Please fix before saving.`,
+                    'error'
+                );
+                setSaving(false);
+                return;
             }
+            orderNums.set(cp.orderNum, cp._id);
         }
-        setCheckpoints([...currentCheckpoints]);
+        for (const row of newRows) {
+            if (orderNums.has(row.orderNum)) {
+                showToast(
+                    language === 'th'
+                        ? `ลำดับ ${row.orderNum} ซ้ำกัน กรุณาแก้ไขก่อนบันทึก`
+                        : `Order number ${row.orderNum} is duplicated. Please fix before saving.`,
+                    'error'
+                );
+                setSaving(false);
+                return;
+            }
+            orderNums.set(row.orderNum, 'new');
+        }
 
         // 1) PUT dirty existing checkpoints
         for (const cpId of dirtyIds) {
@@ -645,12 +662,10 @@ export default function ManageCheckpointsPage() {
                                                                     <input
                                                                         type="text"
                                                                         className="form-input"
-                                                                        id={`rid-input-${cp._id}`}
                                                                         placeholder={displayMode === 'manual' ? '-' : 'Reader ID'}
-                                                                        defaultValue={cp.readerId || ''}
-                                                                        key={`${cp._id}-rid-${cp.readerId ?? ''}-${displayMode}`}
+                                                                        value={cp.readerId || ''}
                                                                         disabled={displayMode === 'manual'}
-                                                                        onChange={() => markDirty(cp._id)}
+                                                                        onChange={e => handleLocalUpdate(cp._id, { readerId: e.target.value })}
                                                                         style={{
                                                                             width: 100,
                                                                             padding: '4px 8px',
@@ -665,21 +680,22 @@ export default function ManageCheckpointsPage() {
                                                             </div>
                                                         </td>
                                                         <td>
-                                                            {/* ใช้งานร่วมกับ – ตอนนี้แสดงจากจำนวนระยะของ campaign แบบอ่านอย่างเดียว */}
-                                                            {getSelectedCampaign()?.categories && getSelectedCampaign()!.categories!.length > 0 ? (
+                                                            {/* ใช้งานร่วมกับ – แสดงระยะทางที่ถูกเลือกจากหน้า Checkpoint Mapping */}
+                                                            {cp.distanceMappings && cp.distanceMappings.length > 0 ? (
                                                                 <>
-                                                                    {getSelectedCampaign()!.categories!.map((cat, i) => (
+                                                                    {cp.distanceMappings.map((name, i) => (
                                                                         <span
-                                                                            key={`${cp._id}-cat-${i}`}
+                                                                            key={`${cp._id}-dist-${i}`}
                                                                             style={{
-                                                                                background: '#eee',
+                                                                                background: '#e5f3ff',
                                                                                 padding: '2px 5px',
                                                                                 borderRadius: 3,
                                                                                 fontSize: 10,
                                                                                 marginRight: 3,
+                                                                                color: '#0369a1',
                                                                             }}
                                                                         >
-                                                                            {cat.name}
+                                                                            {name}
                                                                         </span>
                                                                     ))}
                                                                 </>
