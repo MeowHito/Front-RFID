@@ -10,11 +10,12 @@ import './admin.css';
 interface AdminLayoutProps {
     children: ReactNode;
     breadcrumbItems?: { label: string; labelEn?: string; href?: string }[];
+    breadcrumbRight?: ReactNode;
     pageTitle?: string;
     pageTitleEn?: string;
 }
 
-function AdminLayoutContent({ children, breadcrumbItems = [], pageTitle, pageTitleEn }: AdminLayoutProps) {
+function AdminLayoutContent({ children, breadcrumbItems = [], breadcrumbRight, pageTitle, pageTitleEn }: AdminLayoutProps) {
     return (
         <div className="admin-container">
             <AdminHeader />
@@ -22,7 +23,7 @@ function AdminLayoutContent({ children, breadcrumbItems = [], pageTitle, pageTit
                 <AdminSidebar />
                 <main className="admin-main">
                     {breadcrumbItems.length > 0 && (
-                        <AdminBreadcrumb items={breadcrumbItems} />
+                        <AdminBreadcrumb items={breadcrumbItems} rightContent={breadcrumbRight} />
                     )}
                     {pageTitle && (
                         <div className="admin-page-header">
@@ -38,10 +39,10 @@ function AdminLayoutContent({ children, breadcrumbItems = [], pageTitle, pageTit
     );
 }
 
-export default function AdminLayout({ children, breadcrumbItems, pageTitle, pageTitleEn }: AdminLayoutProps) {
+export default function AdminLayout({ children, breadcrumbItems, breadcrumbRight, pageTitle, pageTitleEn }: AdminLayoutProps) {
     return (
         <AuthGuard>
-            <AdminLayoutContent breadcrumbItems={breadcrumbItems} pageTitle={pageTitle} pageTitleEn={pageTitleEn}>
+            <AdminLayoutContent breadcrumbItems={breadcrumbItems} breadcrumbRight={breadcrumbRight} pageTitle={pageTitle} pageTitleEn={pageTitleEn}>
                 {children}
             </AdminLayoutContent>
         </AuthGuard>

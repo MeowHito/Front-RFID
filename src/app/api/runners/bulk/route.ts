@@ -5,18 +5,30 @@ const BACKEND_URL = process.env.BACKEND_URL || 'http://3.26.160.149:3001';
 export async function POST(request: NextRequest) {
     try {
         const body = await request.json();
-        const res = await fetch(`${BACKEND_URL}/runners/bulk`, {
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+        const authHeader = request.headers.get('Authorization');
+        if (authHeader) {
+            headers['Authorization'] = authHeader;
+        }
+        const updateExisting = request.nextUrl.searchParams.get('updateExisting') || '';
+        const url = updateExisting === 'true'
+            ? `${BACKEND_URL}/runners/bulk?updateExisting=true`
+            : `${BACKEND_URL}/runners/bulk`;
+        const res = await fetch(url, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers,
             body: JSON.stringify(body),
         });
 
         if (!res.ok) {
-            const errorData = await res.text();
-            return NextResponse.json(
-                { error: errorData || 'Failed to bulk import runners' },
-                { status: res.status }
-            );
+            let errorBody: Record<string, unknown> = {};
+            try {
+                errorBody = await res.json();
+            } catch {
+                const text = await res.text();
+                errorBody = { error: text || 'Failed to bulk import runners' };
+            }
+            return NextResponse.json(errorBody, { status: res.status });
         }
 
         const data = await res.json();

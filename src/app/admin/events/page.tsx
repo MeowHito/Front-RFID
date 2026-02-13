@@ -328,8 +328,7 @@ export default function EventsPage() {
     return (
         <AdminLayout
             breadcrumbItems={[
-                { label: 'แอดมิน', labelEn: 'Admin', href: '/admin' },
-                { label: 'อีเวนท์', labelEn: 'Events' }
+                { label: 'จัดการอีเวนต์', labelEn: 'Manage Events' }
             ]}
             pageTitle={language === 'th' ? 'จัดการข้อมูลอีเวนท์และประเภทการแข่งขันของคุณ' : 'Manage your events and competition categories'}
         >

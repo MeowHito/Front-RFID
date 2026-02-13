@@ -64,7 +64,6 @@ export default function UsersPage() {
     return (
         <AdminLayout
             breadcrumbItems={[
-                { label: 'แอดมิน', labelEn: 'Admin', href: '/admin' },
                 { label: 'การตั้งค่าผู้ใช้งาน', labelEn: 'User Settings' }
             ]}
             pageTitle={language === 'th' ? 'เพิ่มและจัดการผู้ใช้งานในระบบ' : 'Add and manage system users'}

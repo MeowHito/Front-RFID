@@ -537,14 +537,32 @@
 
 /* Breadcrumb */
 .admin-breadcrumb {
-    font-size: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 14px;
+    padding: 10px 0;
     margin-bottom: 10px;
     color: var(--text-secondary);
+    border-bottom: 1px solid #ddd;
+}
+
+.breadcrumb-left {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.breadcrumb-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
 }
 
 .breadcrumb-link {
     color: var(--btn-query);
     text-decoration: none;
+    font-size: 14px;
 }
 
 .breadcrumb-link:hover {
@@ -552,12 +570,14 @@
 }
 
 .breadcrumb-separator {
-    margin: 0 6px;
+    margin: 0 8px;
     color: #999;
+    font-size: 14px;
 }
 
 .breadcrumb-current {
     color: var(--text-primary);
+    font-size: 14px;
 }
 
 /* Page Header */

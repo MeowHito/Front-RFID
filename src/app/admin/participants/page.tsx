@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { useLanguage } from '@/lib/language-context';
+import * as XLSX from 'xlsx';
 import AdminLayout from '../AdminLayout';
 import '../admin.css';
 
@@ -30,6 +31,24 @@ interface ParsedRow {
     chipCode: string;
     status: 'ready' | 'warning' | 'error';
     errorMsg: string;
+}
+
+interface Runner {
+    _id: string;
+    bib: string;
+    firstName: string;
+    lastName: string;
+    firstNameTh?: string;
+    lastNameTh?: string;
+    gender: string;
+    category: string;
+    ageGroup?: string;
+    nationality?: string;
+    chipCode?: string;
+    rfidTag?: string;
+    status: string;
+    team?: string;
+    box?: string;
 }
 
 function calculateAgeGroup(birthDate: string, gender: string): string {
@@ -95,11 +114,24 @@ export default function ParticipantsPage() {
     const [selectedCategory, setSelectedCategory] = useState<string>('');
     const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
+    // Tab state
+    const [activeTab, setActiveTab] = useState<'import' | 'list'>('import');
+
+    // Participants list state
+    const [runners, setRunners] = useState<Runner[]>([]);
+    const [runnersTotal, setRunnersTotal] = useState(0);
+    const [runnersLoading, setRunnersLoading] = useState(false);
+    const [listCategory, setListCategory] = useState<string>('');
+    const [listSearch, setListSearch] = useState('');
+    const [listPage, setListPage] = useState(1);
+    const listLimit = 50;
+
     // CSV state
     const [fileName, setFileName] = useState<string>('');
     const [parsedRows, setParsedRows] = useState<ParsedRow[]>([]);
     const [importing, setImporting] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const [isDragging, setIsDragging] = useState(false);
 
     // Options
     const [checkDupBib, setCheckDupBib] = useState(true);
@@ -112,7 +144,7 @@ export default function ParticipantsPage() {
 
     const showToast = (message: string, type: 'success' | 'error') => {
         setToast({ message, type });
-        setTimeout(() => setToast(null), 3000);
+        setTimeout(() => setToast(null), type === 'error' ? 6000 : 3000);
     };
 
     // Load featured campaign
@@ -125,7 +157,10 @@ export default function ParticipantsPage() {
                 if (data && data._id) {
                     setCampaign(data);
                     const cats = data.categories || [];
-                    if (cats.length > 0) setSelectedCategory(cats[0].name);
+                    if (cats.length > 0) {
+                        setSelectedCategory(cats[0].name);
+                        setListCategory(cats[0].name);
+                    }
                 }
             } catch {
                 setCampaign(null);
@@ -135,6 +170,35 @@ export default function ParticipantsPage() {
         }
         loadFeatured();
     }, []);
+
+    // Fetch runners for participants list tab
+    const fetchRunners = useCallback(async () => {
+        if (!campaign?._id || !listCategory) return;
+        setRunnersLoading(true);
+        try {
+            const params = new URLSearchParams({
+                eventId: campaign._id,
+                category: listCategory,
+                page: String(listPage),
+                limit: String(listLimit),
+            });
+            if (listSearch) params.append('search', listSearch);
+            const res = await fetch(`/api/runners/paged?${params.toString()}`, { cache: 'no-store' });
+            if (!res.ok) throw new Error('Failed');
+            const data = await res.json();
+            setRunners(data.data || []);
+            setRunnersTotal(data.total || 0);
+        } catch {
+            setRunners([]);
+            setRunnersTotal(0);
+        } finally {
+            setRunnersLoading(false);
+        }
+    }, [campaign, listCategory, listSearch, listPage]);
+
+    useEffect(() => {
+        if (activeTab === 'list') fetchRunners();
+    }, [activeTab, fetchRunners]);
 
     const processCSV = useCallback((text: string) => {
         const rows = parseCSV(text);
@@ -211,17 +275,64 @@ export default function ParticipantsPage() {
         setParsedRows(parsed);
     }, [language, checkDupBib, autoAgeGroup]);
 
+    const processFile = useCallback((file: File) => {
+        setFileName(file.name);
+        const isXlsx = file.name.toLowerCase().endsWith('.xlsx') || file.name.toLowerCase().endsWith('.xls');
+        if (isXlsx) {
+            const reader = new FileReader();
+            reader.onload = (ev) => {
+                try {
+                    const data = new Uint8Array(ev.target?.result as ArrayBuffer);
+                    const workbook = XLSX.read(data, { type: 'array' });
+                    const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+                    const csvText = XLSX.utils.sheet_to_csv(firstSheet);
+                    processCSV(csvText);
+                } catch {
+                    showToast(language === 'th' ? 'ไม่สามารถอ่านไฟล์ Excel ได้' : 'Cannot read Excel file', 'error');
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        } else {
+            const reader = new FileReader();
+            reader.onload = (ev) => {
+                const text = ev.target?.result as string;
+                processCSV(text);
+            };
+            reader.readAsText(file, 'UTF-8');
+        }
+    }, [processCSV, language]);
+
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
-        setFileName(file.name);
-        const reader = new FileReader();
-        reader.onload = (ev) => {
-            const text = ev.target?.result as string;
-            processCSV(text);
-        };
-        reader.readAsText(file, 'UTF-8');
+        processFile(file);
     };
+
+    const handleDrop = useCallback((e: React.DragEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setIsDragging(false);
+        const file = e.dataTransfer.files?.[0];
+        if (!file) return;
+        const ext = file.name.toLowerCase();
+        if (!ext.endsWith('.csv') && !ext.endsWith('.xlsx') && !ext.endsWith('.xls')) {
+            showToast(language === 'th' ? 'รองรับเฉพาะไฟล์ CSV และ XLSX' : 'Only CSV and XLSX files are supported', 'error');
+            return;
+        }
+        processFile(file);
+    }, [processFile, language]);
+
+    const handleDragOver = useCallback((e: React.DragEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setIsDragging(true);
+    }, []);
+
+    const handleDragLeave = useCallback((e: React.DragEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setIsDragging(false);
+    }, []);
 
     const handleUpdateChip = (rowNum: number, value: string) => {
         setParsedRows(prev => prev.map(r => {
@@ -265,26 +376,72 @@ export default function ParticipantsPage() {
                 status: 'not_started',
             }));
 
-            const res = await fetch('/api/runners/bulk', {
+            const authToken = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
+            const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+            if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
+
+            const apiUrl = updateExisting
+                ? '/api/runners/bulk?updateExisting=true'
+                : '/api/runners/bulk';
+            const res = await fetch(apiUrl, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers,
                 body: JSON.stringify(payload),
             });
 
-            if (!res.ok) throw new Error('Failed');
+            if (!res.ok) {
+                let errMsg = `HTTP ${res.status}`;
+                try {
+                    const errBody = await res.json();
+                    if (errBody?.error) {
+                        errMsg = typeof errBody.error === 'string' ? errBody.error : JSON.stringify(errBody.error);
+                    } else if (errBody?.message) {
+                        errMsg = Array.isArray(errBody.message) ? errBody.message.join(', ') : errBody.message;
+                    }
+                } catch { /* ignore parse error */ }
+                console.error('Import failed:', res.status, errMsg);
+                showToast(
+                    language === 'th'
+                        ? `นำเข้าไม่สำเร็จ: ${errMsg}`
+                        : `Import failed: ${errMsg}`,
+                    'error'
+                );
+                return;
+            }
             const data = await res.json();
-            const count = Array.isArray(data) ? data.length : readyRows.length;
 
-            showToast(
-                language === 'th'
-                    ? `นำเข้าสำเร็จ ${count} รายการ`
-                    : `Imported ${count} participants`,
-                'success'
-            );
+            // Handle new response format { inserted, updated, errors }
+            if (data.inserted !== undefined) {
+                const parts: string[] = [];
+                if (data.inserted > 0) parts.push(language === 'th' ? `เพิ่มใหม่ ${data.inserted}` : `Inserted ${data.inserted}`);
+                if (data.updated > 0) parts.push(language === 'th' ? `อัปเดต ${data.updated}` : `Updated ${data.updated}`);
+                const errParts = data.errors?.length ? data.errors : [];
+                const msg = parts.length > 0 ? parts.join(', ') : (language === 'th' ? 'ไม่มีรายการใหม่' : 'No new records');
+                const hasErrors = errParts.length > 0;
+                showToast(
+                    hasErrors ? `${msg} | ${errParts.join('; ')}` : msg,
+                    (data.inserted > 0 || data.updated > 0) ? 'success' : 'error'
+                );
+            } else {
+                const count = Array.isArray(data) ? data.length : readyRows.length;
+                showToast(
+                    language === 'th'
+                        ? `นำเข้าสำเร็จ ${count} รายการ`
+                        : `Imported ${count} participants`,
+                    'success'
+                );
+            }
             setParsedRows([]);
             setFileName('');
-        } catch {
-            showToast(language === 'th' ? 'นำเข้าไม่สำเร็จ' : 'Import failed', 'error');
+        } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : 'Unknown error';
+            console.error('Import error:', msg);
+            showToast(
+                language === 'th'
+                    ? `นำเข้าไม่สำเร็จ: ${msg}`
+                    : `Import failed: ${msg}`,
+                'error'
+            );
         } finally {
             setImporting(false);
         }
@@ -308,7 +465,11 @@ export default function ParticipantsPage() {
     const errorCount = parsedRows.filter(r => r.status === 'error').length;
 
     return (
-        <AdminLayout>
+        <AdminLayout
+            breadcrumbItems={[
+                { label: 'ผู้เข้าแข่งขัน', labelEn: 'Participants' }
+            ]}
+        >
             {/* Toast */}
             {toast && (
                 <div style={{
@@ -320,14 +481,6 @@ export default function ParticipantsPage() {
                     {toast.message}
                 </div>
             )}
-
-            <div className="admin-breadcrumb">
-                <a href="/admin/events" className="breadcrumb-link">Admin</a>
-                <span className="breadcrumb-separator">/</span>
-                <span className="breadcrumb-current">
-                    {language === 'th' ? 'นำเข้าข้อมูลนักกีฬา' : 'Import Participants'}
-                </span>
-            </div>
 
             {loading ? (
                 <div className="content-box" style={{ padding: 30, textAlign: 'center', color: '#999' }}>
@@ -350,6 +503,59 @@ export default function ParticipantsPage() {
                 </div>
             ) : (
                 <>
+                    {/* Tabs */}
+                    <div style={{
+                        display: 'flex', gap: 0, marginBottom: 20, borderBottom: '2px solid #e5e7eb',
+                    }}>
+                        <button
+                            onClick={() => setActiveTab('import')}
+                            style={{
+                                padding: '10px 24px', fontSize: 14, fontWeight: activeTab === 'import' ? 700 : 500,
+                                border: 'none', cursor: 'pointer', borderRadius: '6px 6px 0 0',
+                                background: activeTab === 'import' ? '#fff' : 'transparent',
+                                color: activeTab === 'import' ? '#3c8dbc' : '#888',
+                                borderBottom: activeTab === 'import' ? '2px solid #3c8dbc' : '2px solid transparent',
+                                marginBottom: -2, transition: '0.15s',
+                            }}
+                        >
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: 6, verticalAlign: -2 }}>
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                                <polyline points="7 10 12 15 17 10" />
+                                <line x1="12" y1="15" x2="12" y2="3" />
+                            </svg>
+                            {language === 'th' ? 'นำเข้าข้อมูล' : 'Import Data'}
+                        </button>
+                        <button
+                            onClick={() => setActiveTab('list')}
+                            style={{
+                                padding: '10px 24px', fontSize: 14, fontWeight: activeTab === 'list' ? 700 : 500,
+                                border: 'none', cursor: 'pointer', borderRadius: '6px 6px 0 0',
+                                background: activeTab === 'list' ? '#fff' : 'transparent',
+                                color: activeTab === 'list' ? '#3c8dbc' : '#888',
+                                borderBottom: activeTab === 'list' ? '2px solid #3c8dbc' : '2px solid transparent',
+                                marginBottom: -2, transition: '0.15s',
+                            }}
+                        >
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: 6, verticalAlign: -2 }}>
+                                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                                <circle cx="9" cy="7" r="4" />
+                                <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+                                <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+                            </svg>
+                            {language === 'th' ? 'รายชื่อผู้เข้าแข่งขัน' : 'Participants List'}
+                            {runnersTotal > 0 && (
+                                <span style={{
+                                    marginLeft: 8, background: activeTab === 'list' ? '#3c8dbc' : '#ccc',
+                                    color: '#fff', padding: '1px 8px', borderRadius: 10, fontSize: 11, fontWeight: 600,
+                                }}>
+                                    {runnersTotal}
+                                </span>
+                            )}
+                        </button>
+                    </div>
+
+                    {/* ===== IMPORT TAB ===== */}
+                    {activeTab === 'import' && (<>
                     {/* Step 1: Import Settings */}
                     <div style={{
                         background: '#fff', borderTop: '3px solid #3c8dbc',
@@ -384,20 +590,25 @@ export default function ParticipantsPage() {
                                 </select>
                             </div>
 
-                            {/* File upload */}
+                            {/* File upload with drag & drop */}
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 300 }}>
                                 <span style={{ fontWeight: 600, fontSize: 12, whiteSpace: 'nowrap', color: '#555' }}>
                                     {language === 'th' ? 'ไฟล์:' : 'File:'}
                                 </span>
                                 <div
                                     onClick={() => fileInputRef.current?.click()}
+                                    onDrop={handleDrop}
+                                    onDragOver={handleDragOver}
+                                    onDragLeave={handleDragLeave}
                                     style={{
-                                        border: '1px dashed #ccc', padding: '6px 12px', background: '#f9f9f9',
+                                        border: `2px dashed ${isDragging ? '#00a65a' : '#ccc'}`,
+                                        padding: '6px 12px',
+                                        background: isDragging ? '#e8f5e9' : '#f9f9f9',
                                         borderRadius: 3, cursor: 'pointer', display: 'flex', alignItems: 'center',
                                         gap: 10, flex: 1, transition: '0.2s',
                                     }}
-                                    onMouseEnter={e => { (e.currentTarget).style.borderColor = '#00a65a'; (e.currentTarget).style.background = '#e8f5e9'; }}
-                                    onMouseLeave={e => { (e.currentTarget).style.borderColor = '#ccc'; (e.currentTarget).style.background = '#f9f9f9'; }}
+                                    onMouseEnter={e => { if (!isDragging) { (e.currentTarget).style.borderColor = '#00a65a'; (e.currentTarget).style.background = '#e8f5e9'; } }}
+                                    onMouseLeave={e => { if (!isDragging) { (e.currentTarget).style.borderColor = '#ccc'; (e.currentTarget).style.background = '#f9f9f9'; } }}
                                 >
                                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#00a65a" strokeWidth="2">
                                         <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
@@ -405,10 +616,15 @@ export default function ParticipantsPage() {
                                         <line x1="16" y1="13" x2="8" y2="13" />
                                         <line x1="16" y1="17" x2="8" y2="17" />
                                     </svg>
-                                    <div style={{ fontWeight: 500, fontSize: 13, color: '#333' }}>
-                                        {fileName || (language === 'th' ? 'คลิกเลือกไฟล์ CSV' : 'Click to select CSV')}
+                                    <div style={{ fontWeight: 500, fontSize: 13, color: isDragging ? '#00a65a' : '#333' }}>
+                                        {isDragging
+                                            ? (language === 'th' ? 'วางไฟล์ที่นี่...' : 'Drop file here...')
+                                            : fileName
+                                                ? fileName
+                                                : (language === 'th' ? 'คลิกเลือกหรือลากไฟล์ CSV, XLSX มาวาง' : 'Click or drag CSV/XLSX file here')
+                                        }
                                     </div>
-                                    {fileName && (
+                                    {fileName && !isDragging && (
                                         <small style={{ color: '#888', marginLeft: 'auto' }}>
                                             ({language === 'th' ? 'คลิกเปลี่ยน' : 'click to change'})
                                         </small>
@@ -417,7 +633,7 @@ export default function ParticipantsPage() {
                                 <input
                                     ref={fileInputRef}
                                     type="file"
-                                    accept=".csv"
+                                    accept=".csv,.xlsx,.xls"
                                     onChange={handleFileChange}
                                     style={{ display: 'none' }}
                                 />
@@ -628,6 +844,195 @@ export default function ParticipantsPage() {
                                         ? `ยืนยันการนำเข้า (${readyCount + warningCount} รายการ)`
                                         : `Import (${readyCount + warningCount} rows)`)}
                             </button>
+                        </div>
+                    )}
+                    </>)}
+
+                    {/* ===== PARTICIPANTS LIST TAB ===== */}
+                    {activeTab === 'list' && (
+                        <div style={{
+                            background: '#fff', borderTop: '3px solid #3c8dbc',
+                            padding: '16px 20px', borderRadius: 4,
+                            boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+                        }}>
+                            {/* Toolbar: category selector + search */}
+                            <div style={{
+                                display: 'flex', gap: 15, alignItems: 'center', marginBottom: 16,
+                                flexWrap: 'wrap',
+                            }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                    <span style={{ fontWeight: 600, fontSize: 13, color: '#555', whiteSpace: 'nowrap' }}>
+                                        {language === 'th' ? 'ระยะทาง:' : 'Distance:'}
+                                    </span>
+                                    <select
+                                        className="form-select"
+                                        value={listCategory}
+                                        onChange={e => { setListCategory(e.target.value); setListPage(1); }}
+                                        style={{ minWidth: 220, padding: '7px 10px', fontSize: 13, fontWeight: 500 }}
+                                    >
+                                        {(campaign.categories || []).map((cat, i) => (
+                                            <option key={`list-${cat.name}-${i}`} value={cat.name}>
+                                                {cat.name}{cat.distance ? ` - ${cat.distance}` : ''}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <div style={{ flex: 1, minWidth: 200 }}>
+                                    <input
+                                        type="text"
+                                        value={listSearch}
+                                        onChange={e => { setListSearch(e.target.value); setListPage(1); }}
+                                        placeholder={language === 'th' ? 'ค้นหา BIB, ชื่อ...' : 'Search BIB, name...'}
+                                        style={{
+                                            width: '100%', padding: '7px 12px', border: '1px solid #ddd',
+                                            borderRadius: 4, fontSize: 13, fontFamily: 'inherit',
+                                        }}
+                                    />
+                                </div>
+                                <div style={{ fontSize: 13, color: '#666', whiteSpace: 'nowrap' }}>
+                                    {language === 'th' ? `ทั้งหมด ${runnersTotal} คน` : `Total: ${runnersTotal}`}
+                                </div>
+                            </div>
+
+                            {/* Runners table */}
+                            {runnersLoading ? (
+                                <div style={{ padding: 40, textAlign: 'center', color: '#999' }}>
+                                    {language === 'th' ? 'กำลังโหลด...' : 'Loading...'}
+                                </div>
+                            ) : runners.length === 0 ? (
+                                <div style={{ padding: 40, textAlign: 'center', color: '#999' }}>
+                                    {language === 'th' ? 'ไม่พบข้อมูลนักกีฬา' : 'No participants found'}
+                                </div>
+                            ) : (
+                                <>
+                                <div style={{ maxHeight: 540, overflowY: 'auto', border: '1px solid #eee', borderRadius: 3 }}>
+                                    <table className="data-table" style={{ fontSize: 12 }}>
+                                        <thead>
+                                            <tr>
+                                                <th style={{ width: 40 }}>#</th>
+                                                <th style={{ width: 80 }}>BIB</th>
+                                                <th>{language === 'th' ? 'ชื่อ-นามสกุล' : 'Name'}</th>
+                                                <th style={{ width: 60 }}>{language === 'th' ? 'เพศ' : 'Gender'}</th>
+                                                <th style={{ width: 100 }}>{language === 'th' ? 'ระยะทาง' : 'Category'}</th>
+                                                <th style={{ width: 90 }}>{language === 'th' ? 'กลุ่มอายุ' : 'Age Grp'}</th>
+                                                <th style={{ width: 70 }}>{language === 'th' ? 'สัญชาติ' : 'Nat.'}</th>
+                                                <th style={{ width: 130 }}>Chip Code</th>
+                                                <th style={{ width: 90 }}>{language === 'th' ? 'สถานะ' : 'Status'}</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {runners.map((r, idx) => (
+                                                <tr key={r._id}>
+                                                    <td style={{ textAlign: 'center', color: '#999' }}>
+                                                        {(listPage - 1) * listLimit + idx + 1}
+                                                    </td>
+                                                    <td>
+                                                        <span style={{
+                                                            background: '#eee', padding: '2px 8px', borderRadius: 4,
+                                                            fontFamily: 'monospace', fontWeight: 'bold', fontSize: 12,
+                                                            border: '1px solid #ddd', display: 'inline-block',
+                                                            minWidth: 45, textAlign: 'center',
+                                                        }}>
+                                                            {r.bib}
+                                                        </span>
+                                                    </td>
+                                                    <td>
+                                                        <div style={{ fontWeight: 500 }}>{r.firstName} {r.lastName}</div>
+                                                        {(r.firstNameTh || r.lastNameTh) && (
+                                                            <div style={{ fontSize: 11, color: '#999' }}>
+                                                                {r.firstNameTh} {r.lastNameTh}
+                                                            </div>
+                                                        )}
+                                                    </td>
+                                                    <td style={{ textAlign: 'center' }}>
+                                                        <span style={{
+                                                            color: r.gender === 'F' ? '#ec4899' : '#3b82f6',
+                                                            fontWeight: 600,
+                                                        }}>
+                                                            {r.gender === 'F' ? (language === 'th' ? 'หญิง' : 'F') : (language === 'th' ? 'ชาย' : 'M')}
+                                                        </span>
+                                                    </td>
+                                                    <td style={{ textAlign: 'center' }}>{r.category}</td>
+                                                    <td>
+                                                        <span style={{ color: r.ageGroup ? '#3c8dbc' : '#ccc' }}>
+                                                            {r.ageGroup || '-'}
+                                                        </span>
+                                                    </td>
+                                                    <td style={{ textAlign: 'center' }}>{r.nationality || '-'}</td>
+                                                    <td>
+                                                        <span style={{
+                                                            fontFamily: 'monospace', fontSize: 11,
+                                                            color: r.chipCode ? '#333' : '#ccc',
+                                                        }}>
+                                                            {r.chipCode || '-'}
+                                                        </span>
+                                                    </td>
+                                                    <td>
+                                                        <span style={{
+                                                            fontSize: 11, fontWeight: 600, padding: '2px 8px',
+                                                            borderRadius: 10, display: 'inline-block',
+                                                            background:
+                                                                r.status === 'finished' ? '#dcfce7' :
+                                                                r.status === 'in_progress' ? '#dbeafe' :
+                                                                r.status === 'dnf' ? '#fee2e2' :
+                                                                r.status === 'dns' ? '#fef3c7' : '#f3f4f6',
+                                                            color:
+                                                                r.status === 'finished' ? '#16a34a' :
+                                                                r.status === 'in_progress' ? '#2563eb' :
+                                                                r.status === 'dnf' ? '#dc2626' :
+                                                                r.status === 'dns' ? '#d97706' : '#666',
+                                                        }}>
+                                                            {r.status === 'not_started' ? (language === 'th' ? 'ยังไม่เริ่ม' : 'Not Started') :
+                                                             r.status === 'in_progress' ? (language === 'th' ? 'กำลังแข่ง' : 'In Progress') :
+                                                             r.status === 'finished' ? (language === 'th' ? 'เข้าเส้นชัย' : 'Finished') :
+                                                             r.status === 'dnf' ? 'DNF' :
+                                                             r.status === 'dns' ? 'DNS' : r.status}
+                                                        </span>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+
+                                {/* Pagination */}
+                                {runnersTotal > listLimit && (
+                                    <div style={{
+                                        display: 'flex', justifyContent: 'center', alignItems: 'center',
+                                        gap: 8, marginTop: 12,
+                                    }}>
+                                        <button
+                                            className="btn"
+                                            disabled={listPage <= 1}
+                                            onClick={() => setListPage(p => Math.max(1, p - 1))}
+                                            style={{
+                                                background: '#fff', color: '#333', border: '1px solid #ddd',
+                                                padding: '5px 12px', fontSize: 12, opacity: listPage <= 1 ? 0.4 : 1,
+                                            }}
+                                        >
+                                            ← {language === 'th' ? 'ก่อนหน้า' : 'Prev'}
+                                        </button>
+                                        <span style={{ fontSize: 12, color: '#666' }}>
+                                            {language === 'th'
+                                                ? `หน้า ${listPage} / ${Math.ceil(runnersTotal / listLimit)}`
+                                                : `Page ${listPage} of ${Math.ceil(runnersTotal / listLimit)}`}
+                                        </span>
+                                        <button
+                                            className="btn"
+                                            disabled={listPage >= Math.ceil(runnersTotal / listLimit)}
+                                            onClick={() => setListPage(p => p + 1)}
+                                            style={{
+                                                background: '#fff', color: '#333', border: '1px solid #ddd',
+                                                padding: '5px 12px', fontSize: 12,
+                                                opacity: listPage >= Math.ceil(runnersTotal / listLimit) ? 0.4 : 1,
+                                            }}
+                                        >
+                                            {language === 'th' ? 'ถัดไป' : 'Next'} →
+                                        </button>
+                                    </div>
+                                )}
+                                </>
+                            )}
                         </div>
                     )}
                 </>

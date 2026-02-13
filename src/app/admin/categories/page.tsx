@@ -255,7 +255,11 @@ export default function CategoriesPage() {
     };
 
     return (
-        <AdminLayout>
+        <AdminLayout
+            breadcrumbItems={[
+                { label: 'ประเภทการแข่งขัน', labelEn: 'Race Categories' }
+            ]}
+        >
             {/* Toast */}
             {toast && (
                 <div style={{

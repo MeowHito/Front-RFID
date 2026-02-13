@@ -187,7 +187,6 @@ export default function ProfilePage() {
     return (
         <AdminLayout
             breadcrumbItems={[
-                { label: 'แอดมิน', labelEn: 'Admin', href: '/admin' },
                 { label: 'โปรไฟล์', labelEn: 'Profile' },
             ]}
             pageTitle={language === 'th' ? 'จัดการข้อมูลโปรไฟล์ของคุณ' : 'Manage your profile information'}

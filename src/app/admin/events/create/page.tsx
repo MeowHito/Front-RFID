@@ -232,7 +232,6 @@ function CreateEventForm() {
         return (
             <AdminLayout
                 breadcrumbItems={[
-                    { label: 'แอดมิน', labelEn: 'Admin', href: '/admin' },
                     { label: 'อีเวนท์', labelEn: 'Events', href: '/admin/events' },
                     { label: 'กำลังโหลด...', labelEn: 'Loading...' }
                 ]}
@@ -248,7 +247,6 @@ function CreateEventForm() {
     return (
         <AdminLayout
             breadcrumbItems={[
-                { label: 'แอดมิน', labelEn: 'Admin', href: '/admin' },
                 { label: 'อีเวนท์', labelEn: 'Events', href: '/admin/events' },
                 { label: isEdit ? 'แก้ไขกิจกรรม' : 'สร้างกิจกรรมใหม่', labelEn: isEdit ? 'Edit Event' : 'Create New Event' }
             ]}

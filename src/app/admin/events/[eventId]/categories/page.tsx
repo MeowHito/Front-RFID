@@ -307,7 +307,6 @@ export default function CategoriesPage() {
     return (
         <AdminLayout
             breadcrumbItems={[
-                { label: 'แอดมิน', labelEn: 'Admin', href: '/admin' },
                 { label: 'อีเวนท์', labelEn: 'Events', href: '/admin/events' },
                 { label: campaign?.name || 'Categories', labelEn: campaign?.name || 'Categories' }
             ]}

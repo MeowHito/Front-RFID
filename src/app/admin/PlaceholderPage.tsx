@@ -18,12 +18,11 @@ export default function PlaceholderPage({ icon, titleTh, titleEn, descTh, descEn
     const { language } = useLanguage();
 
     return (
-        <AdminLayout>
-            <div className="admin-breadcrumb">
-                <a href="/admin/events" className="breadcrumb-link">Admin</a>
-                <span className="breadcrumb-separator">/</span>
-                <span className="breadcrumb-current">{language === 'th' ? breadcrumbTh : breadcrumbEn}</span>
-            </div>
+        <AdminLayout
+            breadcrumbItems={[
+                { label: breadcrumbTh, labelEn: breadcrumbEn }
+            ]}
+        >
             <div className="content-box">
                 <div className="placeholder-page">
                     <div className="placeholder-icon">{icon}</div>

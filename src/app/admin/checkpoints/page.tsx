@@ -376,7 +376,11 @@ export default function ManageCheckpointsPage() {
     };
 
     return (
-        <AdminLayout>
+        <AdminLayout
+            breadcrumbItems={[
+                { label: 'สร้างจุด Checkpoint', labelEn: 'Manage Checkpoints' }
+            ]}
+        >
             {/* Toast */}
             {toast && (
                 <div style={{

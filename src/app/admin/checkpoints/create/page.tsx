@@ -489,7 +489,41 @@ export default function RouteMappingPage() {
     };
 
     return (
-        <AdminLayout>
+        <AdminLayout
+            breadcrumbItems={[
+                { label: 'Checkpoint Mapping', labelEn: 'Checkpoint Mapping' }
+            ]}
+            breadcrumbRight={
+                <button
+                    onClick={handleSaveAll}
+                    disabled={saving || !hasUnsavedChanges || dirtyIds.size === 0}
+                    style={{
+                        padding: '6px 14px', borderRadius: 3, border: 'none',
+                        background: (hasUnsavedChanges && dirtyIds.size > 0) ? '#00a65a' : '#aaa', color: '#fff',
+                        cursor: (hasUnsavedChanges && dirtyIds.size > 0 && !saving) ? 'pointer' : 'not-allowed', fontSize: 13,
+                        display: 'inline-flex', alignItems: 'center', gap: 5,
+                        opacity: saving ? 0.7 : 1,
+                    }}
+                >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+                        <polyline points="17 21 17 13 7 13 7 21" />
+                        <polyline points="7 3 7 8 15 8" />
+                    </svg>
+                    {saving
+                        ? (language === 'th' ? 'กำลังบันทึก...' : 'Saving...')
+                        : (language === 'th' ? 'บันทึกแก้ไขทั้งหมด' : 'Save All Changes')
+                    }
+                    {hasUnsavedChanges && !saving && (
+                        <span style={{
+                            background: '#fff', color: '#00a65a', borderRadius: '50%',
+                            width: 18, height: 18, fontSize: 11, fontWeight: 700,
+                            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                        }}>{dirtyIds.size}</span>
+                    )}
+                </button>
+            }
+        >
             {/* Toast */}
             {toast && (
                 <div style={{
@@ -579,46 +613,13 @@ export default function RouteMappingPage() {
             )}
 
             {/* Page header */}
-            <div style={{ marginBottom: 15, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexWrap: 'wrap', gap: 10 }}>
-                <div>
-                    <h2 style={{ fontSize: 18, fontWeight: 500, margin: 0 }}>Checkpoint Mapping</h2>
-                    <p style={{ fontSize: 12, color: '#777', margin: '4px 0 0' }}>
-                        {language === 'th'
-                            ? 'จัดการจุดเช็คพอยท์และผูกความสัมพันธ์เข้ากับประเภทการแข่งขัน'
-                            : 'Manage checkpoints and map them to race categories'}
-                    </p>
-                </div>
-                <div style={{ display: 'flex', gap: 5 }}>
-                    <button
-                        onClick={handleSaveAll}
-                        disabled={saving || !hasUnsavedChanges || dirtyIds.size === 0}
-                        style={{
-                            padding: '6px 12px', borderRadius: 3, border: 'none',
-                            background: (hasUnsavedChanges && dirtyIds.size > 0) ? '#666' : '#999', color: '#fff',
-                            cursor: (hasUnsavedChanges && dirtyIds.size > 0 && !saving) ? 'pointer' : 'not-allowed', fontSize: 13,
-                            display: 'inline-flex', alignItems: 'center', gap: 5,
-                            opacity: saving ? 0.7 : 1,
-                        }}
-                        title={!hasUnsavedChanges || dirtyIds.size === 0
-                            ? (language === 'th' ? 'ไม่มีข้อมูลที่ต้องบันทึก' : 'No changes to save')
-                            : (language === 'th' ? `บันทึก ${dirtyIds.size} จุด` : `Save ${dirtyIds.size} checkpoint(s)`)
-                        }
-                    >
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                            <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
-                            <polyline points="17 21 17 13 7 13 7 21" />
-                            <polyline points="7 3 7 8 15 8" />
-                        </svg>
-                        {saving ? (language === 'th' ? 'กำลังบันทึก...' : 'Saving...') : (language === 'th' ? 'บันทึกแผนที่เส้นทาง' : 'Save Route Map')}
-                        {hasUnsavedChanges && !saving && (
-                            <span style={{
-                                background: '#fff', color: '#666', borderRadius: '50%',
-                                width: 18, height: 18, fontSize: 11, fontWeight: 700,
-                                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                            }}>{dirtyIds.size}</span>
-                        )}
-                    </button>
-                </div>
+            <div style={{ marginBottom: 15 }}>
+                <h2 style={{ fontSize: 18, fontWeight: 500, margin: 0 }}>Checkpoint Mapping</h2>
+                <p style={{ fontSize: 12, color: '#777', margin: '4px 0 0' }}>
+                    {language === 'th'
+                        ? 'จัดการจุดเช็คพอยท์และผูกความสัมพันธ์เข้ากับประเภทการแข่งขัน'
+                        : 'Manage checkpoints and map them to race categories'}
+                </p>
             </div>
 
             {/* Inventory picker popup */}
@@ -900,6 +901,7 @@ export default function RouteMappingPage() {
                             <table className="data-table" style={{ tableLayout: 'fixed', width: '100%' }}>
                                 <thead>
                                     <tr>
+                                        <th style={{ width: 30 }}></th>
                                         <th style={{ width: 50 }}>{language === 'th' ? 'ลำดับ' : 'Order'}</th>
                                         <th
                                             style={{
@@ -948,6 +950,16 @@ export default function RouteMappingPage() {
                                                     transition: 'opacity 0.15s',
                                                 }}
                                             >
+                                                <td style={{ textAlign: 'center', cursor: 'grab', userSelect: 'none', width: 30 }} title={language === 'th' ? 'คลิกค้างเพื่อย้ายลำดับ' : 'Hold to drag & reorder'}>
+                                                    <svg width="12" height="18" viewBox="0 0 12 18" fill="#999">
+                                                        <circle cx="3" cy="3" r="1.5" />
+                                                        <circle cx="9" cy="3" r="1.5" />
+                                                        <circle cx="3" cy="9" r="1.5" />
+                                                        <circle cx="9" cy="9" r="1.5" />
+                                                        <circle cx="3" cy="15" r="1.5" />
+                                                        <circle cx="9" cy="15" r="1.5" />
+                                                    </svg>
+                                                </td>
                                                 <td style={{ textAlign: 'center' }}>{cp.orderNum}</td>
                                                 <td
                                                     style={{
