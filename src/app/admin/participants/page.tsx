@@ -29,8 +29,13 @@ interface ParsedRow {
     nationality: string;
     ageGroup: string;
     chipCode: string;
-    status: 'ready' | 'warning' | 'error';
-    errorMsg: string;
+    tags: string[]; // 'no_bib','dup_bib','no_chip','dup_chip','ready'
+}
+
+interface CategoryImportData {
+    fileName: string;
+    parsedRows: ParsedRow[];
+    isDragging: boolean;
 }
 
 interface Runner {
@@ -124,7 +129,6 @@ export default function ParticipantsPage() {
     const { language } = useLanguage();
     const [campaign, setCampaign] = useState<Campaign | null>(null);
     const [loading, setLoading] = useState(true);
-    const [selectedCategory, setSelectedCategory] = useState<string>('');
     const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
     // Tab state: 'import' or a category name
@@ -136,36 +140,36 @@ export default function ParticipantsPage() {
     const [runnersLoading, setRunnersLoading] = useState(false);
     const [listSearch, setListSearch] = useState('');
     const [listPage, setListPage] = useState(1);
-    const [chipStatusFilter, setChipStatusFilter] = useState<string>('');
     const listLimit = 50;
+    const [categoryCounts, setCategoryCounts] = useState<Record<string, number>>({});
+    const [listRunnerStatus, setListRunnerStatus] = useState<string[]>([]);
+    const [dupBibs, setDupBibs] = useState<string[]>([]);
+    const [dupChips, setDupChips] = useState<string[]>([]);
 
     // Edit modal state
     const [editingRunner, setEditingRunner] = useState<Runner | null>(null);
     const [editForm, setEditForm] = useState<Record<string, string>>({});
     const [savingRunner, setSavingRunner] = useState(false);
 
-    // CSV state
-    const [fileName, setFileName] = useState<string>('');
-    const [parsedRows, setParsedRows] = useState<ParsedRow[]>([]);
+    // Per-category import state
+    const [categoryImports, setCategoryImports] = useState<Record<string, CategoryImportData>>({});
     const [importing, setImporting] = useState(false);
+    const [importingCategory, setImportingCategory] = useState<string>('');
     const fileInputRef = useRef<HTMLInputElement>(null);
-    const [isDragging, setIsDragging] = useState(false);
+    const [uploadTargetCategory, setUploadTargetCategory] = useState<string>('');
 
     // Options
-    const [checkDupBib, setCheckDupBib] = useState(true);
     const [updateExisting, setUpdateExisting] = useState(false);
-    const [autoAgeGroup, setAutoAgeGroup] = useState(true);
 
-    // Search / filter
-    const [search, setSearch] = useState('');
-    const [statusFilter, setStatusFilter] = useState<string>('');
+    // Import filter buttons (multi-select, push/pop)
+    const [importFilters, setImportFilters] = useState<string[]>([]);
 
     const showToast = (message: string, type: 'success' | 'error') => {
         setToast({ message, type });
         setTimeout(() => setToast(null), type === 'error' ? 6000 : 3000);
     };
 
-    // Load featured campaign
+    // Load featured campaign + fetch category counts
     useEffect(() => {
         async function loadFeatured() {
             try {
@@ -174,10 +178,23 @@ export default function ParticipantsPage() {
                 const data = await res.json();
                 if (data && data._id) {
                     setCampaign(data);
-                    const cats = data.categories || [];
-                    if (cats.length > 0) {
-                        setSelectedCategory(cats[0].name);
-                    }
+                    // Fetch counts per category, then auto-select first with data
+                    const cats: RaceCategory[] = data.categories || [];
+                    const counts: Record<string, number> = {};
+                    await Promise.all(cats.map(async (cat) => {
+                        try {
+                            const p = new URLSearchParams({ eventId: data._id, category: cat.name, page: '1', limit: '1' });
+                            const r = await fetch(`/api/runners/paged?${p.toString()}`);
+                            if (r.ok) {
+                                const d = await r.json();
+                                counts[cat.name] = d.total || 0;
+                            }
+                        } catch { /* ignore */ }
+                    }));
+                    setCategoryCounts(counts);
+                    // Auto-select the first category that has data, otherwise stay on import
+                    const firstWithData = cats.find(c => (counts[c.name] || 0) > 0);
+                    if (firstWithData) setActiveTab(firstWithData.name);
                 }
             } catch {
                 setCampaign(null);
@@ -200,23 +217,37 @@ export default function ParticipantsPage() {
                 limit: String(listLimit),
             });
             if (listSearch) params.append('search', listSearch);
-            if (chipStatusFilter) params.append('chipStatus', chipStatusFilter);
+            if (listRunnerStatus.length > 0) params.append('runnerStatus', listRunnerStatus.join(','));
             const res = await fetch(`/api/runners/paged?${params.toString()}`, { cache: 'no-store' });
             if (!res.ok) throw new Error('Failed');
             const data = await res.json();
             setRunners(data.data || []);
             setRunnersTotal(data.total || 0);
+            setDupBibs(data.dupBibs || []);
+            setDupChips(data.dupChips || []);
         } catch {
             setRunners([]);
             setRunnersTotal(0);
         } finally {
             setRunnersLoading(false);
         }
-    }, [campaign, activeTab, listSearch, listPage, chipStatusFilter]);
+    }, [campaign, activeTab, listSearch, listPage, listRunnerStatus]);
 
     useEffect(() => {
         if (activeTab !== 'import') fetchRunners();
     }, [activeTab, fetchRunners]);
+
+    // Toggle runner status filter (push/pop, 'ready' clears all others)
+    const toggleListRunnerStatus = useCallback((status: string) => {
+        setListRunnerStatus(prev => {
+            if (status === 'ready') return prev.includes('ready') ? [] : ['ready'];
+            let next = prev.filter(f => f !== 'ready');
+            if (next.includes(status)) { next = next.filter(f => f !== status); }
+            else { next = [...next, status]; }
+            return next;
+        });
+        setListPage(1);
+    }, []);
 
     // Open edit modal for a runner
     const openEditModal = useCallback((runner: Runner) => {
@@ -278,7 +309,40 @@ export default function ParticipantsPage() {
         }
     }, [editingRunner, editForm, language]);
 
-    const processCSV = useCallback((text: string) => {
+    // Delete a runner
+    const handleDeleteRunner = useCallback(async () => {
+        if (!editingRunner) return;
+        const confirmed = window.confirm(
+            language === 'th'
+                ? `คุณต้องการลบนักกีฬา BIB ${editingRunner.bib} (${editingRunner.firstName} ${editingRunner.lastName}) จริงหรือไม่?`
+                : `Are you sure you want to delete BIB ${editingRunner.bib} (${editingRunner.firstName} ${editingRunner.lastName})?`
+        );
+        if (!confirmed) return;
+        setSavingRunner(true);
+        try {
+            const res = await fetch(`/api/runners/${editingRunner._id}`, { method: 'DELETE' });
+            if (!res.ok) {
+                let errMsg = 'Failed';
+                try { const e = await res.json(); errMsg = e?.message || e?.error || errMsg; } catch { /* */ }
+                throw new Error(typeof errMsg === 'string' ? errMsg : JSON.stringify(errMsg));
+            }
+            setRunners(prev => prev.filter(r => r._id !== editingRunner._id));
+            setRunnersTotal(prev => prev - 1);
+            // Update category count
+            const cat = editingRunner.category || activeTab;
+            setCategoryCounts(prev => ({ ...prev, [cat]: Math.max(0, (prev[cat] || 1) - 1) }));
+            setEditingRunner(null);
+            showToast(language === 'th' ? 'ลบสำเร็จ' : 'Deleted successfully', 'success');
+        } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : 'Unknown error';
+            showToast(language === 'th' ? `ลบไม่สำเร็จ: ${msg}` : `Delete failed: ${msg}`, 'error');
+        } finally {
+            setSavingRunner(false);
+        }
+    }, [editingRunner, activeTab, language]);
+
+    // Parse CSV text and store for a specific category with tag-based validation
+    const processCSVForCategory = useCallback((text: string, category: string, fName: string) => {
         const rows = parseCSV(text);
         if (rows.length < 2) {
             showToast(language === 'th' ? 'ไฟล์ CSV ไม่มีข้อมูล' : 'CSV file is empty', 'error');
@@ -305,8 +369,10 @@ export default function ParticipantsPage() {
             return;
         }
 
-        const bibSet = new Map<string, number>();
+        // First pass: collect data
         const parsed: ParsedRow[] = [];
+        const bibCount = new Map<string, number[]>();
+        const chipCount = new Map<string, number[]>();
 
         for (let i = 1; i < rows.length; i++) {
             const r = rows[i];
@@ -318,44 +384,44 @@ export default function ParticipantsPage() {
             const birthDate = dobIdx >= 0 ? (r[dobIdx] || '').trim() : '';
             const nationality = natIdx >= 0 ? (r[natIdx] || '').trim() : 'THA';
             const chip = chipIdx >= 0 ? (r[chipIdx] || '').trim() : '';
-            let ageGroup = ageGrpIdx >= 0 ? (r[ageGrpIdx] || '').trim() : '';
+            const ageGroup = ageGrpIdx >= 0 ? (r[ageGrpIdx] || '').trim() : '';
 
-            if (autoAgeGroup && birthDate && gender !== '?') {
-                ageGroup = calculateAgeGroup(birthDate, gender);
+            if (bib) {
+                if (!bibCount.has(bib)) bibCount.set(bib, []);
+                bibCount.get(bib)!.push(i);
             }
-
-            let status: ParsedRow['status'] = 'ready';
-            let errorMsg = '';
-
-            if (!bib || !firstName) {
-                status = 'error';
-                errorMsg = language === 'th' ? 'ข้อมูลไม่ครบ' : 'Missing data';
-            } else if (gender === '?') {
-                status = 'error';
-                errorMsg = language === 'th' ? 'เพศไม่ถูกต้อง' : 'Invalid gender';
-            } else if (checkDupBib && bibSet.has(bib)) {
-                status = 'error';
-                errorMsg = language === 'th' ? `BIB ซ้ำ (แถว ${bibSet.get(bib)})` : `Duplicate BIB (row ${bibSet.get(bib)})`;
-            } else if (!chip) {
-                status = 'warning';
-                errorMsg = language === 'th' ? 'ขาด Chip Code' : 'Missing Chip Code';
+            if (chip) {
+                if (!chipCount.has(chip)) chipCount.set(chip, []);
+                chipCount.get(chip)!.push(i);
             }
-
-            if (status !== 'error') bibSet.set(bib, i);
 
             parsed.push({
                 rowNum: i,
                 bib, firstName, lastName, gender, birthDate, nationality, ageGroup, chipCode: chip,
-                status, errorMsg,
+                tags: [],
             });
         }
 
-        setParsedRows(parsed);
-    }, [language, checkDupBib, autoAgeGroup]);
+        // Second pass: assign tags
+        for (const row of parsed) {
+            const tags: string[] = [];
+            if (!row.bib) tags.push('no_bib');
+            else if ((bibCount.get(row.bib)?.length || 0) > 1) tags.push('dup_bib');
+            if (!row.chipCode) tags.push('no_chip');
+            else if ((chipCount.get(row.chipCode)?.length || 0) > 1) tags.push('dup_chip');
+            if (tags.length === 0) tags.push('ready');
+            row.tags = tags;
+        }
 
-    const processFile = useCallback((file: File) => {
-        setFileName(file.name);
-        const isXlsx = file.name.toLowerCase().endsWith('.xlsx') || file.name.toLowerCase().endsWith('.xls');
+        setCategoryImports(prev => ({
+            ...prev,
+            [category]: { fileName: fName, parsedRows: parsed, isDragging: false },
+        }));
+    }, [language]);
+
+    const processFileForCategory = useCallback((file: File, category: string) => {
+        const fName = file.name;
+        const isXlsx = fName.toLowerCase().endsWith('.xlsx') || fName.toLowerCase().endsWith('.xls');
         if (isXlsx) {
             const reader = new FileReader();
             reader.onload = (ev) => {
@@ -364,7 +430,7 @@ export default function ParticipantsPage() {
                     const workbook = XLSX.read(data, { type: 'array' });
                     const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
                     const csvText = XLSX.utils.sheet_to_csv(firstSheet);
-                    processCSV(csvText);
+                    processCSVForCategory(csvText, category, fName);
                 } catch {
                     showToast(language === 'th' ? 'ไม่สามารถอ่านไฟล์ Excel ได้' : 'Cannot read Excel file', 'error');
                 }
@@ -374,22 +440,26 @@ export default function ParticipantsPage() {
             const reader = new FileReader();
             reader.onload = (ev) => {
                 const text = ev.target?.result as string;
-                processCSV(text);
+                processCSVForCategory(text, category, fName);
             };
             reader.readAsText(file, 'UTF-8');
         }
-    }, [processCSV, language]);
+    }, [processCSVForCategory, language]);
 
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
-        if (!file) return;
-        processFile(file);
+        if (!file || !uploadTargetCategory) return;
+        processFileForCategory(file, uploadTargetCategory);
+        if (fileInputRef.current) fileInputRef.current.value = '';
     };
 
-    const handleDrop = useCallback((e: React.DragEvent) => {
+    const handleDropForCategory = useCallback((e: React.DragEvent, category: string) => {
         e.preventDefault();
         e.stopPropagation();
-        setIsDragging(false);
+        setCategoryImports(prev => ({
+            ...prev,
+            [category]: { ...(prev[category] || { fileName: '', parsedRows: [] }), isDragging: false },
+        }));
         const file = e.dataTransfer.files?.[0];
         if (!file) return;
         const ext = file.name.toLowerCase();
@@ -397,56 +467,54 @@ export default function ParticipantsPage() {
             showToast(language === 'th' ? 'รองรับเฉพาะไฟล์ CSV และ XLSX' : 'Only CSV and XLSX files are supported', 'error');
             return;
         }
-        processFile(file);
-    }, [processFile, language]);
+        processFileForCategory(file, category);
+    }, [processFileForCategory, language]);
 
-    const handleDragOver = useCallback((e: React.DragEvent) => {
+    const handleDragOverForCategory = useCallback((e: React.DragEvent, category: string) => {
         e.preventDefault();
         e.stopPropagation();
-        setIsDragging(true);
-    }, []);
-
-    const handleDragLeave = useCallback((e: React.DragEvent) => {
-        e.preventDefault();
-        e.stopPropagation();
-        setIsDragging(false);
-    }, []);
-
-    const handleUpdateChip = (rowNum: number, value: string) => {
-        setParsedRows(prev => prev.map(r => {
-            if (r.rowNum !== rowNum) return r;
-            const updated = { ...r, chipCode: value };
-            if (r.status === 'warning' && value.trim()) {
-                updated.status = 'ready';
-                updated.errorMsg = '';
-            } else if (r.status === 'ready' && !value.trim() && !r.errorMsg) {
-                updated.status = 'warning';
-                updated.errorMsg = language === 'th' ? 'ขาด Chip Code' : 'Missing Chip Code';
-            }
-            return updated;
+        setCategoryImports(prev => ({
+            ...prev,
+            [category]: { ...(prev[category] || { fileName: '', parsedRows: [] }), isDragging: true },
         }));
-    };
+    }, []);
 
-    const handleImport = async () => {
-        if (!campaign?._id || !selectedCategory) {
-            showToast(language === 'th' ? 'กรุณาเลือกระยะทาง' : 'Please select a distance', 'error');
-            return;
-        }
-        const readyRows = parsedRows.filter(r => r.status === 'ready' || r.status === 'warning');
-        if (readyRows.length === 0) {
-            showToast(language === 'th' ? 'ไม่มีข้อมูลที่พร้อมนำเข้า' : 'No data ready to import', 'error');
-            return;
-        }
+    const handleDragLeaveForCategory = useCallback((e: React.DragEvent, category: string) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setCategoryImports(prev => ({
+            ...prev,
+            [category]: { ...(prev[category] || { fileName: '', parsedRows: [] }), isDragging: false },
+        }));
+    }, []);
+
+    // Toggle import filter (push/pop, 'ready' clears all others)
+    const toggleImportFilter = useCallback((filter: string) => {
+        setImportFilters(prev => {
+            if (filter === 'ready') return prev.includes('ready') ? [] : ['ready'];
+            let next = prev.filter(f => f !== 'ready');
+            if (next.includes(filter)) { next = next.filter(f => f !== filter); }
+            else { next = [...next, filter]; }
+            return next;
+        });
+    }, []);
+
+    // Import a specific category
+    const handleImportCategory = async (category: string) => {
+        if (!campaign?._id) return;
+        const data = categoryImports[category];
+        if (!data || data.parsedRows.length === 0) return;
 
         setImporting(true);
+        setImportingCategory(category);
         try {
-            const payload = readyRows.map(r => ({
+            const payload = data.parsedRows.map(r => ({
                 eventId: campaign._id,
-                bib: r.bib,
-                firstName: r.firstName,
+                bib: r.bib || `AUTO${r.rowNum}`,
+                firstName: r.firstName || '-',
                 lastName: r.lastName || '-',
                 gender: r.gender === 'F' ? 'F' : 'M',
-                category: selectedCategory,
+                category,
                 nationality: r.nationality || 'THA',
                 birthDate: r.birthDate || undefined,
                 ageGroup: r.ageGroup || undefined,
@@ -477,70 +545,46 @@ export default function ParticipantsPage() {
                         errMsg = Array.isArray(errBody.message) ? errBody.message.join(', ') : errBody.message;
                     }
                 } catch { /* ignore parse error */ }
-                console.error('Import failed:', res.status, errMsg);
-                showToast(
-                    language === 'th'
-                        ? `นำเข้าไม่สำเร็จ: ${errMsg}`
-                        : `Import failed: ${errMsg}`,
-                    'error'
-                );
+                showToast(language === 'th' ? `นำเข้าไม่สำเร็จ: ${errMsg}` : `Import failed: ${errMsg}`, 'error');
                 return;
             }
-            const data = await res.json();
+            const result = await res.json();
 
-            // Handle new response format { inserted, updated, errors }
-            if (data.inserted !== undefined) {
+            if (result.inserted !== undefined) {
                 const parts: string[] = [];
-                if (data.inserted > 0) parts.push(language === 'th' ? `เพิ่มใหม่ ${data.inserted}` : `Inserted ${data.inserted}`);
-                if (data.updated > 0) parts.push(language === 'th' ? `อัปเดต ${data.updated}` : `Updated ${data.updated}`);
-                const errParts = data.errors?.length ? data.errors : [];
+                if (result.inserted > 0) parts.push(language === 'th' ? `เพิ่มใหม่ ${result.inserted}` : `Inserted ${result.inserted}`);
+                if (result.updated > 0) parts.push(language === 'th' ? `อัปเดต ${result.updated}` : `Updated ${result.updated}`);
+                const errParts = result.errors?.length ? result.errors : [];
                 const msg = parts.length > 0 ? parts.join(', ') : (language === 'th' ? 'ไม่มีรายการใหม่' : 'No new records');
-                const hasErrors = errParts.length > 0;
                 showToast(
-                    hasErrors ? `${msg} | ${errParts.join('; ')}` : msg,
-                    (data.inserted > 0 || data.updated > 0) ? 'success' : 'error'
+                    errParts.length > 0 ? `${msg} | ${errParts.join('; ')}` : msg,
+                    (result.inserted > 0 || result.updated > 0) ? 'success' : 'error'
                 );
             } else {
-                const count = Array.isArray(data) ? data.length : readyRows.length;
-                showToast(
-                    language === 'th'
-                        ? `นำเข้าสำเร็จ ${count} รายการ`
-                        : `Imported ${count} participants`,
-                    'success'
-                );
+                showToast(language === 'th' ? `นำเข้าสำเร็จ ${data.parsedRows.length} รายการ` : `Imported ${data.parsedRows.length} participants`, 'success');
             }
-            setParsedRows([]);
-            setFileName('');
+            // Clear this category's import data
+            setCategoryImports(prev => { const next = { ...prev }; delete next[category]; return next; });
+            // Refresh count
+            try {
+                const p = new URLSearchParams({ eventId: campaign._id, category, page: '1', limit: '1' });
+                const cr = await fetch(`/api/runners/paged?${p.toString()}`);
+                if (cr.ok) { const cd = await cr.json(); setCategoryCounts(prev => ({ ...prev, [category]: cd.total || 0 })); }
+            } catch { /* ignore */ }
         } catch (err: unknown) {
             const msg = err instanceof Error ? err.message : 'Unknown error';
-            console.error('Import error:', msg);
-            showToast(
-                language === 'th'
-                    ? `นำเข้าไม่สำเร็จ: ${msg}`
-                    : `Import failed: ${msg}`,
-                'error'
-            );
+            showToast(language === 'th' ? `นำเข้าไม่สำเร็จ: ${msg}` : `Import failed: ${msg}`, 'error');
         } finally {
             setImporting(false);
+            setImportingCategory('');
         }
     };
 
-    // Filtered rows
-    const filteredRows = parsedRows.filter(r => {
-        if (statusFilter && r.status !== statusFilter) return false;
-        if (search) {
-            const q = search.toLowerCase();
-            return r.bib.toLowerCase().includes(q) ||
-                r.firstName.toLowerCase().includes(q) ||
-                r.lastName.toLowerCase().includes(q) ||
-                r.chipCode.toLowerCase().includes(q);
-        }
-        return true;
-    });
-
-    const readyCount = parsedRows.filter(r => r.status === 'ready').length;
-    const warningCount = parsedRows.filter(r => r.status === 'warning').length;
-    const errorCount = parsedRows.filter(r => r.status === 'error').length;
+    // Helper: filter rows for a category based on active import filters
+    const getFilteredRows = useCallback((rows: ParsedRow[]) => {
+        if (importFilters.length === 0) return rows;
+        return rows.filter(r => importFilters.some(f => r.tags.includes(f)));
+    }, [importFilters]);
 
     return (
         <AdminLayout
@@ -581,20 +625,20 @@ export default function ParticipantsPage() {
                 </div>
             ) : (
                 <>
-                    {/* Tabs: Import + one per category */}
+                    {/* Tabs: Import + category tabs that have data */}
                     <div style={{
-                        display: 'flex', gap: 0, marginBottom: 20, borderBottom: '2px solid #e5e7eb',
-                        overflowX: 'auto',
+                        display: 'flex', gap: 6, marginBottom: 20,
+                        overflowX: 'auto', flexWrap: 'wrap',
                     }}>
                         <button
-                            onClick={() => { setActiveTab('import'); setListSearch(''); setChipStatusFilter(''); setListPage(1); }}
+                            onClick={() => { setActiveTab('import'); setListSearch(''); setListPage(1); }}
                             style={{
-                                padding: '10px 20px', fontSize: 13, fontWeight: activeTab === 'import' ? 700 : 500,
-                                border: 'none', cursor: 'pointer', borderRadius: '6px 6px 0 0',
-                                background: activeTab === 'import' ? '#fff' : 'transparent',
-                                color: activeTab === 'import' ? '#3c8dbc' : '#888',
-                                borderBottom: activeTab === 'import' ? '2px solid #3c8dbc' : '2px solid transparent',
-                                marginBottom: -2, transition: '0.15s', whiteSpace: 'nowrap',
+                                padding: '8px 18px', fontSize: 13, fontWeight: activeTab === 'import' ? 700 : 500,
+                                border: activeTab === 'import' ? '2px solid #3c8dbc' : '1px solid #bbb',
+                                cursor: 'pointer', borderRadius: 6,
+                                background: activeTab === 'import' ? '#e8f4fd' : '#fff',
+                                color: activeTab === 'import' ? '#3c8dbc' : '#555',
+                                transition: '0.15s', whiteSpace: 'nowrap',
                             }}
                         >
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: 6, verticalAlign: -2 }}>
@@ -602,27 +646,30 @@ export default function ParticipantsPage() {
                                 <polyline points="7 10 12 15 17 10" />
                                 <line x1="12" y1="15" x2="12" y2="3" />
                             </svg>
-                            {language === 'th' ? 'นำเข้าข้อมูล' : 'Import Data'}
+                            {language === 'th' ? 'นำเข้าข้อมูลผู้เข้าแข่งขัน' : 'Import Participants'}
                         </button>
-                        {(campaign.categories || []).map((cat, i) => {
+                        {(campaign.categories || []).filter(cat => (categoryCounts[cat.name] || 0) > 0).map((cat, i) => {
                             const isActive = activeTab === cat.name;
+                            const count = categoryCounts[cat.name] || 0;
                             return (
                                 <button
                                     key={`tab-${cat.name}-${i}`}
-                                    onClick={() => { setActiveTab(cat.name); setListSearch(''); setChipStatusFilter(''); setListPage(1); }}
+                                    onClick={() => { setActiveTab(cat.name); setListSearch(''); setListPage(1); }}
                                     style={{
-                                        padding: '10px 20px', fontSize: 13, fontWeight: isActive ? 700 : 500,
-                                        border: 'none', cursor: 'pointer', borderRadius: '6px 6px 0 0',
-                                        background: isActive ? '#fff' : 'transparent',
-                                        color: isActive ? '#3c8dbc' : '#888',
-                                        borderBottom: isActive ? '2px solid #3c8dbc' : '2px solid transparent',
-                                        marginBottom: -2, transition: '0.15s', whiteSpace: 'nowrap',
+                                        padding: '8px 18px', fontSize: 13, fontWeight: isActive ? 700 : 500,
+                                        border: isActive ? '2px solid #3c8dbc' : '1px solid #bbb',
+                                        cursor: 'pointer', borderRadius: 6,
+                                        background: isActive ? '#e8f4fd' : '#fff',
+                                        color: isActive ? '#3c8dbc' : '#555',
+                                        transition: '0.15s', whiteSpace: 'nowrap',
+                                        display: 'flex', alignItems: 'center', gap: 5,
                                     }}
                                 >
-                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: 5, verticalAlign: -2 }}>
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ verticalAlign: -2 }}>
                                         <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
                                         <circle cx="9" cy="7" r="4" />
                                     </svg>
+                                    <span style={{ color: '#3c8dbc', fontWeight: 700, fontSize: 12 }}>({count})</span>
                                     {cat.name}{cat.distance ? ` (${cat.distance})` : ''}
                                 </button>
                             );
@@ -631,296 +678,175 @@ export default function ParticipantsPage() {
 
                     {/* ===== IMPORT TAB ===== */}
                     {activeTab === 'import' && (<>
-                    {/* Step 1: Import Settings */}
-                    <div style={{
-                        background: '#fff', borderTop: '3px solid #3c8dbc',
-                        padding: '12px 20px', borderRadius: 4, marginBottom: 20,
-                        boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
-                    }}>
-                        <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 10, color: '#444', display: 'flex', alignItems: 'center', gap: 8 }}>
-                            <span style={{
-                                background: '#3c8dbc', color: 'white', width: 20, height: 20,
-                                borderRadius: '50%', display: 'inline-flex', alignItems: 'center',
-                                justifyContent: 'center', fontSize: 10,
-                            }}>1</span>
-                            {language === 'th' ? 'ตั้งค่าการนำเข้า (Import Settings)' : 'Import Settings'}
-                        </div>
-                        <div style={{ display: 'flex', gap: 20, alignItems: 'center', flexWrap: 'wrap' }}>
-                            {/* Distance selector */}
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                <span style={{ fontWeight: 600, fontSize: 12, whiteSpace: 'nowrap', color: '#555' }}>
-                                    {language === 'th' ? 'ระยะทาง:' : 'Distance:'}
-                                </span>
-                                <select
-                                    className="form-select"
-                                    value={selectedCategory}
-                                    onChange={e => setSelectedCategory(e.target.value)}
-                                    style={{ minWidth: 220, padding: '6px 10px', fontSize: 13, fontWeight: 500, border: '1px solid #ccc', borderRadius: 4 }}
-                                >
-                                    {(campaign.categories || []).map((cat, i) => (
-                                        <option key={`${cat.name}-${i}`} value={cat.name}>
-                                            {cat.name}{cat.distance ? ` - ${cat.distance}` : ''}
-                                        </option>
-                                    ))}
-                                </select>
-                            </div>
+                    {/* Hidden file input (shared) */}
+                    <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept=".csv,.xlsx,.xls"
+                        onChange={handleFileChange}
+                        style={{ display: 'none' }}
+                    />
 
-                            {/* File upload with drag & drop */}
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 300 }}>
-                                <span style={{ fontWeight: 600, fontSize: 12, whiteSpace: 'nowrap', color: '#555' }}>
-                                    {language === 'th' ? 'ไฟล์:' : 'File:'}
-                                </span>
-                                <div
-                                    onClick={() => fileInputRef.current?.click()}
-                                    onDrop={handleDrop}
-                                    onDragOver={handleDragOver}
-                                    onDragLeave={handleDragLeave}
-                                    style={{
-                                        border: `2px dashed ${isDragging ? '#00a65a' : '#ccc'}`,
-                                        padding: '6px 12px',
-                                        background: isDragging ? '#e8f5e9' : '#f9f9f9',
-                                        borderRadius: 3, cursor: 'pointer', display: 'flex', alignItems: 'center',
-                                        gap: 10, flex: 1, transition: '0.2s',
-                                    }}
-                                    onMouseEnter={e => { if (!isDragging) { (e.currentTarget).style.borderColor = '#00a65a'; (e.currentTarget).style.background = '#e8f5e9'; } }}
-                                    onMouseLeave={e => { if (!isDragging) { (e.currentTarget).style.borderColor = '#ccc'; (e.currentTarget).style.background = '#f9f9f9'; } }}
-                                >
-                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#00a65a" strokeWidth="2">
-                                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                                        <polyline points="14 2 14 8 20 8" />
-                                        <line x1="16" y1="13" x2="8" y2="13" />
-                                        <line x1="16" y1="17" x2="8" y2="17" />
-                                    </svg>
-                                    <div style={{ fontWeight: 500, fontSize: 13, color: isDragging ? '#00a65a' : '#333' }}>
-                                        {isDragging
-                                            ? (language === 'th' ? 'วางไฟล์ที่นี่...' : 'Drop file here...')
-                                            : fileName
-                                                ? fileName
-                                                : (language === 'th' ? 'คลิกเลือกหรือลากไฟล์ CSV, XLSX มาวาง' : 'Click or drag CSV/XLSX file here')
-                                        }
+                    {/* Per-category sections */}
+                    {(campaign.categories || []).map((cat, catIdx) => {
+                        const catData = categoryImports[cat.name];
+                        const isDrag = catData?.isDragging || false;
+                        const catFileName = catData?.fileName || '';
+                        const catRows = catData?.parsedRows || [];
+                        const filtered = getFilteredRows(catRows);
+                        const readyC = catRows.filter(r => r.tags.includes('ready')).length;
+                        const isImportingThis = importing && importingCategory === cat.name;
+
+                        return (
+                            <div key={`import-${cat.name}-${catIdx}`} style={{
+                                background: '#fff', borderRadius: 4, marginBottom: 16,
+                                boxShadow: '0 1px 3px rgba(0,0,0,0.1)', overflow: 'hidden',
+                                border: '1px solid #e5e7eb',
+                            }}>
+                                {/* Category header */}
+                                <div style={{
+                                    padding: '10px 16px', background: '#f8fafc',
+                                    borderBottom: '1px solid #e5e7eb',
+                                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                                }}>
+                                    <div style={{ fontWeight: 700, fontSize: 13, color: '#333', display: 'flex', alignItems: 'center', gap: 8 }}>
+                                        <span style={{
+                                            background: '#3c8dbc', color: '#fff', padding: '2px 10px',
+                                            borderRadius: 4, fontSize: 12,
+                                        }}>
+                                            {cat.name}
+                                        </span>
+                                        {cat.distance && <span style={{ color: '#666', fontWeight: 500, fontSize: 12 }}>{cat.distance}</span>}
+                                        {catFileName && <span style={{ color: '#888', fontSize: 11, fontWeight: 400 }}>— {catFileName} ({catRows.length} {language === 'th' ? 'รายการ' : 'rows'})</span>}
                                     </div>
-                                    {fileName && !isDragging && (
-                                        <small style={{ color: '#888', marginLeft: 'auto' }}>
-                                            ({language === 'th' ? 'คลิกเปลี่ยน' : 'click to change'})
-                                        </small>
-                                    )}
-                                </div>
-                                <input
-                                    ref={fileInputRef}
-                                    type="file"
-                                    accept=".csv,.xlsx,.xls"
-                                    onChange={handleFileChange}
-                                    style={{ display: 'none' }}
-                                />
-                            </div>
-
-                            {/* Checkboxes */}
-                            <div style={{
-                                display: 'flex', gap: 15, alignItems: 'center', fontSize: 12,
-                                marginLeft: 'auto', paddingLeft: 15, borderLeft: '1px solid #eee',
-                                whiteSpace: 'nowrap', color: '#555',
-                            }}>
-                                <label style={{ display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer' }}>
-                                    <input type="checkbox" checked={checkDupBib} onChange={e => setCheckDupBib(e.target.checked)} />
-                                    {language === 'th' ? 'เช็ค BIB ซ้ำ' : 'Check dup BIB'}
-                                </label>
-                                <label style={{ display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer' }}>
-                                    <input type="checkbox" checked={updateExisting} onChange={e => setUpdateExisting(e.target.checked)} />
-                                    {language === 'th' ? 'อัปเดตข้อมูลเดิม' : 'Update existing'}
-                                </label>
-                                <label style={{ display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer' }}>
-                                    <input type="checkbox" checked={autoAgeGroup} onChange={e => setAutoAgeGroup(e.target.checked)} />
-                                    Auto Age Group
-                                </label>
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* Step 2: Preview */}
-                    {parsedRows.length > 0 && (
-                        <div style={{
-                            background: '#fff', borderRadius: 4,
-                            boxShadow: '0 1px 3px rgba(0,0,0,0.1)', padding: 15, marginBottom: 15,
-                        }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                                <div style={{ fontWeight: 600, fontSize: 14, color: '#444', display: 'flex', alignItems: 'center', gap: 8 }}>
-                                    <span style={{
-                                        background: '#3c8dbc', color: 'white', width: 20, height: 20,
-                                        borderRadius: '50%', display: 'inline-flex', alignItems: 'center',
-                                        justifyContent: 'center', fontSize: 10,
-                                    }}>2</span>
-                                    {language === 'th'
-                                        ? `ตรวจสอบข้อมูล (Preview ${parsedRows.length} รายการ)`
-                                        : `Preview (${parsedRows.length} rows)`}
-                                </div>
-                                <div style={{ fontSize: 12, color: '#666' }}>
-                                    {language === 'th' ? 'สถานะ: ' : 'Status: '}
-                                    <span style={{ color: '#00a65a', fontWeight: 'bold' }}>{readyCount} {language === 'th' ? 'พร้อม' : 'Ready'}</span>
-                                    {warningCount > 0 && (
-                                        <>, <span style={{ color: '#e68a00', fontWeight: 'bold' }}>{warningCount} {language === 'th' ? 'ขาด Chip' : 'No Chip'}</span></>
-                                    )}
-                                    {errorCount > 0 && (
-                                        <>, <span style={{ color: '#dd4b39', fontWeight: 'bold' }}>{errorCount} Error</span></>
-                                    )}
-                                </div>
-                            </div>
-
-                            {/* Filter toolbar */}
-                            <div style={{
-                                display: 'flex', gap: 10, marginBottom: 10, background: '#f4f6f9',
-                                padding: '8px 12px', borderRadius: 4, alignItems: 'center', border: '1px solid #eee',
-                            }}>
-                                <input
-                                    type="text"
-                                    value={search}
-                                    onChange={e => setSearch(e.target.value)}
-                                    placeholder={language === 'th' ? 'ค้นหา BIB, ชื่อ หรือ Chip Code...' : 'Search BIB, name or Chip Code...'}
-                                    style={{
-                                        padding: '6px 10px', border: '1px solid #ccc', borderRadius: 3,
-                                        fontSize: 13, width: 280, fontFamily: 'inherit',
-                                    }}
-                                />
-                                <select
-                                    className="form-select"
-                                    value={statusFilter}
-                                    onChange={e => setStatusFilter(e.target.value)}
-                                    style={{ width: 180, background: 'white', fontSize: 13 }}
-                                >
-                                    <option value="">{language === 'th' ? 'สถานะ: ทั้งหมด' : 'Status: All'}</option>
-                                    <option value="ready">{language === 'th' ? 'พร้อม (Ready)' : 'Ready'}</option>
-                                    <option value="warning">{language === 'th' ? 'ขาด Chip Code' : 'Missing Chip'}</option>
-                                    <option value="error">Error</option>
-                                </select>
-                            </div>
-
-                            {/* Table */}
-                            <div style={{ maxHeight: 500, overflowY: 'auto', border: '1px solid #eee', borderRadius: 3 }}>
-                                <table className="data-table" style={{ fontSize: 12 }}>
-                                    <thead>
-                                        <tr>
-                                            <th style={{ width: 40 }}>#</th>
-                                            <th style={{ width: 80 }}>BIB</th>
-                                            <th>{language === 'th' ? 'ชื่อ-นามสกุล' : 'Name'}</th>
-                                            <th style={{ width: 60 }}>{language === 'th' ? 'เพศ' : 'Gender'}</th>
-                                            <th style={{ width: 90 }}>{language === 'th' ? 'วันเกิด' : 'DOB'}</th>
-                                            <th style={{ width: 60 }}>{language === 'th' ? 'สัญชาติ' : 'Nat.'}</th>
-                                            <th style={{ width: 80 }}>{language === 'th' ? 'กลุ่มอายุ' : 'Age Grp'}</th>
-                                            <th style={{ width: 120 }}>{language === 'th' ? 'สถานะ' : 'Status'}</th>
-                                            <th style={{ width: 160 }}>Chip Code (RFID)</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {filteredRows.map((r) => (
-                                            <tr
-                                                key={r.rowNum}
+                                    {catRows.length > 0 && (
+                                        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                                            <button
+                                                className="btn"
+                                                onClick={() => setCategoryImports(prev => { const n = { ...prev }; delete n[cat.name]; return n; })}
+                                                style={{ background: '#6c757d', fontSize: 11, padding: '4px 12px' }}
+                                            >
+                                                {language === 'th' ? 'ล้าง' : 'Clear'}
+                                            </button>
+                                            <button
+                                                className="btn"
+                                                onClick={() => handleImportCategory(cat.name)}
+                                                disabled={isImportingThis || catRows.length === 0}
                                                 style={{
-                                                    background: r.status === 'error' ? '#fff5f5'
-                                                        : r.status === 'warning' ? '#fff9e6' : undefined,
+                                                    background: '#00a65a', fontSize: 11, padding: '4px 14px',
+                                                    fontWeight: 700, opacity: isImportingThis ? 0.6 : 1,
                                                 }}
                                             >
-                                                <td style={{ textAlign: 'center' }}>{r.rowNum}</td>
-                                                <td>
-                                                    <span style={{
-                                                        background: r.status === 'error' ? '#fff' : '#eee',
-                                                        padding: '2px 8px', borderRadius: 4, fontFamily: 'monospace',
-                                                        fontWeight: 'bold', border: `1px solid ${r.status === 'error' ? '#dd4b39' : '#ddd'}`,
-                                                        fontSize: 12, color: r.status === 'error' ? '#dd4b39' : '#333',
-                                                        display: 'inline-block', minWidth: 45, textAlign: 'center',
-                                                    }}>
-                                                        {r.bib}
-                                                    </span>
-                                                </td>
-                                                <td>{r.firstName} {r.lastName}</td>
-                                                <td style={{ textAlign: 'center', color: r.gender === '?' ? 'red' : undefined, fontWeight: r.gender === '?' ? 'bold' : undefined }}>
-                                                    {r.gender}
-                                                </td>
-                                                <td style={{ textAlign: 'center' }}>{r.birthDate || '-'}</td>
-                                                <td style={{ textAlign: 'center' }}>{r.nationality}</td>
-                                                <td>
-                                                    <span style={{ color: r.ageGroup ? '#3c8dbc' : '#ccc' }}>
-                                                        {r.ageGroup || '-'}
-                                                    </span>
-                                                </td>
-                                                <td>
-                                                    {r.status === 'ready' && (
-                                                        <span style={{ color: '#00a65a', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4, fontSize: 11 }}>
-                                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" /><polyline points="22 4 12 14.01 9 11.01" /></svg>
-                                                            {language === 'th' ? 'พร้อม' : 'Ready'}
-                                                        </span>
-                                                    )}
-                                                    {r.status === 'warning' && (
-                                                        <span style={{ color: '#e68a00', fontWeight: 'bold', fontSize: 11, display: 'flex', alignItems: 'center', gap: 4 }}>
-                                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" /><line x1="7" y1="7" x2="7.01" y2="7" /></svg>
-                                                            {language === 'th' ? 'ขาด Chip' : 'No Chip'}
-                                                        </span>
-                                                    )}
-                                                    {r.status === 'error' && (
-                                                        <span style={{ color: '#dd4b39', fontWeight: 'bold', fontSize: 11, display: 'flex', alignItems: 'center', gap: 4 }}>
-                                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10" /><line x1="15" y1="9" x2="9" y2="15" /><line x1="9" y1="9" x2="15" y2="15" /></svg>
-                                                            {r.errorMsg}
-                                                        </span>
-                                                    )}
-                                                </td>
-                                                <td>
-                                                    <input
-                                                        type="text"
-                                                        value={r.chipCode}
-                                                        onChange={e => handleUpdateChip(r.rowNum, e.target.value)}
-                                                        placeholder={language === 'th' ? 'ระบุรหัสชิป' : 'Chip code'}
-                                                        style={{
-                                                            width: '100%', border: `1px solid ${r.chipCode ? '#bbf7d0' : '#ddd'}`,
-                                                            padding: '4px 8px', fontSize: 12, fontFamily: 'monospace',
-                                                            color: '#333', background: r.chipCode ? '#f0fff4' : '#fff',
-                                                            borderRadius: 3,
-                                                        }}
-                                                    />
-                                                </td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
-                            <div style={{ textAlign: 'right', marginTop: 8, fontSize: 11, color: '#888' }}>
-                                *{language === 'th'
-                                    ? `แสดง ${filteredRows.length} จาก ${parsedRows.length} รายการ`
-                                    : `Showing ${filteredRows.length} of ${parsedRows.length} rows`}
-                            </div>
-                        </div>
-                    )}
+                                                {isImportingThis
+                                                    ? (language === 'th' ? 'กำลังนำเข้า...' : 'Importing...')
+                                                    : (language === 'th' ? `นำเข้า (${catRows.length})` : `Import (${catRows.length})`)}
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
 
-                    {/* Action buttons */}
-                    {parsedRows.length > 0 && (
-                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
-                            <button
-                                className="btn"
-                                onClick={() => { setParsedRows([]); setFileName(''); }}
-                                style={{ background: '#6c757d', fontSize: 13 }}
-                            >
-                                {language === 'th' ? 'ยกเลิก' : 'Cancel'}
-                            </button>
-                            <button
-                                className="btn"
-                                onClick={handleImport}
-                                disabled={importing || readyCount + warningCount === 0}
-                                style={{
-                                    background: '#00a65a', width: 220, fontWeight: 600,
-                                    fontSize: 13, boxShadow: '0 2px 5px rgba(0,166,90,0.3)',
-                                    opacity: importing ? 0.7 : 1,
-                                }}
-                            >
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ display: 'inline-block', marginRight: 6 }}>
-                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                                    <polyline points="7 10 12 15 17 10" />
-                                    <line x1="12" y1="15" x2="12" y2="3" />
-                                </svg>
-                                {importing
-                                    ? (language === 'th' ? 'กำลังนำเข้า...' : 'Importing...')
-                                    : (language === 'th'
-                                        ? `ยืนยันการนำเข้า (${readyCount + warningCount} รายการ)`
-                                        : `Import (${readyCount + warningCount} rows)`)}
-                            </button>
-                        </div>
-                    )}
+                                {/* Drop zone (always visible, compact) */}
+                                <div
+                                    onClick={() => { setUploadTargetCategory(cat.name); setTimeout(() => fileInputRef.current?.click(), 50); }}
+                                    onDrop={e => handleDropForCategory(e, cat.name)}
+                                    onDragOver={e => handleDragOverForCategory(e, cat.name)}
+                                    onDragLeave={e => handleDragLeaveForCategory(e, cat.name)}
+                                    style={{
+                                        padding: catRows.length > 0 ? '6px 16px' : '14px 16px',
+                                        background: isDrag ? '#e8f5e9' : '#fafbfc',
+                                        borderBottom: catRows.length > 0 ? '1px solid #eee' : 'none',
+                                        cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8,
+                                        transition: '0.2s',
+                                    }}
+                                >
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={isDrag ? '#00a65a' : '#aaa'} strokeWidth="2">
+                                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                                        <polyline points="14 2 14 8 20 8" />
+                                    </svg>
+                                    <span style={{ fontSize: 12, color: isDrag ? '#00a65a' : '#888' }}>
+                                        {isDrag
+                                            ? (language === 'th' ? 'วางไฟล์ที่นี่...' : 'Drop here...')
+                                            : catFileName
+                                                ? (language === 'th' ? 'คลิกเปลี่ยนไฟล์' : 'Click to change file')
+                                                : (language === 'th' ? 'ลากไฟล์ CSV/XLSX มาวาง หรือคลิกเลือก' : 'Drag CSV/XLSX here or click to select')}
+                                    </span>
+                                </div>
+
+                                {/* Preview table (if has rows) */}
+                                {catRows.length > 0 && (
+                                    <div style={{ padding: '0 0 8px 0' }}>
+                                        <div style={{ maxHeight: 320, overflowY: 'auto' }}>
+                                            <table className="data-table" style={{ fontSize: 11 }}>
+                                                <thead>
+                                                    <tr>
+                                                        <th style={{ width: 35 }}>#</th>
+                                                        <th style={{ width: 70 }}>BIB</th>
+                                                        <th>{language === 'th' ? 'ชื่อ-นามสกุล' : 'Name'}</th>
+                                                        <th style={{ width: 45 }}>{language === 'th' ? 'เพศ' : 'G'}</th>
+                                                        <th style={{ width: 70 }}>{language === 'th' ? 'สัญชาติ' : 'Nat.'}</th>
+                                                        <th style={{ width: 140 }}>Chip Code</th>
+                                                        <th style={{ width: 120 }}>{language === 'th' ? 'สถานะ' : 'Status'}</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {filtered.map(r => {
+                                                        const hasNoBib = r.tags.includes('no_bib');
+                                                        const hasDupBib = r.tags.includes('dup_bib');
+                                                        const hasNoChip = r.tags.includes('no_chip');
+                                                        const hasDupChip = r.tags.includes('dup_chip');
+                                                        const isReady = r.tags.includes('ready');
+                                                        const rowBg = hasNoBib ? '#fff5f5' : hasDupBib ? '#fffbeb' : undefined;
+                                                        return (
+                                                            <tr key={r.rowNum} style={{ background: rowBg }}>
+                                                                <td style={{ textAlign: 'center', color: '#999' }}>{r.rowNum}</td>
+                                                                <td>
+                                                                    <span style={{
+                                                                        background: hasNoBib ? '#fee2e2' : hasDupBib ? '#fef3c7' : '#eee',
+                                                                        padding: '1px 6px', borderRadius: 3, fontFamily: 'monospace',
+                                                                        fontWeight: 'bold', fontSize: 11,
+                                                                        border: `1px solid ${hasNoBib ? '#f87171' : hasDupBib ? '#fbbf24' : '#ddd'}`,
+                                                                        color: hasNoBib ? '#dc2626' : hasDupBib ? '#92400e' : '#333',
+                                                                    }}>
+                                                                        {r.bib || '—'}
+                                                                    </span>
+                                                                </td>
+                                                                <td>{r.firstName} {r.lastName}</td>
+                                                                <td style={{ textAlign: 'center' }}>{r.gender}</td>
+                                                                <td style={{ textAlign: 'center' }}>{r.nationality}</td>
+                                                                <td>
+                                                                    <span style={{
+                                                                        fontFamily: 'monospace', fontSize: 10,
+                                                                        color: hasNoChip ? '#e68a00' : hasDupChip ? '#92400e' : '#333',
+                                                                        fontWeight: (hasNoChip || hasDupChip) ? 600 : 'normal',
+                                                                    }}>
+                                                                        {r.chipCode || (language === 'th' ? 'ไม่มี' : 'None')}
+                                                                    </span>
+                                                                </td>
+                                                                <td>
+                                                                    <div style={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
+                                                                        {isReady && <span style={{ fontSize: 10, fontWeight: 600, color: '#16a34a', background: '#dcfce7', padding: '1px 6px', borderRadius: 8 }}>{language === 'th' ? 'พร้อม' : 'Ready'}</span>}
+                                                                        {hasNoBib && <span style={{ fontSize: 10, fontWeight: 600, color: '#991b1b', background: '#fee2e2', padding: '1px 6px', borderRadius: 8 }}>{language === 'th' ? 'ไม่มีBIB' : 'No BIB'}</span>}
+                                                                        {hasDupBib && <span style={{ fontSize: 10, fontWeight: 600, color: '#92400e', background: '#fef3c7', padding: '1px 6px', borderRadius: 8 }}>{language === 'th' ? 'BIBซ้ำ' : 'Dup BIB'}</span>}
+                                                                        {hasNoChip && <span style={{ fontSize: 10, fontWeight: 600, color: '#9d174d', background: '#fce7f3', padding: '1px 6px', borderRadius: 8 }}>{language === 'th' ? 'ไม่มีChip' : 'No Chip'}</span>}
+                                                                        {hasDupChip && <span style={{ fontSize: 10, fontWeight: 600, color: '#92400e', background: '#fef3c7', padding: '1px 6px', borderRadius: 8 }}>{language === 'th' ? 'Chipซ้ำ' : 'Dup Chip'}</span>}
+                                                                    </div>
+                                                                </td>
+                                                            </tr>
+                                                        );
+                                                    })}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                        <div style={{ textAlign: 'right', padding: '4px 16px', fontSize: 10, color: '#999' }}>
+                                            {language === 'th'
+                                                ? `แสดง ${filtered.length} จาก ${catRows.length} | พร้อม ${readyC}`
+                                                : `Showing ${filtered.length} of ${catRows.length} | Ready ${readyC}`}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        );
+                    })}
                     </>)}
 
                     {/* ===== CATEGORY TAB (one per distance) ===== */}
@@ -930,7 +856,7 @@ export default function ParticipantsPage() {
                             padding: '16px 20px', borderRadius: 4,
                             boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
                         }}>
-                            {/* Toolbar: search + chip status filter buttons + total */}
+                            {/* Toolbar: search + filter buttons + total */}
                             <div style={{
                                 display: 'flex', gap: 10, alignItems: 'center', marginBottom: 16,
                                 flexWrap: 'wrap',
@@ -943,31 +869,43 @@ export default function ParticipantsPage() {
                                     style={{
                                         padding: '7px 12px', border: '1px solid #ddd',
                                         borderRadius: 4, fontSize: 13, fontFamily: 'inherit',
-                                        width: 240,
+                                        width: 220,
                                     }}
                                 />
-                                <div style={{ display: 'flex', gap: 4 }}>
+                                <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                                     {[
-                                        { key: '', label: language === 'th' ? 'ทั้งหมด' : 'All', icon: null },
-                                        { key: 'has', label: language === 'th' ? 'มี ChipCode' : 'Has Chip', icon: '✓' },
-                                        { key: 'missing', label: language === 'th' ? 'ขาด ChipCode' : 'No Chip', icon: '!' },
-                                    ].map(f => (
+                                        { key: 'dup_bib', label: language === 'th' ? 'BIB ซ้ำ' : 'Dup BIB', bg: '#fee2e2', color: '#991b1b', border: '#f87171' },
+                                        { key: 'no_bib', label: language === 'th' ? 'ไม่มี BIB' : 'No BIB', bg: '#fee2e2', color: '#991b1b', border: '#f87171' },
+                                        { key: 'dup_chip', label: language === 'th' ? 'ChipCode ซ้ำ' : 'Dup Chip', bg: '#fef3c7', color: '#92400e', border: '#fbbf24' },
+                                        { key: 'no_chip', label: language === 'th' ? 'ไม่มี ChipCode' : 'No Chip', bg: '#fef3c7', color: '#92400e', border: '#fbbf24' },
+                                        { key: 'ready', label: language === 'th' ? 'พร้อม' : 'Ready', bg: '#dcfce7', color: '#166534', border: '#4ade80' },
+                                    ].map(f => {
+                                        const active = listRunnerStatus.includes(f.key);
+                                        return (
+                                            <button
+                                                key={f.key}
+                                                onClick={() => toggleListRunnerStatus(f.key)}
+                                                style={{
+                                                    padding: '4px 12px', fontSize: 11, fontWeight: active ? 700 : 500,
+                                                    border: `1.5px solid ${active ? f.border : '#ddd'}`,
+                                                    borderRadius: 4, cursor: 'pointer', transition: '0.15s',
+                                                    background: active ? f.bg : '#fff',
+                                                    color: active ? f.color : '#888',
+                                                    whiteSpace: 'nowrap',
+                                                }}
+                                            >
+                                                {f.label}
+                                            </button>
+                                        );
+                                    })}
+                                    {listRunnerStatus.length > 0 && (
                                         <button
-                                            key={f.key}
-                                            onClick={() => { setChipStatusFilter(f.key); setListPage(1); }}
-                                            style={{
-                                                padding: '6px 14px', fontSize: 12, fontWeight: chipStatusFilter === f.key ? 700 : 500,
-                                                border: `1px solid ${chipStatusFilter === f.key ? '#3c8dbc' : '#ddd'}`,
-                                                borderRadius: 4, cursor: 'pointer', transition: '0.15s',
-                                                background: chipStatusFilter === f.key ? '#e8f4fd' : '#fff',
-                                                color: chipStatusFilter === f.key ? '#3c8dbc' : '#666',
-                                                whiteSpace: 'nowrap',
-                                            }}
+                                            onClick={() => { setListRunnerStatus([]); setListPage(1); }}
+                                            style={{ padding: '4px 8px', fontSize: 10, border: '1px solid #ddd', borderRadius: 4, background: '#fff', color: '#999', cursor: 'pointer' }}
                                         >
-                                            {f.icon && <span style={{ marginRight: 4 }}>{f.icon}</span>}
-                                            {f.label}
+                                            ✕
                                         </button>
-                                    ))}
+                                    )}
                                 </div>
                                 <div style={{ marginLeft: 'auto', fontSize: 13, color: '#666', whiteSpace: 'nowrap' }}>
                                     {language === 'th' ? `ทั้งหมด ${runnersTotal} คน` : `Total: ${runnersTotal}`}
@@ -995,25 +933,33 @@ export default function ParticipantsPage() {
                                                 <th style={{ width: 60 }}>{language === 'th' ? 'เพศ' : 'Gender'}</th>
                                                 <th style={{ width: 90 }}>{language === 'th' ? 'กลุ่มอายุ' : 'Age Grp'}</th>
                                                 <th style={{ width: 70 }}>{language === 'th' ? 'สัญชาติ' : 'Nat.'}</th>
-                                                <th style={{ width: 200 }}>Chip Code (RFID)</th>
-                                                <th style={{ width: 90 }}>{language === 'th' ? 'สถานะ' : 'Status'}</th>
+                                                <th style={{ width: 180 }}>Chip Code</th>
                                                 <th style={{ width: 60 }}></th>
+                                                <th style={{ width: 110 }}>{language === 'th' ? 'สถานะ' : 'Status'}</th>
                                             </tr>
                                         </thead>
                                         <tbody>
-                                            {runners.map((r, idx) => (
-                                                <tr key={r._id}>
+                                            {runners.map((r, idx) => {
+                                                const noBib = !r.bib;
+                                                const isDupBib = !!r.bib && dupBibs.includes(r.bib);
+                                                const noChip = !r.chipCode;
+                                                const isDupChip = !!r.chipCode && dupChips.includes(r.chipCode);
+                                                const isReady = !noBib && !isDupBib && !noChip && !isDupChip;
+                                                return (
+                                                <tr key={r._id} style={{ background: (noBib || isDupBib) ? '#fff5f5' : (noChip || isDupChip) ? '#fffbeb' : undefined }}>
                                                     <td style={{ textAlign: 'center', color: '#999' }}>
                                                         {(listPage - 1) * listLimit + idx + 1}
                                                     </td>
                                                     <td>
                                                         <span style={{
-                                                            background: '#eee', padding: '2px 8px', borderRadius: 4,
+                                                            background: noBib ? '#fee2e2' : isDupBib ? '#fef3c7' : '#eee',
+                                                            padding: '2px 8px', borderRadius: 4,
                                                             fontFamily: 'monospace', fontWeight: 'bold', fontSize: 12,
-                                                            border: '1px solid #ddd', display: 'inline-block',
-                                                            minWidth: 45, textAlign: 'center',
+                                                            border: `1px solid ${noBib ? '#f87171' : isDupBib ? '#fbbf24' : '#ddd'}`,
+                                                            display: 'inline-block', minWidth: 45, textAlign: 'center',
+                                                            color: noBib ? '#dc2626' : isDupBib ? '#92400e' : '#333',
                                                         }}>
-                                                            {r.bib}
+                                                            {r.bib || '—'}
                                                         </span>
                                                     </td>
                                                     <td>
@@ -1041,32 +987,10 @@ export default function ParticipantsPage() {
                                                     <td>
                                                         <span style={{
                                                             fontFamily: 'monospace', fontSize: 11,
-                                                            color: r.chipCode ? '#333' : '#e68a00',
-                                                            fontWeight: r.chipCode ? 'normal' : 600,
+                                                            color: noChip ? '#d97706' : isDupChip ? '#92400e' : '#333',
+                                                            fontWeight: (noChip || isDupChip) ? 600 : 'normal',
                                                         }}>
                                                             {r.chipCode || (language === 'th' ? 'ไม่มี' : 'None')}
-                                                        </span>
-                                                    </td>
-                                                    <td>
-                                                        <span style={{
-                                                            fontSize: 11, fontWeight: 600, padding: '2px 8px',
-                                                            borderRadius: 10, display: 'inline-block',
-                                                            background:
-                                                                r.status === 'finished' ? '#dcfce7' :
-                                                                r.status === 'in_progress' ? '#dbeafe' :
-                                                                r.status === 'dnf' ? '#fee2e2' :
-                                                                r.status === 'dns' ? '#fef3c7' : '#f3f4f6',
-                                                            color:
-                                                                r.status === 'finished' ? '#16a34a' :
-                                                                r.status === 'in_progress' ? '#2563eb' :
-                                                                r.status === 'dnf' ? '#dc2626' :
-                                                                r.status === 'dns' ? '#d97706' : '#666',
-                                                        }}>
-                                                            {r.status === 'not_started' ? (language === 'th' ? 'ยังไม่เริ่ม' : 'Not Started') :
-                                                             r.status === 'in_progress' ? (language === 'th' ? 'กำลังแข่ง' : 'In Progress') :
-                                                             r.status === 'finished' ? (language === 'th' ? 'เข้าเส้นชัย' : 'Finished') :
-                                                             r.status === 'dnf' ? 'DNF' :
-                                                             r.status === 'dns' ? 'DNS' : r.status}
                                                         </span>
                                                     </td>
                                                     <td style={{ textAlign: 'center' }}>
@@ -1085,8 +1009,18 @@ export default function ParticipantsPage() {
                                                             </svg>
                                                         </button>
                                                     </td>
+                                                    <td>
+                                                        <div style={{ display: 'flex', gap: 3, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                                                            {isReady && <span style={{ fontSize: 10, fontWeight: 600, color: '#16a34a', background: '#dcfce7', padding: '1px 6px', borderRadius: 8 }}>{language === 'th' ? 'พร้อม' : 'Ready'}</span>}
+                                                            {noBib && <span style={{ fontSize: 10, fontWeight: 600, color: '#991b1b', background: '#fee2e2', padding: '1px 6px', borderRadius: 8 }}>{language === 'th' ? 'ไม่มีBIB' : 'No BIB'}</span>}
+                                                            {isDupBib && <span style={{ fontSize: 10, fontWeight: 600, color: '#991b1b', background: '#fee2e2', padding: '1px 6px', borderRadius: 8 }}>{language === 'th' ? 'BIBซ้ำ' : 'Dup BIB'}</span>}
+                                                            {noChip && <span style={{ fontSize: 10, fontWeight: 600, color: '#92400e', background: '#fef3c7', padding: '1px 6px', borderRadius: 8 }}>{language === 'th' ? 'ไม่มีChip' : 'No Chip'}</span>}
+                                                            {isDupChip && <span style={{ fontSize: 10, fontWeight: 600, color: '#92400e', background: '#fef3c7', padding: '1px 6px', borderRadius: 8 }}>{language === 'th' ? 'Chipซ้ำ' : 'Dup Chip'}</span>}
+                                                        </div>
+                                                    </td>
                                                 </tr>
-                                            ))}
+                                                );
+                                            })}
                                         </tbody>
                                     </table>
                                 </div>
@@ -1245,33 +1179,50 @@ export default function ParticipantsPage() {
                         {/* Modal footer */}
                         <div style={{
                             padding: '12px 20px', borderTop: '1px solid #e5e7eb',
-                            display: 'flex', justifyContent: 'flex-end', gap: 10,
+                            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
                             background: '#f9fafb', borderRadius: '0 0 8px 8px',
                         }}>
                             <button
-                                onClick={() => setEditingRunner(null)}
-                                style={{
-                                    padding: '8px 20px', fontSize: 13, border: '1px solid #ddd',
-                                    borderRadius: 4, background: '#fff', color: '#666',
-                                    cursor: 'pointer', fontWeight: 600,
-                                }}
-                            >
-                                {language === 'th' ? 'ยกเลิก' : 'Cancel'}
-                            </button>
-                            <button
-                                onClick={handleSaveRunner}
+                                onClick={handleDeleteRunner}
                                 disabled={savingRunner}
                                 style={{
-                                    padding: '8px 24px', fontSize: 13, border: 'none',
-                                    borderRadius: 4, background: '#00a65a', color: '#fff',
-                                    cursor: 'pointer', fontWeight: 700,
-                                    opacity: savingRunner ? 0.6 : 1,
+                                    padding: '8px 18px', fontSize: 13, border: '1px solid #ef4444',
+                                    borderRadius: 4, background: '#fff', color: '#dc2626',
+                                    cursor: 'pointer', fontWeight: 600,
+                                    opacity: savingRunner ? 0.5 : 1,
                                 }}
                             >
-                                {savingRunner
-                                    ? (language === 'th' ? 'กำลังบันทึก...' : 'Saving...')
-                                    : (language === 'th' ? 'บันทึก' : 'Save')}
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: 5, verticalAlign: -2 }}>
+                                    <polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                                </svg>
+                                {language === 'th' ? 'ลบนักกีฬา' : 'Delete'}
                             </button>
+                            <div style={{ display: 'flex', gap: 10 }}>
+                                <button
+                                    onClick={() => setEditingRunner(null)}
+                                    style={{
+                                        padding: '8px 20px', fontSize: 13, border: '1px solid #ddd',
+                                        borderRadius: 4, background: '#fff', color: '#666',
+                                        cursor: 'pointer', fontWeight: 600,
+                                    }}
+                                >
+                                    {language === 'th' ? 'ยกเลิก' : 'Cancel'}
+                                </button>
+                                <button
+                                    onClick={handleSaveRunner}
+                                    disabled={savingRunner}
+                                    style={{
+                                        padding: '8px 24px', fontSize: 13, border: 'none',
+                                        borderRadius: 4, background: '#00a65a', color: '#fff',
+                                        cursor: 'pointer', fontWeight: 700,
+                                        opacity: savingRunner ? 0.6 : 1,
+                                    }}
+                                >
+                                    {savingRunner
+                                        ? (language === 'th' ? 'กำลังบันทึก...' : 'Saving...')
+                                        : (language === 'th' ? 'บันทึก' : 'Save')}
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>

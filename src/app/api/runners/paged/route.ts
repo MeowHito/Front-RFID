@@ -17,6 +17,7 @@ export async function GET(request: NextRequest) {
         const ageGroup = searchParams.get('ageGroup');
         const status = searchParams.get('status');
         const chipStatus = searchParams.get('chipStatus');
+        const runnerStatus = searchParams.get('runnerStatus');
         const search = searchParams.get('search');
         const page = searchParams.get('page') || '1';
         const limit = searchParams.get('limit') || '50';
@@ -26,6 +27,7 @@ export async function GET(request: NextRequest) {
         if (ageGroup) params.append('ageGroup', ageGroup);
         if (status) params.append('status', status);
         if (chipStatus) params.append('chipStatus', chipStatus);
+        if (runnerStatus) params.append('runnerStatus', runnerStatus);
         if (search) params.append('search', search);
         params.append('page', page);
         params.append('limit', limit);
