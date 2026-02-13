@@ -114,17 +114,22 @@ export default function ParticipantsPage() {
     const [selectedCategory, setSelectedCategory] = useState<string>('');
     const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
-    // Tab state
-    const [activeTab, setActiveTab] = useState<'import' | 'list'>('import');
+    // Tab state: 'import' or a category name
+    const [activeTab, setActiveTab] = useState<string>('import');
 
     // Participants list state
     const [runners, setRunners] = useState<Runner[]>([]);
     const [runnersTotal, setRunnersTotal] = useState(0);
     const [runnersLoading, setRunnersLoading] = useState(false);
-    const [listCategory, setListCategory] = useState<string>('');
     const [listSearch, setListSearch] = useState('');
     const [listPage, setListPage] = useState(1);
+    const [chipStatusFilter, setChipStatusFilter] = useState<string>('');
     const listLimit = 50;
+
+    // Inline chip code editing
+    const [editingChipId, setEditingChipId] = useState<string | null>(null);
+    const [editingChipValue, setEditingChipValue] = useState<string>('');
+    const [savingChip, setSavingChip] = useState(false);
 
     // CSV state
     const [fileName, setFileName] = useState<string>('');
@@ -159,7 +164,6 @@ export default function ParticipantsPage() {
                     const cats = data.categories || [];
                     if (cats.length > 0) {
                         setSelectedCategory(cats[0].name);
-                        setListCategory(cats[0].name);
                     }
                 }
             } catch {
@@ -171,18 +175,19 @@ export default function ParticipantsPage() {
         loadFeatured();
     }, []);
 
-    // Fetch runners for participants list tab
+    // Fetch runners for participants list tab (activeTab is the category name)
     const fetchRunners = useCallback(async () => {
-        if (!campaign?._id || !listCategory) return;
+        if (!campaign?._id || activeTab === 'import') return;
         setRunnersLoading(true);
         try {
             const params = new URLSearchParams({
                 eventId: campaign._id,
-                category: listCategory,
+                category: activeTab,
                 page: String(listPage),
                 limit: String(listLimit),
             });
             if (listSearch) params.append('search', listSearch);
+            if (chipStatusFilter) params.append('chipStatus', chipStatusFilter);
             const res = await fetch(`/api/runners/paged?${params.toString()}`, { cache: 'no-store' });
             if (!res.ok) throw new Error('Failed');
             const data = await res.json();
@@ -194,11 +199,31 @@ export default function ParticipantsPage() {
         } finally {
             setRunnersLoading(false);
         }
-    }, [campaign, listCategory, listSearch, listPage]);
+    }, [campaign, activeTab, listSearch, listPage, chipStatusFilter]);
 
     useEffect(() => {
-        if (activeTab === 'list') fetchRunners();
+        if (activeTab !== 'import') fetchRunners();
     }, [activeTab, fetchRunners]);
+
+    // Save chip code for a runner
+    const handleSaveChip = useCallback(async (runnerId: string, chipCode: string) => {
+        setSavingChip(true);
+        try {
+            const res = await fetch(`/api/runners/${runnerId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ chipCode }),
+            });
+            if (!res.ok) throw new Error('Failed');
+            setRunners(prev => prev.map(r => r._id === runnerId ? { ...r, chipCode } : r));
+            setEditingChipId(null);
+            showToast(language === 'th' ? 'บันทึก ChipCode สำเร็จ' : 'ChipCode saved', 'success');
+        } catch {
+            showToast(language === 'th' ? 'บันทึกไม่สำเร็จ' : 'Save failed', 'error');
+        } finally {
+            setSavingChip(false);
+        }
+    }, [language]);
 
     const processCSV = useCallback((text: string) => {
         const rows = parseCSV(text);
@@ -503,19 +528,20 @@ export default function ParticipantsPage() {
                 </div>
             ) : (
                 <>
-                    {/* Tabs */}
+                    {/* Tabs: Import + one per category */}
                     <div style={{
                         display: 'flex', gap: 0, marginBottom: 20, borderBottom: '2px solid #e5e7eb',
+                        overflowX: 'auto',
                     }}>
                         <button
-                            onClick={() => setActiveTab('import')}
+                            onClick={() => { setActiveTab('import'); setListSearch(''); setChipStatusFilter(''); setListPage(1); }}
                             style={{
-                                padding: '10px 24px', fontSize: 14, fontWeight: activeTab === 'import' ? 700 : 500,
+                                padding: '10px 20px', fontSize: 13, fontWeight: activeTab === 'import' ? 700 : 500,
                                 border: 'none', cursor: 'pointer', borderRadius: '6px 6px 0 0',
                                 background: activeTab === 'import' ? '#fff' : 'transparent',
                                 color: activeTab === 'import' ? '#3c8dbc' : '#888',
                                 borderBottom: activeTab === 'import' ? '2px solid #3c8dbc' : '2px solid transparent',
-                                marginBottom: -2, transition: '0.15s',
+                                marginBottom: -2, transition: '0.15s', whiteSpace: 'nowrap',
                             }}
                         >
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: 6, verticalAlign: -2 }}>
@@ -525,33 +551,29 @@ export default function ParticipantsPage() {
                             </svg>
                             {language === 'th' ? 'นำเข้าข้อมูล' : 'Import Data'}
                         </button>
-                        <button
-                            onClick={() => setActiveTab('list')}
-                            style={{
-                                padding: '10px 24px', fontSize: 14, fontWeight: activeTab === 'list' ? 700 : 500,
-                                border: 'none', cursor: 'pointer', borderRadius: '6px 6px 0 0',
-                                background: activeTab === 'list' ? '#fff' : 'transparent',
-                                color: activeTab === 'list' ? '#3c8dbc' : '#888',
-                                borderBottom: activeTab === 'list' ? '2px solid #3c8dbc' : '2px solid transparent',
-                                marginBottom: -2, transition: '0.15s',
-                            }}
-                        >
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: 6, verticalAlign: -2 }}>
-                                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-                                <circle cx="9" cy="7" r="4" />
-                                <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-                                <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-                            </svg>
-                            {language === 'th' ? 'รายชื่อผู้เข้าแข่งขัน' : 'Participants List'}
-                            {runnersTotal > 0 && (
-                                <span style={{
-                                    marginLeft: 8, background: activeTab === 'list' ? '#3c8dbc' : '#ccc',
-                                    color: '#fff', padding: '1px 8px', borderRadius: 10, fontSize: 11, fontWeight: 600,
-                                }}>
-                                    {runnersTotal}
-                                </span>
-                            )}
-                        </button>
+                        {(campaign.categories || []).map((cat, i) => {
+                            const isActive = activeTab === cat.name;
+                            return (
+                                <button
+                                    key={`tab-${cat.name}-${i}`}
+                                    onClick={() => { setActiveTab(cat.name); setListSearch(''); setChipStatusFilter(''); setListPage(1); }}
+                                    style={{
+                                        padding: '10px 20px', fontSize: 13, fontWeight: isActive ? 700 : 500,
+                                        border: 'none', cursor: 'pointer', borderRadius: '6px 6px 0 0',
+                                        background: isActive ? '#fff' : 'transparent',
+                                        color: isActive ? '#3c8dbc' : '#888',
+                                        borderBottom: isActive ? '2px solid #3c8dbc' : '2px solid transparent',
+                                        marginBottom: -2, transition: '0.15s', whiteSpace: 'nowrap',
+                                    }}
+                                >
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: 5, verticalAlign: -2 }}>
+                                        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                                        <circle cx="9" cy="7" r="4" />
+                                    </svg>
+                                    {cat.name}{cat.distance ? ` (${cat.distance})` : ''}
+                                </button>
+                            );
+                        })}
                     </div>
 
                     {/* ===== IMPORT TAB ===== */}
@@ -580,7 +602,7 @@ export default function ParticipantsPage() {
                                     className="form-select"
                                     value={selectedCategory}
                                     onChange={e => setSelectedCategory(e.target.value)}
-                                    style={{ minWidth: 220, padding: '6px 10px', fontSize: 13, fontWeight: 500 }}
+                                    style={{ minWidth: 220, padding: '6px 10px', fontSize: 13, fontWeight: 500, border: '1px solid #ccc', borderRadius: 4 }}
                                 >
                                     {(campaign.categories || []).map((cat, i) => (
                                         <option key={`${cat.name}-${i}`} value={cat.name}>
@@ -848,48 +870,53 @@ export default function ParticipantsPage() {
                     )}
                     </>)}
 
-                    {/* ===== PARTICIPANTS LIST TAB ===== */}
-                    {activeTab === 'list' && (
+                    {/* ===== CATEGORY TAB (one per distance) ===== */}
+                    {activeTab !== 'import' && (
                         <div style={{
                             background: '#fff', borderTop: '3px solid #3c8dbc',
                             padding: '16px 20px', borderRadius: 4,
                             boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
                         }}>
-                            {/* Toolbar: category selector + search */}
+                            {/* Toolbar: search + chip status filter buttons + total */}
                             <div style={{
-                                display: 'flex', gap: 15, alignItems: 'center', marginBottom: 16,
+                                display: 'flex', gap: 10, alignItems: 'center', marginBottom: 16,
                                 flexWrap: 'wrap',
                             }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                    <span style={{ fontWeight: 600, fontSize: 13, color: '#555', whiteSpace: 'nowrap' }}>
-                                        {language === 'th' ? 'ระยะทาง:' : 'Distance:'}
-                                    </span>
-                                    <select
-                                        className="form-select"
-                                        value={listCategory}
-                                        onChange={e => { setListCategory(e.target.value); setListPage(1); }}
-                                        style={{ minWidth: 220, padding: '7px 10px', fontSize: 13, fontWeight: 500 }}
-                                    >
-                                        {(campaign.categories || []).map((cat, i) => (
-                                            <option key={`list-${cat.name}-${i}`} value={cat.name}>
-                                                {cat.name}{cat.distance ? ` - ${cat.distance}` : ''}
-                                            </option>
-                                        ))}
-                                    </select>
+                                <input
+                                    type="text"
+                                    value={listSearch}
+                                    onChange={e => { setListSearch(e.target.value); setListPage(1); }}
+                                    placeholder={language === 'th' ? 'ค้นหา BIB, ชื่อ...' : 'Search BIB, name...'}
+                                    style={{
+                                        padding: '7px 12px', border: '1px solid #ddd',
+                                        borderRadius: 4, fontSize: 13, fontFamily: 'inherit',
+                                        width: 240,
+                                    }}
+                                />
+                                <div style={{ display: 'flex', gap: 4 }}>
+                                    {[
+                                        { key: '', label: language === 'th' ? 'ทั้งหมด' : 'All', icon: null },
+                                        { key: 'has', label: language === 'th' ? 'มี ChipCode' : 'Has Chip', icon: '✓' },
+                                        { key: 'missing', label: language === 'th' ? 'ขาด ChipCode' : 'No Chip', icon: '!' },
+                                    ].map(f => (
+                                        <button
+                                            key={f.key}
+                                            onClick={() => { setChipStatusFilter(f.key); setListPage(1); }}
+                                            style={{
+                                                padding: '6px 14px', fontSize: 12, fontWeight: chipStatusFilter === f.key ? 700 : 500,
+                                                border: `1px solid ${chipStatusFilter === f.key ? '#3c8dbc' : '#ddd'}`,
+                                                borderRadius: 4, cursor: 'pointer', transition: '0.15s',
+                                                background: chipStatusFilter === f.key ? '#e8f4fd' : '#fff',
+                                                color: chipStatusFilter === f.key ? '#3c8dbc' : '#666',
+                                                whiteSpace: 'nowrap',
+                                            }}
+                                        >
+                                            {f.icon && <span style={{ marginRight: 4 }}>{f.icon}</span>}
+                                            {f.label}
+                                        </button>
+                                    ))}
                                 </div>
-                                <div style={{ flex: 1, minWidth: 200 }}>
-                                    <input
-                                        type="text"
-                                        value={listSearch}
-                                        onChange={e => { setListSearch(e.target.value); setListPage(1); }}
-                                        placeholder={language === 'th' ? 'ค้นหา BIB, ชื่อ...' : 'Search BIB, name...'}
-                                        style={{
-                                            width: '100%', padding: '7px 12px', border: '1px solid #ddd',
-                                            borderRadius: 4, fontSize: 13, fontFamily: 'inherit',
-                                        }}
-                                    />
-                                </div>
-                                <div style={{ fontSize: 13, color: '#666', whiteSpace: 'nowrap' }}>
+                                <div style={{ marginLeft: 'auto', fontSize: 13, color: '#666', whiteSpace: 'nowrap' }}>
                                     {language === 'th' ? `ทั้งหมด ${runnersTotal} คน` : `Total: ${runnersTotal}`}
                                 </div>
                             </div>
@@ -913,11 +940,11 @@ export default function ParticipantsPage() {
                                                 <th style={{ width: 80 }}>BIB</th>
                                                 <th>{language === 'th' ? 'ชื่อ-นามสกุล' : 'Name'}</th>
                                                 <th style={{ width: 60 }}>{language === 'th' ? 'เพศ' : 'Gender'}</th>
-                                                <th style={{ width: 100 }}>{language === 'th' ? 'ระยะทาง' : 'Category'}</th>
                                                 <th style={{ width: 90 }}>{language === 'th' ? 'กลุ่มอายุ' : 'Age Grp'}</th>
                                                 <th style={{ width: 70 }}>{language === 'th' ? 'สัญชาติ' : 'Nat.'}</th>
-                                                <th style={{ width: 130 }}>Chip Code</th>
+                                                <th style={{ width: 200 }}>Chip Code (RFID)</th>
                                                 <th style={{ width: 90 }}>{language === 'th' ? 'สถานะ' : 'Status'}</th>
+                                                <th style={{ width: 60 }}></th>
                                             </tr>
                                         </thead>
                                         <tbody>
@@ -952,7 +979,6 @@ export default function ParticipantsPage() {
                                                             {r.gender === 'F' ? (language === 'th' ? 'หญิง' : 'F') : (language === 'th' ? 'ชาย' : 'M')}
                                                         </span>
                                                     </td>
-                                                    <td style={{ textAlign: 'center' }}>{r.category}</td>
                                                     <td>
                                                         <span style={{ color: r.ageGroup ? '#3c8dbc' : '#ccc' }}>
                                                             {r.ageGroup || '-'}
@@ -960,12 +986,54 @@ export default function ParticipantsPage() {
                                                     </td>
                                                     <td style={{ textAlign: 'center' }}>{r.nationality || '-'}</td>
                                                     <td>
-                                                        <span style={{
-                                                            fontFamily: 'monospace', fontSize: 11,
-                                                            color: r.chipCode ? '#333' : '#ccc',
-                                                        }}>
-                                                            {r.chipCode || '-'}
-                                                        </span>
+                                                        {editingChipId === r._id ? (
+                                                            <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                                                                <input
+                                                                    type="text"
+                                                                    value={editingChipValue}
+                                                                    onChange={e => setEditingChipValue(e.target.value)}
+                                                                    onKeyDown={e => {
+                                                                        if (e.key === 'Enter') handleSaveChip(r._id, editingChipValue);
+                                                                        if (e.key === 'Escape') setEditingChipId(null);
+                                                                    }}
+                                                                    autoFocus
+                                                                    style={{
+                                                                        flex: 1, padding: '3px 6px', fontSize: 12,
+                                                                        fontFamily: 'monospace', border: '1px solid #3c8dbc',
+                                                                        borderRadius: 3, outline: 'none',
+                                                                    }}
+                                                                />
+                                                                <button
+                                                                    onClick={() => handleSaveChip(r._id, editingChipValue)}
+                                                                    disabled={savingChip}
+                                                                    style={{
+                                                                        padding: '3px 8px', fontSize: 11, border: 'none',
+                                                                        borderRadius: 3, background: '#00a65a', color: '#fff',
+                                                                        cursor: 'pointer', fontWeight: 600, whiteSpace: 'nowrap',
+                                                                    }}
+                                                                >
+                                                                    {savingChip ? '...' : '✓'}
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => setEditingChipId(null)}
+                                                                    style={{
+                                                                        padding: '3px 8px', fontSize: 11, border: 'none',
+                                                                        borderRadius: 3, background: '#eee', color: '#666',
+                                                                        cursor: 'pointer', fontWeight: 600,
+                                                                    }}
+                                                                >
+                                                                    ✕
+                                                                </button>
+                                                            </div>
+                                                        ) : (
+                                                            <span style={{
+                                                                fontFamily: 'monospace', fontSize: 11,
+                                                                color: r.chipCode ? '#333' : '#e68a00',
+                                                                fontWeight: r.chipCode ? 'normal' : 600,
+                                                            }}>
+                                                                {r.chipCode || (language === 'th' ? 'ไม่มี' : 'None')}
+                                                            </span>
+                                                        )}
                                                     </td>
                                                     <td>
                                                         <span style={{
@@ -988,6 +1056,24 @@ export default function ParticipantsPage() {
                                                              r.status === 'dnf' ? 'DNF' :
                                                              r.status === 'dns' ? 'DNS' : r.status}
                                                         </span>
+                                                    </td>
+                                                    <td style={{ textAlign: 'center' }}>
+                                                        {editingChipId !== r._id && (
+                                                            <button
+                                                                onClick={() => { setEditingChipId(r._id); setEditingChipValue(r.chipCode || ''); }}
+                                                                title={language === 'th' ? 'แก้ไข ChipCode' : 'Edit ChipCode'}
+                                                                style={{
+                                                                    padding: '3px 8px', fontSize: 11, border: '1px solid #ddd',
+                                                                    borderRadius: 3, background: '#fff', color: '#3c8dbc',
+                                                                    cursor: 'pointer', fontWeight: 600,
+                                                                }}
+                                                            >
+                                                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ verticalAlign: -1 }}>
+                                                                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                                                                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                                                                </svg>
+                                                            </button>
+                                                        )}
                                                     </td>
                                                 </tr>
                                             ))}
