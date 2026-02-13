@@ -310,7 +310,7 @@ export default function ManageCheckpointsPage() {
 
         // 1) PUT dirty existing checkpoints
         for (const cpId of dirtyIds) {
-            const cp = currentCheckpoints.find(c => c._id === cpId);
+            const cp = checkpoints.find(c => c._id === cpId);
             if (!cp) continue;
             try {
                 const res = await fetch(`/api/checkpoints/${cpId}`, {
