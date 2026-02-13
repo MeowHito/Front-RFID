@@ -125,6 +125,13 @@ function parseCSV(text: string): string[][] {
     return rows;
 }
 
+function countryCodeToFlag(code?: string): string {
+    const cc = (code || '').trim().toUpperCase();
+    if (!/^[A-Z]{2}$/.test(cc)) return '🏳️';
+    const base = 127397;
+    return String.fromCodePoint(...cc.split('').map(c => base + c.charCodeAt(0)));
+}
+
 export default function ParticipantsPage() {
     const { language } = useLanguage();
     const [campaign, setCampaign] = useState<Campaign | null>(null);
@@ -942,7 +949,7 @@ export default function ParticipantsPage() {
                                                 className={`px-2.5 py-1 text-[11px] rounded border cursor-pointer transition whitespace-nowrap ${active ? `${f.bg} ${f.text} ${f.border} font-bold border-[1.5px]` : 'bg-white text-gray-400 border-gray-300'}`}
                                             >
                                                 {language === 'th' ? f.label : f.labelEn}
-                                                {cnt > 0 && <span className={`ml-1 font-bold ${active ? f.countColor : f.countColor}`}>({cnt})</span>}
+                                                {cnt > 0 && <span className="ml-1 font-bold text-red-600">({cnt})</span>}
                                             </button>
                                         );
                                     })}
@@ -995,8 +1002,8 @@ export default function ParticipantsPage() {
                                 <div className="text-[13px] text-gray-500 whitespace-nowrap">
                                     {language === 'th' ? `ทั้งหมด ${runnersTotal} คน` : `Total: ${runnersTotal}`}
                                     {(statusCounts.ready || 0) > 0 && (
-                                        <span className="text-green-600 font-bold ml-2">
-                                            ({language === 'th' ? `พร้อม ${statusCounts.ready}` : `Ready ${statusCounts.ready}`})
+                                        <span className="text-green-700 font-bold ml-2 bg-green-100 px-2 py-0.5 rounded-full text-[12px]">
+                                            {language === 'th' ? `พร้อม ${statusCounts.ready}` : `Ready ${statusCounts.ready}`}
                                         </span>
                                     )}
                                 </div>
@@ -1010,19 +1017,19 @@ export default function ParticipantsPage() {
                             ) : (
                                 <>
                                 <div className="max-h-[540px] overflow-y-auto border border-gray-200 rounded">
-                                    <table className="data-table text-[12px]">
+                                    <table className="data-table text-[12px] w-auto min-w-[980px]">
                                         <thead>
                                             <tr>
                                                 <th className="w-8"><input type="checkbox" checked={runners.length > 0 && runners.every(r => selectedIds.has(r._id))} onChange={e => { if (e.target.checked) { setSelectedIds(new Set(runners.map(r => r._id))); } else { setSelectedIds(new Set()); } }} /></th>
                                                 <th className="w-10">#</th>
-                                                <th className="w-20 cursor-pointer select-none" onClick={() => handleSort('bib')}>BIB {sortBy === 'bib' ? (sortOrder === 'asc' ? '↑' : '↓') : ''}</th>
-                                                <th className="cursor-pointer select-none" onClick={() => handleSort('firstName')}>{language === 'th' ? 'ชื่อ-นามสกุล' : 'Name'} {sortBy === 'firstName' ? (sortOrder === 'asc' ? '↑' : '↓') : ''}</th>
-                                                <th className="w-12 text-center">{language === 'th' ? 'เพศ' : 'G'}</th>
-                                                <th className="w-20 cursor-pointer select-none" onClick={() => handleSort('ageGroup')}>{language === 'th' ? 'อายุ' : 'Age'} {sortBy === 'ageGroup' ? (sortOrder === 'asc' ? '↑' : '↓') : ''}</th>
-                                                <th className="w-14 text-center">{language === 'th' ? 'สัญชาติ' : 'Nat.'}</th>
-                                                <th className="w-40 cursor-pointer select-none" onClick={() => handleSort('chipCode')}>Chip {sortBy === 'chipCode' ? (sortOrder === 'asc' ? '↑' : '↓') : ''}</th>
-                                                <th className="w-24">{language === 'th' ? 'สถานะ' : 'Status'}</th>
-                                                <th className="w-16"></th>
+                                                <th className="w-20 cursor-pointer select-none" onClick={() => handleSort('bib')}>BIB <span className="inline-flex items-center align-middle ml-0.5 gap-0"><svg width="10" height="14" viewBox="0 0 10 14" className={`${sortBy === 'bib' && sortOrder === 'asc' ? 'text-[#3c8dbc]' : 'text-gray-300'}`}><path d="M5 1v10M5 1L2 4M5 1l3 3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" fill="none"/></svg><svg width="10" height="14" viewBox="0 0 10 14" className={`${sortBy === 'bib' && sortOrder === 'desc' ? 'text-[#3c8dbc]' : 'text-gray-300'}`}><path d="M5 3v10M5 13L2 10M5 13l3-3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" fill="none"/></svg></span></th>
+                                                <th className="w-[38%] cursor-pointer select-none" onClick={() => handleSort('firstName')}>{language === 'th' ? 'ชื่อ-นามสกุล' : 'Name'} <span className="inline-flex items-center align-middle ml-0.5 gap-0"><svg width="10" height="14" viewBox="0 0 10 14" className={`${sortBy === 'firstName' && sortOrder === 'asc' ? 'text-[#3c8dbc]' : 'text-gray-300'}`}><path d="M5 1v10M5 1L2 4M5 1l3 3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" fill="none"/></svg><svg width="10" height="14" viewBox="0 0 10 14" className={`${sortBy === 'firstName' && sortOrder === 'desc' ? 'text-[#3c8dbc]' : 'text-gray-300'}`}><path d="M5 3v10M5 13L2 10M5 13l3-3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" fill="none"/></svg></span></th>
+                                                <th className="w-10 text-center">{language === 'th' ? 'เพศ' : 'G'}</th>
+                                                <th className="w-16 cursor-pointer select-none" onClick={() => handleSort('ageGroup')}>{language === 'th' ? 'อายุ' : 'Age'} <span className="inline-flex items-center align-middle ml-0.5 gap-0"><svg width="10" height="14" viewBox="0 0 10 14" className={`${sortBy === 'ageGroup' && sortOrder === 'asc' ? 'text-[#3c8dbc]' : 'text-gray-300'}`}><path d="M5 1v10M5 1L2 4M5 1l3 3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" fill="none"/></svg><svg width="10" height="14" viewBox="0 0 10 14" className={`${sortBy === 'ageGroup' && sortOrder === 'desc' ? 'text-[#3c8dbc]' : 'text-gray-300'}`}><path d="M5 3v10M5 13L2 10M5 13l3-3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" fill="none"/></svg></span></th>
+                                                <th className="w-12 text-center">{language === 'th' ? 'สัญชาติ' : 'Nat.'}</th>
+                                                <th className="w-28 text-center cursor-pointer select-none" onClick={() => handleSort('chipCode')}>Chip Code <span className="inline-flex items-center align-middle ml-0.5 gap-0"><svg width="10" height="14" viewBox="0 0 10 14" className={`${sortBy === 'chipCode' && sortOrder === 'asc' ? 'text-[#3c8dbc]' : 'text-gray-300'}`}><path d="M5 1v10M5 1L2 4M5 1l3 3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" fill="none"/></svg><svg width="10" height="14" viewBox="0 0 10 14" className={`${sortBy === 'chipCode' && sortOrder === 'desc' ? 'text-[#3c8dbc]' : 'text-gray-300'}`}><path d="M5 3v10M5 13L2 10M5 13l3-3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" fill="none"/></svg></span></th>
+                                                <th className="w-20 text-center">{language === 'th' ? 'สถานะ' : 'Status'}</th>
+                                                <th className="w-14"></th>
                                             </tr>
                                         </thead>
                                         <tbody>
@@ -1042,28 +1049,28 @@ export default function ParticipantsPage() {
                                                             {r.bib || '—'}
                                                         </span>
                                                     </td>
-                                                    <td>
+                                                    <td className="max-w-[420px]">
                                                         <div className="font-medium">{r.firstName} {r.lastName}</div>
                                                         {(r.firstNameTh || r.lastNameTh) && <div className="text-[11px] text-gray-400">{r.firstNameTh} {r.lastNameTh}</div>}
                                                     </td>
                                                     <td className="text-center">
-                                                        <span className={`font-semibold ${r.gender === 'F' ? 'text-pink-500' : 'text-blue-500'}`}>
-                                                            {r.gender === 'F' ? 'F' : 'M'}
+                                                        <span className={`inline-flex items-center justify-center min-w-6 h-6 rounded-full font-semibold text-[14px] ${r.gender === 'F' ? 'text-pink-500 bg-pink-50' : 'text-blue-500 bg-blue-50'}`}>
+                                                            {r.gender === 'F' ? '♀' : '♂'}
                                                         </span>
                                                     </td>
-                                                    <td><span className={r.ageGroup ? 'text-[#3c8dbc]' : 'text-gray-300'}>{r.ageGroup || '-'}</span></td>
-                                                    <td className="text-center">{r.nationality || '-'}</td>
-                                                    <td>
+                                                    <td><span className={r.ageGroup ? 'text-[#3c8dbc]' : 'text-gray-300'}>{r.ageGroup ? r.ageGroup.replace(/[^0-9-]/g, '') || r.ageGroup : '-'}</span></td>
+                                                    <td className="text-center text-[11px] text-gray-600">{r.nationality || '-'}</td>
+                                                    <td className="text-center">
                                                         <span className={`font-mono text-[11px] ${noChip ? 'text-amber-600 font-semibold' : isDupChip ? 'text-amber-800 font-semibold' : 'text-gray-700'}`}>
                                                             {r.chipCode || (language === 'th' ? 'ไม่มี' : 'None')}
                                                         </span>
                                                     </td>
-                                                    <td>
-                                                        <div className="flex gap-1 flex-wrap">
+                                                    <td className="text-center">
+                                                        <div className="flex gap-1 flex-wrap justify-center">
                                                             {isReady && <span className="text-[10px] font-semibold text-green-700 bg-green-100 px-1.5 py-0.5 rounded-full">{language === 'th' ? 'พร้อม' : 'Ready'}</span>}
-                                                            {noBib && <span className="text-[10px] font-semibold text-red-800 bg-red-100 px-1.5 py-0.5 rounded-full">!BIB</span>}
+                                                            {noBib && <span className="text-[10px] font-semibold text-red-800 bg-red-100 px-1.5 py-0.5 rounded-full">{language === 'th' ? 'ไม่มีBIP' : 'No BIB'}</span>}
                                                             {isDupBib && <span className="text-[10px] font-semibold text-red-800 bg-red-100 px-1.5 py-0.5 rounded-full">BIBซ้ำ</span>}
-                                                            {noChip && <span className="text-[10px] font-semibold text-amber-800 bg-amber-100 px-1.5 py-0.5 rounded-full">!Chip</span>}
+                                                            {noChip && <span className="text-[10px] font-semibold text-amber-800 bg-amber-100 px-1.5 py-0.5 rounded-full">{language === 'th' ? 'ไม่มีChip' : 'No Chip'}</span>}
                                                             {isDupChip && <span className="text-[10px] font-semibold text-amber-800 bg-amber-100 px-1.5 py-0.5 rounded-full">Chipซ้ำ</span>}
                                                         </div>
                                                     </td>
