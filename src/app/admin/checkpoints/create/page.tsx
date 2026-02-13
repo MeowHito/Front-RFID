@@ -1035,8 +1035,10 @@ export default function RouteMappingPage() {
                                                         <input
                                                             type="datetime-local"
                                                             className="table-input"
-                                                            defaultValue={cp.cutoffTime || ''}
-                                                            key={`cutoff-${cp._id}-${cp.cutoffTime}`}
+                                                            draggable={false}
+                                                            onDragStart={e => e.stopPropagation()}
+                                                            onMouseDown={e => e.stopPropagation()}
+                                                            value={cp.cutoffTime || ''}
                                                             onChange={e => updateCheckpoint(cp._id, { cutoffTime: e.target.value })}
                                                             style={{
                                                                 width: '100%', padding: '3px 4px', border: '1px solid #ddd',
