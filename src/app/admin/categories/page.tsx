@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useLanguage } from '@/lib/language-context';
 import AdminLayout from '../AdminLayout';
 import '../admin.css';
@@ -20,6 +20,7 @@ interface RaceCategory {
     name: string;
     distance?: string;
     startTime?: string;
+    ageGroups?: AgeGroup[];
 }
 
 interface Campaign {
@@ -37,6 +38,7 @@ export default function CategoriesPage() {
     const [saving, setSaving] = useState(false);
     const [selectedCategory, setSelectedCategory] = useState<string>('');
     const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+    const loadedRef = useRef<string>('');
 
     // Age group calculation config
     const [minAge, setMinAge] = useState(18);
@@ -78,10 +80,12 @@ export default function CategoriesPage() {
     // Load age groups when category changes
     useEffect(() => {
         if (!selectedCategory || !campaign?._id) return;
-        // TODO: Load age groups from API
-        // For now, initialize empty
-        setMaleGroups([]);
-        setFemaleGroups([]);
+        if (loadedRef.current === selectedCategory) return;
+        loadedRef.current = selectedCategory;
+        const cat = campaign.categories?.find(c => c.name === selectedCategory);
+        const groups = cat?.ageGroups || [];
+        setMaleGroups(groups.filter(g => g.gender === 'male').map((g, i) => ({ ...g, index: i + 1 })));
+        setFemaleGroups(groups.filter(g => g.gender === 'female').map((g, i) => ({ ...g, index: i + 1 })));
     }, [selectedCategory, campaign]);
 
     const calculateGroups = (step: number) => {
@@ -215,18 +219,27 @@ export default function CategoriesPage() {
 
         setSaving(true);
         try {
-            // TODO: Save age groups to backend API
-            // const res = await fetch(`/api/categories/${campaign._id}/${selectedCategory}/age-groups`, {
-            //     method: 'PUT',
-            //     headers: { 'Content-Type': 'application/json' },
-            //     body: JSON.stringify({ male: maleGroups, female: femaleGroups }),
-            // });
-            // if (!res.ok) throw new Error('Failed to save');
+            const allGroups: AgeGroup[] = [
+                ...maleGroups.map((g, i) => ({ ...g, index: i + 1 })),
+                ...femaleGroups.map((g, i) => ({ ...g, index: i + 1 })),
+            ];
+            const updatedCategories = (campaign.categories || []).map(cat =>
+                cat.name === selectedCategory ? { ...cat, ageGroups: allGroups } : cat
+            );
+            const res = await fetch(`/api/campaigns/${campaign._id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ categories: updatedCategories }),
+            });
+            if (!res.ok) throw new Error('Failed to save');
+            const updated = await res.json();
+            setCampaign(updated);
+            loadedRef.current = '';
 
             showToast(
                 language === 'th'
-                    ? `บันทึกสำเร็จ ${maleGroups.length + femaleGroups.length} รุ่น`
-                    : `Saved ${maleGroups.length + femaleGroups.length} age groups`,
+                    ? `บันทึกสำเร็จ ${allGroups.length} รุ่น`
+                    : `Saved ${allGroups.length} age groups`,
                 'success'
             );
         } catch {
@@ -285,26 +298,32 @@ export default function CategoriesPage() {
                     </div>
                 ) : (
                     <>
-                        {/* Distance selector */}
-                        <div className="filter-toolbar" style={{ marginBottom: 15 }}>
-                            <label style={{ fontWeight: 700, fontSize: 13 }}>
-                                {language === 'th' ? 'ระยะที่กำลังจัดการ:' : 'Managing distance:'}
-                            </label>
-                            <select
-                                className="form-select"
-                                value={selectedCategory}
-                                onChange={e => setSelectedCategory(e.target.value)}
-                                style={{ minWidth: 200, fontWeight: 'bold', fontSize: 13, padding: '6px 10px' }}
+                        {/* Save button at top */}
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
+                            <button
+                                className="btn"
+                                onClick={handleSaveAll}
+                                disabled={saving}
+                                style={{
+                                    background: '#00a65a',
+                                    width: 180,
+                                    fontSize: 13,
+                                    opacity: saving ? 0.7 : 1,
+                                }}
                             >
-                                {campaign.categories?.map((cat, i) => (
-                                    <option key={`${cat.name}-${i}`} value={cat.name}>
-                                        {cat.name}{cat.distance ? ` (${cat.distance})` : ''}
-                                    </option>
-                                ))}
-                            </select>
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ display: 'inline-block', marginRight: 6 }}>
+                                    <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+                                    <polyline points="17 21 17 13 7 13 7 21" />
+                                    <polyline points="7 3 7 8 15 8" />
+                                </svg>
+                                {saving
+                                    ? (language === 'th' ? 'กำลังบันทึก...' : 'Saving...')
+                                    : (language === 'th' ? 'บันทึกข้อมูลทั้งหมด' : 'Save All Data')
+                                }
+                            </button>
                         </div>
 
-                        {/* Magic tool - Age group calculator */}
+                        {/* Magic tool - Age group calculator + distance selector inside blue box */}
                         <div style={{
                             background: '#f0f7ff',
                             border: '1px dashed #3c8dbc',
@@ -312,12 +331,32 @@ export default function CategoriesPage() {
                             borderRadius: 4,
                             marginBottom: 15,
                         }}>
-                            <div style={{ fontWeight: 'bold', color: '#3c8dbc', marginBottom: 10, fontSize: 13 }}>
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ display: 'inline-block', marginRight: 6, verticalAlign: 'middle' }}>
-                                    <circle cx="12" cy="12" r="10" />
-                                    <path d="M12 6v6l4 2" />
-                                </svg>
-                                {language === 'th' ? 'กำหนดเงื่อนไขการคำนวณอัตโนมัติ:' : 'Auto-calculation settings:'}
+                            {/* Distance selector inside the blue box */}
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, paddingBottom: 10, borderBottom: '1px solid #c5ddf0' }}>
+                                <div style={{ fontWeight: 'bold', color: '#3c8dbc', fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ display: 'inline-block', verticalAlign: 'middle' }}>
+                                        <circle cx="12" cy="12" r="10" />
+                                        <path d="M12 6v6l4 2" />
+                                    </svg>
+                                    {language === 'th' ? 'กำหนดเงื่อนไขการคำนวณอัตโนมัติ' : 'Auto-calculation settings'}
+                                </div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                    <label style={{ fontWeight: 600, fontSize: 12, color: '#555' }}>
+                                        {language === 'th' ? 'ระยะที่กำลังจัดการ:' : 'Distance:'}
+                                    </label>
+                                    <select
+                                        className="form-select"
+                                        value={selectedCategory}
+                                        onChange={e => { loadedRef.current = ''; setSelectedCategory(e.target.value); }}
+                                        style={{ minWidth: 200, fontWeight: 'bold', fontSize: 13, padding: '5px 10px', border: '1px solid #3c8dbc', borderRadius: 4, background: '#fff' }}
+                                    >
+                                        {campaign.categories?.map((cat, i) => (
+                                            <option key={`${cat.name}-${i}`} value={cat.name}>
+                                                {cat.name}{cat.distance ? ` (${cat.distance})` : ''}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
                             </div>
                             <div style={{ display: 'flex', gap: 15, alignItems: 'center', marginBottom: 10, flexWrap: 'wrap' }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
@@ -415,11 +454,11 @@ export default function CategoriesPage() {
                                 {language === 'th' ? 'กลุ่มอายุ: ชาย (Male)' : 'Age Groups: Male'}
                             </span>
                             <button
-                                className="btn btn-add"
+                                className="btn"
                                 onClick={() => addRow('male')}
-                                style={{ padding: '2px 8px', fontSize: 10 }}
+                                style={{ padding: '4px 12px', fontSize: 11, background: '#3c8dbc', fontWeight: 600 }}
                             >
-                                {language === 'th' ? 'เพิ่มรุ่นชาย' : 'Add Male Group'}
+                                + {language === 'th' ? 'เพิ่มรุ่นชาย' : 'Add Male Group'}
                             </button>
                         </div>
                         <table className="data-table">
@@ -520,11 +559,11 @@ export default function CategoriesPage() {
                                 {language === 'th' ? 'กลุ่มอายุ: หญิง (Female)' : 'Age Groups: Female'}
                             </span>
                             <button
-                                className="btn btn-add"
+                                className="btn"
                                 onClick={() => addRow('female')}
-                                style={{ padding: '2px 8px', fontSize: 10 }}
+                                style={{ padding: '4px 12px', fontSize: 11, background: '#e83e8c', fontWeight: 600 }}
                             >
-                                {language === 'th' ? 'เพิ่มรุ่นหญิง' : 'Add Female Group'}
+                                + {language === 'th' ? 'เพิ่มรุ่นหญิง' : 'Add Female Group'}
                             </button>
                         </div>
                         <table className="data-table">
@@ -608,32 +647,6 @@ export default function CategoriesPage() {
                 )}
             </div>
 
-            {/* Save button */}
-            {campaign && selectedCategory && (
-                <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 15 }}>
-                    <button
-                        className="btn"
-                        onClick={handleSaveAll}
-                        disabled={saving}
-                        style={{
-                            background: '#00a65a',
-                            width: 180,
-                            fontSize: 13,
-                            opacity: saving ? 0.7 : 1,
-                        }}
-                    >
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ display: 'inline-block', marginRight: 6 }}>
-                            <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
-                            <polyline points="17 21 17 13 7 13 7 21" />
-                            <polyline points="7 3 7 8 15 8" />
-                        </svg>
-                        {saving
-                            ? (language === 'th' ? 'กำลังบันทึก...' : 'Saving...')
-                            : (language === 'th' ? 'บันทึกข้อมูลทั้งหมด' : 'Save All Data')
-                        }
-                    </button>
-                </div>
-            )}
         </AdminLayout>
     );
 }
