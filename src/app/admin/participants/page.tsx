@@ -43,12 +43,25 @@ interface Runner {
     gender: string;
     category: string;
     ageGroup?: string;
+    age?: number;
     nationality?: string;
     chipCode?: string;
     rfidTag?: string;
     status: string;
     team?: string;
+    teamName?: string;
     box?: string;
+    shirtSize?: string;
+    email?: string;
+    phone?: string;
+    idNo?: string;
+    birthDate?: string;
+    emergencyContact?: string;
+    emergencyPhone?: string;
+    medicalInfo?: string;
+    bloodType?: string;
+    chronicDiseases?: string;
+    address?: string;
 }
 
 function calculateAgeGroup(birthDate: string, gender: string): string {
@@ -126,10 +139,10 @@ export default function ParticipantsPage() {
     const [chipStatusFilter, setChipStatusFilter] = useState<string>('');
     const listLimit = 50;
 
-    // Inline chip code editing
-    const [editingChipId, setEditingChipId] = useState<string | null>(null);
-    const [editingChipValue, setEditingChipValue] = useState<string>('');
-    const [savingChip, setSavingChip] = useState(false);
+    // Edit modal state
+    const [editingRunner, setEditingRunner] = useState<Runner | null>(null);
+    const [editForm, setEditForm] = useState<Record<string, string>>({});
+    const [savingRunner, setSavingRunner] = useState(false);
 
     // CSV state
     const [fileName, setFileName] = useState<string>('');
@@ -205,25 +218,65 @@ export default function ParticipantsPage() {
         if (activeTab !== 'import') fetchRunners();
     }, [activeTab, fetchRunners]);
 
-    // Save chip code for a runner
-    const handleSaveChip = useCallback(async (runnerId: string, chipCode: string) => {
-        setSavingChip(true);
+    // Open edit modal for a runner
+    const openEditModal = useCallback((runner: Runner) => {
+        setEditingRunner(runner);
+        setEditForm({
+            bib: runner.bib || '',
+            firstName: runner.firstName || '',
+            lastName: runner.lastName || '',
+            firstNameTh: runner.firstNameTh || '',
+            lastNameTh: runner.lastNameTh || '',
+            gender: runner.gender || 'M',
+            category: runner.category || '',
+            ageGroup: runner.ageGroup || '',
+            nationality: runner.nationality || '',
+            chipCode: runner.chipCode || '',
+            rfidTag: runner.rfidTag || '',
+            team: runner.team || '',
+            teamName: runner.teamName || '',
+            box: runner.box || '',
+            shirtSize: runner.shirtSize || '',
+            email: runner.email || '',
+            phone: runner.phone || '',
+            idNo: runner.idNo || '',
+            birthDate: runner.birthDate ? runner.birthDate.substring(0, 10) : '',
+            emergencyContact: runner.emergencyContact || '',
+            emergencyPhone: runner.emergencyPhone || '',
+            medicalInfo: runner.medicalInfo || '',
+            bloodType: runner.bloodType || '',
+            chronicDiseases: runner.chronicDiseases || '',
+            address: runner.address || '',
+            status: runner.status || 'not_started',
+        });
+    }, []);
+
+    // Save all edited fields for a runner
+    const handleSaveRunner = useCallback(async () => {
+        if (!editingRunner) return;
+        setSavingRunner(true);
         try {
-            const res = await fetch(`/api/runners/${runnerId}`, {
+            const res = await fetch(`/api/runners/${editingRunner._id}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ chipCode }),
+                body: JSON.stringify(editForm),
             });
-            if (!res.ok) throw new Error('Failed');
-            setRunners(prev => prev.map(r => r._id === runnerId ? { ...r, chipCode } : r));
-            setEditingChipId(null);
-            showToast(language === 'th' ? 'บันทึก ChipCode สำเร็จ' : 'ChipCode saved', 'success');
-        } catch {
-            showToast(language === 'th' ? 'บันทึกไม่สำเร็จ' : 'Save failed', 'error');
+            if (!res.ok) {
+                let errMsg = 'Failed';
+                try { const e = await res.json(); errMsg = e?.message || e?.error || errMsg; } catch { /* */ }
+                throw new Error(typeof errMsg === 'string' ? errMsg : JSON.stringify(errMsg));
+            }
+            const updated = await res.json();
+            setRunners(prev => prev.map(r => r._id === editingRunner._id ? { ...r, ...updated } : r));
+            setEditingRunner(null);
+            showToast(language === 'th' ? 'บันทึกสำเร็จ' : 'Saved successfully', 'success');
+        } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : 'Unknown error';
+            showToast(language === 'th' ? `บันทึกไม่สำเร็จ: ${msg}` : `Save failed: ${msg}`, 'error');
         } finally {
-            setSavingChip(false);
+            setSavingRunner(false);
         }
-    }, [language]);
+    }, [editingRunner, editForm, language]);
 
     const processCSV = useCallback((text: string) => {
         const rows = parseCSV(text);
@@ -986,54 +1039,13 @@ export default function ParticipantsPage() {
                                                     </td>
                                                     <td style={{ textAlign: 'center' }}>{r.nationality || '-'}</td>
                                                     <td>
-                                                        {editingChipId === r._id ? (
-                                                            <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-                                                                <input
-                                                                    type="text"
-                                                                    value={editingChipValue}
-                                                                    onChange={e => setEditingChipValue(e.target.value)}
-                                                                    onKeyDown={e => {
-                                                                        if (e.key === 'Enter') handleSaveChip(r._id, editingChipValue);
-                                                                        if (e.key === 'Escape') setEditingChipId(null);
-                                                                    }}
-                                                                    autoFocus
-                                                                    style={{
-                                                                        flex: 1, padding: '3px 6px', fontSize: 12,
-                                                                        fontFamily: 'monospace', border: '1px solid #3c8dbc',
-                                                                        borderRadius: 3, outline: 'none',
-                                                                    }}
-                                                                />
-                                                                <button
-                                                                    onClick={() => handleSaveChip(r._id, editingChipValue)}
-                                                                    disabled={savingChip}
-                                                                    style={{
-                                                                        padding: '3px 8px', fontSize: 11, border: 'none',
-                                                                        borderRadius: 3, background: '#00a65a', color: '#fff',
-                                                                        cursor: 'pointer', fontWeight: 600, whiteSpace: 'nowrap',
-                                                                    }}
-                                                                >
-                                                                    {savingChip ? '...' : '✓'}
-                                                                </button>
-                                                                <button
-                                                                    onClick={() => setEditingChipId(null)}
-                                                                    style={{
-                                                                        padding: '3px 8px', fontSize: 11, border: 'none',
-                                                                        borderRadius: 3, background: '#eee', color: '#666',
-                                                                        cursor: 'pointer', fontWeight: 600,
-                                                                    }}
-                                                                >
-                                                                    ✕
-                                                                </button>
-                                                            </div>
-                                                        ) : (
-                                                            <span style={{
-                                                                fontFamily: 'monospace', fontSize: 11,
-                                                                color: r.chipCode ? '#333' : '#e68a00',
-                                                                fontWeight: r.chipCode ? 'normal' : 600,
-                                                            }}>
-                                                                {r.chipCode || (language === 'th' ? 'ไม่มี' : 'None')}
-                                                            </span>
-                                                        )}
+                                                        <span style={{
+                                                            fontFamily: 'monospace', fontSize: 11,
+                                                            color: r.chipCode ? '#333' : '#e68a00',
+                                                            fontWeight: r.chipCode ? 'normal' : 600,
+                                                        }}>
+                                                            {r.chipCode || (language === 'th' ? 'ไม่มี' : 'None')}
+                                                        </span>
                                                     </td>
                                                     <td>
                                                         <span style={{
@@ -1058,22 +1070,20 @@ export default function ParticipantsPage() {
                                                         </span>
                                                     </td>
                                                     <td style={{ textAlign: 'center' }}>
-                                                        {editingChipId !== r._id && (
-                                                            <button
-                                                                onClick={() => { setEditingChipId(r._id); setEditingChipValue(r.chipCode || ''); }}
-                                                                title={language === 'th' ? 'แก้ไข ChipCode' : 'Edit ChipCode'}
-                                                                style={{
-                                                                    padding: '3px 8px', fontSize: 11, border: '1px solid #ddd',
-                                                                    borderRadius: 3, background: '#fff', color: '#3c8dbc',
-                                                                    cursor: 'pointer', fontWeight: 600,
-                                                                }}
-                                                            >
-                                                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ verticalAlign: -1 }}>
-                                                                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-                                                                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-                                                                </svg>
-                                                            </button>
-                                                        )}
+                                                        <button
+                                                            onClick={() => openEditModal(r)}
+                                                            title={language === 'th' ? 'แก้ไขข้อมูล' : 'Edit'}
+                                                            style={{
+                                                                padding: '3px 8px', fontSize: 11, border: '1px solid #ddd',
+                                                                borderRadius: 3, background: '#fff', color: '#3c8dbc',
+                                                                cursor: 'pointer', fontWeight: 600,
+                                                            }}
+                                                        >
+                                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ verticalAlign: -1 }}>
+                                                                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                                                                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                                                            </svg>
+                                                        </button>
                                                     </td>
                                                 </tr>
                                             ))}
@@ -1122,6 +1132,149 @@ export default function ParticipantsPage() {
                         </div>
                     )}
                 </>
+            )}
+            {/* ===== EDIT RUNNER MODAL ===== */}
+            {editingRunner && (
+                <div style={{
+                    position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+                    background: 'rgba(0,0,0,0.45)', zIndex: 9999,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }} onClick={() => setEditingRunner(null)}>
+                    <div
+                        onClick={e => e.stopPropagation()}
+                        style={{
+                            background: '#fff', borderRadius: 8, width: '95%', maxWidth: 700,
+                            maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 8px 30px rgba(0,0,0,0.25)',
+                        }}
+                    >
+                        {/* Modal header */}
+                        <div style={{
+                            padding: '14px 20px', borderBottom: '1px solid #e5e7eb',
+                            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                            background: '#f9fafb', borderRadius: '8px 8px 0 0',
+                        }}>
+                            <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: '#333' }}>
+                                {language === 'th' ? 'แก้ไขข้อมูลนักกีฬา' : 'Edit Participant'} — BIB {editingRunner.bib}
+                            </h3>
+                            <button onClick={() => setEditingRunner(null)} style={{
+                                background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: '#999',
+                                lineHeight: 1, padding: '2px 6px',
+                            }}>✕</button>
+                        </div>
+
+                        {/* Modal body */}
+                        <div style={{ padding: '16px 20px' }}>
+                            {(() => {
+                                const inputStyle: React.CSSProperties = {
+                                    width: '100%', padding: '7px 10px', border: '1px solid #ddd',
+                                    borderRadius: 4, fontSize: 13, fontFamily: 'inherit',
+                                };
+                                const labelStyle: React.CSSProperties = {
+                                    fontSize: 12, fontWeight: 600, color: '#555', marginBottom: 4, display: 'block',
+                                };
+                                const cellStyle: React.CSSProperties = { marginBottom: 12 };
+
+                                const fields: { key: string; label: string; labelEn: string; type?: string; options?: { v: string; l: string }[]; colSpan?: number }[] = [
+                                    { key: 'bib', label: 'BIB', labelEn: 'BIB' },
+                                    { key: 'firstName', label: 'ชื่อ (EN)', labelEn: 'First Name' },
+                                    { key: 'lastName', label: 'นามสกุล (EN)', labelEn: 'Last Name' },
+                                    { key: 'firstNameTh', label: 'ชื่อ (TH)', labelEn: 'First Name (TH)' },
+                                    { key: 'lastNameTh', label: 'นามสกุล (TH)', labelEn: 'Last Name (TH)' },
+                                    { key: 'gender', label: 'เพศ', labelEn: 'Gender', type: 'select', options: [{ v: 'M', l: language === 'th' ? 'ชาย' : 'Male' }, { v: 'F', l: language === 'th' ? 'หญิง' : 'Female' }] },
+                                    { key: 'category', label: 'ระยะทาง', labelEn: 'Category' },
+                                    { key: 'ageGroup', label: 'กลุ่มอายุ', labelEn: 'Age Group' },
+                                    { key: 'birthDate', label: 'วันเกิด', labelEn: 'Birth Date', type: 'date' },
+                                    { key: 'nationality', label: 'สัญชาติ', labelEn: 'Nationality' },
+                                    { key: 'chipCode', label: 'Chip Code', labelEn: 'Chip Code' },
+                                    { key: 'rfidTag', label: 'RFID Tag', labelEn: 'RFID Tag' },
+                                    { key: 'idNo', label: 'เลขบัตรประชาชน', labelEn: 'ID No.' },
+                                    { key: 'status', label: 'สถานะ', labelEn: 'Status', type: 'select', options: [
+                                        { v: 'not_started', l: language === 'th' ? 'ยังไม่เริ่ม' : 'Not Started' },
+                                        { v: 'in_progress', l: language === 'th' ? 'กำลังแข่ง' : 'In Progress' },
+                                        { v: 'finished', l: language === 'th' ? 'เข้าเส้นชัย' : 'Finished' },
+                                        { v: 'dnf', l: 'DNF' },
+                                        { v: 'dns', l: 'DNS' },
+                                    ]},
+                                    { key: 'team', label: 'ทีม', labelEn: 'Team' },
+                                    { key: 'teamName', label: 'ชื่อทีม', labelEn: 'Team Name' },
+                                    { key: 'box', label: 'บ็อกซ์', labelEn: 'Box' },
+                                    { key: 'shirtSize', label: 'ไซส์เสื้อ', labelEn: 'Shirt Size' },
+                                    { key: 'email', label: 'อีเมล', labelEn: 'Email' },
+                                    { key: 'phone', label: 'เบอร์โทร', labelEn: 'Phone' },
+                                    { key: 'bloodType', label: 'กรุ๊ปเลือด', labelEn: 'Blood Type' },
+                                    { key: 'emergencyContact', label: 'ผู้ติดต่อฉุกเฉิน', labelEn: 'Emergency Contact' },
+                                    { key: 'emergencyPhone', label: 'เบอร์ฉุกเฉิน', labelEn: 'Emergency Phone' },
+                                    { key: 'chronicDiseases', label: 'โรคประจำตัว', labelEn: 'Chronic Diseases', colSpan: 2 },
+                                    { key: 'medicalInfo', label: 'ข้อมูลสุขภาพ', labelEn: 'Medical Info', colSpan: 2 },
+                                    { key: 'address', label: 'ที่อยู่', labelEn: 'Address', colSpan: 2 },
+                                ];
+
+                                return (
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
+                                        {fields.map(f => (
+                                            <div key={f.key} style={{ ...cellStyle, gridColumn: f.colSpan === 2 ? '1 / -1' : undefined }}>
+                                                <label style={labelStyle}>{language === 'th' ? f.label : f.labelEn}</label>
+                                                {f.type === 'select' ? (
+                                                    <select
+                                                        value={editForm[f.key] || ''}
+                                                        onChange={e => setEditForm(prev => ({ ...prev, [f.key]: e.target.value }))}
+                                                        style={{ ...inputStyle, border: '1px solid #ccc', borderRadius: 4 }}
+                                                    >
+                                                        {f.options?.map(o => (
+                                                            <option key={o.v} value={o.v}>{o.l}</option>
+                                                        ))}
+                                                    </select>
+                                                ) : (
+                                                    <input
+                                                        type={f.type || 'text'}
+                                                        value={editForm[f.key] || ''}
+                                                        onChange={e => setEditForm(prev => ({ ...prev, [f.key]: e.target.value }))}
+                                                        style={{
+                                                            ...inputStyle,
+                                                            fontFamily: (f.key === 'chipCode' || f.key === 'rfidTag') ? 'monospace' : 'inherit',
+                                                        }}
+                                                    />
+                                                )}
+                                            </div>
+                                        ))}
+                                    </div>
+                                );
+                            })()}
+                        </div>
+
+                        {/* Modal footer */}
+                        <div style={{
+                            padding: '12px 20px', borderTop: '1px solid #e5e7eb',
+                            display: 'flex', justifyContent: 'flex-end', gap: 10,
+                            background: '#f9fafb', borderRadius: '0 0 8px 8px',
+                        }}>
+                            <button
+                                onClick={() => setEditingRunner(null)}
+                                style={{
+                                    padding: '8px 20px', fontSize: 13, border: '1px solid #ddd',
+                                    borderRadius: 4, background: '#fff', color: '#666',
+                                    cursor: 'pointer', fontWeight: 600,
+                                }}
+                            >
+                                {language === 'th' ? 'ยกเลิก' : 'Cancel'}
+                            </button>
+                            <button
+                                onClick={handleSaveRunner}
+                                disabled={savingRunner}
+                                style={{
+                                    padding: '8px 24px', fontSize: 13, border: 'none',
+                                    borderRadius: 4, background: '#00a65a', color: '#fff',
+                                    cursor: 'pointer', fontWeight: 700,
+                                    opacity: savingRunner ? 0.6 : 1,
+                                }}
+                            >
+                                {savingRunner
+                                    ? (language === 'th' ? 'กำลังบันทึก...' : 'Saving...')
+                                    : (language === 'th' ? 'บันทึก' : 'Save')}
+                            </button>
+                        </div>
+                    </div>
+                </div>
             )}
         </AdminLayout>
     );

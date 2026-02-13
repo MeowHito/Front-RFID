@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 
 const BACKEND_URL = process.env.BACKEND_URL || 'http://3.26.160.149:3001';
 
-export async function PUT(request: NextRequest, { params }: { params: { id: string } }) {
-    const { id } = params;
+export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+    const { id } = await params;
     try {
         const body = await request.json();
         const res = await fetch(`${BACKEND_URL}/runners/${id}`, {
