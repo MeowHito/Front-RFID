@@ -393,13 +393,6 @@ export default function ManageCheckpointsPage() {
                 </div>
             )}
 
-            <div className="admin-breadcrumb">
-                <a href="/admin/events" className="breadcrumb-link">Admin</a>
-                <span className="breadcrumb-separator">/</span>
-                <span className="breadcrumb-current">
-                    {language === 'th' ? 'สร้างจุด Checkpoint' : 'Manage Checkpoints'}
-                </span>
-            </div>
 
             <div className="content-box">
                 {/* Campaign not selected - show campaign cards */}

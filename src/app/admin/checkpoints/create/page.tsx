@@ -493,36 +493,6 @@ export default function RouteMappingPage() {
             breadcrumbItems={[
                 { label: 'Checkpoint Mapping', labelEn: 'Checkpoint Mapping' }
             ]}
-            breadcrumbRight={
-                <button
-                    onClick={handleSaveAll}
-                    disabled={saving || !hasUnsavedChanges || dirtyIds.size === 0}
-                    style={{
-                        padding: '6px 14px', borderRadius: 3, border: 'none',
-                        background: (hasUnsavedChanges && dirtyIds.size > 0) ? '#00a65a' : '#aaa', color: '#fff',
-                        cursor: (hasUnsavedChanges && dirtyIds.size > 0 && !saving) ? 'pointer' : 'not-allowed', fontSize: 13,
-                        display: 'inline-flex', alignItems: 'center', gap: 5,
-                        opacity: saving ? 0.7 : 1,
-                    }}
-                >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
-                        <polyline points="17 21 17 13 7 13 7 21" />
-                        <polyline points="7 3 7 8 15 8" />
-                    </svg>
-                    {saving
-                        ? (language === 'th' ? 'กำลังบันทึก...' : 'Saving...')
-                        : (language === 'th' ? 'บันทึกแก้ไขทั้งหมด' : 'Save All Changes')
-                    }
-                    {hasUnsavedChanges && !saving && (
-                        <span style={{
-                            background: '#fff', color: '#00a65a', borderRadius: '50%',
-                            width: 18, height: 18, fontSize: 11, fontWeight: 700,
-                            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                        }}>{dirtyIds.size}</span>
-                    )}
-                </button>
-            }
         >
             {/* Toast */}
             {toast && (
@@ -611,16 +581,6 @@ export default function RouteMappingPage() {
                     </div>
                 </div>
             )}
-
-            {/* Page header */}
-            <div style={{ marginBottom: 15 }}>
-                <h2 style={{ fontSize: 18, fontWeight: 500, margin: 0 }}>Checkpoint Mapping</h2>
-                <p style={{ fontSize: 12, color: '#777', margin: '4px 0 0' }}>
-                    {language === 'th'
-                        ? 'จัดการจุดเช็คพอยท์และผูกความสัมพันธ์เข้ากับประเภทการแข่งขัน'
-                        : 'Manage checkpoints and map them to race categories'}
-                </p>
-            </div>
 
             {/* Inventory picker popup */}
             {pickerOpen && (
@@ -809,6 +769,7 @@ export default function RouteMappingPage() {
                     </div>
                 </div>
             )}
+            
 
             <div className="content-box">
                 {loading ? (
@@ -831,6 +792,7 @@ export default function RouteMappingPage() {
                 ) : (
                     <>
                         {/* Filter toolbar */}
+                        
                         <div className="filter-toolbar" style={{ display: 'flex', gap: 10, marginBottom: 15, flexWrap: 'wrap', alignItems: 'center' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                                 <span style={{ fontWeight: 600, fontSize: 13 }}>
@@ -849,11 +811,42 @@ export default function RouteMappingPage() {
                                     ))}
                                 </select>
                             </div>
+                            
                             <button onClick={handleOpenPicker} className="btn btn-query" style={{ background: '#3c8dbc', marginLeft: 'auto', fontSize: 13, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
                                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="16" /><line x1="8" y1="12" x2="16" y2="12" /></svg>
                                 {language === 'th' ? 'ดึงจุด Checkpoint' : 'Pull checkpoints'}
+                                
                             </button>
+                            <button
+                    onClick={handleSaveAll}
+                    disabled={saving || !hasUnsavedChanges || dirtyIds.size === 0}
+                    style={{
+                        padding: '6px 14px', borderRadius: 3, border: 'none',
+                        background: (hasUnsavedChanges && dirtyIds.size > 0) ? '#00a65a' : '#aaa', color: '#fff ',
+                        cursor: (hasUnsavedChanges && dirtyIds.size > 0 && !saving) ? 'pointer' : 'not-allowed', fontSize: 13,
+                        display: 'inline-flex', alignItems: 'center', gap: 5,
+                        opacity: saving ? 0.7 : 1,
+                    }}
+                >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+                        <polyline points="17 21 17 13 7 13 7 21" />
+                        <polyline points="7 3 7 8 15 8" />
+                    </svg>
+                    {saving
+                        ? (language === 'th' ? 'กำลังบันทึก...' : 'Saving...')
+                        : (language === 'th' ? 'บันทึกแก้ไขทั้งหมด' : 'Save All Changes')
+                    }
+                    {hasUnsavedChanges && !saving && (
+                        <span style={{
+                            background: '#fff', color: '#00a65a', borderRadius: '50%',
+                            width: 18, height: 18, fontSize: 11, fontWeight: 700,
+                            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                        }}>{dirtyIds.size}</span>
+                    )}
+                </button>
                         </div>
+                        
 
                         {/* Table */}
                         {loadingCps ? (

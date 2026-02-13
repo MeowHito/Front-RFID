@@ -272,14 +272,6 @@ export default function CategoriesPage() {
                 </div>
             )}
 
-            <div className="admin-breadcrumb">
-                <a href="/admin/events" className="breadcrumb-link">Admin</a>
-                <span className="breadcrumb-separator">/</span>
-                <span className="breadcrumb-current">
-                    {language === 'th' ? 'ประเภทการแข่งขัน' : 'Race Categories'}
-                </span>
-            </div>
-
             <div className="content-box">
                 {loading ? (
                     <div style={{ textAlign: 'center', padding: 30, color: '#999', fontSize: 13 }}>

@@ -145,6 +145,11 @@ export default function ParticipantsPage() {
     const [listRunnerStatus, setListRunnerStatus] = useState<string[]>([]);
     const [dupBibs, setDupBibs] = useState<string[]>([]);
     const [dupChips, setDupChips] = useState<string[]>([]);
+    const [statusCounts, setStatusCounts] = useState<Record<string, number>>({});
+    const [sortBy, setSortBy] = useState('');
+    const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
+    const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+    const [deletingIds, setDeletingIds] = useState(false);
 
     // Edit modal state
     const [editingRunner, setEditingRunner] = useState<Runner | null>(null);
@@ -218,6 +223,7 @@ export default function ParticipantsPage() {
             });
             if (listSearch) params.append('search', listSearch);
             if (listRunnerStatus.length > 0) params.append('runnerStatus', listRunnerStatus.join(','));
+            if (sortBy) { params.append('sortBy', sortBy); params.append('sortOrder', sortOrder); }
             const res = await fetch(`/api/runners/paged?${params.toString()}`, { cache: 'no-store' });
             if (!res.ok) throw new Error('Failed');
             const data = await res.json();
@@ -225,16 +231,17 @@ export default function ParticipantsPage() {
             setRunnersTotal(data.total || 0);
             setDupBibs(data.dupBibs || []);
             setDupChips(data.dupChips || []);
+            if (data.statusCounts) setStatusCounts(data.statusCounts);
         } catch {
             setRunners([]);
             setRunnersTotal(0);
         } finally {
             setRunnersLoading(false);
         }
-    }, [campaign, activeTab, listSearch, listPage, listRunnerStatus]);
+    }, [campaign, activeTab, listSearch, listPage, listRunnerStatus, sortBy, sortOrder]);
 
     useEffect(() => {
-        if (activeTab !== 'import') fetchRunners();
+        if (activeTab !== 'import') { fetchRunners(); setSelectedIds(new Set()); }
     }, [activeTab, fetchRunners]);
 
     // Toggle runner status filter (push/pop, 'ready' clears all others)
@@ -248,6 +255,73 @@ export default function ParticipantsPage() {
         });
         setListPage(1);
     }, []);
+
+    // Toggle sort column
+    const handleSort = useCallback((col: string) => {
+        if (sortBy === col) {
+            setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc');
+        } else {
+            setSortBy(col);
+            setSortOrder('asc');
+        }
+        setListPage(1);
+    }, [sortBy]);
+
+    // Inline delete single runner (from table row, not modal)
+    const handleDeleteSingle = useCallback(async (runner: Runner) => {
+        const confirmed = window.confirm(
+            language === 'th'
+                ? `ลบนักกีฬา BIB ${runner.bib} (${runner.firstName} ${runner.lastName})?`
+                : `Delete BIB ${runner.bib} (${runner.firstName} ${runner.lastName})?`
+        );
+        if (!confirmed) return;
+        try {
+            const res = await fetch(`/api/runners/${runner._id}`, { method: 'DELETE' });
+            if (!res.ok) throw new Error('Failed');
+            setRunners(prev => prev.filter(r => r._id !== runner._id));
+            setRunnersTotal(prev => prev - 1);
+            const cat = runner.category || activeTab;
+            setCategoryCounts(prev => ({ ...prev, [cat]: Math.max(0, (prev[cat] || 1) - 1) }));
+            setSelectedIds(prev => { const n = new Set(prev); n.delete(runner._id); return n; });
+            showToast(language === 'th' ? 'ลบสำเร็จ' : 'Deleted', 'success');
+        } catch {
+            showToast(language === 'th' ? 'ลบไม่สำเร็จ' : 'Delete failed', 'error');
+        }
+    }, [activeTab, language]);
+
+    // Bulk delete selected runners
+    const handleBulkDelete = useCallback(async () => {
+        if (selectedIds.size === 0) return;
+        const confirmed = window.confirm(
+            language === 'th'
+                ? `ลบนักกีฬาที่เลือก ${selectedIds.size} คน?`
+                : `Delete ${selectedIds.size} selected participants?`
+        );
+        if (!confirmed) return;
+        setDeletingIds(true);
+        try {
+            const res = await fetch('/api/runners/bulk', {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ids: Array.from(selectedIds) }),
+            });
+            if (!res.ok) throw new Error('Failed');
+            const data = await res.json();
+            showToast(language === 'th' ? `ลบสำเร็จ ${data.deletedCount} คน` : `Deleted ${data.deletedCount}`, 'success');
+            setSelectedIds(new Set());
+            fetchRunners();
+            // Refresh count
+            try {
+                const p = new URLSearchParams({ eventId: campaign!._id, category: activeTab, page: '1', limit: '1' });
+                const cr = await fetch(`/api/runners/paged?${p.toString()}`);
+                if (cr.ok) { const cd = await cr.json(); setCategoryCounts(prev => ({ ...prev, [activeTab]: cd.total || 0 })); }
+            } catch { /* */ }
+        } catch {
+            showToast(language === 'th' ? 'ลบไม่สำเร็จ' : 'Delete failed', 'error');
+        } finally {
+            setDeletingIds(false);
+        }
+    }, [selectedIds, language, campaign, activeTab, fetchRunners]);
 
     // Open edit modal for a runner
     const openEditModal = useCallback((runner: Runner) => {
@@ -520,6 +594,7 @@ export default function ParticipantsPage() {
                 ageGroup: r.ageGroup || undefined,
                 chipCode: r.chipCode || undefined,
                 status: 'not_started',
+                sourceFile: data.fileName || undefined,
             }));
 
             const authToken = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
@@ -625,23 +700,13 @@ export default function ParticipantsPage() {
                 </div>
             ) : (
                 <>
-                    {/* Tabs: Import + category tabs that have data */}
-                    <div style={{
-                        display: 'flex', gap: 6, marginBottom: 20,
-                        overflowX: 'auto', flexWrap: 'wrap',
-                    }}>
+                    {/* Tabs */}
+                    <div className="flex gap-2 mb-5 overflow-x-auto flex-wrap">
                         <button
-                            onClick={() => { setActiveTab('import'); setListSearch(''); setListPage(1); }}
-                            style={{
-                                padding: '8px 18px', fontSize: 13, fontWeight: activeTab === 'import' ? 700 : 500,
-                                border: activeTab === 'import' ? '2px solid #3c8dbc' : '1px solid #bbb',
-                                cursor: 'pointer', borderRadius: 6,
-                                background: activeTab === 'import' ? '#e8f4fd' : '#fff',
-                                color: activeTab === 'import' ? '#3c8dbc' : '#555',
-                                transition: '0.15s', whiteSpace: 'nowrap',
-                            }}
+                            onClick={() => { setActiveTab('import'); setListSearch(''); setListPage(1); setSelectedIds(new Set()); }}
+                            className={`px-4 py-2 text-[13px] rounded-md border cursor-pointer transition whitespace-nowrap ${activeTab === 'import' ? 'border-[#3c8dbc] border-2 bg-blue-50 text-[#3c8dbc] font-bold' : 'border-gray-300 bg-white text-gray-500'}`}
                         >
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: 6, verticalAlign: -2 }}>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="inline mr-1.5 -mt-0.5">
                                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
                                 <polyline points="7 10 12 15 17 10" />
                                 <line x1="12" y1="15" x2="12" y2="3" />
@@ -654,23 +719,17 @@ export default function ParticipantsPage() {
                             return (
                                 <button
                                     key={`tab-${cat.name}-${i}`}
-                                    onClick={() => { setActiveTab(cat.name); setListSearch(''); setListPage(1); }}
-                                    style={{
-                                        padding: '8px 18px', fontSize: 13, fontWeight: isActive ? 700 : 500,
-                                        border: isActive ? '2px solid #3c8dbc' : '1px solid #bbb',
-                                        cursor: 'pointer', borderRadius: 6,
-                                        background: isActive ? '#e8f4fd' : '#fff',
-                                        color: isActive ? '#3c8dbc' : '#555',
-                                        transition: '0.15s', whiteSpace: 'nowrap',
-                                        display: 'flex', alignItems: 'center', gap: 5,
-                                    }}
+                                    onClick={() => { setActiveTab(cat.name); setListSearch(''); setListPage(1); setSelectedIds(new Set()); }}
+                                    className={`px-4 py-2 text-[13px] rounded-md border cursor-pointer transition whitespace-nowrap flex flex-col items-center gap-0.5 ${isActive ? 'border-[#3c8dbc] border-2 bg-blue-50 text-[#3c8dbc] font-bold' : 'border-gray-300 bg-white text-gray-500'}`}
                                 >
-                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ verticalAlign: -2 }}>
-                                        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-                                        <circle cx="9" cy="7" r="4" />
-                                    </svg>
-                                    <span style={{ color: '#3c8dbc', fontWeight: 700, fontSize: 12 }}>({count})</span>
-                                    {cat.name}{cat.distance ? ` (${cat.distance})` : ''}
+                                    <span className="flex items-center gap-1">
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                                            <circle cx="9" cy="7" r="4" />
+                                        </svg>
+                                        <span className="text-[#3c8dbc] font-bold text-xs">({count})</span>
+                                    </span>
+                                    <span className="text-xs">{cat.name}{cat.distance ? ` (${cat.distance})` : ''}</span>
                                 </button>
                             );
                         })}
@@ -849,93 +908,121 @@ export default function ParticipantsPage() {
                     })}
                     </>)}
 
-                    {/* ===== CATEGORY TAB (one per distance) ===== */}
+                    {/* ===== CATEGORY TAB ===== */}
                     {activeTab !== 'import' && (
-                        <div style={{
-                            background: '#fff', borderTop: '3px solid #3c8dbc',
-                            padding: '16px 20px', borderRadius: 4,
-                            boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
-                        }}>
-                            {/* Toolbar: search + filter buttons + total */}
-                            <div style={{
-                                display: 'flex', gap: 10, alignItems: 'center', marginBottom: 16,
-                                flexWrap: 'wrap',
-                            }}>
+                        <div className="bg-white border-t-[3px] border-[#3c8dbc] rounded p-4 shadow-sm">
+                            {/* Row 1: Search + filter buttons */}
+                            <div className="flex gap-2 items-center mb-3 flex-wrap">
                                 <input
                                     type="text"
                                     value={listSearch}
                                     onChange={e => { setListSearch(e.target.value); setListPage(1); }}
                                     placeholder={language === 'th' ? 'ค้นหา BIB, ชื่อ...' : 'Search BIB, name...'}
-                                    style={{
-                                        padding: '7px 12px', border: '1px solid #ddd',
-                                        borderRadius: 4, fontSize: 13, fontFamily: 'inherit',
-                                        width: 220,
-                                    }}
+                                    className="px-3 py-1.5 border border-gray-300 rounded text-[13px] w-52 font-[inherit]"
                                 />
-                                <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                                <div className="flex gap-1 flex-wrap">
                                     {[
-                                        { key: 'dup_bib', label: language === 'th' ? 'BIB ซ้ำ' : 'Dup BIB', bg: '#fee2e2', color: '#991b1b', border: '#f87171' },
-                                        { key: 'no_bib', label: language === 'th' ? 'ไม่มี BIB' : 'No BIB', bg: '#fee2e2', color: '#991b1b', border: '#f87171' },
-                                        { key: 'dup_chip', label: language === 'th' ? 'ChipCode ซ้ำ' : 'Dup Chip', bg: '#fef3c7', color: '#92400e', border: '#fbbf24' },
-                                        { key: 'no_chip', label: language === 'th' ? 'ไม่มี ChipCode' : 'No Chip', bg: '#fef3c7', color: '#92400e', border: '#fbbf24' },
-                                        { key: 'ready', label: language === 'th' ? 'พร้อม' : 'Ready', bg: '#dcfce7', color: '#166534', border: '#4ade80' },
+                                        { key: 'dup_bib', label: 'BIB ซ้ำ', labelEn: 'Dup BIB', bg: 'bg-red-50', text: 'text-red-800', border: 'border-red-400', countColor: 'text-red-600' },
+                                        { key: 'no_bib', label: 'ไม่มี BIB', labelEn: 'No BIB', bg: 'bg-red-50', text: 'text-red-800', border: 'border-red-400', countColor: 'text-red-600' },
+                                        { key: 'dup_chip', label: 'ChipCode ซ้ำ', labelEn: 'Dup Chip', bg: 'bg-amber-50', text: 'text-amber-800', border: 'border-amber-400', countColor: 'text-amber-600' },
+                                        { key: 'no_chip', label: 'ไม่มี ChipCode', labelEn: 'No Chip', bg: 'bg-amber-50', text: 'text-amber-800', border: 'border-amber-400', countColor: 'text-amber-600' },
+                                        { key: 'no_name', label: 'ไม่มี ชื่อ', labelEn: 'No Name', bg: 'bg-orange-50', text: 'text-orange-800', border: 'border-orange-400', countColor: 'text-orange-600' },
+                                        { key: 'no_gender', label: 'ไม่มี เพศ', labelEn: 'No Gender', bg: 'bg-orange-50', text: 'text-orange-800', border: 'border-orange-400', countColor: 'text-orange-600' },
+                                        { key: 'no_nat', label: 'ไม่มี สัญชาติ', labelEn: 'No Nat.', bg: 'bg-orange-50', text: 'text-orange-800', border: 'border-orange-400', countColor: 'text-orange-600' },
+                                        { key: 'no_age', label: 'ไม่มี อายุ', labelEn: 'No Age', bg: 'bg-orange-50', text: 'text-orange-800', border: 'border-orange-400', countColor: 'text-orange-600' },
+                                        { key: 'ready', label: 'พร้อม', labelEn: 'Ready', bg: 'bg-green-50', text: 'text-green-800', border: 'border-green-400', countColor: 'text-green-600' },
                                     ].map(f => {
                                         const active = listRunnerStatus.includes(f.key);
+                                        const cnt = statusCounts[f.key] || 0;
+                                        if (cnt === 0 && f.key !== 'ready') return null;
                                         return (
                                             <button
                                                 key={f.key}
                                                 onClick={() => toggleListRunnerStatus(f.key)}
-                                                style={{
-                                                    padding: '4px 12px', fontSize: 11, fontWeight: active ? 700 : 500,
-                                                    border: `1.5px solid ${active ? f.border : '#ddd'}`,
-                                                    borderRadius: 4, cursor: 'pointer', transition: '0.15s',
-                                                    background: active ? f.bg : '#fff',
-                                                    color: active ? f.color : '#888',
-                                                    whiteSpace: 'nowrap',
-                                                }}
+                                                className={`px-2.5 py-1 text-[11px] rounded border cursor-pointer transition whitespace-nowrap ${active ? `${f.bg} ${f.text} ${f.border} font-bold border-[1.5px]` : 'bg-white text-gray-400 border-gray-300'}`}
                                             >
-                                                {f.label}
+                                                {language === 'th' ? f.label : f.labelEn}
+                                                {cnt > 0 && <span className={`ml-1 font-bold ${active ? f.countColor : f.countColor}`}>({cnt})</span>}
                                             </button>
                                         );
                                     })}
                                     {listRunnerStatus.length > 0 && (
-                                        <button
-                                            onClick={() => { setListRunnerStatus([]); setListPage(1); }}
-                                            style={{ padding: '4px 8px', fontSize: 10, border: '1px solid #ddd', borderRadius: 4, background: '#fff', color: '#999', cursor: 'pointer' }}
-                                        >
-                                            ✕
-                                        </button>
+                                        <button onClick={() => { setListRunnerStatus([]); setListPage(1); }} className="px-2 py-1 text-[10px] border border-gray-300 rounded bg-white text-gray-400 cursor-pointer">✕</button>
                                     )}
                                 </div>
-                                <div style={{ marginLeft: 'auto', fontSize: 13, color: '#666', whiteSpace: 'nowrap' }}>
+                            </div>
+
+                            {/* Row 2: Bulk actions + sort + total + ready count */}
+                            <div className="flex items-center gap-3 mb-3 flex-wrap">
+                                {selectedIds.size > 0 && (
+                                    <>
+                                        <button
+                                            onClick={() => { const allIds = new Set(runners.map(r => r._id)); setSelectedIds(allIds); }}
+                                            className="px-3 py-1 text-[11px] border border-blue-400 rounded bg-blue-50 text-blue-700 font-semibold cursor-pointer"
+                                        >
+                                            {language === 'th' ? 'เลือกทั้งหมด' : 'Select All'}
+                                        </button>
+                                        <button
+                                            onClick={handleBulkDelete}
+                                            disabled={deletingIds}
+                                            className="px-3 py-1 text-[11px] border border-red-400 rounded bg-red-50 text-red-700 font-semibold cursor-pointer disabled:opacity-50"
+                                        >
+                                            {deletingIds ? '...' : (language === 'th' ? `ลบที่เลือก (${selectedIds.size})` : `Delete (${selectedIds.size})`)}
+                                        </button>
+                                        <button onClick={() => setSelectedIds(new Set())} className="px-2 py-1 text-[10px] border border-gray-300 rounded bg-white text-gray-400 cursor-pointer">
+                                            {language === 'th' ? 'ยกเลิกเลือก' : 'Deselect'}
+                                        </button>
+                                    </>
+                                )}
+                                {/* Sort buttons */}
+                                <div className="flex items-center gap-1 ml-auto">
+                                    <span className="text-[11px] text-gray-400 mr-1">{language === 'th' ? 'เรียง:' : 'Sort:'}</span>
+                                    {[
+                                        { col: 'bib', label: 'BIB' },
+                                        { col: 'firstName', label: language === 'th' ? 'ชื่อ' : 'Name' },
+                                        { col: 'ageGroup', label: language === 'th' ? 'อายุ' : 'Age' },
+                                        { col: 'chipCode', label: 'Chip' },
+                                    ].map(s => (
+                                        <button
+                                            key={s.col}
+                                            onClick={() => handleSort(s.col)}
+                                            className={`px-2 py-0.5 text-[10px] rounded border cursor-pointer ${sortBy === s.col ? 'bg-[#3c8dbc] text-white border-[#3c8dbc] font-bold' : 'bg-white text-gray-500 border-gray-300'}`}
+                                        >
+                                            {s.label} {sortBy === s.col ? (sortOrder === 'asc' ? '↑' : '↓') : ''}
+                                        </button>
+                                    ))}
+                                </div>
+                                <div className="text-[13px] text-gray-500 whitespace-nowrap">
                                     {language === 'th' ? `ทั้งหมด ${runnersTotal} คน` : `Total: ${runnersTotal}`}
+                                    {(statusCounts.ready || 0) > 0 && (
+                                        <span className="text-green-600 font-bold ml-2">
+                                            ({language === 'th' ? `พร้อม ${statusCounts.ready}` : `Ready ${statusCounts.ready}`})
+                                        </span>
+                                    )}
                                 </div>
                             </div>
 
                             {/* Runners table */}
                             {runnersLoading ? (
-                                <div style={{ padding: 40, textAlign: 'center', color: '#999' }}>
-                                    {language === 'th' ? 'กำลังโหลด...' : 'Loading...'}
-                                </div>
+                                <div className="py-10 text-center text-gray-400">{language === 'th' ? 'กำลังโหลด...' : 'Loading...'}</div>
                             ) : runners.length === 0 ? (
-                                <div style={{ padding: 40, textAlign: 'center', color: '#999' }}>
-                                    {language === 'th' ? 'ไม่พบข้อมูลนักกีฬา' : 'No participants found'}
-                                </div>
+                                <div className="py-10 text-center text-gray-400">{language === 'th' ? 'ไม่พบข้อมูลนักกีฬา' : 'No participants found'}</div>
                             ) : (
                                 <>
-                                <div style={{ maxHeight: 540, overflowY: 'auto', border: '1px solid #eee', borderRadius: 3 }}>
-                                    <table className="data-table" style={{ fontSize: 12 }}>
+                                <div className="max-h-[540px] overflow-y-auto border border-gray-200 rounded">
+                                    <table className="data-table text-[12px]">
                                         <thead>
                                             <tr>
-                                                <th style={{ width: 40 }}>#</th>
-                                                <th style={{ width: 80 }}>BIB</th>
-                                                <th>{language === 'th' ? 'ชื่อ-นามสกุล' : 'Name'}</th>
-                                                <th style={{ width: 60 }}>{language === 'th' ? 'เพศ' : 'Gender'}</th>
-                                                <th style={{ width: 90 }}>{language === 'th' ? 'กลุ่มอายุ' : 'Age Grp'}</th>
-                                                <th style={{ width: 70 }}>{language === 'th' ? 'สัญชาติ' : 'Nat.'}</th>
-                                                <th style={{ width: 180 }}>Chip Code</th>
-                                                <th style={{ width: 60 }}></th>
-                                                <th style={{ width: 110 }}>{language === 'th' ? 'สถานะ' : 'Status'}</th>
+                                                <th className="w-8"><input type="checkbox" checked={runners.length > 0 && runners.every(r => selectedIds.has(r._id))} onChange={e => { if (e.target.checked) { setSelectedIds(new Set(runners.map(r => r._id))); } else { setSelectedIds(new Set()); } }} /></th>
+                                                <th className="w-10">#</th>
+                                                <th className="w-20 cursor-pointer select-none" onClick={() => handleSort('bib')}>BIB {sortBy === 'bib' ? (sortOrder === 'asc' ? '↑' : '↓') : ''}</th>
+                                                <th className="cursor-pointer select-none" onClick={() => handleSort('firstName')}>{language === 'th' ? 'ชื่อ-นามสกุล' : 'Name'} {sortBy === 'firstName' ? (sortOrder === 'asc' ? '↑' : '↓') : ''}</th>
+                                                <th className="w-12 text-center">{language === 'th' ? 'เพศ' : 'G'}</th>
+                                                <th className="w-20 cursor-pointer select-none" onClick={() => handleSort('ageGroup')}>{language === 'th' ? 'อายุ' : 'Age'} {sortBy === 'ageGroup' ? (sortOrder === 'asc' ? '↑' : '↓') : ''}</th>
+                                                <th className="w-14 text-center">{language === 'th' ? 'สัญชาติ' : 'Nat.'}</th>
+                                                <th className="w-40 cursor-pointer select-none" onClick={() => handleSort('chipCode')}>Chip {sortBy === 'chipCode' ? (sortOrder === 'asc' ? '↑' : '↓') : ''}</th>
+                                                <th className="w-24">{language === 'th' ? 'สถานะ' : 'Status'}</th>
+                                                <th className="w-16"></th>
                                             </tr>
                                         </thead>
                                         <tbody>
@@ -945,77 +1032,49 @@ export default function ParticipantsPage() {
                                                 const noChip = !r.chipCode;
                                                 const isDupChip = !!r.chipCode && dupChips.includes(r.chipCode);
                                                 const isReady = !noBib && !isDupBib && !noChip && !isDupChip;
+                                                const checked = selectedIds.has(r._id);
                                                 return (
-                                                <tr key={r._id} style={{ background: (noBib || isDupBib) ? '#fff5f5' : (noChip || isDupChip) ? '#fffbeb' : undefined }}>
-                                                    <td style={{ textAlign: 'center', color: '#999' }}>
-                                                        {(listPage - 1) * listLimit + idx + 1}
-                                                    </td>
+                                                <tr key={r._id} className={`${(noBib || isDupBib) ? 'bg-red-50' : (noChip || isDupChip) ? 'bg-amber-50' : ''} ${checked ? '!bg-blue-50' : ''}`}>
+                                                    <td className="text-center"><input type="checkbox" checked={checked} onChange={() => setSelectedIds(prev => { const n = new Set(prev); if (n.has(r._id)) n.delete(r._id); else n.add(r._id); return n; })} /></td>
+                                                    <td className="text-center text-gray-400">{(listPage - 1) * listLimit + idx + 1}</td>
                                                     <td>
-                                                        <span style={{
-                                                            background: noBib ? '#fee2e2' : isDupBib ? '#fef3c7' : '#eee',
-                                                            padding: '2px 8px', borderRadius: 4,
-                                                            fontFamily: 'monospace', fontWeight: 'bold', fontSize: 12,
-                                                            border: `1px solid ${noBib ? '#f87171' : isDupBib ? '#fbbf24' : '#ddd'}`,
-                                                            display: 'inline-block', minWidth: 45, textAlign: 'center',
-                                                            color: noBib ? '#dc2626' : isDupBib ? '#92400e' : '#333',
-                                                        }}>
+                                                        <span className={`px-2 py-0.5 rounded font-mono font-bold text-[12px] inline-block min-w-[45px] text-center border ${noBib ? 'bg-red-100 border-red-400 text-red-600' : isDupBib ? 'bg-amber-100 border-amber-400 text-amber-800' : 'bg-gray-100 border-gray-300 text-gray-700'}`}>
                                                             {r.bib || '—'}
                                                         </span>
                                                     </td>
                                                     <td>
-                                                        <div style={{ fontWeight: 500 }}>{r.firstName} {r.lastName}</div>
-                                                        {(r.firstNameTh || r.lastNameTh) && (
-                                                            <div style={{ fontSize: 11, color: '#999' }}>
-                                                                {r.firstNameTh} {r.lastNameTh}
-                                                            </div>
-                                                        )}
+                                                        <div className="font-medium">{r.firstName} {r.lastName}</div>
+                                                        {(r.firstNameTh || r.lastNameTh) && <div className="text-[11px] text-gray-400">{r.firstNameTh} {r.lastNameTh}</div>}
                                                     </td>
-                                                    <td style={{ textAlign: 'center' }}>
-                                                        <span style={{
-                                                            color: r.gender === 'F' ? '#ec4899' : '#3b82f6',
-                                                            fontWeight: 600,
-                                                        }}>
-                                                            {r.gender === 'F' ? (language === 'th' ? 'หญิง' : 'F') : (language === 'th' ? 'ชาย' : 'M')}
+                                                    <td className="text-center">
+                                                        <span className={`font-semibold ${r.gender === 'F' ? 'text-pink-500' : 'text-blue-500'}`}>
+                                                            {r.gender === 'F' ? 'F' : 'M'}
                                                         </span>
                                                     </td>
+                                                    <td><span className={r.ageGroup ? 'text-[#3c8dbc]' : 'text-gray-300'}>{r.ageGroup || '-'}</span></td>
+                                                    <td className="text-center">{r.nationality || '-'}</td>
                                                     <td>
-                                                        <span style={{ color: r.ageGroup ? '#3c8dbc' : '#ccc' }}>
-                                                            {r.ageGroup || '-'}
-                                                        </span>
-                                                    </td>
-                                                    <td style={{ textAlign: 'center' }}>{r.nationality || '-'}</td>
-                                                    <td>
-                                                        <span style={{
-                                                            fontFamily: 'monospace', fontSize: 11,
-                                                            color: noChip ? '#d97706' : isDupChip ? '#92400e' : '#333',
-                                                            fontWeight: (noChip || isDupChip) ? 600 : 'normal',
-                                                        }}>
+                                                        <span className={`font-mono text-[11px] ${noChip ? 'text-amber-600 font-semibold' : isDupChip ? 'text-amber-800 font-semibold' : 'text-gray-700'}`}>
                                                             {r.chipCode || (language === 'th' ? 'ไม่มี' : 'None')}
                                                         </span>
                                                     </td>
-                                                    <td style={{ textAlign: 'center' }}>
-                                                        <button
-                                                            onClick={() => openEditModal(r)}
-                                                            title={language === 'th' ? 'แก้ไขข้อมูล' : 'Edit'}
-                                                            style={{
-                                                                padding: '3px 8px', fontSize: 11, border: '1px solid #ddd',
-                                                                borderRadius: 3, background: '#fff', color: '#3c8dbc',
-                                                                cursor: 'pointer', fontWeight: 600,
-                                                            }}
-                                                        >
-                                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ verticalAlign: -1 }}>
-                                                                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-                                                                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-                                                            </svg>
-                                                        </button>
+                                                    <td>
+                                                        <div className="flex gap-1 flex-wrap">
+                                                            {isReady && <span className="text-[10px] font-semibold text-green-700 bg-green-100 px-1.5 py-0.5 rounded-full">{language === 'th' ? 'พร้อม' : 'Ready'}</span>}
+                                                            {noBib && <span className="text-[10px] font-semibold text-red-800 bg-red-100 px-1.5 py-0.5 rounded-full">!BIB</span>}
+                                                            {isDupBib && <span className="text-[10px] font-semibold text-red-800 bg-red-100 px-1.5 py-0.5 rounded-full">BIBซ้ำ</span>}
+                                                            {noChip && <span className="text-[10px] font-semibold text-amber-800 bg-amber-100 px-1.5 py-0.5 rounded-full">!Chip</span>}
+                                                            {isDupChip && <span className="text-[10px] font-semibold text-amber-800 bg-amber-100 px-1.5 py-0.5 rounded-full">Chipซ้ำ</span>}
+                                                        </div>
                                                     </td>
                                                     <td>
-                                                        <div style={{ display: 'flex', gap: 3, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-                                                            {isReady && <span style={{ fontSize: 10, fontWeight: 600, color: '#16a34a', background: '#dcfce7', padding: '1px 6px', borderRadius: 8 }}>{language === 'th' ? 'พร้อม' : 'Ready'}</span>}
-                                                            {noBib && <span style={{ fontSize: 10, fontWeight: 600, color: '#991b1b', background: '#fee2e2', padding: '1px 6px', borderRadius: 8 }}>{language === 'th' ? 'ไม่มีBIB' : 'No BIB'}</span>}
-                                                            {isDupBib && <span style={{ fontSize: 10, fontWeight: 600, color: '#991b1b', background: '#fee2e2', padding: '1px 6px', borderRadius: 8 }}>{language === 'th' ? 'BIBซ้ำ' : 'Dup BIB'}</span>}
-                                                            {noChip && <span style={{ fontSize: 10, fontWeight: 600, color: '#92400e', background: '#fef3c7', padding: '1px 6px', borderRadius: 8 }}>{language === 'th' ? 'ไม่มีChip' : 'No Chip'}</span>}
-                                                            {isDupChip && <span style={{ fontSize: 10, fontWeight: 600, color: '#92400e', background: '#fef3c7', padding: '1px 6px', borderRadius: 8 }}>{language === 'th' ? 'Chipซ้ำ' : 'Dup Chip'}</span>}
+                                                        <div className="flex gap-1 justify-center">
+                                                            <button onClick={() => openEditModal(r)} title={language === 'th' ? 'แก้ไข' : 'Edit'} className="p-1 border border-gray-300 rounded bg-white text-[#3c8dbc] cursor-pointer hover:bg-blue-50">
+                                                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                                                            </button>
+                                                            <button onClick={() => handleDeleteSingle(r)} title={language === 'th' ? 'ลบ' : 'Delete'} className="p-1 border border-red-300 rounded bg-white text-red-500 cursor-pointer hover:bg-red-50">
+                                                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                                                            </button>
                                                         </div>
                                                     </td>
                                                 </tr>
@@ -1027,35 +1086,23 @@ export default function ParticipantsPage() {
 
                                 {/* Pagination */}
                                 {runnersTotal > listLimit && (
-                                    <div style={{
-                                        display: 'flex', justifyContent: 'center', alignItems: 'center',
-                                        gap: 8, marginTop: 12,
-                                    }}>
+                                    <div className="flex justify-center items-center gap-2 mt-3">
                                         <button
-                                            className="btn"
                                             disabled={listPage <= 1}
                                             onClick={() => setListPage(p => Math.max(1, p - 1))}
-                                            style={{
-                                                background: '#fff', color: '#333', border: '1px solid #ddd',
-                                                padding: '5px 12px', fontSize: 12, opacity: listPage <= 1 ? 0.4 : 1,
-                                            }}
+                                            className="px-3 py-1 text-[12px] border border-gray-300 rounded bg-white text-gray-600 cursor-pointer disabled:opacity-40"
                                         >
                                             ← {language === 'th' ? 'ก่อนหน้า' : 'Prev'}
                                         </button>
-                                        <span style={{ fontSize: 12, color: '#666' }}>
+                                        <span className="text-[12px] text-gray-500">
                                             {language === 'th'
                                                 ? `หน้า ${listPage} / ${Math.ceil(runnersTotal / listLimit)}`
                                                 : `Page ${listPage} of ${Math.ceil(runnersTotal / listLimit)}`}
                                         </span>
                                         <button
-                                            className="btn"
                                             disabled={listPage >= Math.ceil(runnersTotal / listLimit)}
                                             onClick={() => setListPage(p => p + 1)}
-                                            style={{
-                                                background: '#fff', color: '#333', border: '1px solid #ddd',
-                                                padding: '5px 12px', fontSize: 12,
-                                                opacity: listPage >= Math.ceil(runnersTotal / listLimit) ? 0.4 : 1,
-                                            }}
+                                            className="px-3 py-1 text-[12px] border border-gray-300 rounded bg-white text-gray-600 cursor-pointer disabled:opacity-40"
                                         >
                                             {language === 'th' ? 'ถัดไป' : 'Next'} →
                                         </button>

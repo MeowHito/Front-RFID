@@ -2,6 +2,27 @@ import { NextRequest, NextResponse } from 'next/server';
 
 const BACKEND_URL = process.env.BACKEND_URL || 'http://3.26.160.149:3001';
 
+export async function DELETE(request: NextRequest) {
+    try {
+        const body = await request.json();
+        const res = await fetch(`${BACKEND_URL}/runners/bulk`, {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+        });
+        if (!res.ok) {
+            let errorBody: Record<string, unknown> = {};
+            try { errorBody = await res.json(); } catch { /* */ }
+            return NextResponse.json(errorBody, { status: res.status });
+        }
+        const data = await res.json();
+        return NextResponse.json(data);
+    } catch (error) {
+        console.error('Error bulk deleting runners:', error);
+        return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    }
+}
+
 export async function POST(request: NextRequest) {
     try {
         const body = await request.json();

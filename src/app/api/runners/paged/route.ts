@@ -28,6 +28,10 @@ export async function GET(request: NextRequest) {
         if (status) params.append('status', status);
         if (chipStatus) params.append('chipStatus', chipStatus);
         if (runnerStatus) params.append('runnerStatus', runnerStatus);
+        const sortBy = searchParams.get('sortBy');
+        const sortOrder = searchParams.get('sortOrder');
+        if (sortBy) params.append('sortBy', sortBy);
+        if (sortOrder) params.append('sortOrder', sortOrder);
         if (search) params.append('search', search);
         params.append('page', page);
         params.append('limit', limit);
