@@ -734,7 +734,7 @@ export default function ParticipantsPage() {
                                             <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
                                             <circle cx="9" cy="7" r="4" />
                                         </svg>
-                                        <span className="text-[#3c8dbc] font-bold text-xs">({count})</span>
+                                        <span className="!text-blue-500 font-bold text-xs">({count})</span>
                                     </span>
                                     <span className="text-xs">{cat.name}{cat.distance ? ` (${cat.distance})` : ''}</span>
                                 </button>
@@ -941,7 +941,6 @@ export default function ParticipantsPage() {
                                     ].map(f => {
                                         const active = listRunnerStatus.includes(f.key);
                                         const cnt = statusCounts[f.key] || 0;
-                                        if (cnt === 0 && f.key !== 'ready') return null;
                                         return (
                                             <button
                                                 key={f.key}
@@ -949,7 +948,7 @@ export default function ParticipantsPage() {
                                                 className={`px-2.5 py-1 text-[11px] rounded border cursor-pointer transition whitespace-nowrap ${active ? `${f.bg} ${f.text} ${f.border} font-bold border-[1.5px]` : 'bg-white text-gray-400 border-gray-300'}`}
                                             >
                                                 {language === 'th' ? f.label : f.labelEn}
-                                                {cnt > 0 && <span className="ml-1 font-bold text-red-600">({cnt})</span>}
+                                                <span className="ml-1 font-bold !text-red-600">({cnt})</span>
                                             </button>
                                         );
                                     })}
