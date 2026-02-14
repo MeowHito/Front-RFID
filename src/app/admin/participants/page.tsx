@@ -980,25 +980,7 @@ export default function ParticipantsPage() {
                                         </button>
                                     </>
                                 )}
-                                {/* Sort buttons */}
-                                <div className="flex items-center gap-1 ml-auto">
-                                    <span className="text-[11px] text-gray-400 mr-1">{language === 'th' ? 'เรียง:' : 'Sort:'}</span>
-                                    {[
-                                        { col: 'bib', label: 'BIB' },
-                                        { col: 'firstName', label: language === 'th' ? 'ชื่อ' : 'Name' },
-                                        { col: 'ageGroup', label: language === 'th' ? 'อายุ' : 'Age' },
-                                        { col: 'chipCode', label: 'Chip' },
-                                    ].map(s => (
-                                        <button
-                                            key={s.col}
-                                            onClick={() => handleSort(s.col)}
-                                            className={`px-2 py-0.5 text-[10px] rounded border cursor-pointer ${sortBy === s.col ? 'bg-[#3c8dbc] text-white border-[#3c8dbc] font-bold' : 'bg-white text-gray-500 border-gray-300'}`}
-                                        >
-                                            {s.label} {sortBy === s.col ? (sortOrder === 'asc' ? '↑' : '↓') : ''}
-                                        </button>
-                                    ))}
-                                </div>
-                                <div className="text-[13px] text-gray-500 whitespace-nowrap">
+                                <div className="text-[13px] text-gray-500 whitespace-nowrap ml-auto">
                                     {language === 'th' ? `ทั้งหมด ${runnersTotal} คน` : `Total: ${runnersTotal}`}
                                     {(statusCounts.ready || 0) > 0 && (
                                         <span className="text-green-700 font-bold ml-2 bg-green-100 px-2 py-0.5 rounded-full text-[12px]">
