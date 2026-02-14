@@ -931,12 +931,12 @@ export default function ParticipantsPage() {
                                     {[
                                         { key: 'dup_bib', label: 'BIB ซ้ำ', labelEn: 'Dup BIB', bg: 'bg-red-50', text: 'text-red-800', border: 'border-red-400', countColor: 'text-red-600' },
                                         { key: 'no_bib', label: 'ไม่มี BIB', labelEn: 'No BIB', bg: 'bg-red-50', text: 'text-red-800', border: 'border-red-400', countColor: 'text-red-600' },
-                                        { key: 'dup_chip', label: 'ChipCode ซ้ำ', labelEn: 'Dup Chip', bg: 'bg-amber-50', text: 'text-amber-800', border: 'border-amber-400', countColor: 'text-amber-600' },
-                                        { key: 'no_chip', label: 'ไม่มี ChipCode', labelEn: 'No Chip', bg: 'bg-amber-50', text: 'text-amber-800', border: 'border-amber-400', countColor: 'text-amber-600' },
                                         { key: 'no_name', label: 'ไม่มี ชื่อ', labelEn: 'No Name', bg: 'bg-orange-50', text: 'text-orange-800', border: 'border-orange-400', countColor: 'text-orange-600' },
                                         { key: 'no_gender', label: 'ไม่มี เพศ', labelEn: 'No Gender', bg: 'bg-orange-50', text: 'text-orange-800', border: 'border-orange-400', countColor: 'text-orange-600' },
-                                        { key: 'no_nat', label: 'ไม่มี สัญชาติ', labelEn: 'No Nat.', bg: 'bg-orange-50', text: 'text-orange-800', border: 'border-orange-400', countColor: 'text-orange-600' },
                                         { key: 'no_age', label: 'ไม่มี อายุ', labelEn: 'No Age', bg: 'bg-orange-50', text: 'text-orange-800', border: 'border-orange-400', countColor: 'text-orange-600' },
+                                        { key: 'no_nat', label: 'ไม่มี สัญชาติ', labelEn: 'No Nat.', bg: 'bg-orange-50', text: 'text-orange-800', border: 'border-orange-400', countColor: 'text-orange-600' },
+                                        { key: 'dup_chip', label: 'ChipCode ซ้ำ', labelEn: 'Dup Chip', bg: 'bg-amber-50', text: 'text-amber-800', border: 'border-amber-400', countColor: 'text-amber-600' },
+                                        { key: 'no_chip', label: 'ไม่มี ChipCode', labelEn: 'No Chip', bg: 'bg-amber-50', text: 'text-amber-800', border: 'border-amber-400', countColor: 'text-amber-600' },
                                         { key: 'ready', label: 'พร้อม', labelEn: 'Ready', bg: 'bg-green-50', text: 'text-green-800', border: 'border-green-400', countColor: 'text-green-600' },
                                     ].map(f => {
                                         const active = listRunnerStatus.includes(f.key);
