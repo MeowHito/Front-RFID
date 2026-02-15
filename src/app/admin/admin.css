@@ -223,6 +223,16 @@
     z-index: 200;
 }
 
+/* Keep dropdown text readable on white menu (override header inherited white text) */
+.admin-container .profile-menu,
+.admin-container .profile-menu .profile-name,
+.admin-container .profile-menu .profile-email,
+.admin-container .profile-menu .profile-menu-item,
+.admin-container .profile-menu .lang-label,
+.admin-container .profile-menu .lang-label.active {
+    color: #111;
+}
+
 .profile-menu-header {
     display: flex;
     align-items: center;
@@ -291,6 +301,10 @@
 }
 
 .profile-menu-item.logout {
+    color: var(--danger-color);
+}
+
+.admin-container .profile-menu .profile-menu-item.logout {
     color: var(--danger-color);
 }
 
