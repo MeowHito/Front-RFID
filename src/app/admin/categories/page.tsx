@@ -294,31 +294,6 @@ export default function CategoriesPage() {
                     </div>
                 ) : (
                     <>
-                        {/* Save button at top */}
-                        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
-                            <button
-                                className="btn"
-                                onClick={handleSaveAll}
-                                disabled={saving}
-                                style={{
-                                    background: '#00a65a',
-                                    width: 180,
-                                    fontSize: 13,
-                                    opacity: saving ? 0.7 : 1,
-                                }}
-                            >
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ display: 'inline-block', marginRight: 6 }}>
-                                    <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
-                                    <polyline points="17 21 17 13 7 13 7 21" />
-                                    <polyline points="7 3 7 8 15 8" />
-                                </svg>
-                                {saving
-                                    ? (language === 'th' ? 'กำลังบันทึก...' : 'Saving...')
-                                    : (language === 'th' ? 'บันทึกข้อมูลทั้งหมด' : 'Save All Data')
-                                }
-                            </button>
-                        </div>
-
                         {/* Magic tool - Age group calculator + distance selector inside blue box */}
                         <div style={{
                             background: '#f0f7ff',
@@ -328,14 +303,7 @@ export default function CategoriesPage() {
                             marginBottom: 15,
                         }}>
                             {/* Distance selector inside the blue box */}
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, paddingBottom: 10, borderBottom: '1px solid #c5ddf0' }}>
-                                <div style={{ fontWeight: 'bold', color: '#3c8dbc', fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
-                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ display: 'inline-block', verticalAlign: 'middle' }}>
-                                        <circle cx="12" cy="12" r="10" />
-                                        <path d="M12 6v6l4 2" />
-                                    </svg>
-                                    {language === 'th' ? 'กำหนดเงื่อนไขการคำนวณอัตโนมัติ' : 'Auto-calculation settings'}
-                                </div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, paddingBottom: 10, borderBottom: '1px solid #c5ddf0', gap: 10, flexWrap: 'wrap' }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                                     <label style={{ fontWeight: 600, fontSize: 12, color: '#555' }}>
                                         {language === 'th' ? 'ระยะที่กำลังจัดการ:' : 'Distance:'}
@@ -353,6 +321,34 @@ export default function CategoriesPage() {
                                         ))}
                                     </select>
                                 </div>
+                                <div style={{ fontWeight: 'bold', color: '#3c8dbc', fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ display: 'inline-block', verticalAlign: 'middle' }}>
+                                        <circle cx="12" cy="12" r="10" />
+                                        <path d="M12 6v6l4 2" />
+                                    </svg>
+                                    {language === 'th' ? 'กำหนดเงื่อนไขการคำนวณอัตโนมัติ' : 'Auto-calculation settings'}
+                                </div>
+                                <button
+                                    className="btn"
+                                    onClick={handleSaveAll}
+                                    disabled={saving}
+                                    style={{
+                                        background: '#00a65a',
+                                        width: 180,
+                                        fontSize: 13,
+                                        opacity: saving ? 0.7 : 1,
+                                    }}
+                                >
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ display: 'inline-block', marginRight: 6 }}>
+                                        <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+                                        <polyline points="17 21 17 13 7 13 7 21" />
+                                        <polyline points="7 3 7 8 15 8" />
+                                    </svg>
+                                    {saving
+                                        ? (language === 'th' ? 'กำลังบันทึก...' : 'Saving...')
+                                        : (language === 'th' ? 'บันทึกข้อมูลทั้งหมด' : 'Save All Data')
+                                    }
+                                </button>
                             </div>
                             <div style={{ display: 'flex', gap: 15, alignItems: 'center', marginBottom: 10, flexWrap: 'wrap' }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>

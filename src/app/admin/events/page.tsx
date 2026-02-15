@@ -330,7 +330,7 @@ export default function EventsPage() {
             breadcrumbItems={[
                 { label: 'จัดการอีเวนต์', labelEn: 'Manage Events' }
             ]}
-            pageTitle={language === 'th' ? 'จัดการข้อมูลอีเวนท์และประเภทการแข่งขันของคุณ' : 'Manage your events and competition categories'}
+
         >
             <div className="admin-card">
                 {/* Search */}

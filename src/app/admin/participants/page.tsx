@@ -734,7 +734,7 @@ export default function ParticipantsPage() {
                                             <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
                                             <circle cx="9" cy="7" r="4" />
                                         </svg>
-                                        <span className="!text-blue-500 font-bold text-xs">({count})</span>
+                                        <span className="text-blue-500! font-bold text-xs">({count})</span>
                                     </span>
                                     <span className="text-xs">{cat.name}{cat.distance ? ` (${cat.distance})` : ''}</span>
                                 </button>
@@ -877,7 +877,23 @@ export default function ParticipantsPage() {
                                                                     </span>
                                                                 </td>
                                                                 <td>{r.firstName} {r.lastName}</td>
-                                                                <td style={{ textAlign: 'center' }}>{r.gender}</td>
+                                                                <td style={{ textAlign: 'center' }}>
+                                                                    {r.gender === 'F' ? (
+                                                                        <svg width="18" height="18" viewBox="0 0 24 24" style={{ display: 'inline-block', verticalAlign: 'middle', color: '#ec4899' }}>
+                                                                            <circle cx="12" cy="8.5" r="5.5" fill="none" stroke="currentColor" strokeWidth="3" />
+                                                                            <line x1="12" y1="14" x2="12" y2="21" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+                                                                            <line x1="8.5" y1="17.5" x2="15.5" y2="17.5" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+                                                                        </svg>
+                                                                    ) : r.gender === 'M' ? (
+                                                                        <svg width="18" height="18" viewBox="0 0 24 24" style={{ display: 'inline-block', verticalAlign: 'middle', color: '#3b82f6' }}>
+                                                                            <circle cx="9.5" cy="14.5" r="5.5" fill="none" stroke="currentColor" strokeWidth="3" />
+                                                                            <line x1="13.5" y1="10.5" x2="21" y2="3" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+                                                                            <polyline points="15.5 3 21 3 21 8.5" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+                                                                        </svg>
+                                                                    ) : (
+                                                                        <span style={{ color: '#9ca3af', fontWeight: 700 }}>-</span>
+                                                                    )}
+                                                                </td>
                                                                 <td style={{ textAlign: 'center' }}>{r.nationality}</td>
                                                                 <td>
                                                                     <span style={{
@@ -948,7 +964,7 @@ export default function ParticipantsPage() {
                                                 className={`px-2.5 py-1 text-[11px] rounded border cursor-pointer transition whitespace-nowrap ${active ? `${f.bg} ${f.text} ${f.border} font-bold border-[1.5px]` : 'bg-white text-gray-400 border-gray-300'}`}
                                             >
                                                 {language === 'th' ? f.label : f.labelEn}
-                                                <span className="ml-1 font-bold !text-red-600">({cnt})</span>
+                                                <span className="ml-1 font-bold text-red-600!">({cnt})</span>
                                             </button>
                                         );
                                     })}
@@ -960,14 +976,16 @@ export default function ParticipantsPage() {
 
                             {/* Row 2: Bulk actions + sort + total + ready count */}
                             <div className="flex items-center gap-3 mb-3 flex-wrap">
+                                <div className="text-[13px] text-gray-500 whitespace-nowrap ml-auto">
+                                    {language === 'th' ? `ทั้งหมด ${runnersTotal} คน` : `Total: ${runnersTotal}`}
+                                    {(statusCounts.ready || 0) > 0 && (
+                                        <span className="text-green-700 font-bold ml-2 bg-green-100 px-2 py-0.5 rounded-full text-[12px]">
+                                            {language === 'th' ? `พร้อม ${statusCounts.ready}` : `Ready ${statusCounts.ready}`}
+                                        </span>
+                                    )}
+                                </div>
                                 {selectedIds.size > 0 && (
                                     <>
-                                        <button
-                                            onClick={() => { const allIds = new Set(runners.map(r => r._id)); setSelectedIds(allIds); }}
-                                            className="px-3 py-1 text-[11px] border border-blue-400 rounded bg-blue-50 text-blue-700 font-semibold cursor-pointer"
-                                        >
-                                            {language === 'th' ? 'เลือกทั้งหมด' : 'Select All'}
-                                        </button>
                                         <button
                                             onClick={handleBulkDelete}
                                             disabled={deletingIds}
@@ -980,14 +998,6 @@ export default function ParticipantsPage() {
                                         </button>
                                     </>
                                 )}
-                                <div className="text-[13px] text-gray-500 whitespace-nowrap ml-auto">
-                                    {language === 'th' ? `ทั้งหมด ${runnersTotal} คน` : `Total: ${runnersTotal}`}
-                                    {(statusCounts.ready || 0) > 0 && (
-                                        <span className="text-green-700 font-bold ml-2 bg-green-100 px-2 py-0.5 rounded-full text-[12px]">
-                                            {language === 'th' ? `พร้อม ${statusCounts.ready}` : `Ready ${statusCounts.ready}`}
-                                        </span>
-                                    )}
-                                </div>
                             </div>
 
                             {/* Runners table */}
@@ -1001,7 +1011,6 @@ export default function ParticipantsPage() {
                                     <table className="data-table text-[12px] w-auto min-w-[980px]">
                                         <thead>
                                             <tr>
-                                                <th className="w-8"><input type="checkbox" checked={runners.length > 0 && runners.every(r => selectedIds.has(r._id))} onChange={e => { if (e.target.checked) { setSelectedIds(new Set(runners.map(r => r._id))); } else { setSelectedIds(new Set()); } }} /></th>
                                                 <th className="w-10">#</th>
                                                 <th className="w-20 cursor-pointer select-none" onClick={() => handleSort('bib')}>BIB <span className="inline-flex items-center align-middle ml-0.5 gap-0"><svg width="10" height="14" viewBox="0 0 10 14" className={`${sortBy === 'bib' && sortOrder === 'asc' ? 'text-[#3c8dbc]' : 'text-gray-300'}`}><path d="M5 1v10M5 1L2 4M5 1l3 3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" fill="none"/></svg><svg width="10" height="14" viewBox="0 0 10 14" className={`${sortBy === 'bib' && sortOrder === 'desc' ? 'text-[#3c8dbc]' : 'text-gray-300'}`}><path d="M5 3v10M5 13L2 10M5 13l3-3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" fill="none"/></svg></span></th>
                                                 <th className="w-[38%] cursor-pointer select-none" onClick={() => handleSort('firstName')}>{language === 'th' ? 'ชื่อ-นามสกุล' : 'Name'} <span className="inline-flex items-center align-middle ml-0.5 gap-0"><svg width="10" height="14" viewBox="0 0 10 14" className={`${sortBy === 'firstName' && sortOrder === 'asc' ? 'text-[#3c8dbc]' : 'text-gray-300'}`}><path d="M5 1v10M5 1L2 4M5 1l3 3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" fill="none"/></svg><svg width="10" height="14" viewBox="0 0 10 14" className={`${sortBy === 'firstName' && sortOrder === 'desc' ? 'text-[#3c8dbc]' : 'text-gray-300'}`}><path d="M5 3v10M5 13L2 10M5 13l3-3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" fill="none"/></svg></span></th>
@@ -1011,6 +1020,7 @@ export default function ParticipantsPage() {
                                                 <th className="w-28 text-center cursor-pointer select-none" onClick={() => handleSort('chipCode')}>Chip Code <span className="inline-flex items-center align-middle ml-0.5 gap-0"><svg width="10" height="14" viewBox="0 0 10 14" className={`${sortBy === 'chipCode' && sortOrder === 'asc' ? 'text-[#3c8dbc]' : 'text-gray-300'}`}><path d="M5 1v10M5 1L2 4M5 1l3 3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" fill="none"/></svg><svg width="10" height="14" viewBox="0 0 10 14" className={`${sortBy === 'chipCode' && sortOrder === 'desc' ? 'text-[#3c8dbc]' : 'text-gray-300'}`}><path d="M5 3v10M5 13L2 10M5 13l3-3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" fill="none"/></svg></span></th>
                                                 <th className="w-20 text-center">{language === 'th' ? 'สถานะ' : 'Status'}</th>
                                                 <th className="w-14"></th>
+                                                <th className="w-8"><input type="checkbox" checked={runners.length > 0 && runners.every(r => selectedIds.has(r._id))} onChange={e => { if (e.target.checked) { setSelectedIds(new Set(runners.map(r => r._id))); } else { setSelectedIds(new Set()); } }} /></th>
                                             </tr>
                                         </thead>
                                         <tbody>
@@ -1023,7 +1033,6 @@ export default function ParticipantsPage() {
                                                 const checked = selectedIds.has(r._id);
                                                 return (
                                                 <tr key={r._id} className={`${(noBib || isDupBib) ? 'bg-red-50' : (noChip || isDupChip) ? 'bg-amber-50' : ''} ${checked ? '!bg-blue-50' : ''}`}>
-                                                    <td className="text-center"><input type="checkbox" checked={checked} onChange={() => setSelectedIds(prev => { const n = new Set(prev); if (n.has(r._id)) n.delete(r._id); else n.add(r._id); return n; })} /></td>
                                                     <td className="text-center text-gray-400">{(listPage - 1) * listLimit + idx + 1}</td>
                                                     <td>
                                                         <span className={`px-2 py-0.5 rounded font-mono font-bold text-[12px] inline-block min-w-[45px] text-center border ${noBib ? 'bg-red-100 border-red-400 text-red-600' : isDupBib ? 'bg-amber-100 border-amber-400 text-amber-800' : 'bg-gray-100 border-gray-300 text-gray-700'}`}>
@@ -1035,9 +1044,19 @@ export default function ParticipantsPage() {
                                                         {(r.firstNameTh || r.lastNameTh) && <div className="text-[11px] text-gray-400">{r.firstNameTh} {r.lastNameTh}</div>}
                                                     </td>
                                                     <td className="text-center">
-                                                        <span className={`inline-flex items-center justify-center min-w-6 h-6 rounded-full font-semibold text-[14px] ${r.gender === 'F' ? 'text-pink-500 bg-pink-50' : 'text-blue-500 bg-blue-50'}`}>
-                                                            {r.gender === 'F' ? '♀' : '♂'}
-                                                        </span>
+                                                        {r.gender === 'F' ? (
+                                                            <svg width="20" height="20" viewBox="0 0 24 24" className="inline-block align-middle text-pink-500">
+                                                                <circle cx="12" cy="8.5" r="5.5" fill="none" stroke="currentColor" strokeWidth="3" />
+                                                                <line x1="12" y1="14" x2="12" y2="21" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+                                                                <line x1="8.5" y1="17.5" x2="15.5" y2="17.5" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+                                                            </svg>
+                                                        ) : (
+                                                            <svg width="20" height="20" viewBox="0 0 24 24" className="inline-block align-middle text-blue-500">
+                                                                <circle cx="9.5" cy="14.5" r="5.5" fill="none" stroke="currentColor" strokeWidth="3" />
+                                                                <line x1="13.5" y1="10.5" x2="21" y2="3" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+                                                                <polyline points="15.5 3 21 3 21 8.5" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+                                                            </svg>
+                                                        )}
                                                     </td>
                                                     <td><span className={r.ageGroup ? 'text-[#3c8dbc]' : 'text-gray-300'}>{r.ageGroup ? r.ageGroup.replace(/[^0-9-]/g, '') || r.ageGroup : '-'}</span></td>
                                                     <td className="text-center text-[11px] text-gray-600">{r.nationality || '-'}</td>
@@ -1065,6 +1084,7 @@ export default function ParticipantsPage() {
                                                             </button>
                                                         </div>
                                                     </td>
+                                                    <td className="text-center"><input type="checkbox" checked={checked} onChange={() => setSelectedIds(prev => { const n = new Set(prev); if (n.has(r._id)) n.delete(r._id); else n.add(r._id); return n; })} /></td>
                                                 </tr>
                                                 );
                                             })}
