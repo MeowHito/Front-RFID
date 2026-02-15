@@ -18,20 +18,51 @@ interface RFIDStatus {
     lastCompletedTime: string;
     lastErrorTime: string;
     errors: string[];
+    statistics: {
+        total: number;
+        success: number;
+        error: number;
+    };
+    latestPreview: any | null;
 }
+
+type PreviewType = 'info' | 'bio' | 'split';
 
 export default function RFIDDashboardModal({ isOpen, onClose, eventId, eventName }: RFIDDashboardModalProps) {
     const { language } = useLanguage();
     const [rfidStatus, setRfidStatus] = useState<RFIDStatus>({
         status: 'Stopped',
         healthy: true,
-        totalDataSize: '0 MB',
+        totalDataSize: '-',
         lastCompletedTime: '-',
         lastErrorTime: '-',
-        errors: []
+        errors: [],
+        statistics: {
+            total: 0,
+            success: 0,
+            error: 0,
+        },
+        latestPreview: null,
     });
     const [loading, setLoading] = useState(false);
+    const [runningPreview, setRunningPreview] = useState<PreviewType | null>(null);
     const [showAllErrors, setShowAllErrors] = useState(false);
+
+    const toApiData = (json: any) => json?.data ?? json;
+
+    const formatDate = (value?: string | Date) => {
+        if (!value) return '-';
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) return '-';
+        return date.toLocaleString('th-TH', {
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+        });
+    };
 
     useEffect(() => {
         if (isOpen) {
@@ -42,22 +73,87 @@ export default function RFIDDashboardModal({ isOpen, onClose, eventId, eventName
     const loadRFIDStatus = async () => {
         setLoading(true);
         try {
-            // Simulated data - replace with actual API call
+            const [syncRes, latestPayloadRes] = await Promise.all([
+                fetch(`/api/sync/data?id=${eventId}`, { cache: 'no-store' }),
+                fetch(`/api/sync/last-payload?id=${eventId}`, { cache: 'no-store' }),
+            ]);
+
+            if (!syncRes.ok) {
+                throw new Error('Failed to load sync data');
+            }
+
+            const syncJson = await syncRes.json();
+            const syncData = toApiData(syncJson);
+            const logs = Array.isArray(syncData?.recentLogs) ? syncData.recentLogs : [];
+
+            let latestPayloadData: any = null;
+            if (latestPayloadRes.ok) {
+                const payloadJson = await latestPayloadRes.json();
+                latestPayloadData = toApiData(payloadJson);
+            }
+
+            const latestSuccess = logs.find((log: any) => log.status === 'success');
+            const latestError = logs.find((log: any) => log.status === 'error');
+            const errors = logs
+                .filter((log: any) => log.status === 'error' && typeof log.message === 'string')
+                .map((log: any) => log.message);
+
             setRfidStatus({
-                status: 'Stopped',
-                healthy: true,
-                totalDataSize: '41.81 MB',
-                lastCompletedTime: '2026-02-04 23:30:13',
-                lastErrorTime: '2026-01-23 21:14:09',
-                errors: [
-                    'Split Synchronization failed: SSLHandshakeException: Remote host terminated the handshake',
-                    'Split Synchronization failed: UnknownHostException: rqs.racetigertiming.com'
-                ]
+                status: runningPreview ? 'Running' : 'Stopped',
+                healthy: (syncData?.statistics?.error || 0) === 0,
+                totalDataSize: `${syncData?.statistics?.total || 0} logs`,
+                lastCompletedTime: formatDate(latestSuccess?.createdAt),
+                lastErrorTime: formatDate(latestError?.createdAt),
+                errors,
+                statistics: {
+                    total: syncData?.statistics?.total || 0,
+                    success: syncData?.statistics?.success || 0,
+                    error: syncData?.statistics?.error || 0,
+                },
+                latestPreview: latestPayloadData?.preview || null,
             });
         } catch (error) {
             console.error('Failed to load RFID status:', error);
+            setRfidStatus(prev => ({
+                ...prev,
+                errors: [language === 'th' ? 'โหลดข้อมูลซิงค์ไม่สำเร็จ' : 'Failed to load sync data'],
+            }));
         } finally {
             setLoading(false);
+        }
+    };
+
+    const runPreview = async (type: PreviewType) => {
+        setRunningPreview(type);
+        try {
+            const res = await fetch(`/api/sync/preview?id=${eventId}&type=${type}&page=1`, {
+                cache: 'no-store',
+            });
+            const json = await res.json().catch(() => ({}));
+
+            if (!res.ok) {
+                const message = json?.error || json?.message || 'Preview failed';
+                throw new Error(message);
+            }
+
+            const previewData = toApiData(json);
+            setRfidStatus(prev => ({
+                ...prev,
+                latestPreview: previewData,
+            }));
+
+            await loadRFIDStatus();
+        } catch (error: any) {
+            console.error('Failed to run preview:', error);
+            setRfidStatus(prev => ({
+                ...prev,
+                errors: [
+                    `${type.toUpperCase()} ${language === 'th' ? 'ล้มเหลว' : 'failed'}: ${error?.message || 'unknown error'}`,
+                    ...prev.errors,
+                ],
+            }));
+        } finally {
+            setRunningPreview(null);
         }
     };
 
@@ -99,6 +195,16 @@ export default function RFIDDashboardModal({ isOpen, onClose, eventId, eventName
                                 <span className="rfid-value">{rfidStatus.totalDataSize}</span>
                             </div>
 
+                            <div className="rfid-row">
+                                <span className="rfid-label">Logs (S/E):</span>
+                                <span className="rfid-value">
+                                    {rfidStatus.statistics.success}/{rfidStatus.statistics.error}
+                                    <span style={{ color: '#999', marginLeft: 8 }}>
+                                        (Total {rfidStatus.statistics.total})
+                                    </span>
+                                </span>
+                            </div>
+
                             {/* Last Completed Time */}
                             <div className="rfid-row">
                                 <span className="rfid-label">Last Completed Time:</span>
@@ -110,6 +216,68 @@ export default function RFIDDashboardModal({ isOpen, onClose, eventId, eventName
                                 <span className="rfid-label">Last Error Time:</span>
                                 <span className="rfid-value">{rfidStatus.lastErrorTime}</span>
                             </div>
+
+                            {/* Manual Preview Buttons */}
+                            <div className="rfid-errors-section" style={{ marginTop: 12 }}>
+                                <h4 className="rfid-errors-title">
+                                    {language === 'th' ? 'ทดสอบดึงข้อมูลจากเว็บจีน' : 'Test pull from RaceTiger'}
+                                </h4>
+                                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                                    <button
+                                        className="btn-primary"
+                                        onClick={() => runPreview('info')}
+                                        disabled={!!runningPreview}
+                                    >
+                                        {runningPreview === 'info' ? '...' : 'Preview INFO'}
+                                    </button>
+                                    <button
+                                        className="btn-primary"
+                                        onClick={() => runPreview('bio')}
+                                        disabled={!!runningPreview}
+                                    >
+                                        {runningPreview === 'bio' ? '...' : 'Preview BIO'}
+                                    </button>
+                                    <button
+                                        className="btn-primary"
+                                        onClick={() => runPreview('split')}
+                                        disabled={!!runningPreview}
+                                    >
+                                        {runningPreview === 'split' ? '...' : 'Preview SPLIT'}
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Latest Payload Preview */}
+                            {rfidStatus.latestPreview && (
+                                <div className="rfid-errors-section" style={{ marginTop: 12 }}>
+                                    <h4 className="rfid-errors-title">
+                                        {language === 'th' ? 'Payload ล่าสุดจากเว็บจีน' : 'Latest payload from RaceTiger'}
+                                    </h4>
+                                    <div className="rfid-error-item">
+                                        <strong>Endpoint:</strong> {rfidStatus.latestPreview?.request?.endpoint || '-'}
+                                    </div>
+                                    <div className="rfid-error-item">
+                                        <strong>HTTP:</strong> {rfidStatus.latestPreview?.response?.httpStatus || '-'}
+                                        {' | '}
+                                        <strong>Items:</strong> {rfidStatus.latestPreview?.response?.itemCount ?? 0}
+                                    </div>
+                                    <div className="rfid-error-item">
+                                        <strong>Fetched:</strong> {formatDate(rfidStatus.latestPreview?.fetchedAt)}
+                                    </div>
+                                    <div className="rfid-error-item" style={{ whiteSpace: 'pre-wrap', overflowX: 'auto' }}>
+                                        <strong>Sample:</strong>
+                                        <pre style={{ marginTop: 8, maxHeight: 220, overflow: 'auto' }}>
+{JSON.stringify(rfidStatus.latestPreview?.response?.payloadSample || null, null, 2)}
+                                        </pre>
+                                    </div>
+                                    <div className="rfid-error-item" style={{ whiteSpace: 'pre-wrap', overflowX: 'auto' }}>
+                                        <strong>Raw Snippet:</strong>
+                                        <pre style={{ marginTop: 8, maxHeight: 220, overflow: 'auto' }}>
+{rfidStatus.latestPreview?.response?.rawSnippet || '-'}
+                                        </pre>
+                                    </div>
+                                </div>
+                            )}
 
                             {/* Error Details */}
                             <div className="rfid-errors-section">

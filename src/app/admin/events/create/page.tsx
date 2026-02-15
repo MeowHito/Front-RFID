@@ -34,6 +34,9 @@ interface CreateEventForm {
     eventManager: string;
     themeType: string;
     status: string;
+    allowRFIDSync: boolean;
+    rfidToken: string;
+    raceId: string;
     categories: RaceCategory[];
 }
 
@@ -71,6 +74,9 @@ function CreateEventForm() {
         eventManager: '',
         themeType: 'utmb',
         status: 'upcoming',
+        allowRFIDSync: false,
+        rfidToken: '',
+        raceId: '',
         categories: [],
     });
 
@@ -97,6 +103,9 @@ function CreateEventForm() {
                     eventManager: campaign.eventManager || '',
                     themeType: campaign.themeType || 'utmb',
                     status: campaign.status || 'upcoming',
+                    allowRFIDSync: campaign.allowRFIDSync ?? false,
+                    rfidToken: campaign.rfidToken || '',
+                    raceId: campaign.raceId || '',
                     categories: (campaign.categories || []).map((cat: RaceCategory) => ({
                         name: cat.name || '',
                         distance: cat.distance || '',
@@ -115,7 +124,7 @@ function CreateEventForm() {
             .finally(() => setLoadingEdit(false));
     }, [editId]);
 
-    const updateField = (field: keyof CreateEventForm, value: string) => {
+    const updateField = (field: keyof CreateEventForm, value: string | boolean) => {
         setForm(prev => ({ ...prev, [field]: value }));
     };
 
@@ -170,6 +179,12 @@ function CreateEventForm() {
             return;
         }
 
+        if (form.allowRFIDSync && (!form.rfidToken.trim() || !form.raceId.trim())) {
+            setToastMessage(language === 'th' ? 'กรุณากรอก RFID Token และ Race ID' : 'Please provide RFID token and Race ID');
+            setTimeout(() => setToastMessage(null), 3000);
+            return;
+        }
+
         setSaving(true);
         try {
             // Send pictureUrl (base64 is OK — body limit is 10MB)
@@ -199,6 +214,9 @@ function CreateEventForm() {
             if (pictureUrl) payload.pictureUrl = pictureUrl;
             if (form.organizerName) payload.organizerName = form.organizerName;
             if (form.status) payload.status = form.status;
+            payload.allowRFIDSync = form.allowRFIDSync;
+            if (form.rfidToken.trim()) payload.rfidToken = form.rfidToken.trim();
+            if (form.raceId.trim()) payload.raceId = form.raceId.trim();
             if (cleanCategories.length > 0) payload.categories = cleanCategories;
             // Use API proxy route to work on both localhost and Vercel
             const url = isEdit ? `/api/campaigns/${editId}` : '/api/campaigns';
@@ -602,6 +620,56 @@ function CreateEventForm() {
                             onChange={(e) => updateField('organizerWebsite', e.target.value)}
                         />
                     </div>
+                </div>
+            </div>
+
+                {/* Card 5: RFID Sync */}
+                <div className="ce-card ce-card-info">
+                <div className="ce-card-header">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#00c0ef" strokeWidth="2">
+                        <path d="M2 12a10 10 0 0 1 20 0" />
+                        <path d="M5 12a7 7 0 0 1 14 0" />
+                        <path d="M8 12a4 4 0 0 1 8 0" />
+                        <circle cx="12" cy="16" r="1.5" />
+                    </svg>
+                    <span>{language === 'th' ? 'เชื่อมต่อ RFID (RaceTiger)' : 'RFID Integration (RaceTiger)'}</span>
+                </div>
+                <div className="ce-form-grid">
+                    <div className="ce-form-group ce-full">
+                        <label className="ce-label" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <input
+                                type="checkbox"
+                                checked={form.allowRFIDSync}
+                                onChange={(e) => updateField('allowRFIDSync', e.target.checked)}
+                            />
+                            <span>{language === 'th' ? 'เปิดใช้งานการซิงค์ RFID สำหรับกิจกรรมนี้' : 'Enable RFID sync for this campaign'}</span>
+                        </label>
+                    </div>
+
+                    {form.allowRFIDSync && (
+                        <>
+                            <div className="ce-form-group">
+                                <label className="ce-label">RFID Token *</label>
+                                <input
+                                    type="text"
+                                    className="ce-input"
+                                    placeholder={language === 'th' ? 'ระบุ Event Token จากเว็บจีน' : 'Enter Event Token from RaceTiger'}
+                                    value={form.rfidToken}
+                                    onChange={(e) => updateField('rfidToken', e.target.value)}
+                                />
+                            </div>
+                            <div className="ce-form-group">
+                                <label className="ce-label">Race ID *</label>
+                                <input
+                                    type="text"
+                                    className="ce-input"
+                                    placeholder={language === 'th' ? 'ระบุ Race ID จากเว็บจีน' : 'Enter Race ID from RaceTiger'}
+                                    value={form.raceId}
+                                    onChange={(e) => updateField('raceId', e.target.value)}
+                                />
+                            </div>
+                        </>
+                    )}
                 </div>
             </div>
 
