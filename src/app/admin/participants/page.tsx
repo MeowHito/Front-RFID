@@ -132,6 +132,16 @@ function countryCodeToFlag(code?: string): string {
     return String.fromCodePoint(...cc.split('').map(c => base + c.charCodeAt(0)));
 }
 
+function cleanNamePart(value?: string): string {
+    return (value || '').replace(/\s*-\s*$/, '').trim();
+}
+
+function formatRunnerName(firstName?: string, lastName?: string): string {
+    const first = cleanNamePart(firstName);
+    const last = cleanNamePart(lastName);
+    return [first, last].filter(Boolean).join(' ').trim() || '-';
+}
+
 export default function ParticipantsPage() {
     const { language } = useLanguage();
     const [campaign, setCampaign] = useState<Campaign | null>(null);
@@ -876,7 +886,7 @@ export default function ParticipantsPage() {
                                                                         {r.bib || '—'}
                                                                     </span>
                                                                 </td>
-                                                                <td>{r.firstName} {r.lastName}</td>
+                                                                <td>{formatRunnerName(r.firstName, r.lastName)}</td>
                                                                 <td style={{ textAlign: 'center' }}>
                                                                     {r.gender === 'F' ? (
                                                                         <svg width="18" height="18" viewBox="0 0 24 24" style={{ display: 'inline-block', verticalAlign: 'middle', color: '#ec4899' }}>
@@ -972,32 +982,31 @@ export default function ParticipantsPage() {
                                         <button onClick={() => { setListRunnerStatus([]); setListPage(1); }} className="px-2 py-1 text-[10px] border border-gray-300 rounded bg-white text-gray-400 cursor-pointer">✕</button>
                                     )}
                                 </div>
-                            </div>
 
-                            {/* Row 2: Bulk actions + sort + total + ready count */}
-                            <div className="flex items-center gap-3 mb-3 flex-wrap">
-                                <div className="text-[13px] text-gray-500 whitespace-nowrap ml-auto">
-                                    {language === 'th' ? `ทั้งหมด ${runnersTotal} คน` : `Total: ${runnersTotal}`}
-                                    {(statusCounts.ready || 0) > 0 && (
-                                        <span className="text-green-700 font-bold ml-2 bg-green-100 px-2 py-0.5 rounded-full text-[12px]">
-                                            {language === 'th' ? `พร้อม ${statusCounts.ready}` : `Ready ${statusCounts.ready}`}
-                                        </span>
+                                <div className="ml-auto flex items-center gap-2 flex-wrap">
+                                    <div className="text-[13px] text-gray-500 whitespace-nowrap">
+                                        {language === 'th' ? `ทั้งหมด ${runnersTotal} คน` : `Total: ${runnersTotal}`}
+                                        {(statusCounts.ready || 0) > 0 && (
+                                            <span className="text-green-700 font-bold ml-2 bg-green-100 px-2 py-0.5 rounded-full text-[12px]">
+                                                {language === 'th' ? `พร้อม ${statusCounts.ready}` : `Ready ${statusCounts.ready}`}
+                                            </span>
+                                        )}
+                                    </div>
+                                    {selectedIds.size > 0 && (
+                                        <>
+                                            <button
+                                                onClick={handleBulkDelete}
+                                                disabled={deletingIds}
+                                                className="px-3 py-1 text-[11px] border border-red-400 rounded bg-red-50 text-red-700 font-semibold cursor-pointer disabled:opacity-50"
+                                            >
+                                                {deletingIds ? '...' : (language === 'th' ? `ลบที่เลือก (${selectedIds.size})` : `Delete (${selectedIds.size})`)}
+                                            </button>
+                                            <button onClick={() => setSelectedIds(new Set())} className="px-2 py-1 text-[10px] border border-gray-300 rounded bg-white text-gray-400 cursor-pointer">
+                                                {language === 'th' ? 'ยกเลิกเลือก' : 'Deselect'}
+                                            </button>
+                                        </>
                                     )}
                                 </div>
-                                {selectedIds.size > 0 && (
-                                    <>
-                                        <button
-                                            onClick={handleBulkDelete}
-                                            disabled={deletingIds}
-                                            className="px-3 py-1 text-[11px] border border-red-400 rounded bg-red-50 text-red-700 font-semibold cursor-pointer disabled:opacity-50"
-                                        >
-                                            {deletingIds ? '...' : (language === 'th' ? `ลบที่เลือก (${selectedIds.size})` : `Delete (${selectedIds.size})`)}
-                                        </button>
-                                        <button onClick={() => setSelectedIds(new Set())} className="px-2 py-1 text-[10px] border border-gray-300 rounded bg-white text-gray-400 cursor-pointer">
-                                            {language === 'th' ? 'ยกเลิกเลือก' : 'Deselect'}
-                                        </button>
-                                    </>
-                                )}
                             </div>
 
                             {/* Runners table */}
@@ -1031,6 +1040,8 @@ export default function ParticipantsPage() {
                                                 const isDupChip = !!r.chipCode && dupChips.includes(r.chipCode);
                                                 const isReady = !noBib && !isDupBib && !noChip && !isDupChip;
                                                 const checked = selectedIds.has(r._id);
+                                                const fullName = formatRunnerName(r.firstName, r.lastName);
+                                                const fullNameTh = formatRunnerName(r.firstNameTh, r.lastNameTh);
                                                 return (
                                                 <tr key={r._id} className={`${(noBib || isDupBib) ? 'bg-red-50' : (noChip || isDupChip) ? 'bg-amber-50' : ''} ${checked ? '!bg-blue-50' : ''}`}>
                                                     <td className="text-center text-gray-400">{(listPage - 1) * listLimit + idx + 1}</td>
@@ -1040,8 +1051,8 @@ export default function ParticipantsPage() {
                                                         </span>
                                                     </td>
                                                     <td className="max-w-[420px]">
-                                                        <div className="font-medium">{r.firstName} {r.lastName}</div>
-                                                        {(r.firstNameTh || r.lastNameTh) && <div className="text-[11px] text-gray-400">{r.firstNameTh} {r.lastNameTh}</div>}
+                                                        <div className="font-medium">{fullName}</div>
+                                                        {fullNameTh !== '-' && <div className="text-[11px] text-gray-400">{fullNameTh}</div>}
                                                     </td>
                                                     <td className="text-center">
                                                         {r.gender === 'F' ? (

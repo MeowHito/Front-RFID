@@ -10,6 +10,7 @@ import { useLanguage } from '@/lib/language-context';
 interface Campaign {
     _id: string;
     uuid: string;
+    slug?: string;
     name: string;
     shortName?: string;
     description?: string;
@@ -69,7 +70,7 @@ export default function EventDashboardPage() {
     const { theme, toggleTheme } = useTheme();
     const { language } = useLanguage();
     const params = useParams();
-    const eventId = params.id as string;
+    const eventKey = params.id as string;
 
     const [campaign, setCampaign] = useState<Campaign | null>(null);
     const [runners, setRunners] = useState<Runner[]>([]);
@@ -94,26 +95,26 @@ export default function EventDashboardPage() {
     }, []);
 
     useEffect(() => {
-        if (eventId) fetchEventData();
-    }, [eventId]);
+        if (eventKey) fetchEventData();
+    }, [eventKey]);
 
     async function fetchEventData() {
         try {
             setLoading(true);
             setError(null);
 
-            // Use Next.js API proxy routes (no direct backend calls)
-            const [campaignRes, runnersRes] = await Promise.all([
-                fetch(`/api/campaigns/${eventId}`, { cache: 'no-store' }),
-                fetch(`/api/runners?id=${eventId}`, { cache: 'no-store' })
-            ]);
+            // Resolve campaign by _id/uuid/slug first
+            const campaignRes = await fetch(`/api/campaigns/${eventKey}`, { cache: 'no-store' });
 
             if (!campaignRes.ok) {
                 throw new Error(language === 'th' ? 'ไม่พบข้อมูลกิจกรรม' : 'Event not found');
             }
 
-            const campaignData = await campaignRes.json();
+            const campaignData = await campaignRes.json() as Campaign;
             setCampaign(campaignData);
+
+            // Public runners endpoint currently expects campaign ObjectId
+            const runnersRes = await fetch(`/api/runners?id=${campaignData._id}`, { cache: 'no-store' });
 
             if (runnersRes.ok) {
                 const runnersData = await runnersRes.json();
@@ -136,7 +137,12 @@ export default function EventDashboardPage() {
 
     async function fetchRunnerTimings(runnerId: string) {
         try {
-            const res = await fetch(`/api/timing/runner/${eventId}/${runnerId}`, {
+            if (!campaign?._id) {
+                setRunnerTimings([]);
+                return;
+            }
+
+            const res = await fetch(`/api/timing/runner/${campaign._id}/${runnerId}`, {
                 cache: 'no-store',
             });
             if (res.ok) {

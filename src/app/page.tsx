@@ -28,6 +28,7 @@ interface RaceCategory {
 interface Campaign {
   _id: string;
   uuid: string;
+  slug?: string;
   name: string;
   nameTh?: string;
   nameEn?: string;
@@ -366,7 +367,7 @@ export default function Home() {
                   date={formatDate(campaign.eventDate, campaign.eventEndDate)}
                   imageUrl={campaign.pictureUrl || 'https://images.unsplash.com/photo-1516214104703-d870798883c5?auto=format&fit=crop&w=600&q=80'}
                   color={campaign.categories[0]?.badgeColor || 'var(--accent)'}
-                  link={`/event/${campaign._id}`}
+                  link={`/event/${campaign.slug || campaign._id}`}
                   status={getStatusInfo(campaign.status)}
                   countdown={campaign.status === 'upcoming' ? calculateCountdown(campaign.countdownDate || campaign.eventDate) : undefined}
                   categories={transformCategories(campaign.categories)}
