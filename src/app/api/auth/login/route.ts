@@ -6,11 +6,21 @@ export async function POST(request: Request) {
     try {
         const body = await request.json();
 
+        // Forward client IP to backend for admin logging
+        const forwarded = request.headers.get('x-forwarded-for');
+        const realIp = request.headers.get('x-real-ip');
+        const clientIp = forwarded?.split(',')[0]?.trim() || realIp || '';
+
+        const headers: Record<string, string> = {
+            'Content-Type': 'application/json',
+        };
+        if (clientIp) {
+            headers['X-Forwarded-For'] = clientIp;
+        }
+
         const res = await fetch(`${BACKEND_URL}/auth/login`, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
+            headers,
             body: JSON.stringify(body),
         });
 

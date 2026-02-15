@@ -28,6 +28,14 @@ interface RFIDStatus {
 
 type PreviewType = 'info' | 'bio' | 'split';
 
+interface SyncRequirements {
+    allowRFIDSync: boolean;
+    hasToken: boolean;
+    hasRaceId: boolean;
+    eventCount: number;
+    mappedEventCount: number;
+}
+
 export default function RFIDDashboardModal({ isOpen, onClose, eventId, eventName }: RFIDDashboardModalProps) {
     const { language } = useLanguage();
     const [rfidStatus, setRfidStatus] = useState<RFIDStatus>({
@@ -46,6 +54,15 @@ export default function RFIDDashboardModal({ isOpen, onClose, eventId, eventName
     });
     const [loading, setLoading] = useState(false);
     const [runningPreview, setRunningPreview] = useState<PreviewType | null>(null);
+    const [runningFullSync, setRunningFullSync] = useState(false);
+    const [requirementsLoading, setRequirementsLoading] = useState(false);
+    const [syncRequirements, setSyncRequirements] = useState<SyncRequirements>({
+        allowRFIDSync: false,
+        hasToken: false,
+        hasRaceId: false,
+        eventCount: 0,
+        mappedEventCount: 0,
+    });
     const [showAllErrors, setShowAllErrors] = useState(false);
 
     const toApiData = (json: any) => json?.data ?? json;
@@ -67,8 +84,80 @@ export default function RFIDDashboardModal({ isOpen, onClose, eventId, eventName
     useEffect(() => {
         if (isOpen) {
             loadRFIDStatus();
+            loadSyncRequirements();
         }
     }, [isOpen, eventId]);
+
+    const hasCredentials = syncRequirements.hasToken && syncRequirements.hasRaceId;
+    const hasEventMapping = syncRequirements.eventCount === 1 || syncRequirements.mappedEventCount > 0;
+
+    const getBlockedReason = (target: 'preview' | 'full-sync'): string | null => {
+        if (!syncRequirements.allowRFIDSync) {
+            return language === 'th'
+                ? 'กรุณาเปิดใช้งาน RFID Sync สำหรับกิจกรรมนี้ก่อน'
+                : 'Please enable RFID Sync for this campaign first';
+        }
+        if (!hasCredentials) {
+            return language === 'th'
+                ? 'กรุณาใส่ RFID Token และ Race ID ในหน้าแก้ไขกิจกรรมก่อน'
+                : 'Please set RFID Token and Race ID in campaign edit page first';
+        }
+        if (target === 'full-sync' && syncRequirements.eventCount === 0) {
+            return language === 'th'
+                ? 'ยังไม่มี Event ในกิจกรรมนี้ (ต้องสร้าง Event อย่างน้อย 1 รายการก่อน Sync All Runners)'
+                : 'This campaign has no events yet (create at least 1 event before Sync All Runners)';
+        }
+        if (target === 'full-sync' && !hasEventMapping) {
+            return language === 'th'
+                ? 'ไม่พบ RFID Event ID ที่แมปกับ Event (กรุณาตั้งค่า RFID Event ID ใน Event ก่อน)'
+                : 'No RFID Event ID mapping found (please set RFID Event ID on events first)';
+        }
+        return null;
+    };
+
+    const loadSyncRequirements = async () => {
+        setRequirementsLoading(true);
+        try {
+            const [campaignRes, eventsRes] = await Promise.all([
+                fetch(`/api/campaigns/${eventId}`, { cache: 'no-store' }),
+                fetch(`/api/events/by-campaign/${eventId}`, { cache: 'no-store' }),
+            ]);
+
+            const campaignPayload = campaignRes.ok ? await campaignRes.json().catch(() => ({})) : {};
+            const eventsPayload = eventsRes.ok ? await eventsRes.json().catch(() => ([])) : [];
+
+            const campaign = (campaignPayload as any)?.data ?? campaignPayload ?? {};
+            const eventsSource = (eventsPayload as any)?.data ?? eventsPayload ?? [];
+            const events = Array.isArray(eventsSource) ? eventsSource : [];
+
+            const mappedEventCount = events.filter((event: any) => {
+                const value = event?.rfidEventId;
+                if (value === null || value === undefined) return false;
+                if (typeof value === 'number') return Number.isFinite(value);
+                if (typeof value === 'string') return value.trim() !== '';
+                return false;
+            }).length;
+
+            setSyncRequirements({
+                allowRFIDSync: Boolean(campaign?.allowRFIDSync),
+                hasToken: Boolean(typeof campaign?.rfidToken === 'string' && campaign.rfidToken.trim()),
+                hasRaceId: Boolean(typeof campaign?.raceId === 'string' && campaign.raceId.trim()),
+                eventCount: events.length,
+                mappedEventCount,
+            });
+        } catch (error) {
+            console.warn('Failed to load sync requirements:', error);
+            setSyncRequirements({
+                allowRFIDSync: false,
+                hasToken: false,
+                hasRaceId: false,
+                eventCount: 0,
+                mappedEventCount: 0,
+            });
+        } finally {
+            setRequirementsLoading(false);
+        }
+    };
 
     const loadRFIDStatus = async () => {
         setLoading(true);
@@ -99,7 +188,7 @@ export default function RFIDDashboardModal({ isOpen, onClose, eventId, eventName
                 .map((log: any) => log.message);
 
             setRfidStatus({
-                status: runningPreview ? 'Running' : 'Stopped',
+                status: runningPreview || runningFullSync ? 'Running' : 'Stopped',
                 healthy: (syncData?.statistics?.error || 0) === 0,
                 totalDataSize: `${syncData?.statistics?.total || 0} logs`,
                 lastCompletedTime: formatDate(latestSuccess?.createdAt),
@@ -123,7 +212,65 @@ export default function RFIDDashboardModal({ isOpen, onClose, eventId, eventName
         }
     };
 
+    const runFullSync = async () => {
+        const blockedReason = getBlockedReason('full-sync');
+        if (blockedReason) {
+            setRfidStatus(prev => ({
+                ...prev,
+                errors: [blockedReason, ...prev.errors],
+            }));
+            return;
+        }
+
+        setRunningFullSync(true);
+        try {
+            const res = await fetch(`/api/sync/full-sync?id=${eventId}`, {
+                method: 'POST',
+                cache: 'no-store',
+            });
+            const json = await res.json().catch(() => ({}));
+
+            if (!res.ok) {
+                const message = json?.error || json?.message || 'Full sync failed';
+                throw new Error(message);
+            }
+
+            const syncData = toApiData(json);
+            const summary = syncData?.summary || {};
+            const summaryMessage = language === 'th'
+                ? `ซิงค์ทั้งหมดสำเร็จ: หน้า ${summary.pagesFetched || 0}, ดึง ${summary.rowsFetched || 0}, เพิ่ม ${summary.inserted || 0}, อัปเดต ${summary.updated || 0}`
+                : `Full sync completed: pages ${summary.pagesFetched || 0}, fetched ${summary.rowsFetched || 0}, inserted ${summary.inserted || 0}, updated ${summary.updated || 0}`;
+
+            setRfidStatus(prev => ({
+                ...prev,
+                errors: [summaryMessage, ...prev.errors],
+            }));
+
+            await loadRFIDStatus();
+        } catch (error: any) {
+            console.warn('Failed to run full sync:', error);
+            setRfidStatus(prev => ({
+                ...prev,
+                errors: [
+                    `${language === 'th' ? 'ซิงค์ทั้งหมดล้มเหลว' : 'Full sync failed'}: ${error?.message || 'unknown error'}`,
+                    ...prev.errors,
+                ],
+            }));
+        } finally {
+            setRunningFullSync(false);
+        }
+    };
+
     const runPreview = async (type: PreviewType) => {
+        const blockedReason = getBlockedReason('preview');
+        if (blockedReason) {
+            setRfidStatus(prev => ({
+                ...prev,
+                errors: [blockedReason, ...prev.errors],
+            }));
+            return;
+        }
+
         setRunningPreview(type);
         try {
             const res = await fetch(`/api/sync/preview?id=${eventId}&type=${type}&page=1`, {
@@ -144,7 +291,7 @@ export default function RFIDDashboardModal({ isOpen, onClose, eventId, eventName
 
             await loadRFIDStatus();
         } catch (error: any) {
-            console.error('Failed to run preview:', error);
+            console.warn('Failed to run preview:', error);
             setRfidStatus(prev => ({
                 ...prev,
                 errors: [
@@ -222,27 +369,41 @@ export default function RFIDDashboardModal({ isOpen, onClose, eventId, eventName
                                 <h4 className="rfid-errors-title">
                                     {language === 'th' ? 'ทดสอบดึงข้อมูลจากเว็บจีน' : 'Test pull from RaceTiger'}
                                 </h4>
+                                {(getBlockedReason('preview') || getBlockedReason('full-sync')) && (
+                                    <div className="rfid-error-item" style={{ borderLeft: '3px solid #f59e0b' }}>
+                                        {getBlockedReason('full-sync') || getBlockedReason('preview')}
+                                    </div>
+                                )}
                                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                                     <button
                                         className="btn-primary"
                                         onClick={() => runPreview('info')}
-                                        disabled={!!runningPreview}
+                                        disabled={requirementsLoading || !!runningPreview || runningFullSync || !!getBlockedReason('preview')}
                                     >
                                         {runningPreview === 'info' ? '...' : 'Preview INFO'}
                                     </button>
                                     <button
                                         className="btn-primary"
                                         onClick={() => runPreview('bio')}
-                                        disabled={!!runningPreview}
+                                        disabled={requirementsLoading || !!runningPreview || runningFullSync || !!getBlockedReason('preview')}
                                     >
                                         {runningPreview === 'bio' ? '...' : 'Preview BIO'}
                                     </button>
                                     <button
                                         className="btn-primary"
                                         onClick={() => runPreview('split')}
-                                        disabled={!!runningPreview}
+                                        disabled={requirementsLoading || !!runningPreview || runningFullSync || !!getBlockedReason('preview')}
                                     >
                                         {runningPreview === 'split' ? '...' : 'Preview SPLIT'}
+                                    </button>
+                                    <button
+                                        className="btn-primary"
+                                        onClick={runFullSync}
+                                        disabled={requirementsLoading || !!runningPreview || runningFullSync || !!getBlockedReason('full-sync')}
+                                    >
+                                        {runningFullSync
+                                            ? (language === 'th' ? 'กำลังซิงค์...' : 'Syncing...')
+                                            : (language === 'th' ? 'Sync All Runners' : 'Sync All Runners')}
                                     </button>
                                 </div>
                             </div>

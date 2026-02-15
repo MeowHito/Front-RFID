@@ -157,6 +157,9 @@ export default function AdminHeader() {
                             <Link href="/admin/profile" className="profile-menu-item" onClick={() => setProfileOpen(false)}>
                                 {language === 'th' ? 'ตั้งค่าโปรไฟล์' : 'Profile Settings'}
                             </Link>
+                            <Link href="/admin/admin-logs" className="profile-menu-item" onClick={() => setProfileOpen(false)}>
+                                {language === 'th' ? 'Admin Log' : 'Admin Log'}
+                            </Link>
                             <div className="profile-menu-divider"></div>
                             {/* Language Toggle */}
                             <div className="lang-toggle-row">
