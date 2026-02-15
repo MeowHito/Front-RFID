@@ -47,6 +47,7 @@ export default function EventsPage() {
     const { language } = useLanguage();
     const router = useRouter();
     const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+    const [rfidErrorCampaignIds, setRfidErrorCampaignIds] = useState<Set<string>>(new Set());
     const [loading, setLoading] = useState(true);
     const [filter, setFilter] = useState('ทั้งหมด');
     const [searchQuery, setSearchQuery] = useState('');
@@ -68,16 +69,62 @@ export default function EventsPage() {
         try {
             const params = new URLSearchParams();
             if (searchQuery.trim()) params.set('search', searchQuery.trim());
-            const res = await fetch(`/api/campaigns?${params.toString()}`, { cache: 'no-store' });
+            const [campaignResResult, syncErrorsResult] = await Promise.allSettled([
+                fetch(`/api/campaigns?${params.toString()}`, { cache: 'no-store' }),
+                fetch('/api/sync/errors', { cache: 'no-store' }),
+            ]);
+
+            if (campaignResResult.status !== 'fulfilled') {
+                throw new Error('Failed to fetch campaigns');
+            }
+
+            const res = campaignResResult.value;
             if (!res.ok) throw new Error('Failed to fetch');
             const json = await res.json();
             const campaignData = json?.data || json || [];
             setCampaigns(Array.isArray(campaignData) ? campaignData : []);
+
+            const nextErrorIds = new Set<string>();
+            if (syncErrorsResult.status === 'fulfilled' && syncErrorsResult.value.ok) {
+                const syncErrorsJson = await syncErrorsResult.value.json();
+                const syncErrors = syncErrorsJson?.data || syncErrorsJson || [];
+
+                if (Array.isArray(syncErrors)) {
+                    syncErrors.forEach((entry: any) => {
+                        const campaignId = String(entry?.campaignId?._id || entry?.campaignId || '');
+                        if (campaignId) {
+                            nextErrorIds.add(campaignId);
+                        }
+                    });
+                }
+            }
+
+            setRfidErrorCampaignIds(nextErrorIds);
         } catch (error) {
             console.error('Failed to load campaigns:', error);
+            setRfidErrorCampaignIds(new Set());
         } finally {
             setLoading(false);
         }
+    };
+
+    const getRfidConnectionClass = (campaign: Campaign): 'status-not-connected' | 'status-healthy' | 'status-error' => {
+        if (!campaign.allowRFIDSync) {
+            return 'status-not-connected';
+        }
+
+        return rfidErrorCampaignIds.has(campaign._id) ? 'status-error' : 'status-healthy';
+    };
+
+    const getRfidConnectionLabel = (campaign: Campaign): string => {
+        const state = getRfidConnectionClass(campaign);
+        if (state === 'status-not-connected') {
+            return language === 'th' ? 'ยังไม่เชื่อมต่อ' : 'Not connected';
+        }
+        if (state === 'status-error') {
+            return language === 'th' ? 'เชื่อมต่อแล้ว (มีปัญหา)' : 'Connected (issue)';
+        }
+        return language === 'th' ? 'เชื่อมต่อแล้ว (ปกติ)' : 'Connected (healthy)';
     };
 
     useEffect(() => {
@@ -406,9 +453,9 @@ export default function EventsPage() {
                                                 </button>
                                                 <button
                                                     type="button"
-                                                    className="event-tool-btn"
+                                                    className={`event-tool-btn event-tool-rfid ${getRfidConnectionClass(campaign)}`}
                                                     onClick={() => openRfidModal(campaign)}
-                                                    title={language === 'th' ? 'ดูสถานะการเชื่อมต่อ RFID' : 'View RFID sync status'}
+                                                    title={`${language === 'th' ? 'ดูสถานะการเชื่อมต่อ RFID' : 'View RFID sync status'} • ${getRfidConnectionLabel(campaign)}`}
                                                 >
                                                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                                                         <path d="M2 12a10 10 0 0 1 20 0" />

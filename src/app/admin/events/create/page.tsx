@@ -104,8 +104,8 @@ function CreateEventForm() {
                     themeType: campaign.themeType || 'utmb',
                     status: campaign.status || 'upcoming',
                     allowRFIDSync: campaign.allowRFIDSync ?? false,
-                    rfidToken: campaign.rfidToken || '',
-                    raceId: campaign.raceId || '',
+                    rfidToken: '',
+                    raceId: '',
                     categories: (campaign.categories || []).map((cat: RaceCategory) => ({
                         name: cat.name || '',
                         distance: cat.distance || '',
