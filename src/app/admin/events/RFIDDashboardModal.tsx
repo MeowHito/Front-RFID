@@ -34,6 +34,7 @@ interface SyncRequirements {
     hasRaceId: boolean;
     eventCount: number;
     mappedEventCount: number;
+    categoryMappedCount: number;
 }
 
 export default function RFIDDashboardModal({ isOpen, onClose, eventId, eventName }: RFIDDashboardModalProps) {
@@ -62,6 +63,7 @@ export default function RFIDDashboardModal({ isOpen, onClose, eventId, eventName
         hasRaceId: false,
         eventCount: 0,
         mappedEventCount: 0,
+        categoryMappedCount: 0,
     });
     const [showAllErrors, setShowAllErrors] = useState(false);
 
@@ -89,7 +91,10 @@ export default function RFIDDashboardModal({ isOpen, onClose, eventId, eventName
     }, [isOpen, eventId]);
 
     const hasCredentials = syncRequirements.hasToken && syncRequirements.hasRaceId;
-    const hasEventMapping = syncRequirements.eventCount === 1 || syncRequirements.mappedEventCount > 0;
+    const hasEventMapping =
+        syncRequirements.eventCount === 1
+        || syncRequirements.mappedEventCount > 0
+        || (syncRequirements.eventCount > 0 && syncRequirements.categoryMappedCount > 0);
 
     const getBlockedReason = (target: 'preview' | 'full-sync'): string | null => {
         if (!syncRequirements.allowRFIDSync) {
@@ -129,9 +134,18 @@ export default function RFIDDashboardModal({ isOpen, onClose, eventId, eventName
             const campaign = (campaignPayload as any)?.data ?? campaignPayload ?? {};
             const eventsSource = (eventsPayload as any)?.data ?? eventsPayload ?? [];
             const events = Array.isArray(eventsSource) ? eventsSource : [];
+            const categories = Array.isArray(campaign?.categories) ? campaign.categories : [];
 
             const mappedEventCount = events.filter((event: any) => {
                 const value = event?.rfidEventId;
+                if (value === null || value === undefined) return false;
+                if (typeof value === 'number') return Number.isFinite(value);
+                if (typeof value === 'string') return value.trim() !== '';
+                return false;
+            }).length;
+
+            const categoryMappedCount = categories.filter((category: any) => {
+                const value = category?.remoteEventNo;
                 if (value === null || value === undefined) return false;
                 if (typeof value === 'number') return Number.isFinite(value);
                 if (typeof value === 'string') return value.trim() !== '';
@@ -144,6 +158,7 @@ export default function RFIDDashboardModal({ isOpen, onClose, eventId, eventName
                 hasRaceId: Boolean(typeof campaign?.raceId === 'string' && campaign.raceId.trim()),
                 eventCount: events.length,
                 mappedEventCount,
+                categoryMappedCount,
             });
         } catch (error) {
             console.warn('Failed to load sync requirements:', error);
@@ -153,6 +168,7 @@ export default function RFIDDashboardModal({ isOpen, onClose, eventId, eventName
                 hasRaceId: false,
                 eventCount: 0,
                 mappedEventCount: 0,
+                categoryMappedCount: 0,
             });
         } finally {
             setRequirementsLoading(false);

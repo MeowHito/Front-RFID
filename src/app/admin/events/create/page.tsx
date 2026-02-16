@@ -15,6 +15,7 @@ interface RaceCategory {
     raceType: string;
     badgeColor: string;
     status: string;
+    remoteEventNo?: string;
     itra: number | string;
     utmbIndex: string;
 }
@@ -114,7 +115,8 @@ function CreateEventForm() {
                         elevation: cat.elevation || '',
                         raceType: cat.raceType || '',
                         badgeColor: cat.badgeColor || '#dc2626',
-                        status: cat.status || 'wait',
+                        status: cat.status || 'live',
+                        remoteEventNo: cat.remoteEventNo || '',
                         itra: cat.itra ?? '',
                         utmbIndex: cat.utmbIndex || '',
                     })),
@@ -135,7 +137,7 @@ function CreateEventForm() {
             categories: [...prev.categories, {
                 name: '', distance: '', startTime: '06:00', cutoff: '',
                 elevation: '', raceType: '', badgeColor: '#dc2626',
-                status: 'wait', itra: '', utmbIndex: '',
+                status: 'live', remoteEventNo: '', itra: '', utmbIndex: '',
             }]
         }));
     };
@@ -201,6 +203,7 @@ function CreateEventForm() {
                     ...(cat.elevation && { elevation: cat.elevation }),
                     ...(cat.raceType && { raceType: cat.raceType }),
                     ...(cat.status && { status: cat.status }),
+                    ...(cat.remoteEventNo?.trim() && { remoteEventNo: cat.remoteEventNo.trim() }),
                     ...(cat.itra && { itra: Number(cat.itra) || undefined }),
                     ...(cat.utmbIndex && { utmbIndex: cat.utmbIndex }),
                 }));
@@ -437,7 +440,7 @@ function CreateEventForm() {
                     <table className="ce-distance-table">
                         <thead>
                             <tr>
-                                <th style={{ width: 90 }}>{language === 'th' ? 'สถานะ' : 'Status'}</th>
+                                <th style={{ width: 130 }}>{language === 'th' ? 'Remote Event No' : 'Remote Event No'}</th>
                                 <th style={{ width: 120 }}>{language === 'th' ? 'ระยะทาง' : 'Distance'}</th>
                                 <th style={{ width: 80 }}>Badge</th>
                                 <th style={{ width: 160 }}>{language === 'th' ? 'เวลาปล่อยตัว' : 'Start Time'}</th>
@@ -459,14 +462,13 @@ function CreateEventForm() {
                                 form.categories.map((cat, idx) => (
                                     <tr key={idx}>
                                         <td>
-                                            <select
-                                                className="ce-select ce-select-sm"
-                                                value={cat.status}
-                                                onChange={(e) => updateCategory(idx, 'status', e.target.value)}
-                                            >
-                                                <option value="wait">WAIT</option>
-                                                <option value="live">LIVE</option>
-                                            </select>
+                                            <input
+                                                type="text"
+                                                className="ce-input ce-input-sm"
+                                                value={cat.remoteEventNo || ''}
+                                                onChange={(e) => updateCategory(idx, 'remoteEventNo', e.target.value)}
+                                                placeholder={language === 'th' ? 'Project Number' : 'Project Number'}
+                                            />
                                         </td>
                                         <td>
                                             <input
