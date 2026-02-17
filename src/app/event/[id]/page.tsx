@@ -66,6 +66,23 @@ interface TimingRecord {
     elapsedTime?: number;
 }
 
+function normalizeComparableText(value: unknown): string {
+    return String(value || '')
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9ก-๙]+/g, '');
+}
+
+function parseDistanceValue(value: unknown): number | null {
+    const raw = String(value || '').replace(/,/g, '');
+    const match = raw.match(/-?\d+(?:\.\d+)?/);
+    if (!match) {
+        return null;
+    }
+    const parsed = Number(match[0]);
+    return Number.isFinite(parsed) ? parsed : null;
+}
+
 export default function EventDashboardPage() {
     const { theme, toggleTheme } = useTheme();
     const { language } = useLanguage();
@@ -89,6 +106,8 @@ export default function EventDashboardPage() {
 
     const [currentTime, setCurrentTime] = useState(new Date());
 
+    const toApiData = (payload: any) => payload?.data ?? payload;
+
     useEffect(() => {
         const timer = setInterval(() => setCurrentTime(new Date()), 1000);
         return () => clearInterval(timer);
@@ -110,14 +129,20 @@ export default function EventDashboardPage() {
                 throw new Error(language === 'th' ? 'ไม่พบข้อมูลกิจกรรม' : 'Event not found');
             }
 
-            const campaignData = await campaignRes.json() as Campaign;
+            const campaignJson = await campaignRes.json().catch(() => ({}));
+            const campaignData = toApiData(campaignJson) as Campaign;
+
+            if (!campaignData?._id) {
+                throw new Error(language === 'th' ? 'ไม่พบข้อมูลกิจกรรม' : 'Event not found');
+            }
+
             setCampaign(campaignData);
 
             // Public runners endpoint currently expects campaign ObjectId
             const runnersRes = await fetch(`/api/runners?id=${campaignData._id}`, { cache: 'no-store' });
 
             if (runnersRes.ok) {
-                const runnersData = await runnersRes.json();
+                const runnersData = await runnersRes.json().catch(() => ({}));
                 // Backend public API returns { status, data: { data: Runner[], total } }
                 const list =
                     (runnersData?.data?.data as Runner[]) ||
@@ -194,6 +219,83 @@ export default function EventDashboardPage() {
         }
     }
 
+    const stats = useMemo(() => ({
+        total: runners.length,
+        finished: runners.filter(r => r.status === 'finished').length,
+        racing: runners.filter(r => r.status === 'in_progress').length,
+        dnf: runners.filter(r => r.status === 'dnf' || r.status === 'dns').length,
+    }), [runners]);
+
+    const categories = useMemo(() => {
+        const campaignCategories = Array.isArray(campaign?.categories) ? campaign.categories : [];
+        if (!campaignCategories.length) {
+            const runnerCategories = new Set(runners.map((runner) => runner.category).filter(Boolean));
+            return Array.from(runnerCategories).map((value) => ({
+                key: value,
+                label: value,
+                normalizedName: normalizeComparableText(value),
+                normalizedDistance: normalizeComparableText(value),
+                distanceValue: parseDistanceValue(value),
+            }));
+        }
+
+        return campaignCategories
+            .map((cat, index) => {
+                const distance = String(cat?.distance || '').trim();
+                const name = String(cat?.name || '').trim();
+                const normalizedDistance = normalizeComparableText(distance);
+                const normalizedName = normalizeComparableText(name);
+                const keyBase = normalizedDistance || normalizedName || String(index + 1);
+                const key = `${keyBase}-${index}`;
+                const label = distance || name || `${language === 'th' ? 'ระยะ' : 'Category'} ${index + 1}`;
+
+                return {
+                    key,
+                    label,
+                    normalizedDistance,
+                    normalizedName,
+                    distanceValue: parseDistanceValue(distance || name),
+                };
+            })
+            .filter((cat) => Boolean(cat.label));
+    }, [campaign, runners, language]);
+
+    const resolveRunnerCategoryKey = (runner: Runner): string => {
+        if (!categories.length) {
+            return runner.category;
+        }
+
+        const runnerCategoryRaw = String(runner.category || '').trim();
+        const runnerCategoryKey = normalizeComparableText(runnerCategoryRaw);
+        const runnerDistance = parseDistanceValue(runnerCategoryRaw);
+
+        for (const category of categories) {
+            if (
+                runnerCategoryKey
+                && (
+                    runnerCategoryKey === category.normalizedName
+                    || runnerCategoryKey === category.normalizedDistance
+                    || runnerCategoryKey.includes(category.normalizedName)
+                    || runnerCategoryKey.includes(category.normalizedDistance)
+                    || category.normalizedName.includes(runnerCategoryKey)
+                    || category.normalizedDistance.includes(runnerCategoryKey)
+                )
+            ) {
+                return category.key;
+            }
+
+            if (
+                runnerDistance !== null
+                && category.distanceValue !== null
+                && Math.abs(runnerDistance - category.distanceValue) < 0.001
+            ) {
+                return category.key;
+            }
+        }
+
+        return runnerCategoryRaw;
+    };
+
     const filteredRunners = useMemo(() => {
         return runners
             .filter(runner => {
@@ -202,7 +304,7 @@ export default function EventDashboardPage() {
                     runner.lastName.toLowerCase().includes(searchQuery.toLowerCase()) ||
                     runner.bib.includes(searchQuery);
                 const matchesGender = filterGender === 'ALL' || runner.gender === filterGender;
-                const matchesCategory = filterCategory === 'ALL' || runner.category === filterCategory;
+                const matchesCategory = filterCategory === 'ALL' || resolveRunnerCategoryKey(runner) === filterCategory;
                 return matchesSearch && matchesGender && matchesCategory;
             })
             .sort((a, b) => {
@@ -213,19 +315,7 @@ export default function EventDashboardPage() {
                 if (a.overallRank && b.overallRank) return a.overallRank - b.overallRank;
                 return 0;
             });
-    }, [runners, searchQuery, filterGender, filterCategory]);
-
-    const stats = useMemo(() => ({
-        total: runners.length,
-        finished: runners.filter(r => r.status === 'finished').length,
-        racing: runners.filter(r => r.status === 'in_progress').length,
-        dnf: runners.filter(r => r.status === 'dnf' || r.status === 'dns').length,
-    }), [runners]);
-
-    const categories = useMemo(() => {
-        const cats = new Set(runners.map(r => r.category));
-        return Array.from(cats);
-    }, [runners]);
+    }, [runners, searchQuery, filterGender, filterCategory, categories]);
 
     const handleViewRunner = (runner: Runner) => {
         setSelectedRunner(runner);
@@ -345,16 +435,16 @@ export default function EventDashboardPage() {
                         </button>
                         {categories.map(cat => (
                             <button
-                                key={cat}
-                                onClick={() => setFilterCategory(cat)}
+                                key={cat.key}
+                                onClick={() => setFilterCategory(cat.key)}
                                 className="px-3 py-1 rounded-full text-[11px] font-bold transition-all"
                                 style={{
-                                    background: filterCategory === cat ? (isDark ? '#f8fafc' : '#1e293b') : 'transparent',
-                                    color: filterCategory === cat ? (isDark ? '#0f172a' : '#fff') : (isDark ? '#94a3b8' : '#64748b'),
-                                    border: `1px solid ${filterCategory === cat ? (isDark ? '#f8fafc' : '#1e293b') : (isDark ? 'rgba(255,255,255,0.1)' : '#e2e8f0')}`
+                                    background: filterCategory === cat.key ? (isDark ? '#f8fafc' : '#1e293b') : 'transparent',
+                                    color: filterCategory === cat.key ? (isDark ? '#0f172a' : '#fff') : (isDark ? '#94a3b8' : '#64748b'),
+                                    border: `1px solid ${filterCategory === cat.key ? (isDark ? '#f8fafc' : '#1e293b') : (isDark ? 'rgba(255,255,255,0.1)' : '#e2e8f0')}`
                                 }}
                             >
-                                {cat}
+                                {cat.label}
                             </button>
                         ))}
                     </div>

@@ -69,6 +69,17 @@ interface Runner {
     address?: string;
 }
 
+const IMPORT_TEMPLATE_HEADERS = [
+    'BIB',
+    'FirstName',
+    'LastName',
+    'Gender',
+    'BirthDate',
+    'Nationality',
+    'AgeGroup',
+    'ChipCode',
+];
+
 function calculateAgeGroup(birthDate: string, gender: string): string {
     if (!birthDate) return '';
     const birth = new Date(birthDate);
@@ -185,6 +196,38 @@ export default function ParticipantsPage() {
 
     // Import filter buttons (multi-select, push/pop)
     const [importFilters, setImportFilters] = useState<string[]>([]);
+
+    const downloadCategoryTemplate = useCallback((category: RaceCategory) => {
+        const safeCategory = (category.name || 'category').trim().replace(/\s+/g, '_').toLowerCase();
+        const sampleCode = safeCategory.replace(/[^a-z0-9]/g, '').slice(0, 6) || 'race';
+        const sampleBib = `${sampleCode.toUpperCase()}001`;
+
+        const sampleRow = [
+            sampleBib,
+            'Somchai',
+            'Jaidee',
+            'M',
+            '1990-01-01',
+            'THA',
+            'M 30-39',
+            `CHIP-${sampleBib}`,
+        ];
+
+        const csvRows = [
+            IMPORT_TEMPLATE_HEADERS.join(','),
+            sampleRow.map(value => `"${String(value).replace(/"/g, '""')}"`).join(','),
+        ];
+
+        const csvContent = `\uFEFF${csvRows.join('\n')}`;
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = `participants-template-${safeCategory}.csv`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(link.href);
+    }, []);
 
     const showToast = (message: string, type: 'success' | 'error') => {
         setToast({ message, type });
@@ -453,8 +496,8 @@ export default function ParticipantsPage() {
         if (bibIdx === -1 || fnIdx === -1) {
             showToast(
                 language === 'th'
-                    ? 'ไฟล์ CSV ต้องมีคอลัมน์ BIB และ FirstName อย่างน้อย'
-                    : 'CSV must have at least BIB and FirstName columns',
+                    ? 'ไฟล์ CSV ต้องมีคอลัมน์ BIB และ FirstName (แนะนำดาวน์โหลดแบบฟอร์มจากแต่ละระยะ)'
+                    : 'CSV must include BIB and FirstName columns (recommended: use per-category template download)',
                 'error'
             );
             return;
@@ -763,6 +806,29 @@ export default function ParticipantsPage() {
                         style={{ display: 'none' }}
                     />
 
+                    <div style={{
+                        background: '#eff6ff',
+                        border: '1px solid #bfdbfe',
+                        color: '#1e3a8a',
+                        borderRadius: 8,
+                        padding: '10px 14px',
+                        marginBottom: 12,
+                        fontSize: 12,
+                        lineHeight: 1.6,
+                    }}>
+                        <div style={{ fontWeight: 700, marginBottom: 4 }}>
+                            {language === 'th' ? 'รูปแบบไฟล์นำเข้า (Template Columns)' : 'Import File Format (Template Columns)'}
+                        </div>
+                        <div>
+                            <strong>{language === 'th' ? 'หัวตารางแนะนำ:' : 'Recommended headers:'}</strong> {IMPORT_TEMPLATE_HEADERS.join(', ')}
+                        </div>
+                        <div style={{ color: '#334155' }}>
+                            {language === 'th'
+                                ? 'กดปุ่ม "ดาวน์โหลดฟอร์ม" ในแต่ละระยะเพื่อได้ไฟล์ตัวอย่างที่ใช้ได้ทันที'
+                                : 'Use "Download Template" in each category to get a ready-to-use sample file'}
+                        </div>
+                    </div>
+
                     {/* Per-category sections */}
                     {(campaign.categories || []).map((cat, catIdx) => {
                         const catData = categoryImports[cat.name];
@@ -795,8 +861,16 @@ export default function ParticipantsPage() {
                                         {cat.distance && <span style={{ color: '#666', fontWeight: 500, fontSize: 12 }}>{cat.distance}</span>}
                                         {catFileName && <span style={{ color: '#888', fontSize: 11, fontWeight: 400 }}>— {catFileName} ({catRows.length} {language === 'th' ? 'รายการ' : 'rows'})</span>}
                                     </div>
-                                    {catRows.length > 0 && (
-                                        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                                    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                                        <button
+                                            className="btn"
+                                            onClick={() => downloadCategoryTemplate(cat)}
+                                            style={{ background: '#2563eb', fontSize: 11, padding: '4px 12px' }}
+                                        >
+                                            {language === 'th' ? 'ดาวน์โหลดฟอร์ม' : 'Download Template'}
+                                        </button>
+                                        {catRows.length > 0 && (
+                                            <>
                                             <button
                                                 className="btn"
                                                 onClick={() => setCategoryImports(prev => { const n = { ...prev }; delete n[cat.name]; return n; })}
@@ -817,8 +891,9 @@ export default function ParticipantsPage() {
                                                     ? (language === 'th' ? 'กำลังนำเข้า...' : 'Importing...')
                                                     : (language === 'th' ? `นำเข้า (${catRows.length})` : `Import (${catRows.length})`)}
                                             </button>
-                                        </div>
-                                    )}
+                                            </>
+                                        )}
+                                    </div>
                                 </div>
 
                                 {/* Drop zone (always visible, compact) */}

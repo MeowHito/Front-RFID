@@ -67,7 +67,11 @@ export default function ActivityCard({
         : (locationEn || location);
 
     return (
-        <div className="bg-white dark:bg-[#1e1e2a] rounded-lg shadow-md mb-5 transition-all hover:shadow-lg">
+        <a
+            href={link}
+            className="block bg-white dark:bg-[#1e1e2a] rounded-lg shadow-md mb-5 transition-all hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+            aria-label={`${displayTitle} ${t('card.viewResults')}`}
+        >
             {/* ===== MOBILE LAYOUT ===== */}
             <div className="block md:hidden">
                 {/* Cover Image: fixed 16:8, image fills entire area */}
@@ -100,12 +104,9 @@ export default function ActivityCard({
                     <h2 className="text-xl font-bold mb-2 uppercase tracking-wide" style={{ color: color }}>{displayTitle}</h2>
                     <p className="text-sm text-gray-600 dark:text-gray-300 mb-0.5">📍 {displayLocation}</p>
                     <p className="text-sm text-gray-400 mb-4">📅 {date}</p>
-                    <a
-                        href={link}
-                        className="inline-flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-gray-700 dark:text-gray-200 font-medium text-sm hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-                    >
+                    <span className="inline-flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-gray-700 dark:text-gray-200 font-medium text-sm">
                         {t('card.viewResults')}
-                    </a>
+                    </span>
                 </div>
 
                 {/* Categories Table - Mobile */}
@@ -137,7 +138,6 @@ export default function ActivityCard({
                                         </td>
                                         <td className="py-2.5 px-2 align-middle whitespace-nowrap">
                                             <span className="font-medium text-gray-800 dark:text-gray-200 text-sm">{cat.distance}</span>
-                                            <span className="ml-1.5 text-[0.55rem] font-bold px-1 py-0.5 rounded text-white" style={{ backgroundColor: cat.badgeColor }}>{cat.name}</span>
                                         </td>
                                         <td className="py-2.5 px-2 align-middle text-center text-sm text-gray-600 dark:text-gray-400">{cat.start}</td>
                                         <td className="py-2.5 px-2 align-middle text-center text-sm text-gray-600 dark:text-gray-400">{cat.cutoff || '-'}</td>
@@ -196,9 +196,9 @@ export default function ActivityCard({
                     <h2 className="text-base font-bold mb-1 leading-tight uppercase" style={{ color: color }}>{displayTitle}</h2>
                     <p className="text-[0.75rem] text-gray-700 dark:text-gray-300 font-medium mb-0.5 line-clamp-1">📍 {displayLocation}</p>
                     <p className="text-[0.7rem] text-gray-400 mb-2.5">📅 {date}</p>
-                    <a href={link} className="inline-flex items-center px-3 py-1 border border-gray-300 dark:border-gray-600 rounded text-gray-700 dark:text-gray-200 font-semibold text-[0.7rem] hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors w-fit">
+                    <span className="inline-flex items-center px-3 py-1 border border-gray-300 dark:border-gray-600 rounded text-gray-700 dark:text-gray-200 font-semibold text-[0.7rem] w-fit">
                         {t('card.viewResults')}
-                    </a>
+                    </span>
                 </div>
 
                 {/* Right: Stats Table - 7 columns */}
@@ -230,7 +230,6 @@ export default function ActivityCard({
                                         </td>
                                         <td className="py-1 pr-2 align-middle whitespace-nowrap">
                                             <span className="text-[0.7rem] font-normal text-gray-800 dark:text-gray-200">{cat.distance}</span>
-                                            <span className="ml-1 text-[0.45rem] font-normal px-1 py-0.5 rounded text-white" style={{ backgroundColor: cat.badgeColor || '#dc2626' }}>{cat.name}</span>
                                         </td>
                                         <td className="py-1 pr-2 align-middle text-[0.65rem] text-gray-600 dark:text-gray-400 whitespace-nowrap max-w-[100px] truncate">{cat.start}</td>
                                         <td className="py-1 pr-2 align-middle text-[0.7rem] text-gray-600 dark:text-gray-400 whitespace-nowrap">{cat.cutoff || '-'}</td>
@@ -262,6 +261,6 @@ export default function ActivityCard({
                     </div>
                 </div>
             </div>
-        </div>
+        </a>
     );
 }
