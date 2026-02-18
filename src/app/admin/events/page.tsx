@@ -62,6 +62,7 @@ export default function EventsPage() {
     const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
     const [campaignToDelete, setCampaignToDelete] = useState<Campaign | null>(null);
     const [deleting, setDeleting] = useState(false);
+    const [deleteConfirmInput, setDeleteConfirmInput] = useState('');
     const [featuredConfirmOpen, setFeaturedConfirmOpen] = useState(false);
     const [featuredTargetId, setFeaturedTargetId] = useState<string | null>(null);
 
@@ -346,11 +347,17 @@ export default function EventsPage() {
 
     const openDeleteConfirm = (campaign: Campaign) => {
         setCampaignToDelete(campaign);
+        setDeleteConfirmInput('');
         setDeleteConfirmOpen(true);
     };
 
     const handleDeleteCampaign = async () => {
         if (!campaignToDelete) return;
+        if (deleteConfirmInput.trim() !== campaignToDelete.name.trim()) {
+            setToastMessage(language === 'th' ? 'ชื่อกิจกรรมไม่ตรง' : 'Event name does not match');
+            setTimeout(() => setToastMessage(null), 3000);
+            return;
+        }
         setDeleting(true);
         try {
             const res = await fetch(`/api/campaigns/${campaignToDelete._id}`, { method: 'DELETE' });
@@ -466,6 +473,19 @@ export default function EventsPage() {
                                                         <path d="M5 12a7 7 0 0 1 14 0" />
                                                         <path d="M8 12a4 4 0 0 1 8 0" />
                                                         <circle cx="12" cy="16" r="1" fill="currentColor" />
+                                                    </svg>
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    className="event-tool-btn event-tool-delete"
+                                                    onClick={() => openDeleteConfirm(campaign)}
+                                                    title={language === 'th' ? 'ลบกิจกรรม' : 'Delete event'}
+                                                >
+                                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                                        <polyline points="3 6 5 6 21 6" />
+                                                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                                                        <line x1="10" y1="11" x2="10" y2="17" />
+                                                        <line x1="14" y1="11" x2="14" y2="17" />
                                                     </svg>
                                                 </button>
                                             </div>
@@ -600,40 +620,73 @@ export default function EventsPage() {
             {/* Delete Confirmation Modal */}
             {deleteConfirmOpen && (
                 <div className="modal-overlay" onClick={() => setDeleteConfirmOpen(false)}>
-                    <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '400px' }}>
+                    <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '440px' }}>
                         <div className="modal-header">
                             <h2 className="modal-title" style={{ color: '#dc2626' }}>
-                                {language === 'th' ? 'ยืนยันการลบ' : 'Confirm Delete'}
+                                {language === 'th' ? 'ยืนยันการลบกิจกรรม' : 'Confirm Delete Event'}
                             </h2>
                             <button className="modal-close" onClick={() => setDeleteConfirmOpen(false)}>×</button>
                         </div>
-                        <div className="modal-body" style={{ textAlign: 'center', padding: '2rem' }}>
-                            <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>⚠️</div>
-                            <p style={{ marginBottom: '0.5rem', fontWeight: 'bold' }}>
+                        <div className="modal-body" style={{ padding: '1.5rem' }}>
+                            <div style={{ textAlign: 'center', marginBottom: '1rem' }}>
+                                <span style={{ fontSize: '3rem' }}>⚠️</span>
+                            </div>
+                            <p style={{ marginBottom: '0.5rem', fontWeight: 'bold', textAlign: 'center' }}>
                                 {language === 'th' ? 'คุณแน่ใจหรือว่าต้องการลบกิจกรรมนี้?' : 'Are you sure you want to delete this event?'}
                             </p>
-                            <p style={{ color: '#666', fontSize: '0.9rem' }}>
+                            <p style={{ color: '#666', fontSize: '0.95rem', textAlign: 'center', marginBottom: '1rem' }}>
                                 <strong>{campaignToDelete?.name}</strong>
                             </p>
-                            <p style={{ color: '#dc2626', fontSize: '0.85rem', marginTop: '1rem' }}>
+                            <p style={{ color: '#dc2626', fontSize: '0.85rem', textAlign: 'center', marginBottom: '1.25rem' }}>
                                 {language === 'th' ? 'การดำเนินการนี้ไม่สามารถย้อนกลับได้' : 'This action cannot be undone'}
                             </p>
+                            <div style={{ marginBottom: '1rem' }}>
+                                <label style={{ display: 'block', fontSize: '0.85rem', marginBottom: '0.5rem', color: '#555' }}>
+                                    {language === 'th'
+                                        ? 'พิมพ์ชื่อกิจกรรมเพื่อยืนยัน:'
+                                        : 'Type the event name to confirm:'}
+                                </label>
+                                <input
+                                    type="text"
+                                    value={deleteConfirmInput}
+                                    onChange={(e) => setDeleteConfirmInput(e.target.value)}
+                                    placeholder={campaignToDelete?.name || ''}
+                                    className="modal-input"
+                                    style={{
+                                        width: '100%',
+                                        padding: '0.6rem 0.75rem',
+                                        border: '1px solid #ddd',
+                                        borderRadius: '6px',
+                                        fontSize: '0.95rem',
+                                        outline: 'none',
+                                    }}
+                                    autoFocus
+                                />
+                            </div>
                         </div>
                         <div className="modal-footer" style={{ justifyContent: 'center', gap: '1rem' }}>
-                            <button 
-                                className="btn-secondary" 
+                            <button
+                                className="btn-secondary"
                                 onClick={() => setDeleteConfirmOpen(false)}
                                 disabled={deleting}
                             >
                                 {language === 'th' ? 'ยกเลิก' : 'Cancel'}
                             </button>
-                            <button 
+                            <button
                                 className="btn-danger"
                                 onClick={handleDeleteCampaign}
-                                disabled={deleting}
-                                style={{ background: '#dc2626', color: '#fff', padding: '0.5rem 1.5rem', borderRadius: '6px', border: 'none', cursor: 'pointer' }}
+                                disabled={deleting || deleteConfirmInput.trim() !== campaignToDelete?.name?.trim()}
+                                style={{
+                                    background: '#dc2626',
+                                    color: '#fff',
+                                    padding: '0.5rem 1.5rem',
+                                    borderRadius: '6px',
+                                    border: 'none',
+                                    cursor: deleteConfirmInput.trim() !== campaignToDelete?.name?.trim() ? 'not-allowed' : 'pointer',
+                                    opacity: deleteConfirmInput.trim() !== campaignToDelete?.name?.trim() ? 0.6 : 1,
+                                }}
                             >
-                                {deleting 
+                                {deleting
                                     ? (language === 'th' ? 'กำลังลบ...' : 'Deleting...')
                                     : (language === 'th' ? 'ลบกิจกรรม' : 'Delete Event')
                                 }
