@@ -38,6 +38,7 @@ interface CreateEventForm {
     allowRFIDSync: boolean;
     rfidToken: string;
     raceId: string;
+    partnerCode: string;
     categories: RaceCategory[];
 }
 
@@ -79,6 +80,7 @@ function CreateEventForm() {
         allowRFIDSync: false,
         rfidToken: '',
         raceId: '',
+        partnerCode: '',
         categories: [],
     });
 
@@ -108,6 +110,7 @@ function CreateEventForm() {
                     allowRFIDSync: campaign.allowRFIDSync ?? false,
                     rfidToken: campaign.rfidToken || '',
                     raceId: campaign.raceId || '',
+                    partnerCode: campaign.partnerCode || '',
                     categories: (campaign.categories || []).map((cat: RaceCategory) => ({
                         name: cat.name || '',
                         distance: cat.distance || '',
@@ -123,7 +126,8 @@ function CreateEventForm() {
                     })),
                 });
                 if (campaign.rfidToken && campaign.raceId) {
-                    const reconstructed = `https://rqs.racetigertiming.com/Dif/bio?pc=000001&rid=${campaign.raceId}&token=${campaign.rfidToken}&page=1`;
+                    const pc = campaign.partnerCode || '000001';
+                    const reconstructed = `https://rqs.racetigertiming.com/Dif/bio?pc=${pc}&rid=${campaign.raceId}&token=${campaign.rfidToken}&page=1`;
                     setRaceTigerUrl(reconstructed);
                 }
             })
@@ -161,11 +165,13 @@ function CreateEventForm() {
             const parsed = new URL(url.trim());
             const rid = parsed.searchParams.get('rid');
             const token = parsed.searchParams.get('token');
-            if (rid || token) {
+            const pc = parsed.searchParams.get('pc');
+            if (rid || token || pc) {
                 setForm(prev => ({
                     ...prev,
                     ...(rid ? { raceId: rid } : {}),
                     ...(token ? { rfidToken: token } : {}),
+                    ...(pc ? { partnerCode: pc } : {}),
                     allowRFIDSync: true,
                 }));
             }
@@ -245,6 +251,7 @@ function CreateEventForm() {
             payload.allowRFIDSync = form.allowRFIDSync;
             if (form.rfidToken.trim()) payload.rfidToken = form.rfidToken.trim();
             if (form.raceId.trim()) payload.raceId = form.raceId.trim();
+            if (form.partnerCode.trim()) payload.partnerCode = form.partnerCode.trim();
             if (cleanCategories.length > 0) payload.categories = cleanCategories;
             // Use API proxy route to work on both localhost and Vercel
             const url = isEdit ? `/api/campaigns/${editId}` : '/api/campaigns';
@@ -733,6 +740,21 @@ function CreateEventForm() {
                                     value={form.raceId}
                                     onChange={(e) => updateField('raceId', e.target.value)}
                                 />
+                            </div>
+                            <div className="ce-form-group">
+                                <label className="ce-label">Partner Code (pc)</label>
+                                <input
+                                    type="text"
+                                    className="ce-input"
+                                    placeholder="000001"
+                                    value={form.partnerCode}
+                                    onChange={(e) => updateField('partnerCode', e.target.value)}
+                                />
+                                <span style={{ fontSize: 11, color: '#888', marginTop: 3, display: 'block' }}>
+                                    {language === 'th'
+                                        ? 'ค่า pc จาก URL ของ RaceTiger (ดึงอัตโนมัติเมื่อวาง URL ด้านบน)'
+                                        : 'pc value from RaceTiger URL (auto-filled when pasting URL above)'}
+                                </span>
                             </div>
                         </>
                     )}
