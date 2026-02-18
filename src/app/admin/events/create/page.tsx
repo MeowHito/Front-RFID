@@ -290,7 +290,7 @@ function CreateEventForm() {
                 ]}
                 pageTitle=""
             >
-                <div style={{ textAlign: 'center', padding: 60, color: '#999' }}>
+                <div className="text-center py-16 text-gray-400">
                     {language === 'th' ? 'กำลังโหลดข้อมูล...' : 'Loading data...'}
                 </div>
             </AdminLayout>
@@ -448,8 +448,8 @@ function CreateEventForm() {
 
                 {/* Card 3: Distance Table (Success/Green) */}
                 <div className="ce-card ce-card-success">
-                <div className="ce-card-header" style={{ justifyContent: 'space-between' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <div className="ce-card-header justify-between">
+                    <div className="flex items-center gap-2">
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#00a65a" strokeWidth="2">
                             <line x1="8" y1="6" x2="21" y2="6" />
                             <line x1="8" y1="12" x2="21" y2="12" />
@@ -468,7 +468,7 @@ function CreateEventForm() {
                         {language === 'th' ? 'เพิ่มแถว' : 'Add Row'}
                     </button>
                 </div>
-                <div style={{ overflowX: 'auto' }}>
+                <div className="overflow-x-auto">
                     <table className="ce-distance-table">
                         <thead>
                             <tr>
@@ -486,7 +486,7 @@ function CreateEventForm() {
                         <tbody>
                             {form.categories.length === 0 ? (
                                 <tr>
-                                    <td colSpan={9} style={{ textAlign: 'center', padding: 20, color: '#999' }}>
+                                    <td colSpan={9} className="text-center py-5 text-gray-400">
                                         {language === 'th' ? 'ยังไม่มีประเภท — กดปุ่ม "เพิ่มแถว"' : 'No categories yet — click "Add Row"'}
                                     </td>
                                 </tr>
@@ -558,21 +558,20 @@ function CreateEventForm() {
                                         <td>
                                             <input
                                                 type="text"
-                                                className="ce-input ce-input-sm"
-                                                style={{ textAlign: 'right' }}
+                                                className="ce-input ce-input-sm text-right"
                                                 value={cat.elevation}
                                                 onChange={(e) => updateCategory(idx, 'elevation', e.target.value)}
                                                 placeholder="10,400 m+"
                                             />
                                         </td>
-                                        <td style={{ textAlign: 'center' }}>
+                                        <td className="text-center">
                                             <button
                                                 type="button"
-                                                className="ce-delete-btn"
+                                                className="inline-flex items-center justify-center w-7 h-7 rounded text-red-500 hover:bg-red-100 hover:text-red-700 transition-colors"
                                                 onClick={() => removeCategory(idx)}
-                                                title={language === 'th' ? 'ลบ' : 'Delete'}
+                                                title={language === 'th' ? 'ลบแถวนี้' : 'Delete row'}
                                             >
-                                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#dd4b39" strokeWidth="2">
+                                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                                                     <polyline points="3 6 5 6 21 6" />
                                                     <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
                                                 </svg>
@@ -684,61 +683,53 @@ function CreateEventForm() {
                             }}
                             onChange={(e) => handleRaceTigerUrlPaste(e.target.value)}
                         />
-                        <div style={{ fontSize: 11, color: '#888', marginTop: 6, display: 'flex', flexDirection: 'column', gap: 3 }}>
+                        <div className="text-xs text-gray-500 mt-1.5 flex flex-col gap-1">
                             <span>
                                 {language === 'th'
                                     ? '📋 วาง URL ใดก็ได้จากเว็บ RaceTiger — ระบบจะดึง Race ID, Token และ Partner Code ให้อัตโนมัติ'
                                     : '📋 Paste any URL from RaceTiger — Race ID, Token and Partner Code will be extracted automatically'}
                             </span>
-                            <span style={{ color: '#aaa' }}>
+                            <span className="text-gray-400">
                                 {language === 'th' ? 'เมื่อกด "Import Events จากเว็บจีน" ระบบจะดึงข้อมูลจาก 3 endpoint อัตโนมัติ:' : 'When clicking "Import Events from RaceTiger", the system fetches from 3 endpoints automatically:'}
                             </span>
-                            <span style={{ color: '#6b7280', paddingLeft: 8 }}>
-                                {'📁 '}<code style={{ background: '#f3f4f6', padding: '1px 4px', borderRadius: 3 }}>/Dif/info</code>
+                            <span className="text-gray-500 pl-2">
+                                {'📁 '}<code className="bg-gray-100 px-1 rounded">/Dif/info</code>
                                 {language === 'th' ? ' → ระยะทาง / ชื่อ Event' : ' → distances / event names'}
                             </span>
-                            <span style={{ color: '#6b7280', paddingLeft: 8 }}>
-                                {'🏃 '}<code style={{ background: '#f3f4f6', padding: '1px 4px', borderRadius: 3 }}>/Dif/bio</code>
+                            <span className="text-gray-500 pl-2">
+                                {'🏃 '}<code className="bg-gray-100 px-1 rounded">/Dif/bio</code>
                                 {language === 'th' ? ' → รายชื่อนักวิ่ง (Runners)' : ' → runner list (participants)'}
                             </span>
-                            <span style={{ color: '#6b7280', paddingLeft: 8 }}>
-                                {'📍 '}<code style={{ background: '#f3f4f6', padding: '1px 4px', borderRadius: 3 }}>/Dif/splitScore</code>
+                            <span className="text-gray-500 pl-2">
+                                {'📍 '}<code className="bg-gray-100 px-1 rounded">/Dif/splitScore</code>
                                 {language === 'th' ? ' → ชื่อ Checkpoint ตามจริง' : ' → real checkpoint names'}
                             </span>
                         </div>
                         {/* Show extracted values immediately after URL is pasted */}
                         {(form.partnerCode || form.raceId || form.rfidToken) && (
-                            <div style={{
-                                marginTop: 8, padding: '8px 12px', background: '#f0fdf4',
-                                border: '1px solid #bbf7d0', borderRadius: 6,
-                                fontSize: 11, display: 'flex', flexDirection: 'column', gap: 4,
-                            }}>
-                                <span style={{ fontWeight: 700, color: '#15803d', marginBottom: 2 }}>
+                            <div className="mt-2 px-3 py-2 bg-green-50 border border-green-200 rounded-md text-xs flex flex-col gap-1">
+                                <span className="font-bold text-green-700">
                                     ✅ {language === 'th' ? 'ดึงค่าจาก URL สำเร็จ:' : 'Extracted from URL:'}
                                 </span>
                                 {form.partnerCode && (
-                                    <span style={{ color: '#166534' }}>
+                                    <span className="text-green-800">
                                         <strong>Partner Code (pc):</strong>{' '}
-                                        <code style={{ background: '#dcfce7', padding: '1px 6px', borderRadius: 3, fontFamily: 'monospace' }}>
-                                            {form.partnerCode}
-                                        </code>
-                                        <span style={{ color: '#6b7280', marginLeft: 6 }}>
-                                            {language === 'th' ? '— รหัสพาร์ทเนอร์ของงานนี้ใน RaceTiger' : '— your event\'s partner code in RaceTiger'}
+                                        <code className="bg-green-100 px-1.5 rounded font-mono">{form.partnerCode}</code>
+                                        <span className="text-gray-500 ml-1.5">
+                                            {language === 'th' ? '— รหัสพาร์ทเนอร์ของงานนี้ใน RaceTiger' : "— your event's partner code in RaceTiger"}
                                         </span>
                                     </span>
                                 )}
                                 {form.raceId && (
-                                    <span style={{ color: '#166534' }}>
+                                    <span className="text-green-800">
                                         <strong>Race ID (rid):</strong>{' '}
-                                        <code style={{ background: '#dcfce7', padding: '1px 6px', borderRadius: 3, fontFamily: 'monospace' }}>
-                                            {form.raceId}
-                                        </code>
+                                        <code className="bg-green-100 px-1.5 rounded font-mono">{form.raceId}</code>
                                     </span>
                                 )}
                                 {form.rfidToken && (
-                                    <span style={{ color: '#166534' }}>
+                                    <span className="text-green-800">
                                         <strong>Token:</strong>{' '}
-                                        <code style={{ background: '#dcfce7', padding: '1px 6px', borderRadius: 3, fontFamily: 'monospace' }}>
+                                        <code className="bg-green-100 px-1.5 rounded font-mono">
                                             {form.rfidToken.length > 20 ? form.rfidToken.slice(0, 20) + '…' : form.rfidToken}
                                         </code>
                                     </span>
@@ -748,7 +739,7 @@ function CreateEventForm() {
                     </div>
 
                     <div className="ce-form-group ce-full">
-                        <label className="ce-label" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <label className="ce-label flex items-center gap-2">
                             <input
                                 type="checkbox"
                                 checked={form.allowRFIDSync}
@@ -789,7 +780,7 @@ function CreateEventForm() {
                                     value={form.partnerCode}
                                     onChange={(e) => updateField('partnerCode', e.target.value)}
                                 />
-                                <span style={{ fontSize: 11, color: '#888', marginTop: 3, display: 'block' }}>
+                                <span className="block text-xs text-gray-400 mt-0.5">
                                     {language === 'th'
                                         ? 'ค่า pc จาก URL ของ RaceTiger (ดึงอัตโนมัติเมื่อวาง URL ด้านบน)'
                                         : 'pc value from RaceTiger URL (auto-filled when pasting URL above)'}
