@@ -677,11 +677,28 @@ function CreateEventForm() {
                             }}
                             onChange={(e) => handleRaceTigerUrlPaste(e.target.value)}
                         />
-                        <span style={{ fontSize: 11, color: '#888', marginTop: 4, display: 'block' }}>
-                            {language === 'th'
-                                ? 'วาง URL ใดก็ได้จากเว็บ RaceTiger เช่น Athlete information interface — ระบบจะดึง Race ID และ Token ให้อัตโนมัติ และเปิดใช้งาน RFID Sync'
-                                : 'Paste any URL from RaceTiger (e.g. Athlete information interface) — Race ID and Token will be extracted automatically and RFID sync will be enabled'}
-                        </span>
+                        <div style={{ fontSize: 11, color: '#888', marginTop: 6, display: 'flex', flexDirection: 'column', gap: 3 }}>
+                            <span>
+                                {language === 'th'
+                                    ? '📋 วาง URL ใดก็ได้จากเว็บ RaceTiger — ระบบจะดึง Race ID และ Token ให้อัตโนมัติ'
+                                    : '📋 Paste any URL from RaceTiger — Race ID and Token will be extracted automatically'}
+                            </span>
+                            <span style={{ color: '#aaa' }}>
+                                {language === 'th' ? 'เมื่อกด "Import Events จากเว็บจีน" ระบบจะดึงข้อมูลจาก 3 endpoint อัตโนมัติ:' : 'When clicking "Import Events from RaceTiger", the system fetches from 3 endpoints automatically:'}
+                            </span>
+                            <span style={{ color: '#6b7280', paddingLeft: 8 }}>
+                                {'📁 '}<code style={{ background: '#f3f4f6', padding: '1px 4px', borderRadius: 3 }}>/Dif/info</code>
+                                {language === 'th' ? ' → ระยะทาง / ชื่อ Event' : ' → distances / event names'}
+                            </span>
+                            <span style={{ color: '#6b7280', paddingLeft: 8 }}>
+                                {'🏃 '}<code style={{ background: '#f3f4f6', padding: '1px 4px', borderRadius: 3 }}>/Dif/bio</code>
+                                {language === 'th' ? ' → รายชื่อนักวิ่ง (Runners)' : ' → runner list (participants)'}
+                            </span>
+                            <span style={{ color: '#6b7280', paddingLeft: 8 }}>
+                                {'📍 '}<code style={{ background: '#f3f4f6', padding: '1px 4px', borderRadius: 3 }}>/Dif/splitScore</code>
+                                {language === 'th' ? ' → ชื่อ Checkpoint ตามจริง' : ' → real checkpoint names'}
+                            </span>
+                        </div>
                     </div>
 
                     <div className="ce-form-group ce-full">

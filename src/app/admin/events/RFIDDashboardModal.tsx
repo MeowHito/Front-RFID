@@ -269,9 +269,11 @@ export default function RFIDDashboardModal({ isOpen, onClose, eventId, eventName
             const runUpdated = result?.runners?.updated ?? 0;
             const cpCreated = result?.checkpoints?.created ?? 0;
 
+            const cpNames: string[] = result?.checkpoints?.names ?? [];
+            const cpNamesStr = cpNames.length ? ` (${cpNames.join(', ')})` : '';
             const summaryMessage = language === 'th'
-                ? `✅ Import สำเร็จ!\n📁 Events: สร้าง ${evImported}, อัปเดต ${evUpdated}\n🏃 Runners: เพิ่ม ${runInserted}, อัปเดต ${runUpdated}\n📍 Checkpoints: สร้าง ${cpCreated}`
-                : `✅ Import completed!\n📁 Events: created ${evImported}, updated ${evUpdated}\n🏃 Runners: inserted ${runInserted}, updated ${runUpdated}\n📍 Checkpoints: created ${cpCreated}`;
+                ? `✅ Import สำเร็จ!\n📁 Events: สร้าง ${evImported}, อัปเดต ${evUpdated}\n🏃 Runners: เพิ่ม ${runInserted}, อัปเดต ${runUpdated}\n📍 Checkpoints: สร้าง ${cpCreated}${cpNamesStr}`
+                : `✅ Import completed!\n📁 Events: created ${evImported}, updated ${evUpdated}\n🏃 Runners: inserted ${runInserted}, updated ${runUpdated}\n📍 Checkpoints: created ${cpCreated}${cpNamesStr}`;
 
             showToast('success', summaryMessage);
             setRfidStatus(prev => ({
