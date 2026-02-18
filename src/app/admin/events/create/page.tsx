@@ -39,6 +39,7 @@ interface CreateEventForm {
     rfidToken: string;
     raceId: string;
     partnerCode: string;
+    raceTigerBaseUrl: string;
     categories: RaceCategory[];
 }
 
@@ -81,6 +82,7 @@ function CreateEventForm() {
         rfidToken: '',
         raceId: '',
         partnerCode: '',
+        raceTigerBaseUrl: '',
         categories: [],
     });
 
@@ -111,6 +113,7 @@ function CreateEventForm() {
                     rfidToken: campaign.rfidToken || '',
                     raceId: campaign.raceId || '',
                     partnerCode: campaign.partnerCode || '',
+                    raceTigerBaseUrl: campaign.raceTigerBaseUrl || '',
                     categories: (campaign.categories || []).map((cat: RaceCategory) => ({
                         name: cat.name || '',
                         distance: cat.distance || '',
@@ -126,8 +129,9 @@ function CreateEventForm() {
                     })),
                 });
                 if (campaign.rfidToken && campaign.raceId) {
+                    const base = campaign.raceTigerBaseUrl || 'https://wx.racetigertiming.com';
                     const pc = campaign.partnerCode || '000001';
-                    const reconstructed = `https://rqs.racetigertiming.com/Dif/bio?pc=${pc}&rid=${campaign.raceId}&token=${campaign.rfidToken}&page=1`;
+                    const reconstructed = `${base}/Dif/bio?pc=${pc}&rid=${campaign.raceId}&token=${campaign.rfidToken}&page=1`;
                     setRaceTigerUrl(reconstructed);
                 }
             })
@@ -166,12 +170,15 @@ function CreateEventForm() {
             const rid = parsed.searchParams.get('rid');
             const token = parsed.searchParams.get('token');
             const pc = parsed.searchParams.get('pc');
+            // Extract base URL (e.g. https://wx.racetigertiming.com)
+            const baseUrl = `${parsed.protocol}//${parsed.hostname}`;
             if (rid || token || pc) {
                 setForm(prev => ({
                     ...prev,
                     ...(rid ? { raceId: rid } : {}),
                     ...(token ? { rfidToken: token } : {}),
                     ...(pc ? { partnerCode: pc } : {}),
+                    raceTigerBaseUrl: baseUrl,
                     allowRFIDSync: true,
                 }));
             }
@@ -252,6 +259,7 @@ function CreateEventForm() {
             if (form.rfidToken.trim()) payload.rfidToken = form.rfidToken.trim();
             if (form.raceId.trim()) payload.raceId = form.raceId.trim();
             if (form.partnerCode.trim()) payload.partnerCode = form.partnerCode.trim();
+            if (form.raceTigerBaseUrl.trim()) payload.raceTigerBaseUrl = form.raceTigerBaseUrl.trim();
             if (cleanCategories.length > 0) payload.categories = cleanCategories;
             // Use API proxy route to work on both localhost and Vercel
             const url = isEdit ? `/api/campaigns/${editId}` : '/api/campaigns';
@@ -711,6 +719,15 @@ function CreateEventForm() {
                                 <span className="font-bold text-green-700">
                                     ✅ {language === 'th' ? 'ดึงค่าจาก URL สำเร็จ:' : 'Extracted from URL:'}
                                 </span>
+                                {form.raceTigerBaseUrl && (
+                                    <span className="text-green-800">
+                                        <strong>Base URL:</strong>{' '}
+                                        <code className="bg-green-100 px-1.5 rounded font-mono">{form.raceTigerBaseUrl}</code>
+                                        <span className="text-gray-500 ml-1.5">
+                                            {language === 'th' ? '— server ของ RaceTiger' : '— RaceTiger server'}
+                                        </span>
+                                    </span>
+                                )}
                                 {form.partnerCode && (
                                     <span className="text-green-800">
                                         <strong>Partner Code (pc):</strong>{' '}
