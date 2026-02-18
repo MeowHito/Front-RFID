@@ -69,7 +69,7 @@ export default function ActivityCard({
     return (
         <a
             href={link}
-            className="block bg-white dark:bg-[#1e1e2a] rounded-lg shadow-md mb-5 transition-all hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+            className="block bg-white dark:bg-[#1e1e2a] rounded-lg shadow-md mb-5 transition-all duration-300 ease-out hover:-translate-y-2 hover:shadow-xl focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
             aria-label={`${displayTitle} ${t('card.viewResults')}`}
         >
             {/* ===== MOBILE LAYOUT ===== */}
