@@ -59,6 +59,7 @@ function CreateEventForm() {
     const [cropModalOpen, setCropModalOpen] = useState(false);
     const [rawImage, setRawImage] = useState<string>('');
     const [loadingEdit, setLoadingEdit] = useState(false);
+    const [raceTigerUrl, setRaceTigerUrl] = useState('');
 
     const [form, setForm] = useState<CreateEventForm>({
         name: '',
@@ -147,6 +148,26 @@ function CreateEventForm() {
             ...prev,
             categories: prev.categories.filter((_, i) => i !== idx)
         }));
+    };
+
+    const handleRaceTigerUrlPaste = (url: string) => {
+        setRaceTigerUrl(url);
+        if (!url.trim()) return;
+        try {
+            const parsed = new URL(url.trim());
+            const rid = parsed.searchParams.get('rid');
+            const token = parsed.searchParams.get('token');
+            if (rid || token) {
+                setForm(prev => ({
+                    ...prev,
+                    ...(rid ? { raceId: rid } : {}),
+                    ...(token ? { rfidToken: token } : {}),
+                    allowRFIDSync: true,
+                }));
+            }
+        } catch {
+            // not a valid URL, ignore
+        }
     };
 
     const updateCategory = (idx: number, field: keyof RaceCategory, value: string | number) => {
@@ -637,6 +658,28 @@ function CreateEventForm() {
                     <span>{language === 'th' ? 'เชื่อมต่อ RFID (RaceTiger)' : 'RFID Integration (RaceTiger)'}</span>
                 </div>
                 <div className="ce-form-grid">
+                    <div className="ce-form-group ce-full">
+                        <label className="ce-label">
+                            {language === 'th' ? 'วาง URL จากเว็บ RaceTiger (Auto-fill)' : 'Paste RaceTiger URL (Auto-fill)'}
+                        </label>
+                        <input
+                            type="text"
+                            className="ce-input"
+                            placeholder="https://rqs.racetigertiming.com/Dif/bio?pc=000001&rid=...&token=...&page=1"
+                            value={raceTigerUrl}
+                            onPaste={(e) => {
+                                const text = e.clipboardData.getData('text');
+                                handleRaceTigerUrlPaste(text);
+                            }}
+                            onChange={(e) => handleRaceTigerUrlPaste(e.target.value)}
+                        />
+                        <span style={{ fontSize: 11, color: '#888', marginTop: 4, display: 'block' }}>
+                            {language === 'th'
+                                ? 'วาง URL ใดก็ได้จากเว็บ RaceTiger เช่น Athlete information interface — ระบบจะดึง Race ID และ Token ให้อัตโนมัติ และเปิดใช้งาน RFID Sync'
+                                : 'Paste any URL from RaceTiger (e.g. Athlete information interface) — Race ID and Token will be extracted automatically and RFID sync will be enabled'}
+                        </span>
+                    </div>
+
                     <div className="ce-form-group ce-full">
                         <label className="ce-label" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                             <input

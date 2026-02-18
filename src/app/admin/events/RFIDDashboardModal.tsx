@@ -56,6 +56,7 @@ export default function RFIDDashboardModal({ isOpen, onClose, eventId, eventName
     const [loading, setLoading] = useState(false);
     const [runningPreview, setRunningPreview] = useState<PreviewType | null>(null);
     const [runningFullSync, setRunningFullSync] = useState(false);
+    const [runningImportEvents, setRunningImportEvents] = useState(false);
     const [requirementsLoading, setRequirementsLoading] = useState(false);
     const [syncRequirements, setSyncRequirements] = useState<SyncRequirements>({
         allowRFIDSync: false,
@@ -92,9 +93,7 @@ export default function RFIDDashboardModal({ isOpen, onClose, eventId, eventName
 
     const hasCredentials = syncRequirements.hasToken && syncRequirements.hasRaceId;
     const hasEventMapping =
-        syncRequirements.eventCount === 1
-        || syncRequirements.mappedEventCount > 0
-        || (syncRequirements.eventCount > 0 && syncRequirements.categoryMappedCount > 0);
+        syncRequirements.eventCount >= 1;
 
     const getBlockedReason = (target: 'preview' | 'full-sync'): string | null => {
         if (!syncRequirements.allowRFIDSync) {
@@ -109,13 +108,8 @@ export default function RFIDDashboardModal({ isOpen, onClose, eventId, eventName
         }
         if (target === 'full-sync' && syncRequirements.eventCount === 0) {
             return language === 'th'
-                ? 'ยังไม่มี Event ในกิจกรรมนี้ (ต้องสร้าง Event อย่างน้อย 1 รายการก่อน Sync All Runners)'
-                : 'This campaign has no events yet (create at least 1 event before Sync All Runners)';
-        }
-        if (target === 'full-sync' && !hasEventMapping) {
-            return language === 'th'
-                ? 'ไม่พบ RFID Event ID ที่แมปกับ Event (กรุณาตั้งค่า RFID Event ID ใน Event ก่อน)'
-                : 'No RFID Event ID mapping found (please set RFID Event ID on events first)';
+                ? 'ยังไม่มี Event — กด "Import Events from RaceTiger" เพื่อสร้างอัตโนมัติ'
+                : 'No events yet — click "Import Events from RaceTiger" to create them automatically';
         }
         return null;
     };
@@ -225,6 +219,57 @@ export default function RFIDDashboardModal({ isOpen, onClose, eventId, eventName
             }));
         } finally {
             setLoading(false);
+        }
+    };
+
+    const importEventsFromRaceTiger = async () => {
+        if (!syncRequirements.allowRFIDSync || !syncRequirements.hasToken || !syncRequirements.hasRaceId) {
+            setRfidStatus(prev => ({
+                ...prev,
+                errors: [
+                    language === 'th'
+                        ? 'กรุณาเปิดใช้งาน RFID Sync และใส่ Token/Race ID ก่อน'
+                        : 'Please enable RFID Sync and set Token/Race ID first',
+                    ...prev.errors,
+                ],
+            }));
+            return;
+        }
+
+        setRunningImportEvents(true);
+        try {
+            const res = await fetch(`/api/sync/import-events?id=${eventId}`, {
+                method: 'POST',
+                cache: 'no-store',
+            });
+            const json = await res.json().catch(() => ({}));
+
+            if (!res.ok) {
+                const message = json?.error || json?.message || 'Import events failed';
+                throw new Error(message);
+            }
+
+            const result = (json?.data ?? json) as any;
+            const summaryMessage = language === 'th'
+                ? `Import Events สำเร็จ: สร้างใหม่ ${result?.imported ?? 0}, อัปเดต ${result?.updated ?? 0} events`
+                : `Import Events completed: created ${result?.imported ?? 0}, updated ${result?.updated ?? 0} events`;
+
+            setRfidStatus(prev => ({
+                ...prev,
+                errors: [summaryMessage, ...prev.errors],
+            }));
+
+            await loadSyncRequirements();
+        } catch (error: any) {
+            setRfidStatus(prev => ({
+                ...prev,
+                errors: [
+                    `${language === 'th' ? 'Import Events ล้มเหลว' : 'Import Events failed'}: ${error?.message || 'unknown error'}`,
+                    ...prev.errors,
+                ],
+            }));
+        } finally {
+            setRunningImportEvents(false);
         }
     };
 
@@ -393,29 +438,39 @@ export default function RFIDDashboardModal({ isOpen, onClose, eventId, eventName
                                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                                     <button
                                         className="btn-primary"
+                                        style={{ background: '#8e44ad' }}
+                                        onClick={importEventsFromRaceTiger}
+                                        disabled={requirementsLoading || runningImportEvents || !!runningPreview || runningFullSync || !syncRequirements.allowRFIDSync || !syncRequirements.hasToken || !syncRequirements.hasRaceId}
+                                    >
+                                        {runningImportEvents
+                                            ? (language === 'th' ? 'กำลัง Import...' : 'Importing...')
+                                            : (language === 'th' ? 'Import Events จากเว็บจีน' : 'Import Events from RaceTiger')}
+                                    </button>
+                                    <button
+                                        className="btn-primary"
                                         onClick={() => runPreview('info')}
-                                        disabled={requirementsLoading || !!runningPreview || runningFullSync || !!getBlockedReason('preview')}
+                                        disabled={requirementsLoading || !!runningPreview || runningFullSync || runningImportEvents || !!getBlockedReason('preview')}
                                     >
                                         {runningPreview === 'info' ? '...' : 'Preview INFO'}
                                     </button>
                                     <button
                                         className="btn-primary"
                                         onClick={() => runPreview('bio')}
-                                        disabled={requirementsLoading || !!runningPreview || runningFullSync || !!getBlockedReason('preview')}
+                                        disabled={requirementsLoading || !!runningPreview || runningFullSync || runningImportEvents || !!getBlockedReason('preview')}
                                     >
                                         {runningPreview === 'bio' ? '...' : 'Preview BIO'}
                                     </button>
                                     <button
                                         className="btn-primary"
                                         onClick={() => runPreview('split')}
-                                        disabled={requirementsLoading || !!runningPreview || runningFullSync || !!getBlockedReason('preview')}
+                                        disabled={requirementsLoading || !!runningPreview || runningFullSync || runningImportEvents || !!getBlockedReason('preview')}
                                     >
                                         {runningPreview === 'split' ? '...' : 'Preview SPLIT'}
                                     </button>
                                     <button
                                         className="btn-primary"
                                         onClick={runFullSync}
-                                        disabled={requirementsLoading || !!runningPreview || runningFullSync || !!getBlockedReason('full-sync')}
+                                        disabled={requirementsLoading || !!runningPreview || runningFullSync || runningImportEvents || !!getBlockedReason('full-sync')}
                                     >
                                         {runningFullSync
                                             ? (language === 'th' ? 'กำลังซิงค์...' : 'Syncing...')

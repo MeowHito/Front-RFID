@@ -427,7 +427,11 @@ export default function EventsPage() {
                             </thead>
                             <tbody>
                                 {campaigns.map((campaign) => (
-                                    <tr key={campaign._id}>
+                                    <tr
+                                        key={campaign._id}
+                                        onDoubleClick={() => router.push(`/admin/events/create?edit=${campaign._id}`)}
+                                        style={{ cursor: 'pointer' }}
+                                    >
                                         <td className="col-tools">
                                             <div className="event-row-tools">
                                                 <button
