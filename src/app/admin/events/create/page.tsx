@@ -122,6 +122,10 @@ function CreateEventForm() {
                         utmbIndex: cat.utmbIndex || '',
                     })),
                 });
+                if (campaign.rfidToken && campaign.raceId) {
+                    const reconstructed = `https://rqs.racetigertiming.com/Dif/bio?pc=000001&rid=${campaign.raceId}&token=${campaign.rfidToken}&page=1`;
+                    setRaceTigerUrl(reconstructed);
+                }
             })
             .catch(err => console.error('Failed to load campaign:', err))
             .finally(() => setLoadingEdit(false));
