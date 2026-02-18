@@ -37,6 +37,12 @@ interface SyncRequirements {
     categoryMappedCount: number;
 }
 
+interface Toast {
+    id: number;
+    type: 'success' | 'error' | 'info';
+    message: string;
+}
+
 export default function RFIDDashboardModal({ isOpen, onClose, eventId, eventName }: RFIDDashboardModalProps) {
     const { language } = useLanguage();
     const [rfidStatus, setRfidStatus] = useState<RFIDStatus>({
@@ -67,6 +73,13 @@ export default function RFIDDashboardModal({ isOpen, onClose, eventId, eventName
         categoryMappedCount: 0,
     });
     const [showAllErrors, setShowAllErrors] = useState(false);
+    const [toasts, setToasts] = useState<Toast[]>([]);
+
+    const showToast = (type: Toast['type'], message: string) => {
+        const id = Date.now();
+        setToasts(prev => [...prev, { id, type, message }]);
+        setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 5000);
+    };
 
     const toApiData = (json: any) => json?.data ?? json;
 
@@ -250,23 +263,30 @@ export default function RFIDDashboardModal({ isOpen, onClose, eventId, eventName
             }
 
             const result = (json?.data ?? json) as any;
-            const summaryMessage = language === 'th'
-                ? `Import Events สำเร็จ: สร้างใหม่ ${result?.imported ?? 0}, อัปเดต ${result?.updated ?? 0} events`
-                : `Import Events completed: created ${result?.imported ?? 0}, updated ${result?.updated ?? 0} events`;
+            const evImported = result?.imported ?? 0;
+            const evUpdated = result?.updated ?? 0;
+            const runInserted = result?.runners?.inserted ?? 0;
+            const runUpdated = result?.runners?.updated ?? 0;
+            const cpCreated = result?.checkpoints?.created ?? 0;
 
+            const summaryMessage = language === 'th'
+                ? `✅ Import สำเร็จ!\n📁 Events: สร้าง ${evImported}, อัปเดต ${evUpdated}\n🏃 Runners: เพิ่ม ${runInserted}, อัปเดต ${runUpdated}\n📍 Checkpoints: สร้าง ${cpCreated}`
+                : `✅ Import completed!\n📁 Events: created ${evImported}, updated ${evUpdated}\n🏃 Runners: inserted ${runInserted}, updated ${runUpdated}\n📍 Checkpoints: created ${cpCreated}`;
+
+            showToast('success', summaryMessage);
             setRfidStatus(prev => ({
                 ...prev,
                 errors: [summaryMessage, ...prev.errors],
             }));
 
             await loadSyncRequirements();
+            await loadRFIDStatus();
         } catch (error: any) {
+            const errMsg = `${language === 'th' ? '❌ Import Events ล้มเหลว' : '❌ Import Events failed'}: ${error?.message || 'unknown error'}`;
+            showToast('error', errMsg);
             setRfidStatus(prev => ({
                 ...prev,
-                errors: [
-                    `${language === 'th' ? 'Import Events ล้มเหลว' : 'Import Events failed'}: ${error?.message || 'unknown error'}`,
-                    ...prev.errors,
-                ],
+                errors: [errMsg, ...prev.errors],
             }));
         } finally {
             setRunningImportEvents(false);
@@ -299,9 +319,10 @@ export default function RFIDDashboardModal({ isOpen, onClose, eventId, eventName
             const syncData = toApiData(json);
             const summary = syncData?.summary || {};
             const summaryMessage = language === 'th'
-                ? `ซิงค์ทั้งหมดสำเร็จ: หน้า ${summary.pagesFetched || 0}, ดึง ${summary.rowsFetched || 0}, เพิ่ม ${summary.inserted || 0}, อัปเดต ${summary.updated || 0}`
-                : `Full sync completed: pages ${summary.pagesFetched || 0}, fetched ${summary.rowsFetched || 0}, inserted ${summary.inserted || 0}, updated ${summary.updated || 0}`;
+                ? `✅ ซิงค์สำเร็จ! หน้า ${summary.pagesFetched || 0}, ดึง ${summary.rowsFetched || 0} แถว, เพิ่ม ${summary.inserted || 0}, อัปเดต ${summary.updated || 0} runners`
+                : `✅ Full sync completed! Pages ${summary.pagesFetched || 0}, fetched ${summary.rowsFetched || 0} rows, inserted ${summary.inserted || 0}, updated ${summary.updated || 0} runners`;
 
+            showToast('success', summaryMessage);
             setRfidStatus(prev => ({
                 ...prev,
                 errors: [summaryMessage, ...prev.errors],
@@ -310,12 +331,11 @@ export default function RFIDDashboardModal({ isOpen, onClose, eventId, eventName
             await loadRFIDStatus();
         } catch (error: any) {
             console.warn('Failed to run full sync:', error);
+            const errMsg = `${language === 'th' ? '❌ ซิงค์ล้มเหลว' : '❌ Full sync failed'}: ${error?.message || 'unknown error'}`;
+            showToast('error', errMsg);
             setRfidStatus(prev => ({
                 ...prev,
-                errors: [
-                    `${language === 'th' ? 'ซิงค์ทั้งหมดล้มเหลว' : 'Full sync failed'}: ${error?.message || 'unknown error'}`,
-                    ...prev.errors,
-                ],
+                errors: [errMsg, ...prev.errors],
             }));
         } finally {
             setRunningFullSync(false);
@@ -345,6 +365,10 @@ export default function RFIDDashboardModal({ isOpen, onClose, eventId, eventName
             }
 
             const previewData = toApiData(json);
+            const itemCount = previewData?.response?.itemCount ?? 0;
+            showToast('info', language === 'th'
+                ? `✅ Preview ${type.toUpperCase()} สำเร็จ — พบ ${itemCount} รายการ`
+                : `✅ Preview ${type.toUpperCase()} success — ${itemCount} items found`);
             setRfidStatus(prev => ({
                 ...prev,
                 latestPreview: previewData,
@@ -353,12 +377,11 @@ export default function RFIDDashboardModal({ isOpen, onClose, eventId, eventName
             await loadRFIDStatus();
         } catch (error: any) {
             console.warn('Failed to run preview:', error);
+            const errMsg = `❌ Preview ${type.toUpperCase()} ${language === 'th' ? 'ล้มเหลว' : 'failed'}: ${error?.message || 'unknown error'}`;
+            showToast('error', errMsg);
             setRfidStatus(prev => ({
                 ...prev,
-                errors: [
-                    `${type.toUpperCase()} ${language === 'th' ? 'ล้มเหลว' : 'failed'}: ${error?.message || 'unknown error'}`,
-                    ...prev.errors,
-                ],
+                errors: [errMsg, ...prev.errors],
             }));
         } finally {
             setRunningPreview(null);
@@ -367,7 +390,37 @@ export default function RFIDDashboardModal({ isOpen, onClose, eventId, eventName
 
     if (!isOpen) return null;
 
+    const toastColors: Record<Toast['type'], string> = {
+        success: '#16a34a',
+        error: '#dc2626',
+        info: '#2563eb',
+    };
+
     return (
+        <>
+            {/* Toast container */}
+            <div style={{ position: 'fixed', top: 20, right: 20, zIndex: 99999, display: 'flex', flexDirection: 'column', gap: 8, maxWidth: 360 }}>
+                {toasts.map(toast => (
+                    <div
+                        key={toast.id}
+                        style={{
+                            background: toastColors[toast.type],
+                            color: '#fff',
+                            padding: '12px 16px',
+                            borderRadius: 8,
+                            boxShadow: '0 4px 12px rgba(0,0,0,0.25)',
+                            fontSize: '0.82rem',
+                            whiteSpace: 'pre-line',
+                            lineHeight: 1.5,
+                            cursor: 'pointer',
+                            animation: 'slideIn 0.2s ease',
+                        }}
+                        onClick={() => setToasts(prev => prev.filter(t => t.id !== toast.id))}
+                    >
+                        {toast.message}
+                    </div>
+                ))}
+            </div>
         <div className="modal-overlay" onClick={onClose}>
             <div className="modal-content rfid-modal" onClick={e => e.stopPropagation()}>
                 {/* Header */}
@@ -538,12 +591,21 @@ export default function RFIDDashboardModal({ isOpen, onClose, eventId, eventName
                 </div>
 
                 {/* Footer */}
-                <div className="modal-footer">
+                <div className="modal-footer" style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                    <button
+                        className="btn-primary"
+                        style={{ background: '#475569' }}
+                        onClick={() => { loadRFIDStatus(); loadSyncRequirements(); showToast('info', language === 'th' ? 'รีเฟรชข้อมูลแล้ว' : 'Refreshed'); }}
+                        disabled={loading || requirementsLoading}
+                    >
+                        {language === 'th' ? '🔄 รีเฟรช' : '🔄 Refresh'}
+                    </button>
                     <button className="btn-primary" onClick={onClose}>
                         {language === 'th' ? 'ปิด' : 'Close'}
                     </button>
                 </div>
             </div>
         </div>
+        </>
     );
 }
