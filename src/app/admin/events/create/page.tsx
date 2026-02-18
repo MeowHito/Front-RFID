@@ -687,8 +687,8 @@ function CreateEventForm() {
                         <div style={{ fontSize: 11, color: '#888', marginTop: 6, display: 'flex', flexDirection: 'column', gap: 3 }}>
                             <span>
                                 {language === 'th'
-                                    ? '📋 วาง URL ใดก็ได้จากเว็บ RaceTiger — ระบบจะดึง Race ID และ Token ให้อัตโนมัติ'
-                                    : '📋 Paste any URL from RaceTiger — Race ID and Token will be extracted automatically'}
+                                    ? '📋 วาง URL ใดก็ได้จากเว็บ RaceTiger — ระบบจะดึง Race ID, Token และ Partner Code ให้อัตโนมัติ'
+                                    : '📋 Paste any URL from RaceTiger — Race ID, Token and Partner Code will be extracted automatically'}
                             </span>
                             <span style={{ color: '#aaa' }}>
                                 {language === 'th' ? 'เมื่อกด "Import Events จากเว็บจีน" ระบบจะดึงข้อมูลจาก 3 endpoint อัตโนมัติ:' : 'When clicking "Import Events from RaceTiger", the system fetches from 3 endpoints automatically:'}
@@ -706,6 +706,45 @@ function CreateEventForm() {
                                 {language === 'th' ? ' → ชื่อ Checkpoint ตามจริง' : ' → real checkpoint names'}
                             </span>
                         </div>
+                        {/* Show extracted values immediately after URL is pasted */}
+                        {(form.partnerCode || form.raceId || form.rfidToken) && (
+                            <div style={{
+                                marginTop: 8, padding: '8px 12px', background: '#f0fdf4',
+                                border: '1px solid #bbf7d0', borderRadius: 6,
+                                fontSize: 11, display: 'flex', flexDirection: 'column', gap: 4,
+                            }}>
+                                <span style={{ fontWeight: 700, color: '#15803d', marginBottom: 2 }}>
+                                    ✅ {language === 'th' ? 'ดึงค่าจาก URL สำเร็จ:' : 'Extracted from URL:'}
+                                </span>
+                                {form.partnerCode && (
+                                    <span style={{ color: '#166534' }}>
+                                        <strong>Partner Code (pc):</strong>{' '}
+                                        <code style={{ background: '#dcfce7', padding: '1px 6px', borderRadius: 3, fontFamily: 'monospace' }}>
+                                            {form.partnerCode}
+                                        </code>
+                                        <span style={{ color: '#6b7280', marginLeft: 6 }}>
+                                            {language === 'th' ? '— รหัสพาร์ทเนอร์ของงานนี้ใน RaceTiger' : '— your event\'s partner code in RaceTiger'}
+                                        </span>
+                                    </span>
+                                )}
+                                {form.raceId && (
+                                    <span style={{ color: '#166534' }}>
+                                        <strong>Race ID (rid):</strong>{' '}
+                                        <code style={{ background: '#dcfce7', padding: '1px 6px', borderRadius: 3, fontFamily: 'monospace' }}>
+                                            {form.raceId}
+                                        </code>
+                                    </span>
+                                )}
+                                {form.rfidToken && (
+                                    <span style={{ color: '#166534' }}>
+                                        <strong>Token:</strong>{' '}
+                                        <code style={{ background: '#dcfce7', padding: '1px 6px', borderRadius: 3, fontFamily: 'monospace' }}>
+                                            {form.rfidToken.length > 20 ? form.rfidToken.slice(0, 20) + '…' : form.rfidToken}
+                                        </code>
+                                    </span>
+                                )}
+                            </div>
+                        )}
                     </div>
 
                     <div className="ce-form-group ce-full">
