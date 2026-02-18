@@ -248,7 +248,7 @@ export default function ParticipantsPage() {
                     const counts: Record<string, number> = {};
                     await Promise.all(cats.map(async (cat) => {
                         try {
-                            const p = new URLSearchParams({ eventId: data._id, category: cat.name, page: '1', limit: '1' });
+                            const p = new URLSearchParams({ campaignId: data._id, category: cat.name, page: '1', limit: '1' });
                             const r = await fetch(`/api/runners/paged?${p.toString()}`);
                             if (r.ok) {
                                 const d = await r.json();
@@ -276,7 +276,7 @@ export default function ParticipantsPage() {
         setRunnersLoading(true);
         try {
             const params = new URLSearchParams({
-                eventId: campaign._id,
+                campaignId: campaign._id,
                 category: activeTab,
                 page: String(listPage),
                 limit: String(listLimit),
@@ -372,7 +372,7 @@ export default function ParticipantsPage() {
             fetchRunners();
             // Refresh count
             try {
-                const p = new URLSearchParams({ eventId: campaign!._id, category: activeTab, page: '1', limit: '1' });
+                const p = new URLSearchParams({ campaignId: campaign!._id, category: activeTab, page: '1', limit: '1' });
                 const cr = await fetch(`/api/runners/paged?${p.toString()}`);
                 if (cr.ok) { const cd = await cr.json(); setCategoryCounts(prev => ({ ...prev, [activeTab]: cd.total || 0 })); }
             } catch { /* */ }

@@ -5,13 +5,16 @@ const BACKEND_URL = process.env.BACKEND_URL || 'http://3.26.160.149:3001';
 export async function GET(request: NextRequest) {
     const { searchParams } = request.nextUrl;
     const eventId = searchParams.get('eventId');
+    const campaignId = searchParams.get('campaignId');
 
-    if (!eventId) {
-        return NextResponse.json({ error: 'eventId is required' }, { status: 400 });
+    if (!eventId && !campaignId) {
+        return NextResponse.json({ error: 'eventId or campaignId is required' }, { status: 400 });
     }
 
     try {
-        const params = new URLSearchParams({ eventId });
+        const params = new URLSearchParams();
+        if (eventId) params.set('eventId', eventId);
+        if (campaignId) params.set('campaignId', campaignId);
         const category = searchParams.get('category');
         const gender = searchParams.get('gender');
         const ageGroup = searchParams.get('ageGroup');
