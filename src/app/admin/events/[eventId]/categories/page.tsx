@@ -72,6 +72,7 @@ export default function CategoriesPage() {
     const [events, setEvents] = useState<EventData[]>([]);
     const [checkpoints, setCheckpoints] = useState<Checkpoint[]>([]);
     const [checkpointMappings, setCheckpointMappings] = useState<CheckpointMapping[]>([]);
+    const [selectedCheckpointEventId, setSelectedCheckpointEventId] = useState<string>('');
     const [loading, setLoading] = useState(true);
     const [activeTab, setActiveTab] = useState<'events' | 'checkpoints' | 'addCheckpoints'>(initialTab);
     const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -106,7 +107,18 @@ export default function CategoriesPage() {
             const eventsRes = await fetch(`/api/events/by-campaign/${eventId}`, { cache: 'no-store' });
             if (eventsRes.ok) {
                 const eventsData = await eventsRes.json();
-                setEvents(Array.isArray(eventsData) ? eventsData : []);
+                const nextEvents = Array.isArray(eventsData) ? eventsData : [];
+                setEvents(nextEvents);
+                if (nextEvents.length > 0) {
+                    setSelectedCheckpointEventId(prev => {
+                        if (prev && nextEvents.some((ev: EventData) => ev._id === prev)) {
+                            return prev;
+                        }
+                        return nextEvents[0]._id;
+                    });
+                } else {
+                    setSelectedCheckpointEventId('');
+                }
             }
 
             // Load checkpoints for this campaign
@@ -145,6 +157,16 @@ export default function CategoriesPage() {
         }
     }, [activeTab, events]);
 
+    useEffect(() => {
+        if (!events.length) {
+            setSelectedCheckpointEventId('');
+            return;
+        }
+        if (!selectedCheckpointEventId || !events.some(ev => ev._id === selectedCheckpointEventId)) {
+            setSelectedCheckpointEventId(events[0]._id);
+        }
+    }, [events, selectedCheckpointEventId]);
+
     const loadMappings = async () => {
         try {
             const mappingPromises = events.map(async ev => {
@@ -155,7 +177,15 @@ export default function CategoriesPage() {
                 } catch { return []; }
             });
             const results = await Promise.all(mappingPromises);
-            const allMappings = results.flat();
+            const allMappings = results.flat().map((m: any) => ({
+                ...m,
+                checkpointId: typeof m?.checkpointId === 'object'
+                    ? String(m.checkpointId?._id || '')
+                    : String(m?.checkpointId || ''),
+                eventId: typeof m?.eventId === 'object'
+                    ? String(m.eventId?._id || m.eventId || '')
+                    : String(m?.eventId || ''),
+            }));
             setCheckpointMappings(allMappings);
         } catch {
             setCheckpointMappings([]);
@@ -460,6 +490,30 @@ export default function CategoriesPage() {
                                     <h2 className="categories-title">
                                         {language === 'th' ? 'จัดการจุด Checkpoint' : 'Manage Checkpoints'} ({checkpoints.length})
                                     </h2>
+                                    {events.length > 0 && (
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                            <label style={{ fontSize: '13px', color: '#666' }}>
+                                                {language === 'th' ? 'ระยะ' : 'Distance'}:
+                                            </label>
+                                            <select
+                                                value={selectedCheckpointEventId}
+                                                onChange={(e) => setSelectedCheckpointEventId(e.target.value)}
+                                                style={{
+                                                    padding: '6px 10px',
+                                                    border: '1px solid #ddd',
+                                                    borderRadius: '6px',
+                                                    background: '#fff',
+                                                    fontSize: '13px',
+                                                }}
+                                            >
+                                                {events.map(ev => (
+                                                    <option key={ev._id} value={ev._id}>
+                                                        {ev.name}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                    )}
                                 </div>
 
                                 {checkpoints.length === 0 ? (
@@ -499,7 +553,9 @@ export default function CategoriesPage() {
                                                     {checkpoints
                                                         .sort((a, b) => a.orderNum - b.orderNum)
                                                         .map((cp) => {
-                                                            const mapping = checkpointMappings.find(m => m.checkpointId === cp._id);
+                                                            const mapping = checkpointMappings.find(
+                                                                m => m.checkpointId === cp._id && m.eventId === selectedCheckpointEventId,
+                                                            );
                                                             return (
                                                                 <tr key={cp._id} style={{ borderBottom: '1px solid #f0f0f0' }}>
                                                                     <td style={{ padding: '10px', textAlign: 'center' }}>

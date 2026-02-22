@@ -63,6 +63,23 @@ function CreateEventForm() {
     const [loadingEdit, setLoadingEdit] = useState(false);
     const [raceTigerUrl, setRaceTigerUrl] = useState('');
 
+    const normalizeStartTime = (value: string | undefined): string => {
+        const raw = (value || '').trim();
+        if (!raw) return '06:00';
+
+        const m = raw.match(/(\d{1,2}):(\d{2})/);
+        if (m) return `${m[1].padStart(2, '0')}:${m[2]}`;
+
+        const parsed = new Date(raw);
+        if (!Number.isNaN(parsed.getTime())) {
+            const hh = String(parsed.getHours()).padStart(2, '0');
+            const mm = String(parsed.getMinutes()).padStart(2, '0');
+            return `${hh}:${mm}`;
+        }
+
+        return '06:00';
+    };
+
     const [form, setForm] = useState<CreateEventForm>({
         name: '',
         shortName: '',
@@ -117,7 +134,7 @@ function CreateEventForm() {
                     categories: (campaign.categories || []).map((cat: RaceCategory) => ({
                         name: cat.name || '',
                         distance: cat.distance || '',
-                        startTime: cat.startTime || '06:00',
+                        startTime: normalizeStartTime(cat.startTime),
                         cutoff: cat.cutoff || '',
                         elevation: cat.elevation || '',
                         raceType: cat.raceType || '',
@@ -530,7 +547,7 @@ function CreateEventForm() {
                                         </td>
                                         <td>
                                             <input
-                                                type="datetime-local"
+                                                type="time"
                                                 className="ce-input ce-input-sm"
                                                 value={cat.startTime}
                                                 onChange={(e) => updateCategory(idx, 'startTime', e.target.value)}
@@ -698,7 +715,7 @@ function CreateEventForm() {
                                     : '📋 Paste any URL from RaceTiger — Race ID, Token and Partner Code will be extracted automatically'}
                             </span>
                             <span className="text-gray-400">
-                                {language === 'th' ? 'เมื่อกด "Import Events จากเว็บจีน" ระบบจะดึงข้อมูลจาก 3 endpoint อัตโนมัติ:' : 'When clicking "Import Events from RaceTiger", the system fetches from 3 endpoints automatically:'}
+                                {language === 'th' ? 'เมื่อกด "Import Events from RaceTiger" ระบบจะดึงข้อมูลจาก 3 endpoint อัตโนมัติ:' : 'When clicking "Import Events from RaceTiger", the system fetches from 3 endpoints automatically:'}
                             </span>
                             <span className="text-gray-500 pl-2">
                                 {'📁 '}<code className="bg-gray-100 px-1 rounded">/Dif/info</code>
