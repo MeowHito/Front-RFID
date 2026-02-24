@@ -194,6 +194,10 @@ export default function ParticipantsPage() {
     // Options
     const [updateExisting, setUpdateExisting] = useState(false);
 
+    // Full Sync state
+    const [syncing, setSyncing] = useState(false);
+    const [syncResult, setSyncResult] = useState<any>(null);
+
     // Import filter buttons (multi-select, push/pop)
     const [importFilters, setImportFilters] = useState<string[]>([]);
 
@@ -793,227 +797,312 @@ export default function ParticipantsPage() {
                                 </button>
                             );
                         })}
+                        {/* Full Sync from RaceTiger */}
+                        <button
+                            onClick={async () => {
+                                if (!campaign?._id) return;
+                                if (!confirm(language === 'th'
+                                    ? 'ต้องการ Sync นักวิ่งทั้งหมดจาก RaceTiger หรือไม่?\n\n⚠️ อาจใช้เวลาสักครู่ สำหรับข้อมูลจำนวนมาก'
+                                    : 'Sync all runners from RaceTiger?\n\n⚠️ This may take a moment for large datasets')) return;
+                                setSyncing(true);
+                                setSyncResult(null);
+                                try {
+                                    const res = await fetch(`/api/sync/full-sync?id=${campaign._id}`, { method: 'POST' });
+                                    const data = await res.json();
+                                    if (!res.ok) {
+                                        showToast(data?.error || 'Sync failed', 'error');
+                                        return;
+                                    }
+                                    const s = data?.data?.summary || data?.summary || {};
+                                    setSyncResult(s);
+                                    showToast(
+                                        language === 'th'
+                                            ? `Sync สำเร็จ! ดึง ${s.rowsFetched || 0} rows → เพิ่ม ${s.inserted || 0} / อัพเดท ${s.updated || 0} / ข้าม ${s.rowsSkipped || 0}`
+                                            : `Sync OK! Fetched ${s.rowsFetched || 0} rows → Inserted ${s.inserted || 0} / Updated ${s.updated || 0} / Skipped ${s.rowsSkipped || 0}`,
+                                        'success',
+                                    );
+                                    // Reload runners
+                                    if (activeTab !== 'import') fetchRunners();
+                                    // Reload category counts
+                                    if (campaign?.categories) {
+                                        const counts: Record<string, number> = {};
+                                        await Promise.all(campaign.categories.map(async (cat) => {
+                                            try {
+                                                const p = new URLSearchParams({ campaignId: campaign._id, category: cat.name, page: '1', limit: '1' });
+                                                const r2 = await fetch(`/api/runners/paged?${p.toString()}`);
+                                                if (r2.ok) { const d = await r2.json(); counts[cat.name] = d.total || 0; }
+                                            } catch { /* */ }
+                                        }));
+                                        setCategoryCounts(counts);
+                                    }
+                                } catch (err: any) {
+                                    showToast(err?.message || 'Sync failed', 'error');
+                                } finally {
+                                    setSyncing(false);
+                                }
+                            }}
+                            disabled={syncing}
+                            className="px-4 py-2 text-[13px] rounded-md border cursor-pointer transition whitespace-nowrap border-orange-400 bg-orange-50 text-orange-600 font-bold hover:bg-orange-100 disabled:opacity-50"
+                        >
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={`inline mr-1.5 -mt-0.5 ${syncing ? 'animate-spin' : ''}`}>
+                                <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0118.8-4.3M22 12.5a10 10 0 01-18.8 4.2" />
+                            </svg>
+                            {syncing
+                                ? (language === 'th' ? 'กำลัง Sync...' : 'Syncing...')
+                                : (language === 'th' ? '🔄 Full Sync จาก RaceTiger' : '🔄 Full Sync from RaceTiger')
+                            }
+                        </button>
                     </div>
+
+                    {/* Sync Result Details */}
+                    {syncResult && (
+                        <div className="content-box" style={{ padding: '12px 16px', marginBottom: 12, borderLeft: '4px solid #f59e0b' }}>
+                            <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 6, color: '#333' }}>
+                                {language === 'th' ? '📊 ผลการ Sync ล่าสุด' : '📊 Last Sync Result'}
+                            </div>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: 8 }}>
+                                {[
+                                    { label: language === 'th' ? 'หน้าที่ดึง' : 'Pages Fetched', value: syncResult.pagesFetched || 0, color: '#3c8dbc' },
+                                    { label: language === 'th' ? 'แถวที่ดึง' : 'Rows Fetched', value: syncResult.rowsFetched || 0, color: '#8b5cf6' },
+                                    { label: language === 'th' ? 'แถวที่ Map ได้' : 'Rows Mapped', value: syncResult.rowsMapped || 0, color: '#22c55e' },
+                                    { label: language === 'th' ? 'เพิ่มใหม่' : 'Inserted', value: syncResult.inserted || 0, color: '#16a34a' },
+                                    { label: language === 'th' ? 'อัพเดท' : 'Updated', value: syncResult.updated || 0, color: '#f59e0b' },
+                                    { label: language === 'th' ? 'ข้าม' : 'Skipped', value: syncResult.rowsSkipped || 0, color: '#ef4444' },
+                                ].map(item => (
+                                    <div key={item.label} style={{ padding: '8px 10px', borderRadius: 6, background: '#f8fafc', textAlign: 'center' }}>
+                                        <div style={{ fontSize: 18, fontWeight: 800, color: item.color }}>{item.value}</div>
+                                        <div style={{ fontSize: 10, color: '#888', fontWeight: 600 }}>{item.label}</div>
+                                    </div>
+                                ))}
+                            </div>
+                            {syncResult.errors?.length > 0 && (
+                                <div style={{ marginTop: 8, fontSize: 11, color: '#ef4444' }}>
+                                    ⚠️ Errors: {syncResult.errors.slice(0, 5).join(', ')}
+                                </div>
+                            )}
+                            <button onClick={() => setSyncResult(null)} style={{ marginTop: 6, fontSize: 11, color: '#999', background: 'none', border: 'none', cursor: 'pointer' }}>✕ {language === 'th' ? 'ปิด' : 'Close'}</button>
+                        </div>
+                    )}
 
                     {/* ===== IMPORT TAB ===== */}
                     {activeTab === 'import' && (<>
-                    {/* Hidden file input (shared) */}
-                    <input
-                        ref={fileInputRef}
-                        type="file"
-                        accept=".csv,.xlsx,.xls"
-                        onChange={handleFileChange}
-                        style={{ display: 'none' }}
-                    />
+                        {/* Hidden file input (shared) */}
+                        <input
+                            ref={fileInputRef}
+                            type="file"
+                            accept=".csv,.xlsx,.xls"
+                            onChange={handleFileChange}
+                            style={{ display: 'none' }}
+                        />
 
-                    <div style={{
-                        background: '#eff6ff',
-                        border: '1px solid #bfdbfe',
-                        color: '#1e3a8a',
-                        borderRadius: 8,
-                        padding: '10px 14px',
-                        marginBottom: 12,
-                        fontSize: 12,
-                        lineHeight: 1.6,
-                    }}>
-                        <div style={{ fontWeight: 700, marginBottom: 4 }}>
-                            {language === 'th' ? 'รูปแบบไฟล์นำเข้า (Template Columns)' : 'Import File Format (Template Columns)'}
-                        </div>
-                        <div>
-                            <strong>{language === 'th' ? 'หัวตารางแนะนำ:' : 'Recommended headers:'}</strong> {IMPORT_TEMPLATE_HEADERS.join(', ')}
-                        </div>
-                        <div style={{ color: '#334155' }}>
-                            {language === 'th'
-                                ? 'กดปุ่ม "ดาวน์โหลดฟอร์ม" ในแต่ละระยะเพื่อได้ไฟล์ตัวอย่างที่ใช้ได้ทันที'
-                                : 'Use "Download Template" in each category to get a ready-to-use sample file'}
-                        </div>
-                    </div>
-
-                    {/* Per-category sections */}
-                    {(campaign.categories || []).map((cat, catIdx) => {
-                        const catData = categoryImports[cat.name];
-                        const isDrag = catData?.isDragging || false;
-                        const catFileName = catData?.fileName || '';
-                        const catRows = catData?.parsedRows || [];
-                        const filtered = getFilteredRows(catRows);
-                        const readyC = catRows.filter(r => r.tags.includes('ready')).length;
-                        const isImportingThis = importing && importingCategory === cat.name;
-
-                        return (
-                            <div key={`import-${cat.name}-${catIdx}`} style={{
-                                background: '#fff', borderRadius: 4, marginBottom: 16,
-                                boxShadow: '0 1px 3px rgba(0,0,0,0.1)', overflow: 'hidden',
-                                border: '1px solid #e5e7eb',
-                            }}>
-                                {/* Category header */}
-                                <div style={{
-                                    padding: '10px 16px', background: '#f8fafc',
-                                    borderBottom: '1px solid #e5e7eb',
-                                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                                }}>
-                                    <div style={{ fontWeight: 700, fontSize: 13, color: '#333', display: 'flex', alignItems: 'center', gap: 8 }}>
-                                        <span style={{
-                                            background: '#3c8dbc', color: '#fff', padding: '2px 10px',
-                                            borderRadius: 4, fontSize: 12,
-                                        }}>
-                                            {cat.name}
-                                        </span>
-                                        {cat.distance && <span style={{ color: '#666', fontWeight: 500, fontSize: 12 }}>{cat.distance}</span>}
-                                        {catFileName && <span style={{ color: '#888', fontSize: 11, fontWeight: 400 }}>— {catFileName} ({catRows.length} {language === 'th' ? 'รายการ' : 'rows'})</span>}
-                                    </div>
-                                    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                                        <button
-                                            className="btn"
-                                            onClick={() => downloadCategoryTemplate(cat)}
-                                            style={{ background: '#2563eb', fontSize: 11, padding: '4px 12px' }}
-                                        >
-                                            {language === 'th' ? 'ดาวน์โหลดฟอร์ม' : 'Download Template'}
-                                        </button>
-                                        {catRows.length > 0 && (
-                                            <>
-                                            <button
-                                                className="btn"
-                                                onClick={() => setCategoryImports(prev => { const n = { ...prev }; delete n[cat.name]; return n; })}
-                                                style={{ background: '#6c757d', fontSize: 11, padding: '4px 12px' }}
-                                            >
-                                                {language === 'th' ? 'ล้าง' : 'Clear'}
-                                            </button>
-                                            <button
-                                                className="btn"
-                                                onClick={() => handleImportCategory(cat.name)}
-                                                disabled={isImportingThis || catRows.length === 0}
-                                                style={{
-                                                    background: '#00a65a', fontSize: 11, padding: '4px 14px',
-                                                    fontWeight: 700, opacity: isImportingThis ? 0.6 : 1,
-                                                }}
-                                            >
-                                                {isImportingThis
-                                                    ? (language === 'th' ? 'กำลังนำเข้า...' : 'Importing...')
-                                                    : (language === 'th' ? `นำเข้า (${catRows.length})` : `Import (${catRows.length})`)}
-                                            </button>
-                                            </>
-                                        )}
-                                    </div>
-                                </div>
-
-                                {/* Drop zone (always visible, compact) */}
-                                <div
-                                    onClick={() => { setUploadTargetCategory(cat.name); setTimeout(() => fileInputRef.current?.click(), 50); }}
-                                    onDrop={e => handleDropForCategory(e, cat.name)}
-                                    onDragOver={e => handleDragOverForCategory(e, cat.name)}
-                                    onDragLeave={e => handleDragLeaveForCategory(e, cat.name)}
-                                    style={{
-                                        padding: catRows.length > 0 ? '6px 16px' : '14px 16px',
-                                        background: isDrag ? '#e8f5e9' : '#fafbfc',
-                                        borderBottom: catRows.length > 0 ? '1px solid #eee' : 'none',
-                                        cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8,
-                                        transition: '0.2s',
-                                    }}
-                                >
-                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={isDrag ? '#00a65a' : '#aaa'} strokeWidth="2">
-                                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                                        <polyline points="14 2 14 8 20 8" />
-                                    </svg>
-                                    <span style={{ fontSize: 12, color: isDrag ? '#00a65a' : '#888' }}>
-                                        {isDrag
-                                            ? (language === 'th' ? 'วางไฟล์ที่นี่...' : 'Drop here...')
-                                            : catFileName
-                                                ? (language === 'th' ? 'คลิกเปลี่ยนไฟล์' : 'Click to change file')
-                                                : (language === 'th' ? 'ลากไฟล์ CSV/XLSX มาวาง หรือคลิกเลือก' : 'Drag CSV/XLSX here or click to select')}
-                                    </span>
-                                </div>
-
-                                {/* Preview table (if has rows) */}
-                                {catRows.length > 0 && (
-                                    <div style={{ padding: '0 0 8px 0' }}>
-                                        <div style={{ maxHeight: 320, overflowY: 'auto' }}>
-                                            <table className="data-table" style={{ fontSize: 11 }}>
-                                                <thead>
-                                                    <tr>
-                                                        <th style={{ width: 35 }}>#</th>
-                                                        <th style={{ width: 70 }}>BIB</th>
-                                                        <th>{language === 'th' ? 'ชื่อ-นามสกุล' : 'Name'}</th>
-                                                        <th style={{ width: 45 }}>{language === 'th' ? 'เพศ' : 'G'}</th>
-                                                        <th style={{ width: 70 }}>{language === 'th' ? 'สัญชาติ' : 'Nat.'}</th>
-                                                        <th style={{ width: 140 }}>Chip Code</th>
-                                                        <th style={{ width: 120 }}>{language === 'th' ? 'สถานะ' : 'Status'}</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody>
-                                                    {filtered.map(r => {
-                                                        const hasNoBib = r.tags.includes('no_bib');
-                                                        const hasDupBib = r.tags.includes('dup_bib');
-                                                        const hasNoChip = r.tags.includes('no_chip');
-                                                        const hasDupChip = r.tags.includes('dup_chip');
-                                                        const isReady = r.tags.includes('ready');
-                                                        const rowBg = hasNoBib ? '#fff5f5' : hasDupBib ? '#fffbeb' : undefined;
-                                                        return (
-                                                            <tr key={r.rowNum} style={{ background: rowBg }}>
-                                                                <td style={{ textAlign: 'center', color: '#999' }}>{r.rowNum}</td>
-                                                                <td>
-                                                                    <span style={{
-                                                                        background: hasNoBib ? '#fee2e2' : hasDupBib ? '#fef3c7' : '#eee',
-                                                                        padding: '1px 6px', borderRadius: 3, fontFamily: 'monospace',
-                                                                        fontWeight: 'bold', fontSize: 11,
-                                                                        border: `1px solid ${hasNoBib ? '#f87171' : hasDupBib ? '#fbbf24' : '#ddd'}`,
-                                                                        color: hasNoBib ? '#dc2626' : hasDupBib ? '#92400e' : '#333',
-                                                                    }}>
-                                                                        {r.bib || '—'}
-                                                                    </span>
-                                                                </td>
-                                                                <td>{formatRunnerName(r.firstName, r.lastName)}</td>
-                                                                <td style={{ textAlign: 'center' }}>
-                                                                    {r.gender === 'F' ? (
-                                                                        <svg width="18" height="18" viewBox="0 0 24 24" style={{ display: 'inline-block', verticalAlign: 'middle', color: '#ec4899' }}>
-                                                                            <circle cx="12" cy="8.5" r="5.5" fill="none" stroke="currentColor" strokeWidth="3" />
-                                                                            <line x1="12" y1="14" x2="12" y2="21" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
-                                                                            <line x1="8.5" y1="17.5" x2="15.5" y2="17.5" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
-                                                                        </svg>
-                                                                    ) : r.gender === 'M' ? (
-                                                                        <svg width="18" height="18" viewBox="0 0 24 24" style={{ display: 'inline-block', verticalAlign: 'middle', color: '#3b82f6' }}>
-                                                                            <circle cx="9.5" cy="14.5" r="5.5" fill="none" stroke="currentColor" strokeWidth="3" />
-                                                                            <line x1="13.5" y1="10.5" x2="21" y2="3" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
-                                                                            <polyline points="15.5 3 21 3 21 8.5" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
-                                                                        </svg>
-                                                                    ) : (
-                                                                        <span style={{ color: '#9ca3af', fontWeight: 700 }}>-</span>
-                                                                    )}
-                                                                </td>
-                                                                <td style={{ textAlign: 'center' }}>{r.nationality}</td>
-                                                                <td>
-                                                                    <span style={{
-                                                                        fontFamily: 'monospace', fontSize: 10,
-                                                                        color: hasNoChip ? '#e68a00' : hasDupChip ? '#92400e' : '#333',
-                                                                        fontWeight: (hasNoChip || hasDupChip) ? 600 : 'normal',
-                                                                    }}>
-                                                                        {r.chipCode || (language === 'th' ? 'ไม่มี' : 'None')}
-                                                                    </span>
-                                                                </td>
-                                                                <td>
-                                                                    <div style={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
-                                                                        {isReady && <span style={{ fontSize: 10, fontWeight: 600, color: '#16a34a', background: '#dcfce7', padding: '1px 6px', borderRadius: 8 }}>{language === 'th' ? 'พร้อม' : 'Ready'}</span>}
-                                                                        {hasNoBib && <span style={{ fontSize: 10, fontWeight: 600, color: '#991b1b', background: '#fee2e2', padding: '1px 6px', borderRadius: 8 }}>{language === 'th' ? 'ไม่มีBIB' : 'No BIB'}</span>}
-                                                                        {hasDupBib && <span style={{ fontSize: 10, fontWeight: 600, color: '#92400e', background: '#fef3c7', padding: '1px 6px', borderRadius: 8 }}>{language === 'th' ? 'BIBซ้ำ' : 'Dup BIB'}</span>}
-                                                                        {hasNoChip && <span style={{ fontSize: 10, fontWeight: 600, color: '#9d174d', background: '#fce7f3', padding: '1px 6px', borderRadius: 8 }}>{language === 'th' ? 'ไม่มีChip' : 'No Chip'}</span>}
-                                                                        {hasDupChip && <span style={{ fontSize: 10, fontWeight: 600, color: '#92400e', background: '#fef3c7', padding: '1px 6px', borderRadius: 8 }}>{language === 'th' ? 'Chipซ้ำ' : 'Dup Chip'}</span>}
-                                                                    </div>
-                                                                </td>
-                                                            </tr>
-                                                        );
-                                                    })}
-                                                </tbody>
-                                            </table>
-                                        </div>
-                                        <div style={{ textAlign: 'right', padding: '4px 16px', fontSize: 10, color: '#999' }}>
-                                            {language === 'th'
-                                                ? `แสดง ${filtered.length} จาก ${catRows.length} | พร้อม ${readyC}`
-                                                : `Showing ${filtered.length} of ${catRows.length} | Ready ${readyC}`}
-                                        </div>
-                                    </div>
-                                )}
+                        <div style={{
+                            background: '#eff6ff',
+                            border: '1px solid #bfdbfe',
+                            color: '#1e3a8a',
+                            borderRadius: 8,
+                            padding: '10px 14px',
+                            marginBottom: 12,
+                            fontSize: 12,
+                            lineHeight: 1.6,
+                        }}>
+                            <div style={{ fontWeight: 700, marginBottom: 4 }}>
+                                {language === 'th' ? 'รูปแบบไฟล์นำเข้า (Template Columns)' : 'Import File Format (Template Columns)'}
                             </div>
-                        );
-                    })}
+                            <div>
+                                <strong>{language === 'th' ? 'หัวตารางแนะนำ:' : 'Recommended headers:'}</strong> {IMPORT_TEMPLATE_HEADERS.join(', ')}
+                            </div>
+                            <div style={{ color: '#334155' }}>
+                                {language === 'th'
+                                    ? 'กดปุ่ม "ดาวน์โหลดฟอร์ม" ในแต่ละระยะเพื่อได้ไฟล์ตัวอย่างที่ใช้ได้ทันที'
+                                    : 'Use "Download Template" in each category to get a ready-to-use sample file'}
+                            </div>
+                        </div>
+
+                        {/* Per-category sections */}
+                        {(campaign.categories || []).map((cat, catIdx) => {
+                            const catData = categoryImports[cat.name];
+                            const isDrag = catData?.isDragging || false;
+                            const catFileName = catData?.fileName || '';
+                            const catRows = catData?.parsedRows || [];
+                            const filtered = getFilteredRows(catRows);
+                            const readyC = catRows.filter(r => r.tags.includes('ready')).length;
+                            const isImportingThis = importing && importingCategory === cat.name;
+
+                            return (
+                                <div key={`import-${cat.name}-${catIdx}`} style={{
+                                    background: '#fff', borderRadius: 4, marginBottom: 16,
+                                    boxShadow: '0 1px 3px rgba(0,0,0,0.1)', overflow: 'hidden',
+                                    border: '1px solid #e5e7eb',
+                                }}>
+                                    {/* Category header */}
+                                    <div style={{
+                                        padding: '10px 16px', background: '#f8fafc',
+                                        borderBottom: '1px solid #e5e7eb',
+                                        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                                    }}>
+                                        <div style={{ fontWeight: 700, fontSize: 13, color: '#333', display: 'flex', alignItems: 'center', gap: 8 }}>
+                                            <span style={{
+                                                background: '#3c8dbc', color: '#fff', padding: '2px 10px',
+                                                borderRadius: 4, fontSize: 12,
+                                            }}>
+                                                {cat.name}
+                                            </span>
+                                            {cat.distance && <span style={{ color: '#666', fontWeight: 500, fontSize: 12 }}>{cat.distance}</span>}
+                                            {catFileName && <span style={{ color: '#888', fontSize: 11, fontWeight: 400 }}>— {catFileName} ({catRows.length} {language === 'th' ? 'รายการ' : 'rows'})</span>}
+                                        </div>
+                                        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                                            <button
+                                                className="btn"
+                                                onClick={() => downloadCategoryTemplate(cat)}
+                                                style={{ background: '#2563eb', fontSize: 11, padding: '4px 12px' }}
+                                            >
+                                                {language === 'th' ? 'ดาวน์โหลดฟอร์ม' : 'Download Template'}
+                                            </button>
+                                            {catRows.length > 0 && (
+                                                <>
+                                                    <button
+                                                        className="btn"
+                                                        onClick={() => setCategoryImports(prev => { const n = { ...prev }; delete n[cat.name]; return n; })}
+                                                        style={{ background: '#6c757d', fontSize: 11, padding: '4px 12px' }}
+                                                    >
+                                                        {language === 'th' ? 'ล้าง' : 'Clear'}
+                                                    </button>
+                                                    <button
+                                                        className="btn"
+                                                        onClick={() => handleImportCategory(cat.name)}
+                                                        disabled={isImportingThis || catRows.length === 0}
+                                                        style={{
+                                                            background: '#00a65a', fontSize: 11, padding: '4px 14px',
+                                                            fontWeight: 700, opacity: isImportingThis ? 0.6 : 1,
+                                                        }}
+                                                    >
+                                                        {isImportingThis
+                                                            ? (language === 'th' ? 'กำลังนำเข้า...' : 'Importing...')
+                                                            : (language === 'th' ? `นำเข้า (${catRows.length})` : `Import (${catRows.length})`)}
+                                                    </button>
+                                                </>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    {/* Drop zone (always visible, compact) */}
+                                    <div
+                                        onClick={() => { setUploadTargetCategory(cat.name); setTimeout(() => fileInputRef.current?.click(), 50); }}
+                                        onDrop={e => handleDropForCategory(e, cat.name)}
+                                        onDragOver={e => handleDragOverForCategory(e, cat.name)}
+                                        onDragLeave={e => handleDragLeaveForCategory(e, cat.name)}
+                                        style={{
+                                            padding: catRows.length > 0 ? '6px 16px' : '14px 16px',
+                                            background: isDrag ? '#e8f5e9' : '#fafbfc',
+                                            borderBottom: catRows.length > 0 ? '1px solid #eee' : 'none',
+                                            cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8,
+                                            transition: '0.2s',
+                                        }}
+                                    >
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={isDrag ? '#00a65a' : '#aaa'} strokeWidth="2">
+                                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                                            <polyline points="14 2 14 8 20 8" />
+                                        </svg>
+                                        <span style={{ fontSize: 12, color: isDrag ? '#00a65a' : '#888' }}>
+                                            {isDrag
+                                                ? (language === 'th' ? 'วางไฟล์ที่นี่...' : 'Drop here...')
+                                                : catFileName
+                                                    ? (language === 'th' ? 'คลิกเปลี่ยนไฟล์' : 'Click to change file')
+                                                    : (language === 'th' ? 'ลากไฟล์ CSV/XLSX มาวาง หรือคลิกเลือก' : 'Drag CSV/XLSX here or click to select')}
+                                        </span>
+                                    </div>
+
+                                    {/* Preview table (if has rows) */}
+                                    {catRows.length > 0 && (
+                                        <div style={{ padding: '0 0 8px 0' }}>
+                                            <div style={{ maxHeight: 320, overflowY: 'auto' }}>
+                                                <table className="data-table" style={{ fontSize: 11 }}>
+                                                    <thead>
+                                                        <tr>
+                                                            <th style={{ width: 35 }}>#</th>
+                                                            <th style={{ width: 70 }}>BIB</th>
+                                                            <th>{language === 'th' ? 'ชื่อ-นามสกุล' : 'Name'}</th>
+                                                            <th style={{ width: 45 }}>{language === 'th' ? 'เพศ' : 'G'}</th>
+                                                            <th style={{ width: 70 }}>{language === 'th' ? 'สัญชาติ' : 'Nat.'}</th>
+                                                            <th style={{ width: 140 }}>Chip Code</th>
+                                                            <th style={{ width: 120 }}>{language === 'th' ? 'สถานะ' : 'Status'}</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        {filtered.map(r => {
+                                                            const hasNoBib = r.tags.includes('no_bib');
+                                                            const hasDupBib = r.tags.includes('dup_bib');
+                                                            const hasNoChip = r.tags.includes('no_chip');
+                                                            const hasDupChip = r.tags.includes('dup_chip');
+                                                            const isReady = r.tags.includes('ready');
+                                                            const rowBg = hasNoBib ? '#fff5f5' : hasDupBib ? '#fffbeb' : undefined;
+                                                            return (
+                                                                <tr key={r.rowNum} style={{ background: rowBg }}>
+                                                                    <td style={{ textAlign: 'center', color: '#999' }}>{r.rowNum}</td>
+                                                                    <td>
+                                                                        <span style={{
+                                                                            background: hasNoBib ? '#fee2e2' : hasDupBib ? '#fef3c7' : '#eee',
+                                                                            padding: '1px 6px', borderRadius: 3, fontFamily: 'monospace',
+                                                                            fontWeight: 'bold', fontSize: 11,
+                                                                            border: `1px solid ${hasNoBib ? '#f87171' : hasDupBib ? '#fbbf24' : '#ddd'}`,
+                                                                            color: hasNoBib ? '#dc2626' : hasDupBib ? '#92400e' : '#333',
+                                                                        }}>
+                                                                            {r.bib || '—'}
+                                                                        </span>
+                                                                    </td>
+                                                                    <td>{formatRunnerName(r.firstName, r.lastName)}</td>
+                                                                    <td style={{ textAlign: 'center' }}>
+                                                                        {r.gender === 'F' ? (
+                                                                            <svg width="18" height="18" viewBox="0 0 24 24" style={{ display: 'inline-block', verticalAlign: 'middle', color: '#ec4899' }}>
+                                                                                <circle cx="12" cy="8.5" r="5.5" fill="none" stroke="currentColor" strokeWidth="3" />
+                                                                                <line x1="12" y1="14" x2="12" y2="21" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+                                                                                <line x1="8.5" y1="17.5" x2="15.5" y2="17.5" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+                                                                            </svg>
+                                                                        ) : r.gender === 'M' ? (
+                                                                            <svg width="18" height="18" viewBox="0 0 24 24" style={{ display: 'inline-block', verticalAlign: 'middle', color: '#3b82f6' }}>
+                                                                                <circle cx="9.5" cy="14.5" r="5.5" fill="none" stroke="currentColor" strokeWidth="3" />
+                                                                                <line x1="13.5" y1="10.5" x2="21" y2="3" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+                                                                                <polyline points="15.5 3 21 3 21 8.5" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+                                                                            </svg>
+                                                                        ) : (
+                                                                            <span style={{ color: '#9ca3af', fontWeight: 700 }}>-</span>
+                                                                        )}
+                                                                    </td>
+                                                                    <td style={{ textAlign: 'center' }}>{r.nationality}</td>
+                                                                    <td>
+                                                                        <span style={{
+                                                                            fontFamily: 'monospace', fontSize: 10,
+                                                                            color: hasNoChip ? '#e68a00' : hasDupChip ? '#92400e' : '#333',
+                                                                            fontWeight: (hasNoChip || hasDupChip) ? 600 : 'normal',
+                                                                        }}>
+                                                                            {r.chipCode || (language === 'th' ? 'ไม่มี' : 'None')}
+                                                                        </span>
+                                                                    </td>
+                                                                    <td>
+                                                                        <div style={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
+                                                                            {isReady && <span style={{ fontSize: 10, fontWeight: 600, color: '#16a34a', background: '#dcfce7', padding: '1px 6px', borderRadius: 8 }}>{language === 'th' ? 'พร้อม' : 'Ready'}</span>}
+                                                                            {hasNoBib && <span style={{ fontSize: 10, fontWeight: 600, color: '#991b1b', background: '#fee2e2', padding: '1px 6px', borderRadius: 8 }}>{language === 'th' ? 'ไม่มีBIB' : 'No BIB'}</span>}
+                                                                            {hasDupBib && <span style={{ fontSize: 10, fontWeight: 600, color: '#92400e', background: '#fef3c7', padding: '1px 6px', borderRadius: 8 }}>{language === 'th' ? 'BIBซ้ำ' : 'Dup BIB'}</span>}
+                                                                            {hasNoChip && <span style={{ fontSize: 10, fontWeight: 600, color: '#9d174d', background: '#fce7f3', padding: '1px 6px', borderRadius: 8 }}>{language === 'th' ? 'ไม่มีChip' : 'No Chip'}</span>}
+                                                                            {hasDupChip && <span style={{ fontSize: 10, fontWeight: 600, color: '#92400e', background: '#fef3c7', padding: '1px 6px', borderRadius: 8 }}>{language === 'th' ? 'Chipซ้ำ' : 'Dup Chip'}</span>}
+                                                                        </div>
+                                                                    </td>
+                                                                </tr>
+                                                            );
+                                                        })}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                            <div style={{ textAlign: 'right', padding: '4px 16px', fontSize: 10, color: '#999' }}>
+                                                {language === 'th'
+                                                    ? `แสดง ${filtered.length} จาก ${catRows.length} | พร้อม ${readyC}`
+                                                    : `Showing ${filtered.length} of ${catRows.length} | Ready ${readyC}`}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            );
+                        })}
                     </>)}
 
                     {/* ===== CATEGORY TAB ===== */}
@@ -1091,117 +1180,117 @@ export default function ParticipantsPage() {
                                 <div className="py-10 text-center text-gray-400">{language === 'th' ? 'ไม่พบข้อมูลนักกีฬา' : 'No participants found'}</div>
                             ) : (
                                 <>
-                                <div className="max-h-[540px] overflow-y-auto border border-gray-200 rounded">
-                                    <table className="data-table text-[12px] w-auto min-w-[980px]">
-                                        <thead>
-                                            <tr>
-                                                <th className="w-10">#</th>
-                                                <th className="w-20 cursor-pointer select-none" onClick={() => handleSort('bib')}>BIB <span className="inline-flex items-center align-middle ml-0.5 gap-0"><svg width="10" height="14" viewBox="0 0 10 14" className={`${sortBy === 'bib' && sortOrder === 'asc' ? 'text-[#3c8dbc]' : 'text-gray-300'}`}><path d="M5 1v10M5 1L2 4M5 1l3 3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" fill="none"/></svg><svg width="10" height="14" viewBox="0 0 10 14" className={`${sortBy === 'bib' && sortOrder === 'desc' ? 'text-[#3c8dbc]' : 'text-gray-300'}`}><path d="M5 3v10M5 13L2 10M5 13l3-3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" fill="none"/></svg></span></th>
-                                                <th className="w-[38%] cursor-pointer select-none" onClick={() => handleSort('firstName')}>{language === 'th' ? 'ชื่อ-นามสกุล' : 'Name'} <span className="inline-flex items-center align-middle ml-0.5 gap-0"><svg width="10" height="14" viewBox="0 0 10 14" className={`${sortBy === 'firstName' && sortOrder === 'asc' ? 'text-[#3c8dbc]' : 'text-gray-300'}`}><path d="M5 1v10M5 1L2 4M5 1l3 3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" fill="none"/></svg><svg width="10" height="14" viewBox="0 0 10 14" className={`${sortBy === 'firstName' && sortOrder === 'desc' ? 'text-[#3c8dbc]' : 'text-gray-300'}`}><path d="M5 3v10M5 13L2 10M5 13l3-3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" fill="none"/></svg></span></th>
-                                                <th className="w-10 text-center">{language === 'th' ? 'เพศ' : 'G'}</th>
-                                                <th className="w-16 cursor-pointer select-none" onClick={() => handleSort('ageGroup')}>{language === 'th' ? 'อายุ' : 'Age'} <span className="inline-flex items-center align-middle ml-0.5 gap-0"><svg width="10" height="14" viewBox="0 0 10 14" className={`${sortBy === 'ageGroup' && sortOrder === 'asc' ? 'text-[#3c8dbc]' : 'text-gray-300'}`}><path d="M5 1v10M5 1L2 4M5 1l3 3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" fill="none"/></svg><svg width="10" height="14" viewBox="0 0 10 14" className={`${sortBy === 'ageGroup' && sortOrder === 'desc' ? 'text-[#3c8dbc]' : 'text-gray-300'}`}><path d="M5 3v10M5 13L2 10M5 13l3-3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" fill="none"/></svg></span></th>
-                                                <th className="w-12 text-center">{language === 'th' ? 'สัญชาติ' : 'Nat.'}</th>
-                                                <th className="w-28 text-center cursor-pointer select-none" onClick={() => handleSort('chipCode')}>Chip Code <span className="inline-flex items-center align-middle ml-0.5 gap-0"><svg width="10" height="14" viewBox="0 0 10 14" className={`${sortBy === 'chipCode' && sortOrder === 'asc' ? 'text-[#3c8dbc]' : 'text-gray-300'}`}><path d="M5 1v10M5 1L2 4M5 1l3 3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" fill="none"/></svg><svg width="10" height="14" viewBox="0 0 10 14" className={`${sortBy === 'chipCode' && sortOrder === 'desc' ? 'text-[#3c8dbc]' : 'text-gray-300'}`}><path d="M5 3v10M5 13L2 10M5 13l3-3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" fill="none"/></svg></span></th>
-                                                <th className="w-20 text-center">{language === 'th' ? 'สถานะ' : 'Status'}</th>
-                                                <th className="w-14"></th>
-                                                <th className="w-8"><input type="checkbox" checked={runners.length > 0 && runners.every(r => selectedIds.has(r._id))} onChange={e => { if (e.target.checked) { setSelectedIds(new Set(runners.map(r => r._id))); } else { setSelectedIds(new Set()); } }} /></th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {runners.map((r, idx) => {
-                                                const noBib = !r.bib;
-                                                const isDupBib = !!r.bib && dupBibs.includes(r.bib);
-                                                const noChip = !r.chipCode;
-                                                const isDupChip = !!r.chipCode && dupChips.includes(r.chipCode);
-                                                const isReady = !noBib && !isDupBib && !noChip && !isDupChip;
-                                                const checked = selectedIds.has(r._id);
-                                                const fullName = formatRunnerName(r.firstName, r.lastName);
-                                                const fullNameTh = formatRunnerName(r.firstNameTh, r.lastNameTh);
-                                                return (
-                                                <tr key={r._id} className={`${(noBib || isDupBib) ? 'bg-red-50' : (noChip || isDupChip) ? 'bg-amber-50' : ''} ${checked ? '!bg-blue-50' : ''}`}>
-                                                    <td className="text-center text-gray-400">{(listPage - 1) * listLimit + idx + 1}</td>
-                                                    <td>
-                                                        <span className={`px-2 py-0.5 rounded font-mono font-bold text-[12px] inline-block min-w-[45px] text-center border ${noBib ? 'bg-red-100 border-red-400 text-red-600' : isDupBib ? 'bg-amber-100 border-amber-400 text-amber-800' : 'bg-gray-100 border-gray-300 text-gray-700'}`}>
-                                                            {r.bib || '—'}
-                                                        </span>
-                                                    </td>
-                                                    <td className="max-w-[420px]">
-                                                        <div className="font-medium">{fullName}</div>
-                                                        {fullNameTh !== '-' && <div className="text-[11px] text-gray-400">{fullNameTh}</div>}
-                                                    </td>
-                                                    <td className="text-center">
-                                                        {r.gender === 'F' ? (
-                                                            <svg width="20" height="20" viewBox="0 0 24 24" className="inline-block align-middle text-pink-500">
-                                                                <circle cx="12" cy="8.5" r="5.5" fill="none" stroke="currentColor" strokeWidth="3" />
-                                                                <line x1="12" y1="14" x2="12" y2="21" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
-                                                                <line x1="8.5" y1="17.5" x2="15.5" y2="17.5" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
-                                                            </svg>
-                                                        ) : (
-                                                            <svg width="20" height="20" viewBox="0 0 24 24" className="inline-block align-middle text-blue-500">
-                                                                <circle cx="9.5" cy="14.5" r="5.5" fill="none" stroke="currentColor" strokeWidth="3" />
-                                                                <line x1="13.5" y1="10.5" x2="21" y2="3" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
-                                                                <polyline points="15.5 3 21 3 21 8.5" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
-                                                            </svg>
-                                                        )}
-                                                    </td>
-                                                    <td><span className={r.ageGroup ? 'text-[#3c8dbc]' : 'text-gray-300'}>{r.ageGroup ? r.ageGroup.replace(/[^0-9-]/g, '') || r.ageGroup : '-'}</span></td>
-                                                    <td className="text-center text-[11px] text-gray-600">{r.nationality || '-'}</td>
-                                                    <td className="text-center">
-                                                        <span className={`font-mono text-[11px] ${noChip ? 'text-amber-600 font-semibold' : isDupChip ? 'text-amber-800 font-semibold' : 'text-gray-700'}`}>
-                                                            {r.chipCode || (language === 'th' ? 'ไม่มี' : 'None')}
-                                                        </span>
-                                                    </td>
-                                                    <td className="text-center">
-                                                        <div className="flex gap-1 flex-wrap justify-center">
-                                                            {isReady && <span className="text-[10px] font-semibold text-green-700 bg-green-100 px-1.5 py-0.5 rounded-full">{language === 'th' ? 'พร้อม' : 'Ready'}</span>}
-                                                            {noBib && <span className="text-[10px] font-semibold text-red-800 bg-red-100 px-1.5 py-0.5 rounded-full">{language === 'th' ? 'ไม่มีBIP' : 'No BIB'}</span>}
-                                                            {isDupBib && <span className="text-[10px] font-semibold text-red-800 bg-red-100 px-1.5 py-0.5 rounded-full">BIBซ้ำ</span>}
-                                                            {noChip && <span className="text-[10px] font-semibold text-amber-800 bg-amber-100 px-1.5 py-0.5 rounded-full">{language === 'th' ? 'ไม่มีChip' : 'No Chip'}</span>}
-                                                            {isDupChip && <span className="text-[10px] font-semibold text-amber-800 bg-amber-100 px-1.5 py-0.5 rounded-full">Chipซ้ำ</span>}
-                                                        </div>
-                                                    </td>
-                                                    <td>
-                                                        <div className="flex gap-1 justify-center">
-                                                            <button onClick={() => openEditModal(r)} title={language === 'th' ? 'แก้ไข' : 'Edit'} className="p-1 border border-gray-300 rounded bg-white text-[#3c8dbc] cursor-pointer hover:bg-blue-50">
-                                                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-                                                            </button>
-                                                            <button onClick={() => handleDeleteSingle(r)} title={language === 'th' ? 'ลบ' : 'Delete'} className="p-1 border border-red-300 rounded bg-white text-red-500 cursor-pointer hover:bg-red-50">
-                                                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-                                                            </button>
-                                                        </div>
-                                                    </td>
-                                                    <td className="text-center"><input type="checkbox" checked={checked} onChange={() => setSelectedIds(prev => { const n = new Set(prev); if (n.has(r._id)) n.delete(r._id); else n.add(r._id); return n; })} /></td>
+                                    <div className="max-h-[540px] overflow-y-auto border border-gray-200 rounded">
+                                        <table className="data-table text-[12px] w-auto min-w-[980px]">
+                                            <thead>
+                                                <tr>
+                                                    <th className="w-10">#</th>
+                                                    <th className="w-20 cursor-pointer select-none" onClick={() => handleSort('bib')}>BIB <span className="inline-flex items-center align-middle ml-0.5 gap-0"><svg width="10" height="14" viewBox="0 0 10 14" className={`${sortBy === 'bib' && sortOrder === 'asc' ? 'text-[#3c8dbc]' : 'text-gray-300'}`}><path d="M5 1v10M5 1L2 4M5 1l3 3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" fill="none" /></svg><svg width="10" height="14" viewBox="0 0 10 14" className={`${sortBy === 'bib' && sortOrder === 'desc' ? 'text-[#3c8dbc]' : 'text-gray-300'}`}><path d="M5 3v10M5 13L2 10M5 13l3-3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" fill="none" /></svg></span></th>
+                                                    <th className="w-[38%] cursor-pointer select-none" onClick={() => handleSort('firstName')}>{language === 'th' ? 'ชื่อ-นามสกุล' : 'Name'} <span className="inline-flex items-center align-middle ml-0.5 gap-0"><svg width="10" height="14" viewBox="0 0 10 14" className={`${sortBy === 'firstName' && sortOrder === 'asc' ? 'text-[#3c8dbc]' : 'text-gray-300'}`}><path d="M5 1v10M5 1L2 4M5 1l3 3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" fill="none" /></svg><svg width="10" height="14" viewBox="0 0 10 14" className={`${sortBy === 'firstName' && sortOrder === 'desc' ? 'text-[#3c8dbc]' : 'text-gray-300'}`}><path d="M5 3v10M5 13L2 10M5 13l3-3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" fill="none" /></svg></span></th>
+                                                    <th className="w-10 text-center">{language === 'th' ? 'เพศ' : 'G'}</th>
+                                                    <th className="w-16 cursor-pointer select-none" onClick={() => handleSort('ageGroup')}>{language === 'th' ? 'อายุ' : 'Age'} <span className="inline-flex items-center align-middle ml-0.5 gap-0"><svg width="10" height="14" viewBox="0 0 10 14" className={`${sortBy === 'ageGroup' && sortOrder === 'asc' ? 'text-[#3c8dbc]' : 'text-gray-300'}`}><path d="M5 1v10M5 1L2 4M5 1l3 3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" fill="none" /></svg><svg width="10" height="14" viewBox="0 0 10 14" className={`${sortBy === 'ageGroup' && sortOrder === 'desc' ? 'text-[#3c8dbc]' : 'text-gray-300'}`}><path d="M5 3v10M5 13L2 10M5 13l3-3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" fill="none" /></svg></span></th>
+                                                    <th className="w-12 text-center">{language === 'th' ? 'สัญชาติ' : 'Nat.'}</th>
+                                                    <th className="w-28 text-center cursor-pointer select-none" onClick={() => handleSort('chipCode')}>Chip Code <span className="inline-flex items-center align-middle ml-0.5 gap-0"><svg width="10" height="14" viewBox="0 0 10 14" className={`${sortBy === 'chipCode' && sortOrder === 'asc' ? 'text-[#3c8dbc]' : 'text-gray-300'}`}><path d="M5 1v10M5 1L2 4M5 1l3 3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" fill="none" /></svg><svg width="10" height="14" viewBox="0 0 10 14" className={`${sortBy === 'chipCode' && sortOrder === 'desc' ? 'text-[#3c8dbc]' : 'text-gray-300'}`}><path d="M5 3v10M5 13L2 10M5 13l3-3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" fill="none" /></svg></span></th>
+                                                    <th className="w-20 text-center">{language === 'th' ? 'สถานะ' : 'Status'}</th>
+                                                    <th className="w-14"></th>
+                                                    <th className="w-8"><input type="checkbox" checked={runners.length > 0 && runners.every(r => selectedIds.has(r._id))} onChange={e => { if (e.target.checked) { setSelectedIds(new Set(runners.map(r => r._id))); } else { setSelectedIds(new Set()); } }} /></th>
                                                 </tr>
-                                                );
-                                            })}
-                                        </tbody>
-                                    </table>
-                                </div>
-
-                                {/* Pagination */}
-                                {runnersTotal > listLimit && (
-                                    <div className="flex justify-center items-center gap-2 mt-3">
-                                        <button
-                                            disabled={listPage <= 1}
-                                            onClick={() => setListPage(p => Math.max(1, p - 1))}
-                                            className="px-3 py-1 text-[12px] border border-gray-300 rounded bg-white text-gray-600 cursor-pointer disabled:opacity-40"
-                                        >
-                                            ← {language === 'th' ? 'ก่อนหน้า' : 'Prev'}
-                                        </button>
-                                        <span className="text-[12px] text-gray-500">
-                                            {language === 'th'
-                                                ? `หน้า ${listPage} / ${Math.ceil(runnersTotal / listLimit)}`
-                                                : `Page ${listPage} of ${Math.ceil(runnersTotal / listLimit)}`}
-                                        </span>
-                                        <button
-                                            disabled={listPage >= Math.ceil(runnersTotal / listLimit)}
-                                            onClick={() => setListPage(p => p + 1)}
-                                            className="px-3 py-1 text-[12px] border border-gray-300 rounded bg-white text-gray-600 cursor-pointer disabled:opacity-40"
-                                        >
-                                            {language === 'th' ? 'ถัดไป' : 'Next'} →
-                                        </button>
+                                            </thead>
+                                            <tbody>
+                                                {runners.map((r, idx) => {
+                                                    const noBib = !r.bib;
+                                                    const isDupBib = !!r.bib && dupBibs.includes(r.bib);
+                                                    const noChip = !r.chipCode;
+                                                    const isDupChip = !!r.chipCode && dupChips.includes(r.chipCode);
+                                                    const isReady = !noBib && !isDupBib && !noChip && !isDupChip;
+                                                    const checked = selectedIds.has(r._id);
+                                                    const fullName = formatRunnerName(r.firstName, r.lastName);
+                                                    const fullNameTh = formatRunnerName(r.firstNameTh, r.lastNameTh);
+                                                    return (
+                                                        <tr key={r._id} className={`${(noBib || isDupBib) ? 'bg-red-50' : (noChip || isDupChip) ? 'bg-amber-50' : ''} ${checked ? '!bg-blue-50' : ''}`}>
+                                                            <td className="text-center text-gray-400">{(listPage - 1) * listLimit + idx + 1}</td>
+                                                            <td>
+                                                                <span className={`px-2 py-0.5 rounded font-mono font-bold text-[12px] inline-block min-w-[45px] text-center border ${noBib ? 'bg-red-100 border-red-400 text-red-600' : isDupBib ? 'bg-amber-100 border-amber-400 text-amber-800' : 'bg-gray-100 border-gray-300 text-gray-700'}`}>
+                                                                    {r.bib || '—'}
+                                                                </span>
+                                                            </td>
+                                                            <td className="max-w-[420px]">
+                                                                <div className="font-medium">{fullName}</div>
+                                                                {fullNameTh !== '-' && <div className="text-[11px] text-gray-400">{fullNameTh}</div>}
+                                                            </td>
+                                                            <td className="text-center">
+                                                                {r.gender === 'F' ? (
+                                                                    <svg width="20" height="20" viewBox="0 0 24 24" className="inline-block align-middle text-pink-500">
+                                                                        <circle cx="12" cy="8.5" r="5.5" fill="none" stroke="currentColor" strokeWidth="3" />
+                                                                        <line x1="12" y1="14" x2="12" y2="21" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+                                                                        <line x1="8.5" y1="17.5" x2="15.5" y2="17.5" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+                                                                    </svg>
+                                                                ) : (
+                                                                    <svg width="20" height="20" viewBox="0 0 24 24" className="inline-block align-middle text-blue-500">
+                                                                        <circle cx="9.5" cy="14.5" r="5.5" fill="none" stroke="currentColor" strokeWidth="3" />
+                                                                        <line x1="13.5" y1="10.5" x2="21" y2="3" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+                                                                        <polyline points="15.5 3 21 3 21 8.5" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+                                                                    </svg>
+                                                                )}
+                                                            </td>
+                                                            <td><span className={r.ageGroup ? 'text-[#3c8dbc]' : 'text-gray-300'}>{r.ageGroup ? r.ageGroup.replace(/[^0-9-]/g, '') || r.ageGroup : '-'}</span></td>
+                                                            <td className="text-center text-[11px] text-gray-600">{r.nationality || '-'}</td>
+                                                            <td className="text-center">
+                                                                <span className={`font-mono text-[11px] ${noChip ? 'text-amber-600 font-semibold' : isDupChip ? 'text-amber-800 font-semibold' : 'text-gray-700'}`}>
+                                                                    {r.chipCode || (language === 'th' ? 'ไม่มี' : 'None')}
+                                                                </span>
+                                                            </td>
+                                                            <td className="text-center">
+                                                                <div className="flex gap-1 flex-wrap justify-center">
+                                                                    {isReady && <span className="text-[10px] font-semibold text-green-700 bg-green-100 px-1.5 py-0.5 rounded-full">{language === 'th' ? 'พร้อม' : 'Ready'}</span>}
+                                                                    {noBib && <span className="text-[10px] font-semibold text-red-800 bg-red-100 px-1.5 py-0.5 rounded-full">{language === 'th' ? 'ไม่มีBIP' : 'No BIB'}</span>}
+                                                                    {isDupBib && <span className="text-[10px] font-semibold text-red-800 bg-red-100 px-1.5 py-0.5 rounded-full">BIBซ้ำ</span>}
+                                                                    {noChip && <span className="text-[10px] font-semibold text-amber-800 bg-amber-100 px-1.5 py-0.5 rounded-full">{language === 'th' ? 'ไม่มีChip' : 'No Chip'}</span>}
+                                                                    {isDupChip && <span className="text-[10px] font-semibold text-amber-800 bg-amber-100 px-1.5 py-0.5 rounded-full">Chipซ้ำ</span>}
+                                                                </div>
+                                                            </td>
+                                                            <td>
+                                                                <div className="flex gap-1 justify-center">
+                                                                    <button onClick={() => openEditModal(r)} title={language === 'th' ? 'แก้ไข' : 'Edit'} className="p-1 border border-gray-300 rounded bg-white text-[#3c8dbc] cursor-pointer hover:bg-blue-50">
+                                                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
+                                                                    </button>
+                                                                    <button onClick={() => handleDeleteSingle(r)} title={language === 'th' ? 'ลบ' : 'Delete'} className="p-1 border border-red-300 rounded bg-white text-red-500 cursor-pointer hover:bg-red-50">
+                                                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>
+                                                                    </button>
+                                                                </div>
+                                                            </td>
+                                                            <td className="text-center"><input type="checkbox" checked={checked} onChange={() => setSelectedIds(prev => { const n = new Set(prev); if (n.has(r._id)) n.delete(r._id); else n.add(r._id); return n; })} /></td>
+                                                        </tr>
+                                                    );
+                                                })}
+                                            </tbody>
+                                        </table>
                                     </div>
-                                )}
+
+                                    {/* Pagination */}
+                                    {runnersTotal > listLimit && (
+                                        <div className="flex justify-center items-center gap-2 mt-3">
+                                            <button
+                                                disabled={listPage <= 1}
+                                                onClick={() => setListPage(p => Math.max(1, p - 1))}
+                                                className="px-3 py-1 text-[12px] border border-gray-300 rounded bg-white text-gray-600 cursor-pointer disabled:opacity-40"
+                                            >
+                                                ← {language === 'th' ? 'ก่อนหน้า' : 'Prev'}
+                                            </button>
+                                            <span className="text-[12px] text-gray-500">
+                                                {language === 'th'
+                                                    ? `หน้า ${listPage} / ${Math.ceil(runnersTotal / listLimit)}`
+                                                    : `Page ${listPage} of ${Math.ceil(runnersTotal / listLimit)}`}
+                                            </span>
+                                            <button
+                                                disabled={listPage >= Math.ceil(runnersTotal / listLimit)}
+                                                onClick={() => setListPage(p => p + 1)}
+                                                className="px-3 py-1 text-[12px] border border-gray-300 rounded bg-white text-gray-600 cursor-pointer disabled:opacity-40"
+                                            >
+                                                {language === 'th' ? 'ถัดไป' : 'Next'} →
+                                            </button>
+                                        </div>
+                                    )}
                                 </>
                             )}
                         </div>
@@ -1263,13 +1352,15 @@ export default function ParticipantsPage() {
                                     { key: 'chipCode', label: 'Chip Code', labelEn: 'Chip Code' },
                                     { key: 'rfidTag', label: 'RFID Tag', labelEn: 'RFID Tag' },
                                     { key: 'idNo', label: 'เลขบัตรประชาชน', labelEn: 'ID No.' },
-                                    { key: 'status', label: 'สถานะ', labelEn: 'Status', type: 'select', options: [
-                                        { v: 'not_started', l: language === 'th' ? 'ยังไม่เริ่ม' : 'Not Started' },
-                                        { v: 'in_progress', l: language === 'th' ? 'กำลังแข่ง' : 'In Progress' },
-                                        { v: 'finished', l: language === 'th' ? 'เข้าเส้นชัย' : 'Finished' },
-                                        { v: 'dnf', l: 'DNF' },
-                                        { v: 'dns', l: 'DNS' },
-                                    ]},
+                                    {
+                                        key: 'status', label: 'สถานะ', labelEn: 'Status', type: 'select', options: [
+                                            { v: 'not_started', l: language === 'th' ? 'ยังไม่เริ่ม' : 'Not Started' },
+                                            { v: 'in_progress', l: language === 'th' ? 'กำลังแข่ง' : 'In Progress' },
+                                            { v: 'finished', l: language === 'th' ? 'เข้าเส้นชัย' : 'Finished' },
+                                            { v: 'dnf', l: 'DNF' },
+                                            { v: 'dns', l: 'DNS' },
+                                        ]
+                                    },
                                     { key: 'team', label: 'ทีม', labelEn: 'Team' },
                                     { key: 'teamName', label: 'ชื่อทีม', labelEn: 'Team Name' },
                                     { key: 'box', label: 'บ็อกซ์', labelEn: 'Box' },

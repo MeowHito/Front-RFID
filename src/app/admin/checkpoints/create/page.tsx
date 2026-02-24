@@ -61,6 +61,7 @@ export default function RouteMappingPage() {
     });
 
     const hasUnsavedChanges = dirtyIds.size > 0;
+    const [syncing, setSyncing] = useState(false);
 
     const showToast = (message: string, type: 'success' | 'error') => {
         setToast({ message, type });
@@ -70,6 +71,32 @@ export default function RouteMappingPage() {
     const markDirty = useCallback((cpId: string) => {
         setDirtyIds(prev => { const n = new Set(prev); n.add(cpId); return n; });
     }, []);
+
+    // Sync checkpoints from RaceTiger (pulls actual_distance → kmCumulative)
+    const handleSyncFromRaceTiger = async () => {
+        if (!campaign?._id) return;
+        if (hasUnsavedChanges && !confirm(language === 'th' ? 'มีการเปลี่ยนแปลงที่ยังไม่บันทึก ต้องการ Sync หรือไม่?' : 'Unsaved changes will be overwritten. Sync anyway?')) return;
+        setSyncing(true);
+        try {
+            const res = await fetch(`/api/sync/import-events?id=${campaign._id}`, { method: 'POST' });
+            if (!res.ok) throw new Error('Sync failed');
+            const result = await res.json();
+            const data = result?.data || result;
+            const cpCount = data?.checkpoints?.created ?? 0;
+            showToast(
+                language === 'th'
+                    ? `Sync สำเร็จ! Checkpoint ${cpCount > 0 ? `สร้าง ${cpCount} จุด` : 'อัพเดต KM แล้ว'}`
+                    : `Sync complete! ${cpCount > 0 ? `${cpCount} checkpoints created` : 'KM updated'}`,
+                'success'
+            );
+            // Reload checkpoints to get updated kmCumulative
+            await loadCheckpoints(campaign._id);
+        } catch {
+            showToast(language === 'th' ? 'Sync ไม่สำเร็จ' : 'Sync failed', 'error');
+        } finally {
+            setSyncing(false);
+        }
+    };
 
     // Load featured campaign
     useEffect(() => {
@@ -155,7 +182,7 @@ export default function RouteMappingPage() {
         if (!deleteConfirm.checkpoint) return;
         const cp = deleteConfirm.checkpoint;
         setDeleteConfirm({ open: false, checkpoint: null });
-        
+
         try {
             const res = await fetch(`/api/checkpoints/${cp._id}`, { method: 'DELETE' });
             if (!res.ok) throw new Error('Failed');
@@ -769,7 +796,7 @@ export default function RouteMappingPage() {
                     </div>
                 </div>
             )}
-            
+
 
             <div className="content-box">
                 {loading ? (
@@ -792,7 +819,7 @@ export default function RouteMappingPage() {
                 ) : (
                     <>
                         {/* Filter toolbar */}
-                        
+
                         <div className="filter-toolbar" style={{ display: 'flex', gap: 10, marginBottom: 15, flexWrap: 'wrap', alignItems: 'center' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                                 <span style={{ fontWeight: 600, fontSize: 13 }}>
@@ -811,42 +838,59 @@ export default function RouteMappingPage() {
                                     ))}
                                 </select>
                             </div>
-                            
-                            <button onClick={handleOpenPicker} className="btn btn-query" style={{ background: '#3c8dbc', marginLeft: 'auto', fontSize: 13, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+
+                            <button onClick={handleOpenPicker} className="btn btn-query" style={{ background: '#3c8dbc', fontSize: 13, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
                                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="16" /><line x1="8" y1="12" x2="16" y2="12" /></svg>
                                 {language === 'th' ? 'ดึงจุด Checkpoint' : 'Pull checkpoints'}
-                                
+
                             </button>
                             <button
-                    onClick={handleSaveAll}
-                    disabled={saving || !hasUnsavedChanges || dirtyIds.size === 0}
-                    style={{
-                        padding: '6px 14px', borderRadius: 3, border: 'none',
-                        background: (hasUnsavedChanges && dirtyIds.size > 0) ? '#00a65a' : '#aaa', color: '#fff ',
-                        cursor: (hasUnsavedChanges && dirtyIds.size > 0 && !saving) ? 'pointer' : 'not-allowed', fontSize: 13,
-                        display: 'inline-flex', alignItems: 'center', gap: 5,
-                        opacity: saving ? 0.7 : 1,
-                    }}
-                >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
-                        <polyline points="17 21 17 13 7 13 7 21" />
-                        <polyline points="7 3 7 8 15 8" />
-                    </svg>
-                    {saving
-                        ? (language === 'th' ? 'กำลังบันทึก...' : 'Saving...')
-                        : (language === 'th' ? 'บันทึกแก้ไขทั้งหมด' : 'Save All Changes')
-                    }
-                    {hasUnsavedChanges && !saving && (
-                        <span style={{
-                            background: '#fff', color: '#00a65a', borderRadius: '50%',
-                            width: 18, height: 18, fontSize: 11, fontWeight: 700,
-                            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                        }}>{dirtyIds.size}</span>
-                    )}
-                </button>
+                                onClick={handleSyncFromRaceTiger}
+                                disabled={syncing}
+                                className="btn btn-query"
+                                style={{
+                                    background: '#f39c12', marginLeft: 'auto', fontSize: 13,
+                                    display: 'inline-flex', alignItems: 'center', gap: 5,
+                                    opacity: syncing ? 0.7 : 1,
+                                    cursor: syncing ? 'not-allowed' : 'pointer',
+                                }}
+                            >
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" /></svg>
+                                {syncing
+                                    ? (language === 'th' ? 'กำลัง Sync...' : 'Syncing...')
+                                    : (language === 'th' ? 'Sync from RaceTiger' : 'Sync from RaceTiger')
+                                }
+                            </button>
+                            <button
+                                onClick={handleSaveAll}
+                                disabled={saving || !hasUnsavedChanges || dirtyIds.size === 0}
+                                style={{
+                                    padding: '6px 14px', borderRadius: 3, border: 'none',
+                                    background: (hasUnsavedChanges && dirtyIds.size > 0) ? '#00a65a' : '#aaa', color: '#fff ',
+                                    cursor: (hasUnsavedChanges && dirtyIds.size > 0 && !saving) ? 'pointer' : 'not-allowed', fontSize: 13,
+                                    display: 'inline-flex', alignItems: 'center', gap: 5,
+                                    opacity: saving ? 0.7 : 1,
+                                }}
+                            >
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                    <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+                                    <polyline points="17 21 17 13 7 13 7 21" />
+                                    <polyline points="7 3 7 8 15 8" />
+                                </svg>
+                                {saving
+                                    ? (language === 'th' ? 'กำลังบันทึก...' : 'Saving...')
+                                    : (language === 'th' ? 'บันทึกแก้ไขทั้งหมด' : 'Save All Changes')
+                                }
+                                {hasUnsavedChanges && !saving && (
+                                    <span style={{
+                                        background: '#fff', color: '#00a65a', borderRadius: '50%',
+                                        width: 18, height: 18, fontSize: 11, fontWeight: 700,
+                                        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                                    }}>{dirtyIds.size}</span>
+                                )}
+                            </button>
                         </div>
-                        
+
 
                         {/* Table */}
                         {loadingCps ? (
@@ -917,176 +961,176 @@ export default function RouteMappingPage() {
                                         .slice()
                                         .sort((a, b) => a.orderNum - b.orderNum)
                                         .map((cp, idx) => {
-                                        const isDirty = dirtyIds.has(cp._id);
-                                        const isStart = cp.type === 'start';
-                                        const isFinish = cp.type === 'finish';
-                                        const hasCutoff = cp.cutoffTime && cp.cutoffTime !== '-' && cp.cutoffTime !== '';
-                                        const kmHasValue = cp.kmCumulative !== undefined && cp.kmCumulative !== null && cp.kmCumulative > 0;
-                                        const mode: 'rfid' | 'manual' =
-                                            (cp.description === 'manual' || cp.description === 'rfid') ? cp.description : 'rfid';
-                                        const badge = getModeBadgeStyle(mode);
+                                            const isDirty = dirtyIds.has(cp._id);
+                                            const isStart = cp.type === 'start';
+                                            const isFinish = cp.type === 'finish';
+                                            const hasCutoff = cp.cutoffTime && cp.cutoffTime !== '-' && cp.cutoffTime !== '';
+                                            const kmHasValue = cp.kmCumulative !== undefined && cp.kmCumulative !== null && cp.kmCumulative > 0;
+                                            const mode: 'rfid' | 'manual' =
+                                                (cp.description === 'manual' || cp.description === 'rfid') ? cp.description : 'rfid';
+                                            const badge = getModeBadgeStyle(mode);
 
-                                        return (
-                                            <tr
-                                                key={cp._id}
-                                                draggable
-                                                onDragStart={() => handleDragStart(idx)}
-                                                onDragOver={(e) => handleDragOver(e, idx)}
-                                                onDrop={() => handleDrop(idx)}
-                                                onDragEnd={handleDragEnd}
-                                                style={{
-                                                    ...(isDirty ? { background: '#fffbeb' } : {}),
-                                                    ...(overIdx === idx && dragIdx !== null && dragIdx !== idx
-                                                        ? { borderTop: '2px solid #3b82f6' }
-                                                        : {}),
-                                                    opacity: dragIdx === idx ? 0.5 : 1,
-                                                    transition: 'opacity 0.15s',
-                                                }}
-                                            >
-                                                <td style={{ textAlign: 'center', cursor: 'grab', userSelect: 'none', width: 30 }} title={language === 'th' ? 'คลิกค้างเพื่อย้ายลำดับ' : 'Hold to drag & reorder'}>
-                                                    <svg width="12" height="18" viewBox="0 0 12 18" fill="#999">
-                                                        <circle cx="3" cy="3" r="1.5" />
-                                                        <circle cx="9" cy="3" r="1.5" />
-                                                        <circle cx="3" cy="9" r="1.5" />
-                                                        <circle cx="9" cy="9" r="1.5" />
-                                                        <circle cx="3" cy="15" r="1.5" />
-                                                        <circle cx="9" cy="15" r="1.5" />
-                                                    </svg>
-                                                </td>
-                                                <td style={{ textAlign: 'center' }}>{cp.orderNum}</td>
-                                                <td
+                                            return (
+                                                <tr
+                                                    key={cp._id}
+                                                    draggable
+                                                    onDragStart={() => handleDragStart(idx)}
+                                                    onDragOver={(e) => handleDragOver(e, idx)}
+                                                    onDrop={() => handleDrop(idx)}
+                                                    onDragEnd={handleDragEnd}
                                                     style={{
-                                                        textAlign: 'left',
-                                                        maxWidth: 260,
-                                                        whiteSpace: 'nowrap',
-                                                        overflow: 'hidden',
-                                                        textOverflow: 'ellipsis',
+                                                        ...(isDirty ? { background: '#fffbeb' } : {}),
+                                                        ...(overIdx === idx && dragIdx !== null && dragIdx !== idx
+                                                            ? { borderTop: '2px solid #3b82f6' }
+                                                            : {}),
+                                                        opacity: dragIdx === idx ? 0.5 : 1,
+                                                        transition: 'opacity 0.15s',
                                                     }}
-                                                    title={cp.name}
                                                 >
-                                                    {cp.name}
-                                                </td>
-                                                <td>
-                                                    <input
-                                                        type="number"
-                                                        step="0.1"
-                                                        className="table-input"
-                                                        defaultValue={cp.kmCumulative ?? 0}
-                                                        key={`km-${cp._id}-${cp.kmCumulative}`}
-                                                        onChange={e => {
-                                                            const val = parseFloat(e.target.value) || 0;
-                                                            updateCheckpoint(cp._id, { kmCumulative: val });
-                                                        }}
-                                                        style={{
-                                                            width: '100%', padding: '4px 8px', border: '1px solid #ddd',
-                                                            borderRadius: 3, fontFamily: 'inherit', fontSize: 13,
-                                                            textAlign: 'center',
-                                                            color: kmHasValue ? '#3c8dbc' : undefined,
-                                                            fontWeight: kmHasValue ? 600 : undefined,
-                                                        }}
-                                                    />
-                                                </td>
-                                                <td>
-                                                    <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
-                                                        <select
-                                                            value={mode}
-                                                            onChange={e => {
-                                                                const newMode = e.target.value as 'rfid' | 'manual';
-                                                                updateCheckpoint(cp._id, {
-                                                                    description: newMode,
-                                                                    readerId: newMode === 'manual' ? '' : (cp.readerId || ''),
-                                                                });
-                                                            }}
-                                                            style={{
-                                                                padding: '4px 8px',
-                                                                borderRadius: 6,
-                                                                border: `1px solid ${badge.border}`,
-                                                                background: badge.bg,
-                                                                color: badge.text,
-                                                                fontSize: 12,
-                                                                fontWeight: 600,
-                                                                cursor: 'pointer',
-                                                                minWidth: 80,
-                                                            }}
-                                                        >
-                                                            <option value="rfid">RFID</option>
-                                                            <option value="manual">Manual</option>
-                                                        </select>
-                                                        <input
-                                                            type="text"
-                                                            placeholder="Reader ID"
-                                                            value={cp.readerId || ''}
-                                                            onChange={e => updateCheckpoint(cp._id, { readerId: e.target.value })}
-                                                            disabled={mode === 'manual'}
-                                                            style={{
-                                                                width: 100,
-                                                                padding: '4px 8px',
-                                                                borderRadius: 4,
-                                                                border: '1px solid #d1d5db',
-                                                                fontSize: 12,
-                                                                background: mode === 'manual' ? '#f5f5f5' : '#fff',
-                                                                opacity: mode === 'manual' ? 0.5 : 1,
-                                                            }}
-                                                        />
-                                                    </div>
-                                                </td>
-                                                <td>
-                                                    {isStart ? (
-                                                        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                                                            <span style={{ color: '#ccc', fontSize: 13 }}>—</span>
-                                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ccc" strokeWidth="2"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>
-                                                        </div>
-                                                    ) : (
-                                                        <input
-                                                            type="datetime-local"
-                                                            className="table-input"
-                                                            draggable={false}
-                                                            onDragStart={e => e.stopPropagation()}
-                                                            onMouseDown={e => e.stopPropagation()}
-                                                            value={cp.cutoffTime || ''}
-                                                            onChange={e => updateCheckpoint(cp._id, { cutoffTime: e.target.value })}
-                                                            style={{
-                                                                width: '100%', padding: '3px 4px', border: '1px solid #ddd',
-                                                                borderRadius: 3, fontFamily: 'inherit', fontSize: 12,
-                                                                color: hasCutoff ? '#dd4b39' : '#999',
-                                                                fontWeight: hasCutoff ? 600 : 400,
-                                                            }}
-                                                        />
-                                                    )}
-                                                </td>
-                                                <td style={{ textAlign: 'center' }}>
-                                                    <div
-                                                        className={`toggle-sim ${cp.active ? 'on' : ''}`}
-                                                        onClick={() => handleToggle(cp)}
-                                                        style={{ cursor: 'pointer' }}
-                                                    />
-                                                </td>
-                                                <td style={{ textAlign: 'center' }}>
-                                                    {(isStart || isFinish) ? (
-                                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ccc" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                                            <circle cx="12" cy="12" r="10" />
-                                                            <line x1="15" y1="9" x2="9" y2="15" />
-                                                            <line x1="9" y1="9" x2="15" y2="15" />
+                                                    <td style={{ textAlign: 'center', cursor: 'grab', userSelect: 'none', width: 30 }} title={language === 'th' ? 'คลิกค้างเพื่อย้ายลำดับ' : 'Hold to drag & reorder'}>
+                                                        <svg width="12" height="18" viewBox="0 0 12 18" fill="#999">
+                                                            <circle cx="3" cy="3" r="1.5" />
+                                                            <circle cx="9" cy="3" r="1.5" />
+                                                            <circle cx="3" cy="9" r="1.5" />
+                                                            <circle cx="9" cy="9" r="1.5" />
+                                                            <circle cx="3" cy="15" r="1.5" />
+                                                            <circle cx="9" cy="15" r="1.5" />
                                                         </svg>
-                                                    ) : (
-                                                        <button
-                                                            onClick={() => handleDeleteClick(cp)}
-                                                            style={{
-                                                                background: 'none', border: 'none', cursor: 'pointer',
-                                                                color: '#dd4b39', padding: 4,
+                                                    </td>
+                                                    <td style={{ textAlign: 'center' }}>{cp.orderNum}</td>
+                                                    <td
+                                                        style={{
+                                                            textAlign: 'left',
+                                                            maxWidth: 260,
+                                                            whiteSpace: 'nowrap',
+                                                            overflow: 'hidden',
+                                                            textOverflow: 'ellipsis',
+                                                        }}
+                                                        title={cp.name}
+                                                    >
+                                                        {cp.name}
+                                                    </td>
+                                                    <td>
+                                                        <input
+                                                            type="number"
+                                                            step="0.1"
+                                                            className="table-input"
+                                                            defaultValue={cp.kmCumulative ?? 0}
+                                                            key={`km-${cp._id}-${cp.kmCumulative}`}
+                                                            onChange={e => {
+                                                                const val = parseFloat(e.target.value) || 0;
+                                                                updateCheckpoint(cp._id, { kmCumulative: val });
                                                             }}
-                                                            title={language === 'th' ? 'ลบ' : 'Delete'}
-                                                        >
-                                                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                                                <polyline points="3 6 5 6 21 6" />
-                                                                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                                                            style={{
+                                                                width: '100%', padding: '4px 8px', border: '1px solid #ddd',
+                                                                borderRadius: 3, fontFamily: 'inherit', fontSize: 13,
+                                                                textAlign: 'center',
+                                                                color: kmHasValue ? '#3c8dbc' : undefined,
+                                                                fontWeight: kmHasValue ? 600 : undefined,
+                                                            }}
+                                                        />
+                                                    </td>
+                                                    <td>
+                                                        <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
+                                                            <select
+                                                                value={mode}
+                                                                onChange={e => {
+                                                                    const newMode = e.target.value as 'rfid' | 'manual';
+                                                                    updateCheckpoint(cp._id, {
+                                                                        description: newMode,
+                                                                        readerId: newMode === 'manual' ? '' : (cp.readerId || ''),
+                                                                    });
+                                                                }}
+                                                                style={{
+                                                                    padding: '4px 8px',
+                                                                    borderRadius: 6,
+                                                                    border: `1px solid ${badge.border}`,
+                                                                    background: badge.bg,
+                                                                    color: badge.text,
+                                                                    fontSize: 12,
+                                                                    fontWeight: 600,
+                                                                    cursor: 'pointer',
+                                                                    minWidth: 80,
+                                                                }}
+                                                            >
+                                                                <option value="rfid">RFID</option>
+                                                                <option value="manual">Manual</option>
+                                                            </select>
+                                                            <input
+                                                                type="text"
+                                                                placeholder="Reader ID"
+                                                                value={cp.readerId || ''}
+                                                                onChange={e => updateCheckpoint(cp._id, { readerId: e.target.value })}
+                                                                disabled={mode === 'manual'}
+                                                                style={{
+                                                                    width: 100,
+                                                                    padding: '4px 8px',
+                                                                    borderRadius: 4,
+                                                                    border: '1px solid #d1d5db',
+                                                                    fontSize: 12,
+                                                                    background: mode === 'manual' ? '#f5f5f5' : '#fff',
+                                                                    opacity: mode === 'manual' ? 0.5 : 1,
+                                                                }}
+                                                            />
+                                                        </div>
+                                                    </td>
+                                                    <td>
+                                                        {isStart ? (
+                                                            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                                                <span style={{ color: '#ccc', fontSize: 13 }}>—</span>
+                                                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ccc" strokeWidth="2"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>
+                                                            </div>
+                                                        ) : (
+                                                            <input
+                                                                type="datetime-local"
+                                                                className="table-input"
+                                                                draggable={false}
+                                                                onDragStart={e => e.stopPropagation()}
+                                                                onMouseDown={e => e.stopPropagation()}
+                                                                value={cp.cutoffTime || ''}
+                                                                onChange={e => updateCheckpoint(cp._id, { cutoffTime: e.target.value })}
+                                                                style={{
+                                                                    width: '100%', padding: '3px 4px', border: '1px solid #ddd',
+                                                                    borderRadius: 3, fontFamily: 'inherit', fontSize: 12,
+                                                                    color: hasCutoff ? '#dd4b39' : '#999',
+                                                                    fontWeight: hasCutoff ? 600 : 400,
+                                                                }}
+                                                            />
+                                                        )}
+                                                    </td>
+                                                    <td style={{ textAlign: 'center' }}>
+                                                        <div
+                                                            className={`toggle-sim ${cp.active ? 'on' : ''}`}
+                                                            onClick={() => handleToggle(cp)}
+                                                            style={{ cursor: 'pointer' }}
+                                                        />
+                                                    </td>
+                                                    <td style={{ textAlign: 'center' }}>
+                                                        {(isStart || isFinish) ? (
+                                                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ccc" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                                <circle cx="12" cy="12" r="10" />
+                                                                <line x1="15" y1="9" x2="9" y2="15" />
+                                                                <line x1="9" y1="9" x2="15" y2="15" />
                                                             </svg>
-                                                        </button>
-                                                    )}
-                                                </td>
-                                            </tr>
-                                        );
-                                    })}
+                                                        ) : (
+                                                            <button
+                                                                onClick={() => handleDeleteClick(cp)}
+                                                                style={{
+                                                                    background: 'none', border: 'none', cursor: 'pointer',
+                                                                    color: '#dd4b39', padding: 4,
+                                                                }}
+                                                                title={language === 'th' ? 'ลบ' : 'Delete'}
+                                                            >
+                                                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                                    <polyline points="3 6 5 6 21 6" />
+                                                                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                                                                </svg>
+                                                            </button>
+                                                        )}
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
                                 </tbody>
                             </table>
                         )}
