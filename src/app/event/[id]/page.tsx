@@ -45,14 +45,20 @@ interface Runner {
     status: string;
     netTime?: number;
     elapsedTime?: number;
+    gunTime?: number;
     overallRank?: number;
     genderRank?: number;
+    genderNetRank?: number;
     ageGroupRank?: number;
     categoryRank?: number;
     nationality?: string;
     team?: string;
     teamName?: string;
     latestCheckpoint?: string;
+    gunPace?: string;
+    netPace?: string;
+    totalFinishers?: number;
+    genderFinishers?: number;
 }
 
 interface TimingRecord {
@@ -121,6 +127,7 @@ export default function EventLivePage() {
     const [showColDropdown, setShowColDropdown] = useState(false);
 
     const [currentTime, setCurrentTime] = useState(new Date());
+    const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
     const [checkpointMappings, setCheckpointMappings] = useState<CheckpointMapping[]>([]);
     const [totalDistance, setTotalDistance] = useState<number>(0);
 
@@ -132,6 +139,25 @@ export default function EventLivePage() {
     }, []);
 
     useEffect(() => { if (eventKey) fetchEventData(); }, [eventKey]);
+
+    // Auto-refresh runners every 15 seconds
+    useEffect(() => {
+        if (!campaign?._id) return;
+        const refreshInterval = setInterval(async () => {
+            try {
+                const runnersRes = await fetch(`/api/runners?id=${campaign._id}`, { cache: 'no-store' });
+                if (runnersRes.ok) {
+                    const runnersData = await runnersRes.json().catch(() => ({}));
+                    const list = (runnersData?.data?.data as Runner[]) || (runnersData?.data as Runner[]) || (Array.isArray(runnersData) ? runnersData : []);
+                    if (Array.isArray(list) && list.length > 0) {
+                        setRunners(list);
+                        setLastUpdated(new Date());
+                    }
+                }
+            } catch { /* silently retry next interval */ }
+        }, 15_000);
+        return () => clearInterval(refreshInterval);
+    }, [campaign?._id]);
 
     async function fetchEventData() {
         try {
@@ -166,8 +192,9 @@ export default function EventLivePage() {
         } catch { setRunnerTimings([]); }
     }
 
-    function formatTime(ms: number | undefined): string {
-        if (!ms) return '-';
+    function formatTime(ms: number | undefined | null): string {
+        if (ms === undefined || ms === null || ms < 0) return '-';
+        if (ms === 0) return '0:00:00';
         const hours = Math.floor(ms / 3600000);
         const minutes = Math.floor((ms % 3600000) / 60000);
         const seconds = Math.floor((ms % 60000) / 1000);
@@ -440,21 +467,25 @@ export default function EventLivePage() {
                     <table style={{ width: '100%', textAlign: 'left', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
                         <thead>
                             <tr style={{ fontSize: 10, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '-0.02em', position: 'sticky', top: 0, background: '#fff', zIndex: 20, borderBottom: '2px solid #f1f5f9' }}>
-                                <th style={{ padding: '12px 12px', textAlign: 'center', width: '4%' }}>Rank</th>
-                                {showGenRank && <th style={{ padding: '12px 6px', textAlign: 'center', width: '3.5%' }}>Gen</th>}
-                                {showCatRank && <th style={{ padding: '12px 6px', textAlign: 'center', width: '3.5%' }}>Cat</th>}
-                                <th style={{ padding: '12px 8px', width: '22%' }}>{language === 'th' ? 'นักวิ่ง' : 'Runner'}</th>
-                                <th style={{ padding: '12px 6px', textAlign: 'center', width: '4%' }}>{language === 'th' ? 'เพศ' : 'Gender'}</th>
-                                <th style={{ padding: '12px 8px', width: '12%' }}>{language === 'th' ? 'สถานะ / จุดล่าสุด' : 'Status / Last CP'}</th>
-                                <th style={{ padding: '12px 8px', width: '12%' }}>{language === 'th' ? 'จุดถัดไป / คาดการณ์' : 'Next CP / Prediction'}</th>
-                                <th style={{ padding: '12px 8px', width: '8%' }}>{language === 'th' ? 'เวลา' : 'Time'}</th>
-                                <th style={{ padding: '12px 8px', width: '8%' }}>{language === 'th' ? 'คาดเวลาจบ' : 'Est. Finish'}</th>
-                                <th style={{ padding: '12px 12px', textAlign: 'right', width: '10%' }}>Progress</th>
+                                <th style={{ padding: '12px 6px', textAlign: 'center', width: '3%' }}>Rank</th>
+                                {showGenRank && <th style={{ padding: '12px 4px', textAlign: 'center', width: '3%' }}>Gen</th>}
+                                {showCatRank && <th style={{ padding: '12px 4px', textAlign: 'center', width: '3%' }}>Cat</th>}
+                                <th style={{ padding: '12px 6px', width: '15%' }}>{language === 'th' ? 'นักวิ่ง' : 'Runner'}</th>
+                                <th style={{ padding: '12px 4px', textAlign: 'center', width: '3%' }}>{language === 'th' ? 'เพศ' : 'Sex'}</th>
+                                <th style={{ padding: '12px 6px', width: '8%' }}>{language === 'th' ? 'สถานะ' : 'Status'}</th>
+                                <th style={{ padding: '12px 6px', textAlign: 'center', width: '7%' }}>{language === 'th' ? 'เวลาปืน' : 'Gun Time'}</th>
+                                <th style={{ padding: '12px 6px', textAlign: 'center', width: '7%' }}>{language === 'th' ? 'เวลาสุทธิ' : 'Net Time'}</th>
+                                <th style={{ padding: '12px 4px', textAlign: 'center', width: '4%' }}>{language === 'th' ? 'จัดเพศสุทธิ' : 'Gen Net'}</th>
+                                <th style={{ padding: '12px 6px', textAlign: 'center', width: '5%' }}>{language === 'th' ? 'เพสปืน' : 'Gun Pace'}</th>
+                                <th style={{ padding: '12px 6px', textAlign: 'center', width: '5%' }}>{language === 'th' ? 'เพสสุทธิ' : 'Net Pace'}</th>
+                                <th style={{ padding: '12px 4px', textAlign: 'center', width: '4%' }}>{language === 'th' ? 'จบทั้งหมด' : 'Finish'}</th>
+                                <th style={{ padding: '12px 4px', textAlign: 'center', width: '4%' }}>{language === 'th' ? 'จบ/เพศ' : 'Gen Fin'}</th>
+                                <th style={{ padding: '12px 8px', textAlign: 'right', width: '8%' }}>Progress</th>
                             </tr>
                         </thead>
                         <tbody>
                             {filteredRunners.length === 0 ? (
-                                <tr><td colSpan={showGenRank && showCatRank ? 10 : showGenRank || showCatRank ? 9 : 8} style={{ padding: '48px 16px', textAlign: 'center', color: '#94a3b8', fontSize: 14 }}>
+                                <tr><td colSpan={showGenRank && showCatRank ? 15 : showGenRank || showCatRank ? 14 : 13} style={{ padding: '48px 16px', textAlign: 'center', color: '#94a3b8', fontSize: 14 }}>
                                     {language === 'th' ? 'ไม่พบข้อมูลผู้เข้าแข่งขัน' : 'No participants found'}
                                 </td></tr>
                             ) : (
@@ -545,43 +576,52 @@ export default function EventLivePage() {
                                             <td style={{ padding: '12px 6px', textAlign: 'center', fontSize: 10, fontWeight: 700, color: runner.gender === 'M' ? '#3b82f6' : '#ec4899' }}>
                                                 {runner.gender}
                                             </td>
-                                            {/* Status / Last CP */}
-                                            <td style={{ padding: '12px 8px' }}>
+                                            {/* Status */}
+                                            <td style={{ padding: '12px 6px' }}>
                                                 <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 4, fontWeight: 700, fontSize: 10, color: '#fff', background: getStatusBgColor(runner.status), lineHeight: 1.4, marginBottom: 3 }}>
                                                     {getStatusLabel(runner.status)}
                                                 </span>
-                                                <span style={{ display: 'block', fontSize: 10, color: '#94a3b8', textTransform: 'uppercase', fontWeight: 500, marginTop: 2 }}>
-                                                    {runner.latestCheckpoint || '-'}
-                                                </span>
-                                            </td>
-                                            {/* Next CP / Prediction */}
-                                            <td style={{ padding: '12px 8px' }}>
-                                                {runner.status === 'in_progress' ? (
-                                                    <>
-                                                        <span style={{ display: 'block', fontWeight: 700, fontSize: 11, color: '#0f172a', lineHeight: 1, marginBottom: 3 }}>
-                                                            {runner.latestCheckpoint ? '→ Next' : '→ START'}
-                                                        </span>
-                                                        <span style={{ fontSize: 10, color: '#3b82f6', fontWeight: 600 }}>
-                                                            {runner.elapsedTime ? `~${formatTime(Math.round(runner.elapsedTime * 1.15))}` : '-'}
-                                                        </span>
-                                                    </>
-                                                ) : runner.status === 'finished' ? (
-                                                    <span style={{ fontSize: 10, color: '#22c55e', fontWeight: 700 }}>✓ DONE</span>
-                                                ) : (
-                                                    <span style={{ fontSize: 10, color: '#94a3b8' }}>-</span>
+                                                {runner.latestCheckpoint && (
+                                                    <span style={{ display: 'block', fontSize: 9, color: '#94a3b8', textTransform: 'uppercase', fontWeight: 500, marginTop: 2 }}>
+                                                        {runner.latestCheckpoint}
+                                                    </span>
                                                 )}
                                             </td>
-                                            {/* Time */}
-                                            <td style={{ padding: '12px 8px' }}>
-                                                <span style={{ fontSize: 14, fontWeight: 700, color: '#0f172a' }}>
-                                                    {formatTime(runner.elapsedTime || runner.netTime)}
+                                            {/* Gun Time (枪时间) */}
+                                            <td style={{ padding: '12px 6px', textAlign: 'center' }}>
+                                                <span style={{ fontSize: 12, fontWeight: 700, color: '#0f172a', fontFamily: 'monospace' }}>
+                                                    {formatTime(runner.gunTime || runner.elapsedTime)}
                                                 </span>
                                             </td>
-                                            {/* Est. Finish */}
-                                            <td style={{ padding: '12px 8px' }}>
-                                                <span style={{ fontSize: 11, fontWeight: 700, color: runner.status === 'in_progress' ? '#3b82f6' : '#94a3b8' }}>
-                                                    {estFinish}
+                                            {/* Net Time (净时间) */}
+                                            <td style={{ padding: '12px 6px', textAlign: 'center' }}>
+                                                <span style={{ fontSize: 12, fontWeight: 700, color: runner.netTime ? '#059669' : '#94a3b8', fontFamily: 'monospace' }}>
+                                                    {formatTime(runner.netTime)}
                                                 </span>
+                                            </td>
+                                            {/* Gender Net Rank (性别净排名) */}
+                                            <td style={{ padding: '12px 4px', textAlign: 'center', fontSize: 11, fontWeight: 600, color: '#64748b' }}>
+                                                {runner.genderNetRank || '-'}
+                                            </td>
+                                            {/* Gun Pace (枪时配速) */}
+                                            <td style={{ padding: '12px 6px', textAlign: 'center' }}>
+                                                <span style={{ fontSize: 11, fontWeight: 600, color: '#475569', fontFamily: 'monospace' }}>
+                                                    {runner.gunPace || '-'}
+                                                </span>
+                                            </td>
+                                            {/* Net Pace (净时配速) */}
+                                            <td style={{ padding: '12px 6px', textAlign: 'center' }}>
+                                                <span style={{ fontSize: 11, fontWeight: 600, color: runner.netPace ? '#059669' : '#94a3b8', fontFamily: 'monospace' }}>
+                                                    {runner.netPace || '-'}
+                                                </span>
+                                            </td>
+                                            {/* Total Finishers (完赛总人数) */}
+                                            <td style={{ padding: '12px 4px', textAlign: 'center', fontSize: 11, fontWeight: 600, color: '#64748b' }}>
+                                                {runner.totalFinishers || '-'}
+                                            </td>
+                                            {/* Gender Finishers (完赛性别人数) */}
+                                            <td style={{ padding: '12px 4px', textAlign: 'center', fontSize: 11, fontWeight: 600, color: '#64748b' }}>
+                                                {runner.genderFinishers || '-'}
                                             </td>
                                             {/* Progress */}
                                             <td style={{ padding: '12px 12px', textAlign: 'right' }}>
@@ -624,9 +664,12 @@ export default function EventLivePage() {
                     <span style={{ fontSize: 9, fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>
                         {filteredRunners.length} / {runners.length} {language === 'th' ? 'คน' : 'runners'}
                     </span>
+                    <span style={{ fontSize: 9, fontWeight: 600, color: '#94a3b8' }}>
+                        {language === 'th' ? 'อัพเดทล่าสุด' : 'Updated'}: {lastUpdated.toLocaleTimeString(language === 'th' ? 'th-TH' : 'en-US')}
+                    </span>
                     <span style={{ fontSize: 9, fontWeight: 700, color: '#22c55e', textTransform: 'uppercase' }}>
                         <span style={{ display: 'inline-block', width: 5, height: 5, borderRadius: '50%', background: '#22c55e', marginRight: 4, animation: 'pulseLive 1.5s infinite' }} />
-                        Connected
+                        {language === 'th' ? 'Auto-refresh 15s' : 'Auto-refresh 15s'}
                     </span>
                     <span style={{ fontSize: 10, fontFamily: 'monospace', color: '#94a3b8' }}>
                         {currentTime.toLocaleTimeString(language === 'th' ? 'th-TH' : 'en-US')}
