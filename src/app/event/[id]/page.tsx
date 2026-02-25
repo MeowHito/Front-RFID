@@ -1,10 +1,8 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import Link from 'next/link';
-import Image from 'next/image';
 import { useParams } from 'next/navigation';
-import { useTheme } from '@/lib/theme-context';
 import { useLanguage } from '@/lib/language-context';
 
 interface Campaign {
@@ -66,25 +64,43 @@ interface TimingRecord {
     elapsedTime?: number;
 }
 
+interface CheckpointMapping {
+    _id: string;
+    checkpointId: string;
+    eventId: string;
+    orderNum: number;
+    distanceFromStart?: number;
+    checkpoint?: { name: string; type: string; kmCumulative?: number };
+}
+
 function normalizeComparableText(value: unknown): string {
-    return String(value || '')
-        .trim()
-        .toLowerCase()
-        .replace(/[^a-z0-9ก-๙]+/g, '');
+    return String(value || '').trim().toLowerCase().replace(/[^a-z0-9ก-๙]+/g, '');
 }
 
 function parseDistanceValue(value: unknown): number | null {
     const raw = String(value || '').replace(/,/g, '');
     const match = raw.match(/-?\d+(?:\.\d+)?/);
-    if (!match) {
-        return null;
-    }
+    if (!match) return null;
     const parsed = Number(match[0]);
     return Number.isFinite(parsed) ? parsed : null;
 }
 
-export default function EventDashboardPage() {
-    const { theme, toggleTheme } = useTheme();
+const AVATAR_COLORS = [
+    '#ef4444', '#f97316', '#eab308', '#22c55e', '#06b6d4',
+    '#3b82f6', '#8b5cf6', '#ec4899', '#f43f5e', '#14b8a6',
+];
+
+function getAvatarColor(name: string): string {
+    let hash = 0;
+    for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
+    return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
+}
+
+function getInitials(firstName: string, lastName: string): string {
+    return ((firstName?.[0] || '') + (lastName?.[0] || '')).toUpperCase() || '?';
+}
+
+export default function EventLivePage() {
     const { language } = useLanguage();
     const params = useParams();
     const eventKey = params.id as string;
@@ -100,11 +116,13 @@ export default function EventDashboardPage() {
     const [selectedRunner, setSelectedRunner] = useState<Runner | null>(null);
     const [runnerTimings, setRunnerTimings] = useState<TimingRecord[]>([]);
 
-    // Column visibility
     const [showGenRank, setShowGenRank] = useState(true);
     const [showCatRank, setShowCatRank] = useState(true);
+    const [showColDropdown, setShowColDropdown] = useState(false);
 
     const [currentTime, setCurrentTime] = useState(new Date());
+    const [checkpointMappings, setCheckpointMappings] = useState<CheckpointMapping[]>([]);
+    const [totalDistance, setTotalDistance] = useState<number>(0);
 
     const toApiData = (payload: any) => payload?.data ?? payload;
 
@@ -113,72 +131,39 @@ export default function EventDashboardPage() {
         return () => clearInterval(timer);
     }, []);
 
-    useEffect(() => {
-        if (eventKey) fetchEventData();
-    }, [eventKey]);
+    useEffect(() => { if (eventKey) fetchEventData(); }, [eventKey]);
 
     async function fetchEventData() {
         try {
             setLoading(true);
             setError(null);
 
-            // Resolve campaign by _id/uuid/slug first
             const campaignRes = await fetch(`/api/campaigns/${eventKey}`, { cache: 'no-store' });
+            if (!campaignRes.ok) throw new Error(language === 'th' ? 'ไม่พบข้อมูลกิจกรรม' : 'Event not found');
 
-            if (!campaignRes.ok) {
-                throw new Error(language === 'th' ? 'ไม่พบข้อมูลกิจกรรม' : 'Event not found');
-            }
-
-            const campaignJson = await campaignRes.json().catch(() => ({}));
-            const campaignData = toApiData(campaignJson) as Campaign;
-
-            if (!campaignData?._id) {
-                throw new Error(language === 'th' ? 'ไม่พบข้อมูลกิจกรรม' : 'Event not found');
-            }
-
+            const campaignData = toApiData(await campaignRes.json().catch(() => ({}))) as Campaign;
+            if (!campaignData?._id) throw new Error(language === 'th' ? 'ไม่พบข้อมูลกิจกรรม' : 'Event not found');
             setCampaign(campaignData);
 
-            // Public runners endpoint currently expects campaign ObjectId
             const runnersRes = await fetch(`/api/runners?id=${campaignData._id}`, { cache: 'no-store' });
-
             if (runnersRes.ok) {
                 const runnersData = await runnersRes.json().catch(() => ({}));
-                // Backend public API returns { status, data: { data: Runner[], total } }
-                const list =
-                    (runnersData?.data?.data as Runner[]) ||
-                    (runnersData?.data as Runner[]) ||
-                    (Array.isArray(runnersData) ? runnersData : []);
+                const list = (runnersData?.data?.data as Runner[]) || (runnersData?.data as Runner[]) || (Array.isArray(runnersData) ? runnersData : []);
                 setRunners(Array.isArray(list) ? list : []);
-            } else {
-                setRunners([]);
             }
         } catch (err: unknown) {
-            const errorMessage = err instanceof Error ? err.message : 'Error loading event';
-            setError(errorMessage);
+            setError(err instanceof Error ? err.message : 'Error');
         } finally {
             setLoading(false);
         }
     }
 
     async function fetchRunnerTimings(runnerId: string) {
+        if (!campaign?._id) { setRunnerTimings([]); return; }
         try {
-            if (!campaign?._id) {
-                setRunnerTimings([]);
-                return;
-            }
-
-            const res = await fetch(`/api/timing/runner/${campaign._id}/${runnerId}`, {
-                cache: 'no-store',
-            });
-            if (res.ok) {
-                const data = await res.json();
-                setRunnerTimings(data || []);
-            } else {
-                setRunnerTimings([]);
-            }
-        } catch {
-            setRunnerTimings([]);
-        }
+            const res = await fetch(`/api/timing/runner/${campaign._id}/${runnerId}`, { cache: 'no-store' });
+            if (res.ok) { setRunnerTimings(await res.json() || []); } else { setRunnerTimings([]); }
+        } catch { setRunnerTimings([]); }
     }
 
     function formatTime(ms: number | undefined): string {
@@ -191,20 +176,16 @@ export default function EventDashboardPage() {
 
     function formatDate(dateString: string) {
         const date = new Date(dateString);
-        return date.toLocaleDateString(language === 'th' ? 'th-TH' : 'en-US', {
-            day: '2-digit',
-            month: 'long',
-            year: 'numeric'
-        });
+        return date.toLocaleDateString(language === 'th' ? 'th-TH' : 'en-US', { day: '2-digit', month: 'short', year: 'numeric' });
     }
 
     function getStatusColor(status: string) {
         switch (status) {
-            case 'finished': return { text: 'var(--success)', bg: 'var(--success)' };
-            case 'in_progress': return { text: 'var(--warning)', bg: 'var(--warning)' };
-            case 'dnf': return { text: 'var(--error)', bg: 'var(--error)' };
-            case 'dns': return { text: 'var(--error)', bg: 'var(--error)' };
-            default: return { text: 'var(--muted-foreground)', bg: 'var(--muted-foreground)' };
+            case 'finished': return '#22c55e';
+            case 'in_progress': return '#f97316';
+            case 'dnf': return '#ef4444';
+            case 'dns': return '#ef4444';
+            default: return '#94a3b8';
         }
     }
 
@@ -219,8 +200,19 @@ export default function EventDashboardPage() {
         }
     }
 
+    function getStatusBgColor(status: string) {
+        switch (status) {
+            case 'finished': return '#22c55e';
+            case 'in_progress': return '#f97316';
+            case 'dnf': return '#dc2626';
+            case 'dns': return '#dc2626';
+            default: return '#94a3b8';
+        }
+    }
+
     const stats = useMemo(() => ({
         total: runners.length,
+        started: runners.filter(r => r.status !== 'not_started' && r.status !== 'dns').length,
         finished: runners.filter(r => r.status === 'finished').length,
         racing: runners.filter(r => r.status === 'in_progress').length,
         dnf: runners.filter(r => r.status === 'dnf' || r.status === 'dns').length,
@@ -229,112 +221,59 @@ export default function EventDashboardPage() {
     const categories = useMemo(() => {
         const campaignCategories = Array.isArray(campaign?.categories) ? campaign.categories : [];
         if (!campaignCategories.length) {
-            const runnerCategories = new Set(runners.map((runner) => runner.category).filter(Boolean));
-            return Array.from(runnerCategories).map((value) => ({
-                key: value,
-                label: value,
-                normalizedName: normalizeComparableText(value),
-                normalizedDistance: normalizeComparableText(value),
-                distanceValue: parseDistanceValue(value),
-            }));
+            const runnerCategories = new Set(runners.map(r => r.category).filter(Boolean));
+            return Array.from(runnerCategories).map(v => ({ key: v, label: v, normalizedName: normalizeComparableText(v), normalizedDistance: normalizeComparableText(v), distanceValue: parseDistanceValue(v) }));
         }
-
-        return campaignCategories
-            .map((cat, index) => {
-                const distance = String(cat?.distance || '').trim();
-                const name = String(cat?.name || '').trim();
-                const normalizedDistance = normalizeComparableText(distance);
-                const normalizedName = normalizeComparableText(name);
-                const keyBase = normalizedDistance || normalizedName || String(index + 1);
-                const key = `${keyBase}-${index}`;
-                const label = distance || name || `${language === 'th' ? 'ระยะ' : 'Category'} ${index + 1}`;
-
-                return {
-                    key,
-                    label,
-                    normalizedDistance,
-                    normalizedName,
-                    distanceValue: parseDistanceValue(distance || name),
-                };
-            })
-            .filter((cat) => Boolean(cat.label));
+        return campaignCategories.map((cat, i) => {
+            const distance = String(cat?.distance || '').trim();
+            const name = String(cat?.name || '').trim();
+            const nd = normalizeComparableText(distance);
+            const nn = normalizeComparableText(name);
+            return { key: `${nd || nn || i + 1}-${i}`, label: distance || name || `Category ${i + 1}`, normalizedDistance: nd, normalizedName: nn, distanceValue: parseDistanceValue(distance || name) };
+        }).filter(c => Boolean(c.label));
     }, [campaign, runners, language]);
 
-    const resolveRunnerCategoryKey = (runner: Runner): string => {
-        if (!categories.length) {
-            return runner.category;
+    const resolveRunnerCategoryKey = useCallback((runner: Runner): string => {
+        if (!categories.length) return runner.category;
+        const rc = normalizeComparableText(runner.category);
+        const rd = parseDistanceValue(runner.category);
+        for (const cat of categories) {
+            if (rc && (rc === cat.normalizedName || rc === cat.normalizedDistance || rc.includes(cat.normalizedName) || rc.includes(cat.normalizedDistance) || cat.normalizedName.includes(rc) || cat.normalizedDistance.includes(rc))) return cat.key;
+            if (rd !== null && cat.distanceValue !== null && Math.abs(rd - cat.distanceValue) < 0.001) return cat.key;
         }
-
-        const runnerCategoryRaw = String(runner.category || '').trim();
-        const runnerCategoryKey = normalizeComparableText(runnerCategoryRaw);
-        const runnerDistance = parseDistanceValue(runnerCategoryRaw);
-
-        for (const category of categories) {
-            if (
-                runnerCategoryKey
-                && (
-                    runnerCategoryKey === category.normalizedName
-                    || runnerCategoryKey === category.normalizedDistance
-                    || runnerCategoryKey.includes(category.normalizedName)
-                    || runnerCategoryKey.includes(category.normalizedDistance)
-                    || category.normalizedName.includes(runnerCategoryKey)
-                    || category.normalizedDistance.includes(runnerCategoryKey)
-                )
-            ) {
-                return category.key;
-            }
-
-            if (
-                runnerDistance !== null
-                && category.distanceValue !== null
-                && Math.abs(runnerDistance - category.distanceValue) < 0.001
-            ) {
-                return category.key;
-            }
-        }
-
-        return runnerCategoryRaw;
-    };
+        return runner.category;
+    }, [categories]);
 
     const filteredRunners = useMemo(() => {
         return runners
             .filter(runner => {
-                const matchesSearch = searchQuery === '' ||
-                    runner.firstName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                    runner.lastName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                    runner.bib.includes(searchQuery);
+                const matchesSearch = !searchQuery || runner.firstName?.toLowerCase().includes(searchQuery.toLowerCase()) || runner.lastName?.toLowerCase().includes(searchQuery.toLowerCase()) || runner.bib?.includes(searchQuery);
                 const matchesGender = filterGender === 'ALL' || runner.gender === filterGender;
                 const matchesCategory = filterCategory === 'ALL' || resolveRunnerCategoryKey(runner) === filterCategory;
                 return matchesSearch && matchesGender && matchesCategory;
             })
             .sort((a, b) => {
-                // Sort by rank (finished first, then in_progress, then others)
                 const statusOrder: Record<string, number> = { 'finished': 0, 'in_progress': 1, 'not_started': 2, 'dns': 3, 'dnf': 4 };
-                const statusDiff = (statusOrder[a.status] ?? 5) - (statusOrder[b.status] ?? 5);
-                if (statusDiff !== 0) return statusDiff;
+                const sd = (statusOrder[a.status] ?? 5) - (statusOrder[b.status] ?? 5);
+                if (sd !== 0) return sd;
                 if (a.overallRank && b.overallRank) return a.overallRank - b.overallRank;
                 return 0;
             });
-    }, [runners, searchQuery, filterGender, filterCategory, categories]);
+    }, [runners, searchQuery, filterGender, filterCategory, resolveRunnerCategoryKey]);
 
     const handleViewRunner = (runner: Runner) => {
         setSelectedRunner(runner);
         fetchRunnerTimings(runner._id);
     };
 
-    // Theme-based styles
-    const isDark = theme === 'dark';
-
+    // Loading state
     if (loading) {
         return (
-            <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--background)' }}>
-                <div className="text-center">
-                    <div className="w-16 h-16 glass rounded-2xl flex items-center justify-center mx-auto mb-4">
-                        <div className="w-8 h-8 border-3 rounded-full animate-spin" style={{ borderColor: 'var(--border)', borderTopColor: 'var(--accent)' }}></div>
-                    </div>
-                    <p style={{ color: 'var(--muted-foreground)' }}>
-                        {language === 'th' ? 'กำลังโหลดข้อมูล...' : 'Loading...'}
-                    </p>
+            <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f8fafc', fontFamily: "'Inter', 'Prompt', sans-serif" }}>
+                <div style={{ textAlign: 'center' }}>
+                    <div style={{ width: 40, height: 40, border: '3px solid #e2e8f0', borderTopColor: '#22c55e', borderRadius: '50%', animation: 'spin 1s linear infinite', margin: '0 auto 16px' }} />
+                    <p style={{ color: '#94a3b8', fontSize: 14 }}>{language === 'th' ? 'กำลังโหลด...' : 'Loading...'}</p>
+                    <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
                 </div>
             </div>
         );
@@ -342,15 +281,13 @@ export default function EventDashboardPage() {
 
     if (error || !campaign) {
         return (
-            <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--background)' }}>
-                <div className="glass p-8 rounded-2xl max-w-md text-center">
-                    <div className="text-4xl mb-4">😔</div>
-                    <h2 className="text-xl font-semibold mb-2" style={{ color: 'var(--foreground)' }}>
-                        {language === 'th' ? 'ไม่พบข้อมูล' : 'Not Found'}
-                    </h2>
-                    <p className="mb-4" style={{ color: 'var(--muted-foreground)' }}>{error}</p>
-                    <Link href="/" className="inline-block py-2 px-4 rounded-xl" style={{ background: 'var(--accent)', color: 'var(--accent-foreground)' }}>
-                        {language === 'th' ? 'กลับหน้าแรก' : 'Back to Home'}
+            <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f8fafc', fontFamily: "'Inter', 'Prompt', sans-serif" }}>
+                <div style={{ textAlign: 'center', padding: 32, background: '#fff', borderRadius: 16, boxShadow: '0 4px 24px rgba(0,0,0,0.08)', maxWidth: 400 }}>
+                    <div style={{ fontSize: 48, marginBottom: 16 }}>😔</div>
+                    <h2 style={{ fontSize: 20, fontWeight: 700, marginBottom: 8, color: '#0f172a' }}>{language === 'th' ? 'ไม่พบข้อมูล' : 'Not Found'}</h2>
+                    <p style={{ color: '#94a3b8', marginBottom: 16 }}>{error}</p>
+                    <Link href="/" style={{ display: 'inline-block', padding: '8px 24px', borderRadius: 8, background: '#22c55e', color: '#fff', fontWeight: 600, textDecoration: 'none' }}>
+                        {language === 'th' ? 'กลับหน้าแรก' : 'Back'}
                     </Link>
                 </div>
             </div>
@@ -358,77 +295,66 @@ export default function EventDashboardPage() {
     }
 
     return (
-        <div className="min-h-screen overflow-hidden" style={{ background: isDark ? '#0f172a' : '#f8fafc', color: isDark ? '#f8fafc' : '#1e293b' }}>
-            {/* Header */}
-            <header className="px-4 py-2 shadow-sm relative z-30" style={{
-                background: isDark ? 'rgba(15,23,42,0.95)' : 'rgba(255,255,255,0.95)',
-                borderBottom: `1px solid ${isDark ? 'rgba(255,255,255,0.08)' : '#e2e8f0'}`,
-                backdropFilter: 'blur(12px)'
-            }}>
-                <div className="max-w-full mx-auto flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                        <Link href="/" className="flex items-center">
-                            <Image
-                                src={isDark ? '/logo-white.png' : '/logo-black.png'}
-                                alt="RACETIME"
-                                width={100}
-                                height={32}
-                                className="h-8 w-auto"
-                            />
-                        </Link>
-                        <div className="border-l pl-3" style={{ borderColor: isDark ? 'rgba(255,255,255,0.1)' : '#e2e8f0' }}>
-                            <span className="text-lg font-black italic" style={{ color: isDark ? '#f8fafc' : '#0f172a' }}>
-                                RACETIME <span className="font-bold uppercase not-italic" style={{ color: 'var(--success)' }}>Live</span>
-                            </span>
-                        </div>
-                        <div className="hidden sm:block">
-                            <h1 className="text-sm font-bold leading-tight" style={{ color: isDark ? '#f8fafc' : '#0f172a' }}>{campaign.name}</h1>
-                            <p className="text-[10px] font-medium" style={{ color: isDark ? '#94a3b8' : '#94a3b8' }}>
+        <div style={{ minHeight: '100vh', overflow: 'hidden', background: '#f8fafc', color: '#1e293b', fontFamily: "'Inter', 'Prompt', sans-serif" }}>
+            <style>{`
+                @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Prompt:wght@400;500;600;700&display=swap');
+                @keyframes pulseLive { 0% { transform: scale(0.9); opacity: 0.7; } 50% { transform: scale(1.2); opacity: 1; } 100% { transform: scale(0.9); opacity: 0.7; } }
+                .live-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; animation: pulseLive 1.5s infinite; border: 1.5px solid white; }
+                .runner-row:hover { background-color: #f0fdf4 !important; border-left-color: #22c55e !important; }
+                .table-scroll::-webkit-scrollbar { display: none; }
+                .table-scroll { scrollbar-width: none; }
+            `}</style>
+
+            {/* ===== HEADER ===== */}
+            <header style={{ background: '#fff', borderBottom: '1px solid #e2e8f0', padding: '8px 16px', boxShadow: '0 1px 3px rgba(0,0,0,0.04)', position: 'relative', zIndex: 30 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', maxWidth: '100%' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                        <span style={{ fontSize: 18, fontWeight: 900, fontStyle: 'italic', color: '#0f172a', borderRight: '1px solid #e2e8f0', paddingRight: 12 }}>
+                            ACTION <span style={{ color: '#22c55e', fontWeight: 700, fontStyle: 'normal', textTransform: 'uppercase' }}>Live</span>
+                        </span>
+                        <div>
+                            <h1 style={{ fontSize: 14, fontWeight: 700, lineHeight: 1.2, margin: 0, color: '#0f172a' }}>{campaign.name}</h1>
+                            <p style={{ fontSize: 10, color: '#94a3b8', fontWeight: 500, margin: 0 }}>
                                 {formatDate(campaign.eventDate)} | {campaign.location}
                             </p>
                         </div>
                     </div>
 
-                    <div className="flex gap-4 text-[10px] font-bold uppercase tracking-wider items-center px-3 py-1.5">
-                        <div className="flex items-center" style={{ color: isDark ? '#94a3b8' : '#64748b' }}>
-                            Started: <span className="ml-1" style={{ color: isDark ? '#f8fafc' : '#0f172a' }}>{stats.total}</span>
+                    <div style={{ display: 'flex', gap: 16, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', alignItems: 'center', padding: '6px 12px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', color: '#64748b' }}>
+                            Started: <span style={{ color: '#0f172a', marginLeft: 4 }}>{stats.started}</span>
                         </div>
-                        <div className="hidden sm:flex items-center" style={{ color: 'var(--success)' }}>
-                            <span className="w-1.5 h-1.5 rounded-full mr-1.5" style={{ background: 'var(--success)' }}></span>
-                            Racing: <span className="ml-1" style={{ color: isDark ? '#f8fafc' : '#0f172a' }}>{stats.racing}</span>
+                        <div style={{ display: 'flex', alignItems: 'center', color: '#22c55e' }}>
+                            <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#22c55e', marginRight: 6 }} />
+                            Racing: <span style={{ color: '#0f172a', marginLeft: 4 }}>{stats.racing}</span>
                         </div>
-                        <div className="hidden sm:flex items-center" style={{ color: 'var(--primary)' }}>
-                            <span className="w-1.5 h-1.5 rounded-full mr-1.5" style={{ background: 'var(--primary)' }}></span>
-                            Fin: <span className="ml-1" style={{ color: isDark ? '#f8fafc' : '#0f172a' }}>{stats.finished}</span>
+                        <div style={{ display: 'flex', alignItems: 'center', color: '#3b82f6' }}>
+                            <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#3b82f6', marginRight: 6 }} />
+                            Fin: <span style={{ color: '#0f172a', marginLeft: 4 }}>{stats.finished}</span>
                         </div>
-                        <div className="hidden sm:flex items-center" style={{ color: 'var(--error)' }}>
-                            <span className="w-1.5 h-1.5 rounded-full mr-1.5" style={{ background: 'var(--error)' }}></span>
-                            DNF: <span className="ml-1" style={{ color: isDark ? '#f8fafc' : '#0f172a' }}>{stats.dnf}</span>
+                        <div style={{ display: 'flex', alignItems: 'center', color: '#ef4444' }}>
+                            <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#ef4444', marginRight: 6 }} />
+                            DNF: <span style={{ color: '#0f172a', marginLeft: 4 }}>{stats.dnf}</span>
                         </div>
-                        <button onClick={toggleTheme} className="p-1.5 rounded-lg" style={{ background: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)' }}>
-                            <span className="text-sm">{isDark ? '☀️' : '🌙'}</span>
-                        </button>
                     </div>
                 </div>
             </header>
 
-            {/* Filter Bar */}
-            <div className="px-4 py-2 flex flex-wrap items-center justify-between gap-3" style={{
-                background: isDark ? 'rgba(15,23,42,0.9)' : 'rgba(255,255,255,0.9)',
-                borderBottom: `1px solid ${isDark ? 'rgba(255,255,255,0.06)' : '#e2e8f0'}`
-            }}>
-                <div className="flex items-center gap-3">
-                    <span className="text-[10px] font-bold uppercase whitespace-nowrap" style={{ color: isDark ? '#64748b' : '#94a3b8' }}>
+            {/* ===== FILTER BAR ===== */}
+            <div style={{ background: '#fff', borderBottom: '1px solid #e2e8f0', padding: '8px 16px', display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                {/* Distance filter */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <span style={{ fontSize: 10, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>
                         {language === 'th' ? 'ประเภท:' : 'Distance:'}
                     </span>
-                    <div className="flex gap-1.5 flex-wrap">
+                    <div style={{ display: 'flex', gap: 6 }}>
                         <button
                             onClick={() => setFilterCategory('ALL')}
-                            className="px-3 py-1 rounded-full text-[11px] font-bold transition-all"
                             style={{
-                                background: filterCategory === 'ALL' ? (isDark ? '#f8fafc' : '#1e293b') : 'transparent',
-                                color: filterCategory === 'ALL' ? (isDark ? '#0f172a' : '#fff') : (isDark ? '#94a3b8' : '#64748b'),
-                                border: `1px solid ${filterCategory === 'ALL' ? (isDark ? '#f8fafc' : '#1e293b') : (isDark ? 'rgba(255,255,255,0.1)' : '#e2e8f0')}`
+                                padding: '6px 14px', borderRadius: 20, fontSize: 11, fontWeight: 700, cursor: 'pointer', transition: 'all 0.2s', border: '1px solid',
+                                ...(filterCategory === 'ALL'
+                                    ? { background: '#1e293b', color: '#fff', borderColor: '#1e293b' }
+                                    : { background: '#fff', color: '#64748b', borderColor: '#e2e8f0' })
                             }}
                         >
                             {language === 'th' ? 'ทั้งหมด' : 'ALL'}
@@ -437,11 +363,11 @@ export default function EventDashboardPage() {
                             <button
                                 key={cat.key}
                                 onClick={() => setFilterCategory(cat.key)}
-                                className="px-3 py-1 rounded-full text-[11px] font-bold transition-all"
                                 style={{
-                                    background: filterCategory === cat.key ? (isDark ? '#f8fafc' : '#1e293b') : 'transparent',
-                                    color: filterCategory === cat.key ? (isDark ? '#0f172a' : '#fff') : (isDark ? '#94a3b8' : '#64748b'),
-                                    border: `1px solid ${filterCategory === cat.key ? (isDark ? '#f8fafc' : '#1e293b') : (isDark ? 'rgba(255,255,255,0.1)' : '#e2e8f0')}`
+                                    padding: '6px 14px', borderRadius: 20, fontSize: 11, fontWeight: 700, cursor: 'pointer', transition: 'all 0.2s', border: '1px solid',
+                                    ...(filterCategory === cat.key
+                                        ? { background: '#1e293b', color: '#fff', borderColor: '#1e293b' }
+                                        : { background: '#fff', color: '#64748b', borderColor: '#e2e8f0' })
                                 }}
                             >
                                 {cat.label}
@@ -450,17 +376,19 @@ export default function EventDashboardPage() {
                     </div>
                 </div>
 
-                <div className="flex items-center gap-3">
+                {/* Right controls */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                     {/* Gender Filter */}
-                    <div className="flex p-0.5 rounded-lg" style={{ background: isDark ? 'rgba(255,255,255,0.05)' : '#f1f5f9' }}>
+                    <div style={{ display: 'flex', background: '#f1f5f9', padding: 3, borderRadius: 8 }}>
                         {(['ALL', 'M', 'F'] as const).map(g => (
                             <button
                                 key={g}
                                 onClick={() => setFilterGender(g)}
-                                className="px-3 py-1 text-[10px] font-bold rounded-md transition-all whitespace-nowrap"
                                 style={{
-                                    background: filterGender === g ? (isDark ? '#f8fafc' : '#1e293b') : 'transparent',
-                                    color: filterGender === g ? (isDark ? '#0f172a' : '#fff') : (isDark ? '#94a3b8' : '#64748b')
+                                    padding: '4px 12px', fontSize: 10, fontWeight: 700, borderRadius: 6, border: 'none', cursor: 'pointer', transition: 'all 0.2s', whiteSpace: 'nowrap',
+                                    ...(filterGender === g
+                                        ? { background: '#1e293b', color: '#fff' }
+                                        : { background: 'transparent', color: '#64748b' })
                                 }}
                             >
                                 {g === 'ALL' ? (language === 'th' ? 'ทั้งหมด' : 'All') : g === 'M' ? (language === 'th' ? 'ชาย' : 'Male') : (language === 'th' ? 'หญิง' : 'Female')}
@@ -469,177 +397,214 @@ export default function EventDashboardPage() {
                     </div>
 
                     {/* Search */}
-                    <div className="relative hidden sm:block">
-                        <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" style={{ color: isDark ? '#64748b' : '#94a3b8' }}>
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    <div style={{ position: 'relative' }}>
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2" style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)' }}>
+                            <circle cx="11" cy="11" r="8" /><path d="M21 21l-4.35-4.35" />
                         </svg>
                         <input
                             type="text"
                             placeholder={language === 'th' ? 'BIB หรือ ชื่อ...' : 'BIB or Name...'}
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
-                            className="pl-8 pr-4 py-1.5 rounded-lg text-xs w-44 outline-none transition-all"
-                            style={{
-                                background: isDark ? 'rgba(255,255,255,0.05)' : '#f1f5f9',
-                                color: isDark ? '#f8fafc' : '#0f172a',
-                                border: 'none'
-                            }}
+                            style={{ paddingLeft: 30, paddingRight: 16, paddingTop: 6, paddingBottom: 6, background: '#f1f5f9', border: 'none', borderRadius: 8, fontSize: 12, width: 180, outline: 'none', color: '#0f172a' }}
                         />
                     </div>
 
-                    {/* Column Toggle */}
-                    <div className="hidden md:flex items-center gap-2">
-                        <label className="flex items-center gap-1 cursor-pointer text-[10px]" style={{ color: isDark ? '#94a3b8' : '#64748b' }}>
-                            <input type="checkbox" checked={showGenRank} onChange={(e) => setShowGenRank(e.target.checked)} className="w-3 h-3" />
-                            Gen
-                        </label>
-                        <label className="flex items-center gap-1 cursor-pointer text-[10px]" style={{ color: isDark ? '#94a3b8' : '#64748b' }}>
-                            <input type="checkbox" checked={showCatRank} onChange={(e) => setShowCatRank(e.target.checked)} className="w-3 h-3" />
-                            Cat
-                        </label>
+                    {/* Column dropdown */}
+                    <div style={{ position: 'relative' }}>
+                        <button
+                            onClick={() => setShowColDropdown(!showColDropdown)}
+                            style={{ background: '#fff', border: '1px solid #e2e8f0', color: '#64748b', padding: '6px 12px', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}
+                        >
+                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /><rect x="14" y="14" width="7" height="7" /></svg>
+                            {language === 'th' ? 'คอลัมน์' : 'Columns'}
+                        </button>
+                        {showColDropdown && (
+                            <div style={{ position: 'absolute', right: 0, top: 36, background: '#fff', minWidth: 160, boxShadow: '0 8px 16px rgba(0,0,0,0.1)', borderRadius: 8, zIndex: 30, border: '1px solid #e2e8f0', padding: 8 }}>
+                                <p style={{ fontSize: 10, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', marginBottom: 4, padding: '0 8px' }}>Display</p>
+                                <label style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 8px', fontSize: 12, cursor: 'pointer' }}>
+                                    <input type="checkbox" checked={showGenRank} onChange={e => setShowGenRank(e.target.checked)} /> Gender Rank
+                                </label>
+                                <label style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 8px', fontSize: 12, cursor: 'pointer' }}>
+                                    <input type="checkbox" checked={showCatRank} onChange={e => setShowCatRank(e.target.checked)} /> Category Rank
+                                </label>
+                            </div>
+                        )}
                     </div>
                 </div>
             </div>
 
-            {/* Results Table */}
-            <main className="p-0 sm:p-3">
-                <div className="sm:rounded-xl shadow-sm overflow-auto" style={{
-                    background: isDark ? 'rgba(15,23,42,0.8)' : '#fff',
-                    border: `1px solid ${isDark ? 'rgba(255,255,255,0.06)' : '#e2e8f0'}`,
-                    height: 'calc(100vh - 150px)'
-                }}>
-                    <table className="w-full text-left border-collapse">
+            {/* ===== TABLE ===== */}
+            <main style={{ padding: '0 16px' }}>
+                <div className="table-scroll" style={{ background: '#fff', borderRadius: '0 0 12px 12px', boxShadow: '0 1px 3px rgba(0,0,0,0.04)', border: '1px solid #e2e8f0', borderTop: 'none', height: 'calc(100vh - 140px)', overflowY: 'auto' }}>
+                    <table style={{ width: '100%', textAlign: 'left', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
                         <thead>
-                            <tr className="text-[10px] font-bold uppercase tracking-tighter sticky top-0 z-20" style={{
-                                background: isDark ? '#0f172a' : '#fff',
-                                color: isDark ? '#64748b' : '#94a3b8',
-                                borderBottom: `2px solid ${isDark ? 'rgba(255,255,255,0.06)' : '#f1f5f9'}`
-                            }}>
-                                <th className="py-3 px-4 text-center w-12">Rank</th>
-                                {showGenRank && <th className="py-3 px-2 text-center w-12">Gen</th>}
-                                {showCatRank && <th className="py-3 px-2 text-center w-12">Cat</th>}
-                                <th className="py-3 px-2">{language === 'th' ? 'นักวิ่ง' : 'Runner'}</th>
-                                <th className="py-3 px-2 text-center">{language === 'th' ? 'เพศ' : 'Gender'}</th>
-                                <th className="py-3 px-2">{language === 'th' ? 'สถานะ' : 'Status'}</th>
-                                <th className="py-3 px-2">{language === 'th' ? 'จุดล่าสุด' : 'Last CP'}</th>
-                                <th className="py-3 px-2">{language === 'th' ? 'เวลา' : 'Time'}</th>
-                                <th className="py-3 px-4 text-center">{language === 'th' ? 'ดู' : 'View'}</th>
+                            <tr style={{ fontSize: 10, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '-0.02em', position: 'sticky', top: 0, background: '#fff', zIndex: 20, borderBottom: '2px solid #f1f5f9' }}>
+                                <th style={{ padding: '12px 12px', textAlign: 'center', width: '4%' }}>Rank</th>
+                                {showGenRank && <th style={{ padding: '12px 6px', textAlign: 'center', width: '3.5%' }}>Gen</th>}
+                                {showCatRank && <th style={{ padding: '12px 6px', textAlign: 'center', width: '3.5%' }}>Cat</th>}
+                                <th style={{ padding: '12px 8px', width: '22%' }}>{language === 'th' ? 'นักวิ่ง' : 'Runner'}</th>
+                                <th style={{ padding: '12px 6px', textAlign: 'center', width: '4%' }}>{language === 'th' ? 'เพศ' : 'Gender'}</th>
+                                <th style={{ padding: '12px 8px', width: '12%' }}>{language === 'th' ? 'สถานะ / จุดล่าสุด' : 'Status / Last CP'}</th>
+                                <th style={{ padding: '12px 8px', width: '12%' }}>{language === 'th' ? 'จุดถัดไป / คาดการณ์' : 'Next CP / Prediction'}</th>
+                                <th style={{ padding: '12px 8px', width: '8%' }}>{language === 'th' ? 'เวลา' : 'Time'}</th>
+                                <th style={{ padding: '12px 8px', width: '8%' }}>{language === 'th' ? 'คาดเวลาจบ' : 'Est. Finish'}</th>
+                                <th style={{ padding: '12px 12px', textAlign: 'right', width: '10%' }}>Progress</th>
                             </tr>
                         </thead>
                         <tbody>
                             {filteredRunners.length === 0 ? (
-                                <tr>
-                                    <td colSpan={showGenRank && showCatRank ? 9 : showGenRank || showCatRank ? 8 : 7} className="px-4 py-12 text-center" style={{ color: 'var(--muted-foreground)' }}>
-                                        {language === 'th' ? 'ไม่พบข้อมูลผู้เข้าแข่งขัน' : 'No participants found'}
-                                    </td>
-                                </tr>
+                                <tr><td colSpan={showGenRank && showCatRank ? 10 : showGenRank || showCatRank ? 9 : 8} style={{ padding: '48px 16px', textAlign: 'center', color: '#94a3b8', fontSize: 14 }}>
+                                    {language === 'th' ? 'ไม่พบข้อมูลผู้เข้าแข่งขัน' : 'No participants found'}
+                                </td></tr>
                             ) : (
                                 filteredRunners.map((runner, idx) => {
-                                    const statusColors = getStatusColor(runner.status);
+                                    const rank = runner.overallRank || idx + 1;
                                     const displayName = language === 'th' && runner.firstNameTh
                                         ? `${runner.firstNameTh} ${runner.lastNameTh || ''}`
                                         : `${runner.firstName} ${runner.lastName}`;
-                                    const rank = runner.overallRank || idx + 1;
+                                    const initials = getInitials(runner.firstName, runner.lastName);
+                                    const avatarBg = getAvatarColor(runner.firstName + runner.lastName);
+                                    const statusColor = getStatusColor(runner.status);
+
+                                    // Calculate progress percentage
+                                    let progressPct = 0;
+                                    if (runner.status === 'finished') {
+                                        progressPct = 100;
+                                    } else if (runner.status === 'in_progress') {
+                                        // Estimate from checkpoint position or elapsed time
+                                        progressPct = runner.latestCheckpoint ? 50 : 10; // Default estimate
+                                    } else if (runner.status === 'dnf') {
+                                        progressPct = runner.latestCheckpoint ? 40 : 0;
+                                    }
+
+                                    // Progress bar color based on percentage with gradient
+                                    const getProgressColor = (pct: number) => {
+                                        if (pct <= 25) return '#334155'; // dark/black
+                                        if (pct <= 50) return '#ef4444'; // red
+                                        if (pct <= 75) return '#eab308'; // yellow/amber
+                                        return '#22c55e'; // green
+                                    };
+                                    const progressColor = getProgressColor(progressPct);
+
+                                    // Est. finish (placeholder based on status)
+                                    const estFinish = runner.status === 'finished' ? '--:--:--'
+                                        : runner.status === 'in_progress' ? (runner.netTime ? `~ ${formatTime(runner.netTime)}` : '-')
+                                            : '--:--';
 
                                     return (
                                         <tr
                                             key={runner._id}
-                                            className="cursor-pointer transition-colors"
+                                            className="runner-row"
                                             onClick={() => handleViewRunner(runner)}
-                                            style={{
-                                                borderBottom: `1px solid ${isDark ? 'rgba(255,255,255,0.03)' : '#f8fafc'}`,
-                                                borderLeft: '4px solid transparent'
-                                            }}
-                                            onMouseEnter={(e) => {
-                                                e.currentTarget.style.background = isDark ? 'rgba(34,197,94,0.05)' : '#f0fdf4';
-                                                e.currentTarget.style.borderLeftColor = 'var(--success)';
-                                            }}
-                                            onMouseLeave={(e) => {
-                                                e.currentTarget.style.background = 'transparent';
-                                                e.currentTarget.style.borderLeftColor = 'transparent';
-                                            }}
+                                            style={{ cursor: 'pointer', transition: 'all 0.15s', borderBottom: '1px solid #f8fafc', borderLeft: '4px solid transparent' }}
                                         >
-                                            <td className="py-3 px-4 text-center">
-                                                <span className="text-base font-black" style={{
-                                                    color: rank <= 3 ? (rank === 1 ? 'var(--success)' : (isDark ? '#f8fafc' : '#334155')) : (isDark ? '#475569' : '#cbd5e1')
-                                                }}>
-                                                    {rank}
-                                                </span>
+                                            {/* Rank */}
+                                            <td style={{ padding: '12px 12px', textAlign: 'center' }}>
+                                                <span style={{ fontSize: 16, fontWeight: 900, color: rank <= 3 ? (rank === 1 ? '#22c55e' : '#334155') : '#cbd5e1' }}>{rank}</span>
                                             </td>
+                                            {/* Gen Rank */}
                                             {showGenRank && (
-                                                <td className="py-3 px-2 text-center">
-                                                    <span className="text-xs font-bold" style={{ color: isDark ? '#94a3b8' : '#64748b' }}>
-                                                        {runner.genderRank || '-'}
-                                                    </span>
+                                                <td style={{ padding: '12px 6px', textAlign: 'center' }}>
+                                                    <span style={{ fontSize: 12, fontWeight: 700, color: '#64748b' }}>{runner.genderRank || '-'}</span>
                                                 </td>
                                             )}
+                                            {/* Cat Rank */}
                                             {showCatRank && (
-                                                <td className="py-3 px-2 text-center">
-                                                    <span className="text-xs font-bold" style={{ color: isDark ? '#94a3b8' : '#64748b' }}>
-                                                        {runner.categoryRank || '-'}
-                                                    </span>
+                                                <td style={{ padding: '12px 6px', textAlign: 'center' }}>
+                                                    <span style={{ fontSize: 12, fontWeight: 700, color: '#64748b' }}>{runner.categoryRank || '-'}</span>
                                                 </td>
                                             )}
-                                            <td className="py-3 px-2">
-                                                <div className="flex items-center gap-3">
-                                                    <div className="relative">
-                                                        <div className="w-8 h-8 rounded-full flex items-center justify-center text-white font-bold text-sm"
-                                                            style={{ background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)' }}>
-                                                            {runner.firstName?.[0] || '?'}
+                                            {/* Runner */}
+                                            <td style={{ padding: '12px 8px', overflow: 'hidden' }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                                    <div style={{ position: 'relative', flexShrink: 0 }}>
+                                                        <div style={{ width: 32, height: 32, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 700, fontSize: 12, background: avatarBg }}>
+                                                            {initials}
                                                         </div>
                                                         {runner.status === 'in_progress' && (
-                                                            <span className="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full animate-pulse" style={{ background: 'var(--success)', border: '1.5px solid white' }}></span>
+                                                            <span className="live-dot" style={{ background: '#22c55e', position: 'absolute', bottom: -1, right: -1 }} />
                                                         )}
                                                     </div>
-                                                    <div>
-                                                        <span className="block font-bold text-sm leading-none uppercase mb-1" style={{ color: isDark ? '#f8fafc' : '#1e293b' }}>
-                                                            {displayName}
+                                                    <div style={{ overflow: 'hidden' }}>
+                                                        <span style={{ display: 'block', fontWeight: 700, fontSize: 13, color: '#0f172a', lineHeight: 1, textTransform: 'uppercase', marginBottom: 3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                                            {displayName.trim()}
                                                         </span>
-                                                        <span className="text-[10px] font-medium flex items-center gap-1.5" style={{ color: isDark ? '#64748b' : '#94a3b8' }}>
-                                                            <span className="px-1.5 py-0.5 rounded text-[10px] font-black tracking-wider"
-                                                                style={{
-                                                                    background: isDark ? '#1e293b' : '#0f172a',
-                                                                    color: '#f8fafc',
-                                                                    border: `1px solid ${isDark ? '#334155' : '#334155'}`
-                                                                }}>
+                                                        <span style={{ fontSize: 10, color: '#94a3b8', fontWeight: 500, display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
+                                                            <span style={{
+                                                                background: '#0f172a', color: '#f8fafc', padding: '1px 6px', borderRadius: 4, fontSize: 10, fontWeight: 800, letterSpacing: '0.05em', border: '1px solid #334155'
+                                                            }}>
                                                                 #{runner.bib}
                                                             </span>
-                                                            {runner.nationality || ''} | {runner.category}
+                                                            {runner.nationality ? `${runner.nationality} | ` : ''}{runner.ageGroup || runner.category}
                                                         </span>
                                                     </div>
                                                 </div>
                                             </td>
-                                            <td className="py-3 px-2 text-center text-[10px] font-bold" style={{
-                                                color: runner.gender === 'M' ? '#3b82f6' : '#ec4899'
-                                            }}>
+                                            {/* Gender */}
+                                            <td style={{ padding: '12px 6px', textAlign: 'center', fontSize: 10, fontWeight: 700, color: runner.gender === 'M' ? '#3b82f6' : '#ec4899' }}>
                                                 {runner.gender}
                                             </td>
-                                            <td className="py-3 px-2">
-                                                <span className="block font-bold text-[11px] leading-none mb-1" style={{ color: statusColors.text }}>
+                                            {/* Status / Last CP */}
+                                            <td style={{ padding: '12px 8px' }}>
+                                                <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 4, fontWeight: 700, fontSize: 10, color: '#fff', background: getStatusBgColor(runner.status), lineHeight: 1.4, marginBottom: 3 }}>
                                                     {getStatusLabel(runner.status)}
                                                 </span>
-                                                <span className="text-[10px] uppercase font-medium" style={{ color: isDark ? '#64748b' : '#94a3b8' }}>
+                                                <span style={{ display: 'block', fontSize: 10, color: '#94a3b8', textTransform: 'uppercase', fontWeight: 500, marginTop: 2 }}>
                                                     {runner.latestCheckpoint || '-'}
                                                 </span>
                                             </td>
-                                            <td className="py-3 px-2">
-                                                <span className="text-[10px] uppercase font-medium" style={{ color: isDark ? '#64748b' : '#94a3b8' }}>
-                                                    {runner.latestCheckpoint || '-'}
-                                                </span>
+                                            {/* Next CP / Prediction */}
+                                            <td style={{ padding: '12px 8px' }}>
+                                                {runner.status === 'in_progress' ? (
+                                                    <>
+                                                        <span style={{ display: 'block', fontWeight: 700, fontSize: 11, color: '#0f172a', lineHeight: 1, marginBottom: 3 }}>
+                                                            {runner.latestCheckpoint ? '→ Next' : '→ START'}
+                                                        </span>
+                                                        <span style={{ fontSize: 10, color: '#3b82f6', fontWeight: 600 }}>
+                                                            {runner.elapsedTime ? `~${formatTime(Math.round(runner.elapsedTime * 1.15))}` : '-'}
+                                                        </span>
+                                                    </>
+                                                ) : runner.status === 'finished' ? (
+                                                    <span style={{ fontSize: 10, color: '#22c55e', fontWeight: 700 }}>✓ DONE</span>
+                                                ) : (
+                                                    <span style={{ fontSize: 10, color: '#94a3b8' }}>-</span>
+                                                )}
                                             </td>
-                                            <td className="py-3 px-2">
-                                                <span className="text-sm font-bold" style={{ color: isDark ? '#f8fafc' : '#0f172a' }}>
+                                            {/* Time */}
+                                            <td style={{ padding: '12px 8px' }}>
+                                                <span style={{ fontSize: 14, fontWeight: 700, color: '#0f172a' }}>
                                                     {formatTime(runner.elapsedTime || runner.netTime)}
                                                 </span>
                                             </td>
-                                            <td className="py-3 px-4 text-center">
-                                                <button
-                                                    className="px-2 py-1 rounded-lg text-xs font-bold"
-                                                    style={{ background: 'var(--accent)', color: 'var(--accent-foreground)' }}
-                                                    onClick={(e) => { e.stopPropagation(); handleViewRunner(runner); }}
-                                                >
-                                                    {language === 'th' ? 'ดู' : 'View'}
-                                                </button>
+                                            {/* Est. Finish */}
+                                            <td style={{ padding: '12px 8px' }}>
+                                                <span style={{ fontSize: 11, fontWeight: 700, color: runner.status === 'in_progress' ? '#3b82f6' : '#94a3b8' }}>
+                                                    {estFinish}
+                                                </span>
+                                            </td>
+                                            {/* Progress */}
+                                            <td style={{ padding: '12px 12px', textAlign: 'right' }}>
+                                                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
+                                                    <span style={{ fontWeight: 700, fontSize: 11, color: '#334155', marginBottom: 4 }}>
+                                                        {progressPct}%
+                                                    </span>
+                                                    <div style={{ width: '100%', maxWidth: 80, height: 6, borderRadius: 3, background: '#f1f5f9', overflow: 'hidden' }}>
+                                                        <div style={{
+                                                            height: '100%',
+                                                            width: `${progressPct}%`,
+                                                            borderRadius: 3,
+                                                            background: progressPct > 75
+                                                                ? 'linear-gradient(90deg, #334155 0%, #ef4444 33%, #eab308 66%, #22c55e 100%)'
+                                                                : progressPct > 50
+                                                                    ? 'linear-gradient(90deg, #334155 0%, #ef4444 50%, #eab308 100%)'
+                                                                    : progressPct > 25
+                                                                        ? 'linear-gradient(90deg, #334155 0%, #ef4444 100%)'
+                                                                        : '#334155',
+                                                            transition: 'width 0.5s ease',
+                                                        }} />
+                                                    </div>
+                                                </div>
                                             </td>
                                         </tr>
                                     );
@@ -650,72 +615,75 @@ export default function EventDashboardPage() {
                 </div>
             </main>
 
-            {/* Footer */}
-            <footer className="px-4 py-2 fixed bottom-0 w-full flex justify-between items-center z-30" style={{
-                background: isDark ? 'rgba(15,23,42,0.95)' : 'rgba(255,255,255,0.95)',
-                borderTop: `1px solid ${isDark ? 'rgba(255,255,255,0.06)' : '#e2e8f0'}`,
-                backdropFilter: 'blur(12px)'
-            }}>
-                <p className="text-[9px] font-bold uppercase tracking-widest" style={{ color: isDark ? '#334155' : '#cbd5e1' }}>
-                    RACETIME &copy; 2026
+            {/* ===== FOOTER ===== */}
+            <footer style={{ background: '#fff', borderTop: '1px solid #e2e8f0', padding: '8px 16px', position: 'fixed', bottom: 0, width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', zIndex: 30 }}>
+                <p style={{ fontSize: 9, fontWeight: 700, color: '#cbd5e1', textTransform: 'uppercase', letterSpacing: '0.1em', margin: 0 }}>
+                    ACTION TIMING &copy; 2026
                 </p>
-                <div className="flex gap-4 items-center">
-                    <span className="text-[9px] font-bold uppercase" style={{ color: isDark ? '#94a3b8' : '#64748b' }}>
+                <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
+                    <span style={{ fontSize: 9, fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>
                         {filteredRunners.length} / {runners.length} {language === 'th' ? 'คน' : 'runners'}
                     </span>
-                    <span className="text-[9px] font-bold uppercase animate-pulse" style={{ color: 'var(--success)' }}>
-                        ● Connected
+                    <span style={{ fontSize: 9, fontWeight: 700, color: '#22c55e', textTransform: 'uppercase' }}>
+                        <span style={{ display: 'inline-block', width: 5, height: 5, borderRadius: '50%', background: '#22c55e', marginRight: 4, animation: 'pulseLive 1.5s infinite' }} />
+                        Connected
                     </span>
-                    <span className="text-[10px] font-mono" style={{ color: isDark ? '#64748b' : '#94a3b8' }}>
+                    <span style={{ fontSize: 10, fontFamily: 'monospace', color: '#94a3b8' }}>
                         {currentTime.toLocaleTimeString(language === 'th' ? 'th-TH' : 'en-US')}
                     </span>
                 </div>
             </footer>
 
-            {/* Runner Details Modal */}
+            {/* ===== RUNNER DETAIL MODAL ===== */}
             {selectedRunner && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.6)' }} onClick={() => setSelectedRunner(null)}>
-                    <div className="rounded-2xl p-6 max-w-lg w-full max-h-[80vh] overflow-y-auto" onClick={e => e.stopPropagation()} style={{
-                        background: isDark ? '#1e293b' : '#fff',
-                        border: `1px solid ${isDark ? 'rgba(255,255,255,0.1)' : '#e2e8f0'}`
-                    }}>
-                        <div className="flex justify-between items-start mb-4">
-                            <h3 className="text-xl font-bold" style={{ color: isDark ? '#f8fafc' : '#0f172a' }}>
-                                {language === 'th' ? 'รายละเอียดนักวิ่ง' : 'Runner Details'}
-                            </h3>
-                            <button onClick={() => setSelectedRunner(null)} className="text-2xl" style={{ color: isDark ? '#94a3b8' : '#64748b' }}>×</button>
+                <div style={{ position: 'fixed', inset: 0, zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)' }} onClick={() => setSelectedRunner(null)}>
+                    <div style={{ background: '#fff', borderRadius: 16, padding: 24, maxWidth: 480, width: '100%', maxHeight: '80vh', overflowY: 'auto', boxShadow: '0 24px 48px rgba(0,0,0,0.15)' }} onClick={e => e.stopPropagation()}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                                <div style={{ width: 48, height: 48, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 800, fontSize: 18, background: getAvatarColor(selectedRunner.firstName + selectedRunner.lastName) }}>
+                                    {getInitials(selectedRunner.firstName, selectedRunner.lastName)}
+                                </div>
+                                <div>
+                                    <h3 style={{ fontSize: 18, fontWeight: 800, margin: 0, color: '#0f172a', textTransform: 'uppercase' }}>
+                                        {selectedRunner.firstName} {selectedRunner.lastName}
+                                    </h3>
+                                    <span style={{ background: '#0f172a', color: '#f8fafc', padding: '2px 8px', borderRadius: 4, fontSize: 11, fontWeight: 800 }}>
+                                        BIB #{selectedRunner.bib}
+                                    </span>
+                                </div>
+                            </div>
+                            <button onClick={() => setSelectedRunner(null)} style={{ fontSize: 24, color: '#94a3b8', background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}>×</button>
                         </div>
 
-                        <div className="space-y-3">
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 16 }}>
                             {[
-                                { label: 'BIB', value: selectedRunner.bib },
-                                { label: language === 'th' ? 'ชื่อ' : 'Name', value: `${selectedRunner.firstName} ${selectedRunner.lastName}` },
+                                { label: language === 'th' ? 'สถานะ' : 'Status', value: getStatusLabel(selectedRunner.status), color: getStatusColor(selectedRunner.status) },
                                 { label: language === 'th' ? 'ประเภท' : 'Category', value: selectedRunner.category },
-                                { label: language === 'th' ? 'กลุ่มอายุ' : 'Age Group', value: selectedRunner.ageGroup },
-                                { label: language === 'th' ? 'สถานะ' : 'Status', value: getStatusLabel(selectedRunner.status) },
+                                { label: language === 'th' ? 'กลุ่มอายุ' : 'Age Group', value: selectedRunner.ageGroup || '-' },
+                                { label: language === 'th' ? 'เพศ' : 'Gender', value: selectedRunner.gender === 'M' ? (language === 'th' ? 'ชาย' : 'Male') : (language === 'th' ? 'หญิง' : 'Female') },
                                 { label: language === 'th' ? 'อันดับรวม' : 'Overall Rank', value: selectedRunner.overallRank || '-' },
                                 { label: language === 'th' ? 'อันดับเพศ' : 'Gender Rank', value: selectedRunner.genderRank || '-' },
                                 { label: language === 'th' ? 'เวลาสุทธิ' : 'Net Time', value: formatTime(selectedRunner.netTime) },
                                 { label: language === 'th' ? 'ทีม' : 'Team', value: selectedRunner.team || selectedRunner.teamName || '-' },
                             ].map((item, i) => (
-                                <div key={i} className="flex justify-between py-1" style={{ borderBottom: `1px solid ${isDark ? 'rgba(255,255,255,0.05)' : '#f1f5f9'}` }}>
-                                    <span style={{ color: isDark ? '#94a3b8' : '#64748b' }}>{item.label}</span>
-                                    <span className="font-bold" style={{ color: isDark ? '#f8fafc' : '#0f172a' }}>{item.value}</span>
+                                <div key={i} style={{ padding: '8px 10px', borderRadius: 8, background: '#f8fafc' }}>
+                                    <div style={{ fontSize: 10, color: '#94a3b8', fontWeight: 600, marginBottom: 2 }}>{item.label}</div>
+                                    <div style={{ fontSize: 13, fontWeight: 700, color: (item as any).color || '#0f172a' }}>{String(item.value)}</div>
                                 </div>
                             ))}
                         </div>
 
                         {/* Timing Records */}
                         {runnerTimings.length > 0 && (
-                            <div className="mt-4">
-                                <h4 className="font-bold text-sm mb-2" style={{ color: isDark ? '#f8fafc' : '#0f172a' }}>
-                                    {language === 'th' ? 'บันทึกเวลา' : 'Timing Records'}
+                            <div>
+                                <h4 style={{ fontSize: 13, fontWeight: 700, marginBottom: 8, color: '#0f172a' }}>
+                                    {language === 'th' ? '⏱ บันทึกเวลา' : '⏱ Timing Records'}
                                 </h4>
-                                <div className="space-y-1">
-                                    {runnerTimings.map((record) => (
-                                        <div key={record._id} className="flex justify-between text-sm py-1" style={{ borderBottom: `1px solid ${isDark ? 'rgba(255,255,255,0.05)' : '#f1f5f9'}` }}>
-                                            <span style={{ color: isDark ? '#94a3b8' : '#64748b' }}>{record.checkpoint}</span>
-                                            <span className="font-mono" style={{ color: isDark ? '#f8fafc' : '#0f172a' }}>
+                                <div style={{ borderRadius: 8, overflow: 'hidden', border: '1px solid #e2e8f0' }}>
+                                    {runnerTimings.map((record, i) => (
+                                        <div key={record._id} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 12px', fontSize: 12, background: i % 2 === 0 ? '#f8fafc' : '#fff' }}>
+                                            <span style={{ color: '#64748b', fontWeight: 600 }}>{record.checkpoint}</span>
+                                            <span style={{ fontFamily: 'monospace', fontWeight: 700, color: '#0f172a' }}>
                                                 {record.elapsedTime ? formatTime(record.elapsedTime) : new Date(record.scanTime).toLocaleTimeString()}
                                             </span>
                                         </div>
