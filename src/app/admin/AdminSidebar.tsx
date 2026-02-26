@@ -34,7 +34,6 @@ const menuSections: MenuSection[] = [
         header: 'RACE CONFIG (ตั้งค่าสนาม)',
         headerEn: 'RACE CONFIG',
         items: [
-            { href: '/admin/categories', label: 'ประเภทการแข่งขัน', labelEn: 'Race Categories', icon: 'layer-group' },
             { href: '/admin/checkpoints', label: 'สร้างจุด Checkpoint', labelEn: 'Manage Checkpoints', icon: 'map-location-dot' },
             { href: '/admin/checkpoints/create', label: 'Checkpoint & Mapping', labelEn: 'Route & Mapping', icon: 'route', iconColor: '#00a65a' },
         ]
@@ -43,7 +42,8 @@ const menuSections: MenuSection[] = [
         header: 'PARTICIPANTS (นักกีฬา)',
         headerEn: 'PARTICIPANTS',
         items: [
-            { href: '/admin/participants', label: 'นำเข้าข้อมูล', labelEn: 'Import Participants', icon: 'file-import' },
+            { href: '/admin/participants', label: 'นำเข้าข้อมูลผู้เข้าแข่งขัน', labelEn: 'Import Participants', icon: 'file-import' },
+            { href: '/admin/categories', label: 'ประเภทกลุ่มอายุ', labelEn: 'Age Groups', icon: 'layer-group' },
             { href: '/admin/bib-check', label: 'เช็คบิบ', labelEn: 'Check BIB', icon: 'magnifying-glass' },
         ]
     },
@@ -62,6 +62,7 @@ const menuSections: MenuSection[] = [
         headerEn: 'RESULTS & REPORTS',
         items: [
             { href: '/admin/results', label: 'ผลการแข่งขัน', labelEn: 'Results', icon: 'trophy', iconColor: '#f39c12' },
+            { href: '/admin/display', label: 'การแสดงผล', labelEn: 'Display Settings', icon: 'desktop' },
             { href: '/admin/certificates', label: 'ใบประกาศ', labelEn: 'Certificates', icon: 'print' },
             { href: '/admin/export', label: 'ส่งออกข้อมูล', labelEn: 'Export Data', icon: 'file-excel' },
         ]

@@ -257,7 +257,7 @@ export default function CategoriesPage() {
     return (
         <AdminLayout
             breadcrumbItems={[
-                { label: 'ประเภทการแข่งขัน', labelEn: 'Race Categories' }
+                { label: 'ประเภทกลุ่มอายุ', labelEn: 'Age Groups' }
             ]}
         >
             {/* Toast */}

@@ -101,6 +101,15 @@ body {
         inset 0 1px 0 rgba(255, 255, 255, 0.1);
 }
 
+/* Header glass with accent tint for better visibility */
+header.glass, .glass-header {
+    background: linear-gradient(135deg, var(--card) 0%, var(--accent-light) 100%);
+    border-bottom: 1px solid var(--accent);
+    box-shadow:
+        0 4px 20px rgba(251, 191, 36, 0.1),
+        inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
 .glass-solid {
     background: var(--card-solid);
     border: 1px solid var(--border);

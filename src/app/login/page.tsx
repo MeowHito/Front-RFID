@@ -152,18 +152,6 @@ export default function LoginPage() {
                         </button>
                     </form>
 
-                    {/* Demo Credentials */}
-                    <div
-                        className="mt-6 p-4 rounded-xl glass scale-hover"
-                        style={{ background: 'var(--warning-bg)' }}
-                    >
-                        <div className="text-xs font-medium mb-2 uppercase tracking-wider" style={{ color: 'var(--warning)' }}>
-                            Demo Credentials
-                        </div>
-                        <div className="text-sm font-mono" style={{ color: 'var(--foreground)' }}>
-                            admin@rfidtiming.com / admin123
-                        </div>
-                    </div>
 
                     <div className="mt-6 text-center space-y-3">
                         <p className="text-sm" style={{ color: 'var(--muted-foreground)' }}>

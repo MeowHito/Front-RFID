@@ -268,12 +268,15 @@ export default function RFIDDashboardModal({ isOpen, onClose, eventId, eventName
             const runInserted = result?.runners?.inserted ?? 0;
             const runUpdated = result?.runners?.updated ?? 0;
             const cpCreated = result?.checkpoints?.created ?? 0;
+            const scoreUpdated = result?.score?.updated ?? 0;
+            const scoreStatusChanges = result?.score?.statusChanges ?? 0;
 
             const cpNames: string[] = result?.checkpoints?.names ?? [];
             const cpNamesStr = cpNames.length ? ` (${cpNames.join(', ')})` : '';
+            const debugInfo = result?.debug ? `\n🔍 Debug: ${JSON.stringify(result.debug).substring(0, 200)}` : '';
             const summaryMessage = language === 'th'
-                ? `✅ Import สำเร็จ!\n📁 Events: สร้าง ${evImported}, อัปเดต ${evUpdated}\n🏃 Runners: เพิ่ม ${runInserted}, อัปเดต ${runUpdated}\n📍 Checkpoints: สร้าง ${cpCreated}${cpNamesStr}`
-                : `✅ Import completed!\n📁 Events: created ${evImported}, updated ${evUpdated}\n🏃 Runners: inserted ${runInserted}, updated ${runUpdated}\n📍 Checkpoints: created ${cpCreated}${cpNamesStr}`;
+                ? `✅ Import สำเร็จ!\n📁 Events: สร้าง ${evImported}, อัปเดต ${evUpdated}\n🏃 Runners: เพิ่ม ${runInserted}, อัปเดต ${runUpdated}\n📍 Checkpoints: สร้าง ${cpCreated}${cpNamesStr}\n⏱️ Timing: อัปเดต ${scoreUpdated}, สถานะ ${scoreStatusChanges}${debugInfo}`
+                : `✅ Import completed!\n📁 Events: created ${evImported}, updated ${evUpdated}\n🏃 Runners: inserted ${runInserted}, updated ${runUpdated}\n📍 Checkpoints: created ${cpCreated}${cpNamesStr}\n⏱️ Timing: ${scoreUpdated} updates, ${scoreStatusChanges} status changes${debugInfo}`;
 
             showToast('success', summaryMessage);
             setRfidStatus(prev => ({
@@ -423,191 +426,191 @@ export default function RFIDDashboardModal({ isOpen, onClose, eventId, eventName
                     </div>
                 ))}
             </div>
-        <div className="modal-overlay" onClick={onClose}>
-            <div className="modal-content rfid-modal" onClick={e => e.stopPropagation()}>
-                {/* Header */}
-                <div className="modal-header">
-                    <h2 className="modal-title">
-                        {language === 'th' ? 'แดชบอร์ดการการเชื่อมต่อ RFID' : 'RFID Connection Dashboard'}
-                    </h2>
-                    <button className="modal-close" onClick={onClose}>×</button>
-                </div>
+            <div className="modal-overlay" onClick={onClose}>
+                <div className="modal-content rfid-modal" onClick={e => e.stopPropagation()}>
+                    {/* Header */}
+                    <div className="modal-header">
+                        <h2 className="modal-title">
+                            {language === 'th' ? 'แดชบอร์ดการการเชื่อมต่อ RFID' : 'RFID Connection Dashboard'}
+                        </h2>
+                        <button className="modal-close" onClick={onClose}>×</button>
+                    </div>
 
-                {/* Body */}
-                <div className="modal-body">
-                    {loading ? (
-                        <div className="modal-loading">
-                            {language === 'th' ? 'กำลังโหลด...' : 'Loading...'}
-                        </div>
-                    ) : (
-                        <>
-                            {/* Status Row */}
-                            <div className="rfid-row">
-                                <span className="rfid-label">Status:</span>
-                                <span className="rfid-value">
-                                    {rfidStatus.status}
-                                    <span className={`rfid-health ${rfidStatus.healthy ? 'healthy' : 'unhealthy'}`}>
-                                        ({rfidStatus.healthy ? 'Healthy' : 'Unhealthy'})
+                    {/* Body */}
+                    <div className="modal-body">
+                        {loading ? (
+                            <div className="modal-loading">
+                                {language === 'th' ? 'กำลังโหลด...' : 'Loading...'}
+                            </div>
+                        ) : (
+                            <>
+                                {/* Status Row */}
+                                <div className="rfid-row">
+                                    <span className="rfid-label">Status:</span>
+                                    <span className="rfid-value">
+                                        {rfidStatus.status}
+                                        <span className={`rfid-health ${rfidStatus.healthy ? 'healthy' : 'unhealthy'}`}>
+                                            ({rfidStatus.healthy ? 'Healthy' : 'Unhealthy'})
+                                        </span>
                                     </span>
-                                </span>
-                            </div>
-
-                            {/* Total Data Size */}
-                            <div className="rfid-row">
-                                <span className="rfid-label">Total Data Size:</span>
-                                <span className="rfid-value">{rfidStatus.totalDataSize}</span>
-                            </div>
-
-                            <div className="rfid-row">
-                                <span className="rfid-label">Logs (S/E):</span>
-                                <span className="rfid-value">
-                                    {rfidStatus.statistics.success}/{rfidStatus.statistics.error}
-                                    <span style={{ color: '#999', marginLeft: 8 }}>
-                                        (Total {rfidStatus.statistics.total})
-                                    </span>
-                                </span>
-                            </div>
-
-                            {/* Last Completed Time */}
-                            <div className="rfid-row">
-                                <span className="rfid-label">Last Completed Time:</span>
-                                <span className="rfid-value">{rfidStatus.lastCompletedTime}</span>
-                            </div>
-
-                            {/* Last Error Time */}
-                            <div className="rfid-row">
-                                <span className="rfid-label">Last Error Time:</span>
-                                <span className="rfid-value">{rfidStatus.lastErrorTime}</span>
-                            </div>
-
-                            {/* Manual Preview Buttons */}
-                            <div className="rfid-errors-section" style={{ marginTop: 12 }}>
-                                <h4 className="rfid-errors-title">
-                                    {language === 'th' ? 'ทดสอบดึงข้อมูลจากเว็บจีน' : 'Test pull from RaceTiger'}
-                                </h4>
-                                {(getBlockedReason('preview') || getBlockedReason('full-sync')) && (
-                                    <div className="rfid-error-item" style={{ borderLeft: '3px solid #f59e0b' }}>
-                                        {getBlockedReason('full-sync') || getBlockedReason('preview')}
-                                    </div>
-                                )}
-                                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                                    <button
-                                        className="btn-primary"
-                                        style={{ background: '#8e44ad' }}
-                                        onClick={importEventsFromRaceTiger}
-                                        disabled={requirementsLoading || runningImportEvents || !!runningPreview || runningFullSync || !syncRequirements.allowRFIDSync || !syncRequirements.hasToken || !syncRequirements.hasRaceId}
-                                    >
-                                        {runningImportEvents
-                                            ? (language === 'th' ? 'กำลัง Import...' : 'Importing...')
-                                            : (language === 'th' ? 'Import Events จากเว็บจีน' : 'Import Events from RaceTiger')}
-                                    </button>
-                                    <button
-                                        className="btn-primary"
-                                        onClick={() => runPreview('info')}
-                                        disabled={requirementsLoading || !!runningPreview || runningFullSync || runningImportEvents || !!getBlockedReason('preview')}
-                                    >
-                                        {runningPreview === 'info' ? '...' : 'Preview INFO'}
-                                    </button>
-                                    <button
-                                        className="btn-primary"
-                                        onClick={() => runPreview('bio')}
-                                        disabled={requirementsLoading || !!runningPreview || runningFullSync || runningImportEvents || !!getBlockedReason('preview')}
-                                    >
-                                        {runningPreview === 'bio' ? '...' : 'Preview BIO'}
-                                    </button>
-                                    <button
-                                        className="btn-primary"
-                                        onClick={() => runPreview('split')}
-                                        disabled={requirementsLoading || !!runningPreview || runningFullSync || runningImportEvents || !!getBlockedReason('preview')}
-                                    >
-                                        {runningPreview === 'split' ? '...' : 'Preview SPLIT'}
-                                    </button>
-                                    <button
-                                        className="btn-primary"
-                                        onClick={runFullSync}
-                                        disabled={requirementsLoading || !!runningPreview || runningFullSync || runningImportEvents || !!getBlockedReason('full-sync')}
-                                    >
-                                        {runningFullSync
-                                            ? (language === 'th' ? 'กำลังซิงค์...' : 'Syncing...')
-                                            : (language === 'th' ? 'Sync All Runners' : 'Sync All Runners')}
-                                    </button>
                                 </div>
-                            </div>
 
-                            {/* Latest Payload Preview */}
-                            {rfidStatus.latestPreview && (
+                                {/* Total Data Size */}
+                                <div className="rfid-row">
+                                    <span className="rfid-label">Total Data Size:</span>
+                                    <span className="rfid-value">{rfidStatus.totalDataSize}</span>
+                                </div>
+
+                                <div className="rfid-row">
+                                    <span className="rfid-label">Logs (S/E):</span>
+                                    <span className="rfid-value">
+                                        {rfidStatus.statistics.success}/{rfidStatus.statistics.error}
+                                        <span style={{ color: '#999', marginLeft: 8 }}>
+                                            (Total {rfidStatus.statistics.total})
+                                        </span>
+                                    </span>
+                                </div>
+
+                                {/* Last Completed Time */}
+                                <div className="rfid-row">
+                                    <span className="rfid-label">Last Completed Time:</span>
+                                    <span className="rfid-value">{rfidStatus.lastCompletedTime}</span>
+                                </div>
+
+                                {/* Last Error Time */}
+                                <div className="rfid-row">
+                                    <span className="rfid-label">Last Error Time:</span>
+                                    <span className="rfid-value">{rfidStatus.lastErrorTime}</span>
+                                </div>
+
+                                {/* Manual Preview Buttons */}
                                 <div className="rfid-errors-section" style={{ marginTop: 12 }}>
                                     <h4 className="rfid-errors-title">
-                                        {language === 'th' ? 'Payload ล่าสุดจากเว็บจีน' : 'Latest payload from RaceTiger'}
+                                        {language === 'th' ? 'ทดสอบดึงข้อมูลจากเว็บจีน' : 'Test pull from RaceTiger'}
                                     </h4>
-                                    <div className="rfid-error-item">
-                                        <strong>Endpoint:</strong> {rfidStatus.latestPreview?.request?.endpoint || '-'}
-                                    </div>
-                                    <div className="rfid-error-item">
-                                        <strong>HTTP:</strong> {rfidStatus.latestPreview?.response?.httpStatus || '-'}
-                                        {' | '}
-                                        <strong>Items:</strong> {rfidStatus.latestPreview?.response?.itemCount ?? 0}
-                                    </div>
-                                    <div className="rfid-error-item">
-                                        <strong>Fetched:</strong> {formatDate(rfidStatus.latestPreview?.fetchedAt)}
-                                    </div>
-                                    <div className="rfid-error-item" style={{ whiteSpace: 'pre-wrap', overflowX: 'auto' }}>
-                                        <strong>Sample:</strong>
-                                        <pre style={{ marginTop: 8, maxHeight: 220, overflow: 'auto' }}>
-{JSON.stringify(rfidStatus.latestPreview?.response?.payloadSample || null, null, 2)}
-                                        </pre>
-                                    </div>
-                                    <div className="rfid-error-item" style={{ whiteSpace: 'pre-wrap', overflowX: 'auto' }}>
-                                        <strong>Raw Snippet:</strong>
-                                        <pre style={{ marginTop: 8, maxHeight: 220, overflow: 'auto' }}>
-{rfidStatus.latestPreview?.response?.rawSnippet || '-'}
-                                        </pre>
-                                    </div>
-                                </div>
-                            )}
-
-                            {/* Error Details */}
-                            <div className="rfid-errors-section">
-                                <h4 className="rfid-errors-title">Error Details:</h4>
-                                <div className="rfid-errors-list">
-                                    {rfidStatus.errors.slice(0, showAllErrors ? undefined : 2).map((error, idx) => (
-                                        <div key={idx} className="rfid-error-item">
-                                            {error}
+                                    {(getBlockedReason('preview') || getBlockedReason('full-sync')) && (
+                                        <div className="rfid-error-item" style={{ borderLeft: '3px solid #f59e0b' }}>
+                                            {getBlockedReason('full-sync') || getBlockedReason('preview')}
                                         </div>
-                                    ))}
+                                    )}
+                                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                                        <button
+                                            className="btn-primary"
+                                            style={{ background: '#8e44ad' }}
+                                            onClick={importEventsFromRaceTiger}
+                                            disabled={requirementsLoading || runningImportEvents || !!runningPreview || runningFullSync || !syncRequirements.allowRFIDSync || !syncRequirements.hasToken || !syncRequirements.hasRaceId}
+                                        >
+                                            {runningImportEvents
+                                                ? (language === 'th' ? 'กำลัง Import...' : 'Importing...')
+                                                : (language === 'th' ? 'Import Events จากเว็บจีน' : 'Import Events from RaceTiger')}
+                                        </button>
+                                        <button
+                                            className="btn-primary"
+                                            onClick={() => runPreview('info')}
+                                            disabled={requirementsLoading || !!runningPreview || runningFullSync || runningImportEvents || !!getBlockedReason('preview')}
+                                        >
+                                            {runningPreview === 'info' ? '...' : 'Preview INFO'}
+                                        </button>
+                                        <button
+                                            className="btn-primary"
+                                            onClick={() => runPreview('bio')}
+                                            disabled={requirementsLoading || !!runningPreview || runningFullSync || runningImportEvents || !!getBlockedReason('preview')}
+                                        >
+                                            {runningPreview === 'bio' ? '...' : 'Preview BIO'}
+                                        </button>
+                                        <button
+                                            className="btn-primary"
+                                            onClick={() => runPreview('split')}
+                                            disabled={requirementsLoading || !!runningPreview || runningFullSync || runningImportEvents || !!getBlockedReason('preview')}
+                                        >
+                                            {runningPreview === 'split' ? '...' : 'Preview SPLIT'}
+                                        </button>
+                                        <button
+                                            className="btn-primary"
+                                            onClick={runFullSync}
+                                            disabled={requirementsLoading || !!runningPreview || runningFullSync || runningImportEvents || !!getBlockedReason('full-sync')}
+                                        >
+                                            {runningFullSync
+                                                ? (language === 'th' ? 'กำลังซิงค์...' : 'Syncing...')
+                                                : (language === 'th' ? 'Sync All Runners' : 'Sync All Runners')}
+                                        </button>
+                                    </div>
                                 </div>
-                                {rfidStatus.errors.length > 2 && (
-                                    <button
-                                        className="rfid-show-more"
-                                        onClick={() => setShowAllErrors(!showAllErrors)}
-                                    >
-                                        {showAllErrors
-                                            ? (language === 'th' ? 'แสดงน้อยลง' : 'Show less')
-                                            : (language === 'th' ? 'แสดงเพิ่มเติม' : 'Show more')
-                                        }
-                                    </button>
-                                )}
-                            </div>
-                        </>
-                    )}
-                </div>
 
-                {/* Footer */}
-                <div className="modal-footer" style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                    <button
-                        className="btn-primary"
-                        style={{ background: '#475569' }}
-                        onClick={() => { loadRFIDStatus(); loadSyncRequirements(); showToast('info', language === 'th' ? 'รีเฟรชข้อมูลแล้ว' : 'Refreshed'); }}
-                        disabled={loading || requirementsLoading}
-                    >
-                        {language === 'th' ? '🔄 รีเฟรช' : '🔄 Refresh'}
-                    </button>
-                    <button className="btn-primary" onClick={onClose}>
-                        {language === 'th' ? 'ปิด' : 'Close'}
-                    </button>
+                                {/* Latest Payload Preview */}
+                                {rfidStatus.latestPreview && (
+                                    <div className="rfid-errors-section" style={{ marginTop: 12 }}>
+                                        <h4 className="rfid-errors-title">
+                                            {language === 'th' ? 'Payload ล่าสุดจากเว็บจีน' : 'Latest payload from RaceTiger'}
+                                        </h4>
+                                        <div className="rfid-error-item">
+                                            <strong>Endpoint:</strong> {rfidStatus.latestPreview?.request?.endpoint || '-'}
+                                        </div>
+                                        <div className="rfid-error-item">
+                                            <strong>HTTP:</strong> {rfidStatus.latestPreview?.response?.httpStatus || '-'}
+                                            {' | '}
+                                            <strong>Items:</strong> {rfidStatus.latestPreview?.response?.itemCount ?? 0}
+                                        </div>
+                                        <div className="rfid-error-item">
+                                            <strong>Fetched:</strong> {formatDate(rfidStatus.latestPreview?.fetchedAt)}
+                                        </div>
+                                        <div className="rfid-error-item" style={{ whiteSpace: 'pre-wrap', overflowX: 'auto' }}>
+                                            <strong>Sample:</strong>
+                                            <pre style={{ marginTop: 8, maxHeight: 220, overflow: 'auto' }}>
+                                                {JSON.stringify(rfidStatus.latestPreview?.response?.payloadSample || null, null, 2)}
+                                            </pre>
+                                        </div>
+                                        <div className="rfid-error-item" style={{ whiteSpace: 'pre-wrap', overflowX: 'auto' }}>
+                                            <strong>Raw Snippet:</strong>
+                                            <pre style={{ marginTop: 8, maxHeight: 220, overflow: 'auto' }}>
+                                                {rfidStatus.latestPreview?.response?.rawSnippet || '-'}
+                                            </pre>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Error Details */}
+                                <div className="rfid-errors-section">
+                                    <h4 className="rfid-errors-title">Error Details:</h4>
+                                    <div className="rfid-errors-list">
+                                        {rfidStatus.errors.slice(0, showAllErrors ? undefined : 2).map((error, idx) => (
+                                            <div key={idx} className="rfid-error-item">
+                                                {error}
+                                            </div>
+                                        ))}
+                                    </div>
+                                    {rfidStatus.errors.length > 2 && (
+                                        <button
+                                            className="rfid-show-more"
+                                            onClick={() => setShowAllErrors(!showAllErrors)}
+                                        >
+                                            {showAllErrors
+                                                ? (language === 'th' ? 'แสดงน้อยลง' : 'Show less')
+                                                : (language === 'th' ? 'แสดงเพิ่มเติม' : 'Show more')
+                                            }
+                                        </button>
+                                    )}
+                                </div>
+                            </>
+                        )}
+                    </div>
+
+                    {/* Footer */}
+                    <div className="modal-footer" style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                        <button
+                            className="btn-primary"
+                            style={{ background: '#475569' }}
+                            onClick={() => { loadRFIDStatus(); loadSyncRequirements(); showToast('info', language === 'th' ? 'รีเฟรชข้อมูลแล้ว' : 'Refreshed'); }}
+                            disabled={loading || requirementsLoading}
+                        >
+                            {language === 'th' ? '🔄 รีเฟรช' : '🔄 Refresh'}
+                        </button>
+                        <button className="btn-primary" onClick={onClose}>
+                            {language === 'th' ? 'ปิด' : 'Close'}
+                        </button>
+                    </div>
                 </div>
             </div>
-        </div>
         </>
     );
 }

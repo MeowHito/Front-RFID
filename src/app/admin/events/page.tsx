@@ -41,6 +41,8 @@ interface Campaign {
     isFeatured?: boolean;
     categories: RaceCategory[];
     organizerName?: string;
+    rfidToken?: string;
+    raceId?: string;
 }
 
 export default function EventsPage() {
@@ -490,8 +492,8 @@ export default function EventsPage() {
                                                 </button>
                                             </div>
                                         </td>
-                                        <td className="col-id">{String(campaign._id).slice(-6)}</td>
-                                        <td className="col-name">{campaign.name} {campaign.location ? campaign.location : ''}</td>
+                                        <td className="col-id">{campaign.raceId || String(campaign._id).slice(-6)}</td>
+                                        <td className="col-name">{campaign.name}</td>
                                         <td className="col-date">{formatDate(campaign.eventDate)}</td>
                                         <td className="col-mode">
                                             <span className={`mode-badge ${campaign.isDraft ? 'test' : 'real'}`}>

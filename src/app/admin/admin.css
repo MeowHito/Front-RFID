@@ -54,9 +54,9 @@
 :root {
     --header-bg: #00a65a;
     --header-text: #ffffff;
-    --sidebar-bg: #222d32;
-    --sidebar-text: #b8c7ce;
-    --sidebar-active-bg: #1e282c;
+    --sidebar-bg: #1a2332;
+    --sidebar-text: #cdd5db;
+    --sidebar-active-bg: #0d1b2a;
     --sidebar-active-border: #00a65a;
     --content-bg: #ecf0f5;
     --table-header-bg: #f5f7fa;
@@ -490,8 +490,8 @@
 .sidebar-header {
     padding: 8px 15px;
     font-size: 10px;
-    color: #4b646f;
-    background: #1a2226;
+    color: #7b96a9;
+    background: #111d27;
     text-transform: uppercase;
     font-weight: 600;
     letter-spacing: 0.5px;
@@ -762,11 +762,13 @@
     font-size: 13px;
     text-align: center;
 }
+
 .table-input:focus {
     border-color: #3c8dbc;
     outline: none;
-    box-shadow: 0 0 3px rgba(60,141,188,0.2);
+    box-shadow: 0 0 3px rgba(60, 141, 188, 0.2);
 }
+
 .table-select {
     width: 100%;
     padding: 4px 5px;
@@ -776,6 +778,7 @@
     font-size: 12px;
     cursor: pointer;
 }
+
 .badge-dist {
     background: #eee;
     padding: 2px 6px;
@@ -928,14 +931,34 @@
     overflow-x: auto;
 }
 
-.events-data-table .col-tools { width: 90px; text-align: center; }
-.events-data-table .col-id { width: 80px; }
-.events-data-table .col-name { min-width: 200px; }
-.events-data-table .col-date { width: 100px; }
-.events-data-table .col-mode { width: 80px; text-align: center; }
+.events-data-table .col-tools {
+    width: 90px;
+    text-align: center;
+}
+
+.events-data-table .col-id {
+    width: 80px;
+}
+
+.events-data-table .col-name {
+    min-width: 200px;
+}
+
+.events-data-table .col-date {
+    width: 100px;
+}
+
+.events-data-table .col-mode {
+    width: 80px;
+    text-align: center;
+}
+
 .events-data-table .col-cert,
 .events-data-table .col-rfid,
-.events-data-table .col-status { width: 90px; text-align: center; }
+.events-data-table .col-status {
+    width: 90px;
+    text-align: center;
+}
 
 .event-row-tools {
     display: flex;
