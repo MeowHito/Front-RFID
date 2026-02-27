@@ -203,7 +203,7 @@ export default function ActivityCard({
 
                 {/* Right: Stats Table - 7 columns */}
                 <div className="flex-1 bg-white dark:bg-[#1e1e2a]" style={{ overflow: 'hidden' }}>
-                    <div className="px-2 overflow-x-auto overflow-y-auto" style={{ maxHeight: '160px' }}>
+                    <div className="px-2 overflow-x-auto overflow-y-auto" style={{ maxHeight: '220px' }}>
                         <table className="w-full border-collapse" style={{ tableLayout: 'auto' }}>
                             <thead className="sticky top-0 bg-white dark:bg-[#1e1e2a] z-10">
                                 <tr>

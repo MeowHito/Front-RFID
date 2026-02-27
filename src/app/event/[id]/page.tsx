@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { useParams } from 'next/navigation';
@@ -49,11 +49,15 @@ interface Runner {
     netTime?: number;
     elapsedTime?: number;
     gunTime?: number;
+    netTimeStr?: string;
+    gunTimeStr?: string;
     overallRank?: number;
     genderRank?: number;
     genderNetRank?: number;
     ageGroupRank?: number;
+    ageGroupNetRank?: number;
     categoryRank?: number;
+    categoryNetRank?: number;
     nationality?: string;
     team?: string;
     teamName?: string;
@@ -71,6 +75,10 @@ interface TimingRecord {
     scanTime: string;
     splitTime?: number;
     elapsedTime?: number;
+    distanceFromStart?: number;
+    netTime?: number;
+    gunTime?: number;
+    order?: number;
 }
 
 interface CheckpointMapping {
@@ -125,6 +133,9 @@ export default function EventLivePage() {
     const [filterCategory, setFilterCategory] = useState('');
     const [selectedRunner, setSelectedRunner] = useState<Runner | null>(null);
     const [runnerTimings, setRunnerTimings] = useState<TimingRecord[]>([]);
+    const [slipBgImage, setSlipBgImage] = useState<string | null>(null);
+    const [downloading, setDownloading] = useState(false);
+    const slipRef = useRef<HTMLDivElement>(null);
 
     const [showGenRank, setShowGenRank] = useState(true);
     const [showCatRank, setShowCatRank] = useState(true);
@@ -289,10 +300,28 @@ export default function EventLivePage() {
         if (!categories.length) return runner.category;
         const rc = normalizeComparableText(runner.category);
         const rd = parseDistanceValue(runner.category);
+
+        // Pass 1: exact normalized match (highest confidence)
         for (const cat of categories) {
-            if (rc && (rc === cat.normalizedName || rc === cat.normalizedDistance || rc.includes(cat.normalizedName) || rc.includes(cat.normalizedDistance) || cat.normalizedName.includes(rc) || cat.normalizedDistance.includes(rc))) return cat.key;
-            if (rd !== null && cat.distanceValue !== null && Math.abs(rd - cat.distanceValue) < 0.001) return cat.key;
+            if (rc && (rc === cat.normalizedName || rc === cat.normalizedDistance)) return cat.key;
         }
+
+        // Pass 2: numeric distance match (e.g., "21 KM" matches category with distanceValue 21)
+        if (rd !== null) {
+            for (const cat of categories) {
+                if (cat.distanceValue !== null && Math.abs(rd - cat.distanceValue) < 0.001) return cat.key;
+            }
+        }
+
+        // Pass 3: substring match only if one side fully contains the other AND
+        // the shorter string is at least 3 chars (avoids "5km" matching "15km")
+        for (const cat of categories) {
+            if (!rc || !cat.normalizedName) continue;
+            const shorter = rc.length <= cat.normalizedName.length ? rc : cat.normalizedName;
+            const longer = rc.length <= cat.normalizedName.length ? cat.normalizedName : rc;
+            if (shorter.length >= 3 && longer.startsWith(shorter)) return cat.key;
+        }
+
         return runner.category;
     }, [categories]);
 
@@ -324,22 +353,23 @@ export default function EventLivePage() {
                 return matchesSearch && matchesGender && matchesCategory;
             })
             .sort((a, b) => {
+                // Primary: runners with netTime first, sorted ascending (fastest = #1)
+                const aTime = a.netTime || 0;
+                const bTime = b.netTime || 0;
+                if (aTime > 0 && bTime > 0) return aTime - bTime;
+                if (aTime > 0 && bTime <= 0) return -1;
+                if (aTime <= 0 && bTime > 0) return 1;
+
+                // Secondary: runners with gunTime
+                const aGun = a.gunTime || a.elapsedTime || 0;
+                const bGun = b.gunTime || b.elapsedTime || 0;
+                if (aGun > 0 && bGun > 0) return aGun - bGun;
+                if (aGun > 0 && bGun <= 0) return -1;
+                if (aGun <= 0 && bGun > 0) return 1;
+
+                // Tertiary: status order
                 const statusOrder: Record<string, number> = { 'finished': 0, 'in_progress': 1, 'not_started': 2, 'dns': 3, 'dnf': 4 };
-                const sd = (statusOrder[a.status] ?? 5) - (statusOrder[b.status] ?? 5);
-                if (sd !== 0) return sd;
-                // Sort by overallRank (lower is better)
-                const aRank = a.overallRank || 0;
-                const bRank = b.overallRank || 0;
-                if (aRank && bRank) return aRank - bRank;
-                if (aRank && !bRank) return -1;
-                if (!aRank && bRank) return 1;
-                // Fallback: sort by netTime (lower is better)
-                const aTime = a.netTime || a.gunTime || a.elapsedTime || 0;
-                const bTime = b.netTime || b.gunTime || b.elapsedTime || 0;
-                if (aTime && bTime) return aTime - bTime;
-                if (aTime && !bTime) return -1;
-                if (!aTime && bTime) return 1;
-                return 0;
+                return (statusOrder[a.status] ?? 5) - (statusOrder[b.status] ?? 5);
             });
     }, [runners, searchQuery, filterGender, filterCategory, resolveRunnerCategoryKey]);
 
@@ -589,7 +619,7 @@ export default function EventLivePage() {
                                 </td></tr>
                             ) : (
                                 filteredRunners.map((runner, idx) => {
-                                    const rank = runner.overallRank || idx + 1;
+                                    const rank = idx + 1;
                                     const displayName = language === 'th' && runner.firstNameTh
                                         ? `${runner.firstNameTh} ${runner.lastNameTh || ''}`
                                         : `${runner.firstName} ${runner.lastName}`;
@@ -691,14 +721,14 @@ export default function EventLivePage() {
                                             {/* Gun Time */}
                                             <td style={{ padding: '12px 6px', textAlign: 'center' }}>
                                                 <span style={{ fontSize: 12, fontWeight: 700, color: themeStyles.text, fontFamily: 'monospace' }}>
-                                                    {formatTime(runner.gunTime || runner.elapsedTime)}
+                                                    {runner.gunTimeStr || formatTime(runner.gunTime || runner.elapsedTime)}
                                                 </span>
                                             </td>
                                             {/* Net Time */}
                                             {shouldShowColumn('netTime') && (
                                                 <td style={{ padding: '12px 6px', textAlign: 'center' }}>
-                                                    <span style={{ fontSize: 12, fontWeight: 700, color: runner.netTime ? '#22c55e' : themeStyles.textSecondary, fontFamily: 'monospace' }}>
-                                                        {formatTime(runner.netTime)}
+                                                    <span style={{ fontSize: 12, fontWeight: 700, color: (runner.netTimeStr || runner.netTime) ? '#22c55e' : themeStyles.textSecondary, fontFamily: 'monospace' }}>
+                                                        {runner.netTimeStr || formatTime(runner.netTime)}
                                                     </span>
                                                 </td>
                                             )}
@@ -790,66 +820,167 @@ export default function EventLivePage() {
                 </div>
             </footer>
 
-            {/* ===== RUNNER DETAIL MODAL ===== */}
-            {selectedRunner && (
-                <div style={{ position: 'fixed', inset: 0, zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, background: isDark ? 'rgba(0,0,0,0.7)' : 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)' }} onClick={() => setSelectedRunner(null)}>
-                    <div style={{ background: themeStyles.cardBg, borderRadius: 16, padding: 24, maxWidth: 480, width: '100%', maxHeight: '80vh', overflowY: 'auto', boxShadow: isDark ? '0 24px 48px rgba(0,0,0,0.4)' : '0 24px 48px rgba(0,0,0,0.15)', border: isDark ? '1px solid rgba(255,255,255,0.1)' : 'none' }} onClick={e => e.stopPropagation()}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                                <div style={{ width: 48, height: 48, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 800, fontSize: 18, background: getAvatarColor(selectedRunner.firstName + selectedRunner.lastName) }}>
-                                    {getInitials(selectedRunner.firstName, selectedRunner.lastName)}
-                                </div>
-                                <div>
-                                    <h3 style={{ fontSize: 18, fontWeight: 800, margin: 0, color: themeStyles.text, textTransform: 'uppercase' }}>
-                                        {selectedRunner.firstName} {selectedRunner.lastName}
-                                    </h3>
-                                    <span style={{ background: isDark ? '#22c55e' : '#0f172a', color: '#f8fafc', padding: '2px 8px', borderRadius: 4, fontSize: 11, fontWeight: 800 }}>
-                                        BIB #{selectedRunner.bib}
-                                    </span>
-                                </div>
+            {/* ===== RUNNER E-SLIP MODAL ===== */}
+            {selectedRunner && (() => {
+                const slipRank = (filteredRunners.findIndex(r => r._id === selectedRunner._id) + 1) || '-';
+                const slipGenderLabel = selectedRunner.gender === 'M' ? 'Male' : 'Female';
+                const slipDistance = parseDistanceValue(selectedRunner.category);
+                const slipTime = selectedRunner.netTime || selectedRunner.gunTime || selectedRunner.elapsedTime;
+                const slipTimeStr = selectedRunner.netTimeStr || selectedRunner.gunTimeStr;
+                const slipPace = selectedRunner.netPace || selectedRunner.gunPace || '-';
+                const handleBgUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    if (file.size > 5 * 1024 * 1024) { alert('Max 5MB'); return; }
+                    const reader = new FileReader();
+                    reader.onload = (ev) => setSlipBgImage(ev.target?.result as string);
+                    reader.readAsDataURL(file);
+                };
+                const handleDownload = async () => {
+                    if (!slipRef.current) return;
+                    setDownloading(true);
+                    try {
+                        const html2canvas = (await import('html2canvas')).default;
+                        const canvas = await html2canvas(slipRef.current, { scale: 3, backgroundColor: '#0f172a', useCORS: true });
+                        const link = document.createElement('a');
+                        link.download = `ACTION_Live_${selectedRunner.bib}.jpg`;
+                        link.href = canvas.toDataURL('image/jpeg', 0.92);
+                        link.click();
+                    } catch (err) { console.error('E-Slip download error:', err); }
+                    finally { setDownloading(false); }
+                };
+                return (
+                    <div style={{ position: 'fixed', inset: 0, zIndex: 50, display: 'flex', flexDirection: 'column', alignItems: 'center', background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(10px)', overflowY: 'auto' }} onClick={() => { setSelectedRunner(null); setSlipBgImage(null); }}>
+                        {/* Top bar: Back + Actions */}
+                        <div style={{ width: '100%', maxWidth: 420, padding: '10px 15px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }} onClick={e => e.stopPropagation()}>
+                            <button onClick={() => { setSelectedRunner(null); setSlipBgImage(null); }} style={{ color: '#cbd5e1', fontSize: 14, background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5, fontWeight: 600, fontFamily: "'Prompt', sans-serif" }}>
+                                ← {language === 'th' ? 'ย้อนกลับ' : 'Back'}
+                            </button>
+                            <div style={{ display: 'flex', gap: 6 }}>
+                                <input type="file" id="eslip-bg-upload" accept="image/*" style={{ display: 'none' }} onChange={handleBgUpload} />
+                                <label htmlFor="eslip-bg-upload" style={{ padding: '6px 12px', borderRadius: 8, fontWeight: 700, fontSize: 12, cursor: 'pointer', background: 'rgba(255,255,255,0.1)', color: 'white', border: '1px solid rgba(255,255,255,0.2)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                                    📷 {language === 'th' ? 'เลือกรูป' : 'Photo'}
+                                </label>
+                                {slipBgImage && (
+                                    <button onClick={() => setSlipBgImage(null)} style={{ padding: '6px 12px', borderRadius: 8, fontWeight: 700, fontSize: 12, cursor: 'pointer', background: 'rgba(239,68,68,0.2)', color: '#f87171', border: '1px solid rgba(239,68,68,0.3)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                                        ✕ {language === 'th' ? 'ลบรูป' : 'Remove'}
+                                    </button>
+                                )}
+                                <button onClick={handleDownload} disabled={downloading} style={{ padding: '6px 12px', borderRadius: 8, fontWeight: 700, fontSize: 12, cursor: downloading ? 'wait' : 'pointer', background: '#16a34a', color: 'white', border: 'none', opacity: downloading ? 0.7 : 1, display: 'flex', alignItems: 'center', gap: 4 }}>
+                                    {downloading ? '⏳' : '📥'} {language === 'th' ? 'ดาวน์โหลด' : 'Download'}
+                                </button>
                             </div>
-                            <button onClick={() => setSelectedRunner(null)} style={{ fontSize: 24, color: themeStyles.textSecondary, background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}>×</button>
                         </div>
 
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 16 }}>
-                            {[
-                                { label: language === 'th' ? 'สถานะ' : 'Status', value: getStatusLabel(selectedRunner.status), color: getStatusColor(selectedRunner.status) },
-                                { label: language === 'th' ? 'ประเภท' : 'Category', value: selectedRunner.category },
-                                { label: language === 'th' ? 'กลุ่มอายุ' : 'Age Group', value: selectedRunner.ageGroup || '-' },
-                                { label: language === 'th' ? 'เพศ' : 'Gender', value: selectedRunner.gender === 'M' ? (language === 'th' ? 'ชาย' : 'Male') : (language === 'th' ? 'หญิง' : 'Female') },
-                                { label: language === 'th' ? 'อันดับรวม' : 'Overall Rank', value: selectedRunner.overallRank || '-' },
-                                { label: language === 'th' ? 'อันดับเพศ' : 'Gender Rank', value: selectedRunner.genderRank || '-' },
-                                { label: language === 'th' ? 'เวลาสุทธิ' : 'Net Time', value: formatTime(selectedRunner.netTime) },
-                                { label: language === 'th' ? 'ทีม' : 'Team', value: selectedRunner.team || selectedRunner.teamName || '-' },
-                            ].map((item, i) => (
-                                <div key={i} style={{ padding: '8px 10px', borderRadius: 8, background: themeStyles.inputBg }}>
-                                    <div style={{ fontSize: 10, color: themeStyles.textSecondary, fontWeight: 600, marginBottom: 2 }}>{item.label}</div>
-                                    <div style={{ fontSize: 13, fontWeight: 700, color: (item as any).color || themeStyles.text }}>{String(item.value)}</div>
+                        {/* E-Slip Card — full-height frosted glass */}
+                        <div ref={slipRef} onClick={e => e.stopPropagation()} style={{
+                            width: '100%', maxWidth: 420, flex: 1, overflow: 'hidden',
+                            position: 'relative',
+                            backgroundImage: slipBgImage ? `url(${slipBgImage})` : 'none',
+                            backgroundSize: 'cover', backgroundPosition: 'center',
+                        }}>
+                            {/* Frosted glass overlay */}
+                            <div style={{ position: 'absolute', inset: 0, background: slipBgImage ? 'rgba(15,23,42,0.55)' : 'rgba(255,255,255,0.03)', backdropFilter: slipBgImage ? 'blur(16px) saturate(1.2)' : 'blur(20px)', zIndex: 1 }} />
+                            {/* Content */}
+                            <div style={{ position: 'relative', zIndex: 2, padding: '20px 18px', display: 'flex', flexDirection: 'column', minHeight: '100%' }}>
+                                {/* Event Title */}
+                                <div style={{ textAlign: 'center', color: 'white', fontSize: 14, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 20, textShadow: '0 2px 6px rgba(0,0,0,0.6)', opacity: 0.9 }}>
+                                    {campaign?.name || 'Event'}
                                 </div>
-                            ))}
-                        </div>
-
-                        {/* Timing Records */}
-                        {runnerTimings.length > 0 && (
-                            <div>
-                                <h4 style={{ fontSize: 13, fontWeight: 700, marginBottom: 8, color: themeStyles.text }}>
-                                    {language === 'th' ? '⏱ บันทึกเวลา' : '⏱ Timing Records'}
-                                </h4>
-                                <div style={{ borderRadius: 8, overflow: 'hidden', border: `1px solid ${themeStyles.border}` }}>
-                                    {runnerTimings.map((record, i) => (
-                                        <div key={record._id} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 12px', fontSize: 12, background: i % 2 === 0 ? themeStyles.inputBg : themeStyles.cardBg }}>
-                                            <span style={{ color: themeStyles.textMuted, fontWeight: 600 }}>{record.checkpoint}</span>
-                                            <span style={{ fontFamily: 'monospace', fontWeight: 700, color: themeStyles.text }}>
-                                                {record.elapsedTime ? formatTime(record.elapsedTime) : new Date(record.scanTime).toLocaleTimeString()}
-                                            </span>
+                                {/* Runner Info */}
+                                <div style={{ textAlign: 'center', marginBottom: 20 }}>
+                                    <span style={{ background: 'rgba(255,255,255,0.9)', color: '#0f172a', padding: '3px 14px', borderRadius: 8, fontSize: 15, fontWeight: 900, border: '2px solid #16a34a', display: 'inline-block', marginBottom: 8 }}>
+                                        #{selectedRunner.bib}
+                                    </span>
+                                    <h1 style={{ fontSize: 30, fontWeight: 900, textTransform: 'uppercase', color: 'white', lineHeight: 1.1, margin: '6px 0 0', textShadow: '0 2px 8px rgba(0,0,0,0.6)' }}>
+                                        {selectedRunner.firstName} {selectedRunner.lastName}
+                                    </h1>
+                                    <p style={{ color: '#4ade80', fontWeight: 700, fontSize: 12, marginTop: 6, textShadow: '0 1px 4px rgba(0,0,0,0.5)' }}>
+                                        {selectedRunner.category} | {slipGenderLabel} {selectedRunner.ageGroup || ''}
+                                    </p>
+                                </div>
+                                {/* Main Stats: Distance / Pace / Time */}
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 18, background: 'rgba(255,255,255,0.06)', borderRadius: 12, padding: '14px 10px', border: '1px solid rgba(255,255,255,0.1)' }}>
+                                    <div style={{ textAlign: 'center' }}>
+                                        <div style={{ fontSize: 9, fontWeight: 700, color: 'rgba(255,255,255,0.5)', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 4 }}>Distance</div>
+                                        <div style={{ fontSize: 26, fontWeight: 900, color: 'white', lineHeight: 1, textShadow: '0 2px 4px rgba(0,0,0,0.5)' }}>
+                                            {slipDistance ?? '-'} <span style={{ fontSize: 11, fontWeight: 600, color: 'rgba(255,255,255,0.5)' }}>KM</span>
+                                        </div>
+                                    </div>
+                                    <div style={{ textAlign: 'center', borderLeft: '1px solid rgba(255,255,255,0.1)', borderRight: '1px solid rgba(255,255,255,0.1)' }}>
+                                        <div style={{ fontSize: 9, fontWeight: 700, color: 'rgba(255,255,255,0.5)', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 4 }}>Pace</div>
+                                        <div style={{ fontSize: 26, fontWeight: 900, color: 'white', lineHeight: 1, textShadow: '0 2px 4px rgba(0,0,0,0.5)' }}>
+                                            {slipPace} <span style={{ fontSize: 11, fontWeight: 600, color: 'rgba(255,255,255,0.5)' }}>/K</span>
+                                        </div>
+                                    </div>
+                                    <div style={{ textAlign: 'center' }}>
+                                        <div style={{ fontSize: 9, fontWeight: 700, color: '#4ade80', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 4 }}>Time</div>
+                                        <div style={{ fontSize: 26, fontWeight: 900, color: '#4ade80', lineHeight: 1, textShadow: '0 2px 4px rgba(0,0,0,0.5)' }}>
+                                            {slipTimeStr || formatTime(slipTime)}
+                                        </div>
+                                    </div>
+                                </div>
+                                {/* Rank Boxes */}
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6, marginBottom: 18 }}>
+                                    {[
+                                        { label: 'Overall Rank', value: slipRank, total: filteredRunners.length },
+                                        { label: 'Gender Rank', value: selectedRunner.genderRank || '-', total: selectedRunner.genderFinishers || '' },
+                                        { label: 'Category Rank', value: selectedRunner.categoryRank || slipRank, total: selectedRunner.totalFinishers || filteredRunners.length },
+                                    ].map((r, i) => (
+                                        <div key={i} style={{ background: 'rgba(255,255,255,0.06)', backdropFilter: 'blur(8px)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 10, padding: '10px 4px', textAlign: 'center' }}>
+                                            <div style={{ fontSize: 9, fontWeight: 700, color: 'rgba(255,255,255,0.45)', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{r.label}</div>
+                                            <div style={{ fontSize: 18, fontWeight: 900, color: 'white', lineHeight: 1, marginTop: 3, textShadow: '0 1px 3px rgba(0,0,0,0.4)' }}>
+                                                {r.value}{r.total ? <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.4)', fontWeight: 500, marginLeft: 2 }}>/{r.total}</span> : null}
+                                            </div>
                                         </div>
                                     ))}
                                 </div>
+                                {/* Splits / Checkpoint History */}
+                                <div style={{ background: 'rgba(0,0,0,0.25)', borderRadius: 12, padding: 14, border: '1px solid rgba(255,255,255,0.08)', flex: 1 }}>
+                                    <div style={{ fontSize: 10, fontWeight: 800, color: 'rgba(255,255,255,0.45)', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 10, textAlign: 'center', borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: 6 }}>
+                                        Splits History
+                                    </div>
+                                    {runnerTimings.length > 0 && (
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, paddingBottom: 4, borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+                                            <span style={{ fontSize: 9, fontWeight: 700, color: 'rgba(255,255,255,0.3)', textTransform: 'uppercase', flex: 2 }}>Split</span>
+                                            <span style={{ fontSize: 9, fontWeight: 700, color: 'rgba(255,255,255,0.3)', textTransform: 'uppercase', flex: 1, textAlign: 'center' }}>Dist.</span>
+                                            <span style={{ fontSize: 9, fontWeight: 700, color: 'rgba(255,255,255,0.3)', textTransform: 'uppercase', flex: 1.5, textAlign: 'right' }}>Net Time</span>
+                                        </div>
+                                    )}
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                        {runnerTimings.length > 0 ? runnerTimings.map((record, i) => {
+                                            const isFinish = record.checkpoint?.toLowerCase().includes('finish');
+                                            const isStart = record.checkpoint?.toLowerCase().includes('start');
+                                            const displayTime = record.netTime ?? record.elapsedTime;
+                                            return (
+                                                <div key={record._id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: i < runnerTimings.length - 1 ? '1px dashed rgba(255,255,255,0.06)' : 'none', paddingBottom: i < runnerTimings.length - 1 ? 5 : 0 }}>
+                                                    <span style={{ fontSize: 12, fontWeight: isFinish ? 800 : 600, color: isFinish ? '#4ade80' : isStart ? 'rgba(255,255,255,0.4)' : 'rgba(255,255,255,0.85)', flex: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                        {record.checkpoint}
+                                                    </span>
+                                                    <span style={{ fontSize: 11, fontWeight: 600, color: 'rgba(255,255,255,0.4)', flex: 1, textAlign: 'center' }}>
+                                                        {record.distanceFromStart !== undefined && record.distanceFromStart !== null ? `${record.distanceFromStart} km` : '-'}
+                                                    </span>
+                                                    <span style={{ fontSize: isFinish ? 15 : 13, fontWeight: 800, color: isFinish ? '#4ade80' : 'white', fontFamily: 'monospace', flex: 1.5, textAlign: 'right' }}>
+                                                        {displayTime ? formatTime(displayTime) : (isStart ? '0:00:00' : '-')}
+                                                    </span>
+                                                </div>
+                                            );
+                                        }) : (
+                                            <div style={{ textAlign: 'center', fontSize: 11, color: 'rgba(255,255,255,0.3)', padding: '12px 0' }}>
+                                                {selectedRunner.status === 'not_started' ? (language === 'th' ? 'ยังไม่เริ่ม' : 'Not started yet') : (language === 'th' ? 'ไม่มีข้อมูล Splits' : 'No splits data')}
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                                {/* Footer */}
+                                <div style={{ textAlign: 'center', fontSize: 8, color: 'rgba(255,255,255,0.25)', marginTop: 18, fontWeight: 600, letterSpacing: 1.5, textTransform: 'uppercase' }}>
+                                    VERIFIED BY ACTION TIMING
+                                </div>
                             </div>
-                        )}
+                        </div>
                     </div>
-                </div>
-            )}
+                );
+            })()}
         </div>
     );
 }

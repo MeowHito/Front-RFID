@@ -54,10 +54,10 @@
 :root {
     --header-bg: #00a65a;
     --header-text: #ffffff;
-    --sidebar-bg: #1a2332;
-    --sidebar-text: #cdd5db;
-    --sidebar-active-bg: #0d1b2a;
-    --sidebar-active-border: #00a65a;
+    --sidebar-bg: #1e293b;
+    --sidebar-text: #e2e8f0;
+    --sidebar-active-bg: #334155;
+    --sidebar-active-border: #22c55e;
     --content-bg: #ecf0f5;
     --table-header-bg: #f5f7fa;
     --border-color: #d2d6de;
@@ -488,32 +488,40 @@
 }
 
 .sidebar-header {
-    padding: 8px 15px;
+    padding: 10px 15px;
     font-size: 10px;
-    color: #7b96a9;
-    background: #111d27;
+    color: #94a3b8;
+    background: #0f172a;
     text-transform: uppercase;
-    font-weight: 600;
-    letter-spacing: 0.5px;
+    font-weight: 700;
+    letter-spacing: 0.6px;
     list-style: none;
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 .sidebar-menu li a {
-    padding: 10px 15px;
+    padding: 11px 15px;
     display: flex;
     align-items: center;
     text-decoration: none;
     color: var(--sidebar-text);
     border-left: 3px solid transparent;
-    transition: all 0.2s;
-    font-size: 12px;
+    transition: all 0.15s ease;
+    font-size: 12.5px;
+    font-weight: 500;
 }
 
-.sidebar-menu li a:hover,
+.sidebar-menu li a:hover {
+    background-color: var(--sidebar-active-bg);
+    color: #fff;
+    border-left-color: var(--sidebar-active-border);
+}
+
 .sidebar-menu li.active a {
     background-color: var(--sidebar-active-bg);
     color: #fff;
     border-left-color: var(--sidebar-active-border);
+    font-weight: 600;
 }
 
 .sidebar-icon {

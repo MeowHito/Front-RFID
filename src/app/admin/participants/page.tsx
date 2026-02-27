@@ -250,6 +250,12 @@ export default function ParticipantsPage() {
                     // Fetch counts per category, then auto-select first with data
                     const cats: RaceCategory[] = data.categories || [];
                     const counts: Record<string, number> = {};
+                    // Fetch total count (all runners in campaign)
+                    try {
+                        const pAll = new URLSearchParams({ campaignId: data._id, page: '1', limit: '1' });
+                        const rAll = await fetch(`/api/runners/paged?${pAll.toString()}`);
+                        if (rAll.ok) { const dAll = await rAll.json(); counts['__all__'] = dAll.total || 0; }
+                    } catch { /* */ }
                     await Promise.all(cats.map(async (cat) => {
                         try {
                             const p = new URLSearchParams({ campaignId: data._id, category: cat.name, page: '1', limit: '1' });
@@ -261,9 +267,8 @@ export default function ParticipantsPage() {
                         } catch { /* ignore */ }
                     }));
                     setCategoryCounts(counts);
-                    // Auto-select the first category that has data, otherwise stay on import
-                    const firstWithData = cats.find(c => (counts[c.name] || 0) > 0);
-                    if (firstWithData) setActiveTab(firstWithData.name);
+                    // Auto-select 'all' if there are runners, otherwise stay on import
+                    if ((counts['__all__'] || 0) > 0) setActiveTab('all');
                 }
             } catch {
                 setCampaign(null);
@@ -281,10 +286,10 @@ export default function ParticipantsPage() {
         try {
             const params = new URLSearchParams({
                 campaignId: campaign._id,
-                category: activeTab,
                 page: String(listPage),
                 limit: String(listLimit),
             });
+            if (activeTab !== 'all') params.append('category', activeTab);
             if (listSearch) params.append('search', listSearch);
             if (listRunnerStatus.length > 0) params.append('runnerStatus', listRunnerStatus.join(','));
             if (sortBy) { params.append('sortBy', sortBy); params.append('sortOrder', sortOrder); }
@@ -704,11 +709,16 @@ export default function ParticipantsPage() {
             }
             // Clear this category's import data
             setCategoryImports(prev => { const next = { ...prev }; delete next[category]; return next; });
-            // Refresh count
+            // Refresh count for this category + total
             try {
-                const p = new URLSearchParams({ eventId: campaign._id, category, page: '1', limit: '1' });
-                const cr = await fetch(`/api/runners/paged?${p.toString()}`);
-                if (cr.ok) { const cd = await cr.json(); setCategoryCounts(prev => ({ ...prev, [category]: cd.total || 0 })); }
+                const [cr, crAll] = await Promise.all([
+                    fetch(`/api/runners/paged?${new URLSearchParams({ campaignId: campaign._id, category, page: '1', limit: '1' }).toString()}`),
+                    fetch(`/api/runners/paged?${new URLSearchParams({ campaignId: campaign._id, page: '1', limit: '1' }).toString()}`),
+                ]);
+                const updates: Record<string, number> = {};
+                if (cr.ok) { const cd = await cr.json(); updates[category] = cd.total || 0; }
+                if (crAll.ok) { const cdAll = await crAll.json(); updates['__all__'] = cdAll.total || 0; }
+                setCategoryCounts(prev => ({ ...prev, ...updates }));
             } catch { /* ignore */ }
         } catch (err: unknown) {
             const msg = err instanceof Error ? err.message : 'Unknown error';
@@ -777,7 +787,23 @@ export default function ParticipantsPage() {
                             </svg>
                             {language === 'th' ? 'นำเข้าข้อมูลผู้เข้าแข่งขัน' : 'Import Participants'}
                         </button>
-                        {(campaign.categories || []).filter(cat => (categoryCounts[cat.name] || 0) > 0).map((cat, i) => {
+                        {/* All Runners tab */}
+                        <button
+                            onClick={() => { setActiveTab('all'); setListSearch(''); setListPage(1); setSelectedIds(new Set()); }}
+                            className={`px-4 py-2 text-[13px] rounded-md border cursor-pointer transition whitespace-nowrap flex flex-col items-center gap-0.5 ${activeTab === 'all' ? 'border-[#3c8dbc] border-2 bg-blue-50 text-[#3c8dbc] font-bold' : 'border-gray-300 bg-white text-gray-500'}`}
+                        >
+                            <span className="flex items-center gap-1">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                                    <circle cx="9" cy="7" r="4" />
+                                    <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+                                    <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+                                </svg>
+                                <span className="font-bold text-xs" style={{ color: '#3b82f6' }}>({categoryCounts['__all__'] || 0})</span>
+                            </span>
+                            <span className="text-xs">{language === 'th' ? 'ทั้งหมด' : 'All Runners'}</span>
+                        </button>
+                        {(campaign.categories || []).map((cat, i) => {
                             const isActive = activeTab === cat.name;
                             const count = categoryCounts[cat.name] || 0;
                             return (
@@ -791,7 +817,7 @@ export default function ParticipantsPage() {
                                             <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
                                             <circle cx="9" cy="7" r="4" />
                                         </svg>
-                                        <span className="text-blue-500! font-bold text-xs">({count})</span>
+                                        <span className="font-bold text-xs" style={{ color: '#3b82f6' }}>({count})</span>
                                     </span>
                                     <span className="text-xs">{cat.name}{cat.distance ? ` (${cat.distance})` : ''}</span>
                                 </button>
@@ -823,9 +849,14 @@ export default function ParticipantsPage() {
                                     );
                                     // Reload runners
                                     if (activeTab !== 'import') fetchRunners();
-                                    // Reload category counts
+                                    // Reload category counts (including __all__)
                                     if (campaign?.categories) {
                                         const counts: Record<string, number> = {};
+                                        try {
+                                            const pAll = new URLSearchParams({ campaignId: campaign._id, page: '1', limit: '1' });
+                                            const rAll = await fetch(`/api/runners/paged?${pAll.toString()}`);
+                                            if (rAll.ok) { const dAll = await rAll.json(); counts['__all__'] = dAll.total || 0; }
+                                        } catch { /* */ }
                                         await Promise.all(campaign.categories.map(async (cat) => {
                                             try {
                                                 const p = new URLSearchParams({ campaignId: campaign._id, category: cat.name, page: '1', limit: '1' });
