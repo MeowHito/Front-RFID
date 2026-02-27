@@ -52,7 +52,11 @@ export default function CertificatesPage() {
         bgColor: '#1a1a2e',
         accentColor: '#e94560',
         textColor: '#ffffff',
+        backgroundImage: '' as string,
     });
+    const [bgUploading, setBgUploading] = useState(false);
+    const [configSaving, setConfigSaving] = useState(false);
+    const [configSaved, setConfigSaved] = useState(false);
 
     const showToast = (message: string, type: 'success' | 'error') => {
         setToast({ message, type });
@@ -68,6 +72,13 @@ export default function CertificatesPage() {
                 if (data && data._id) {
                     setCampaign(data);
                     if (data.categories?.length > 0) setSelectedCategory(data.categories[0].name);
+                    // Load saved cert config from campaign
+                    if (data.certTextColor) {
+                        setCertConfig(prev => ({ ...prev, textColor: data.certTextColor }));
+                    }
+                    if (data.certBackgroundImage) {
+                        setCertConfig(prev => ({ ...prev, backgroundImage: data.certBackgroundImage }));
+                    }
                 }
             } catch { setCampaign(null); }
             finally { setLoading(false); }
@@ -123,8 +134,48 @@ export default function CertificatesPage() {
         }
     }, [campaign, certConfig, language]);
 
+    const handleBgImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        if (file.size > 5 * 1024 * 1024) { showToast('Max file size 5MB', 'error'); return; }
+        setBgUploading(true);
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+            setCertConfig(prev => ({ ...prev, backgroundImage: ev.target?.result as string }));
+            setBgUploading(false);
+        };
+        reader.readAsDataURL(file);
+    };
+
+    const handleSaveCertConfig = async () => {
+        if (!campaign?._id) return;
+        setConfigSaving(true);
+        setConfigSaved(false);
+        try {
+            const res = await fetch(`/api/campaigns/${campaign._id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    certTextColor: certConfig.textColor,
+                    certBackgroundImage: certConfig.backgroundImage,
+                }),
+            });
+            if (res.ok) {
+                setConfigSaved(true);
+                showToast(language === 'th' ? 'บันทึกสำเร็จ' : 'Saved', 'success');
+                setTimeout(() => setConfigSaved(false), 3000);
+            } else {
+                showToast(language === 'th' ? 'บันทึกล้มเหลว' : 'Save failed', 'error');
+            }
+        } catch { showToast('Error', 'error'); }
+        finally { setConfigSaving(false); }
+    };
+
     const generateCertHTML = (runner: Runner) => {
         const campaignName = language === 'th' ? (campaign?.nameTh || campaign?.name || '') : (campaign?.nameEn || campaign?.name || '');
+        const bgImageCSS = certConfig.backgroundImage
+            ? `background-image: url('${certConfig.backgroundImage}'); background-size: cover; background-position: center;`
+            : `background: ${certConfig.bgColor};`;
         return `<!DOCTYPE html>
 <html>
 <head><meta charset="utf-8"><title>Certificate - ${runner.bib}</title>
@@ -133,30 +184,35 @@ export default function CertificatesPage() {
 @page { size: A4 landscape; margin: 0; }
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { width: 297mm; height: 210mm; display: flex; align-items: center; justify-content: center; font-family: 'Sarabun', sans-serif; }
-.cert { width: 297mm; height: 210mm; position: relative; background: ${certConfig.bgColor}; display: flex; flex-direction: column; align-items: center; justify-content: center; color: ${certConfig.textColor}; overflow: hidden; }
+.cert { width: 297mm; height: 210mm; position: relative; ${bgImageCSS} display: flex; flex-direction: column; align-items: center; justify-content: center; color: ${certConfig.textColor}; overflow: hidden; }
 .cert::before { content: ''; position: absolute; top: 0; left: 0; right: 0; bottom: 0; border: 12px solid ${certConfig.accentColor}40; border-radius: 0; }
 .cert::after { content: ''; position: absolute; top: 16px; left: 16px; right: 16px; bottom: 16px; border: 2px solid ${certConfig.accentColor}60; }
-.cert-title { font-family: 'Playfair Display', serif; font-size: 42px; letter-spacing: 4px; text-transform: uppercase; margin-bottom: 8px; color: ${certConfig.accentColor}; }
-.cert-subtitle { font-size: 16px; letter-spacing: 8px; text-transform: uppercase; opacity: 0.7; margin-bottom: 40px; }
-.cert-name { font-size: 38px; font-weight: 700; border-bottom: 2px solid ${certConfig.accentColor}; padding-bottom: 8px; margin-bottom: 16px; }
-.cert-details { font-size: 16px; opacity: 0.8; margin-bottom: 6px; }
-.cert-big { font-size: 22px; font-weight: 700; color: ${certConfig.accentColor}; margin: 12px 0; }
-.cert-event { font-size: 24px; font-weight: 600; margin-bottom: 30px; }
-.cert-bottom { position: absolute; bottom: 40px; display: flex; gap: 80px; font-size: 13px; opacity: 0.6; }
+.cert-overlay { position: absolute; inset: 0; background: rgba(0,0,0,0.3); z-index: 0; }
+.cert-content { position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center; }
+.cert-title { font-family: 'Playfair Display', serif; font-size: 42px; letter-spacing: 4px; text-transform: uppercase; margin-bottom: 8px; color: ${certConfig.accentColor}; text-shadow: 0 2px 8px rgba(0,0,0,0.5); }
+.cert-subtitle { font-size: 16px; letter-spacing: 8px; text-transform: uppercase; opacity: 0.85; margin-bottom: 40px; text-shadow: 0 1px 4px rgba(0,0,0,0.5); }
+.cert-name { font-size: 38px; font-weight: 700; border-bottom: 2px solid ${certConfig.accentColor}; padding-bottom: 8px; margin-bottom: 16px; text-shadow: 0 2px 6px rgba(0,0,0,0.5); }
+.cert-details { font-size: 16px; opacity: 0.9; margin-bottom: 6px; text-shadow: 0 1px 3px rgba(0,0,0,0.4); }
+.cert-big { font-size: 22px; font-weight: 700; color: ${certConfig.accentColor}; margin: 12px 0; text-shadow: 0 2px 6px rgba(0,0,0,0.4); }
+.cert-event { font-size: 24px; font-weight: 600; margin-bottom: 30px; text-shadow: 0 1px 4px rgba(0,0,0,0.4); }
+.cert-bottom { position: absolute; bottom: 40px; display: flex; gap: 80px; font-size: 13px; opacity: 0.7; z-index: 1; text-shadow: 0 1px 3px rgba(0,0,0,0.4); }
 </style></head>
 <body>
 <div class="cert">
-    <div class="cert-title">${certConfig.title}</div>
-    <div class="cert-subtitle">${certConfig.titleTh}</div>
-    <div class="cert-event">${campaignName}</div>
-    <div class="cert-name">${runner.firstName} ${runner.lastName}</div>
-    <div class="cert-details">BIB: ${runner.bib} | ${runner.category} | ${runner.gender === 'M' ? 'Male' : 'Female'}</div>
-    <div class="cert-big">🏆 Gun Time: ${formatTime(runner.netTime)}</div>
-    <div class="cert-details">${runner.ageGroup ? 'Age Group: ' + runner.ageGroup : ''}</div>
-    <div class="cert-details">
-        Overall Rank: ${runner.overallRank || '-'} | 
-        Gender Rank: ${runner.genderRank || '-'} | 
-        Age Group Rank: ${runner.ageGroupRank || '-'}
+    ${certConfig.backgroundImage ? '<div class="cert-overlay"></div>' : ''}
+    <div class="cert-content">
+        <div class="cert-title">${certConfig.title}</div>
+        <div class="cert-subtitle">${certConfig.titleTh}</div>
+        <div class="cert-event">${campaignName}</div>
+        <div class="cert-name">${runner.firstName} ${runner.lastName}</div>
+        <div class="cert-details">BIB: ${runner.bib} | ${runner.category} | ${runner.gender === 'M' ? 'Male' : 'Female'}</div>
+        <div class="cert-big">Gun Time: ${formatTime(runner.netTime)}</div>
+        <div class="cert-details">${runner.ageGroup ? 'Age Group: ' + runner.ageGroup : ''}</div>
+        <div class="cert-details">
+            Overall Rank: ${runner.overallRank || '-'} | 
+            Gender Rank: ${runner.genderRank || '-'} | 
+            Age Group Rank: ${runner.ageGroupRank || '-'}
+        </div>
     </div>
     <div class="cert-bottom">
         <div>Date: ${runner.finishTime ? formatDate(runner.finishTime) : '-'}</div>
@@ -292,7 +348,7 @@ body { width: 297mm; height: 210mm; display: flex; align-items: center; justify-
                                 </div>
                                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6 }}>
                                     <div>
-                                        <label style={{ fontSize: 10, color: '#666' }}>BG</label>
+                                        <label style={{ fontSize: 10, color: '#666' }}>BG Color</label>
                                         <input type="color" value={certConfig.bgColor}
                                             onChange={e => setCertConfig(c => ({ ...c, bgColor: e.target.value }))}
                                             style={{ width: '100%', height: 30, border: 'none', cursor: 'pointer' }} />
@@ -310,6 +366,47 @@ body { width: 297mm; height: 210mm; display: flex; align-items: center; justify-
                                             style={{ width: '100%', height: 30, border: 'none', cursor: 'pointer' }} />
                                     </div>
                                 </div>
+
+                                {/* Background Image Upload */}
+                                <div>
+                                    <label style={{ fontSize: 11, color: '#666', fontWeight: 600, display: 'block', marginBottom: 4 }}>
+                                        {language === 'th' ? 'ภาพพื้นหลัง (A4 landscape)' : 'Background Image (A4 landscape)'}
+                                    </label>
+                                    {certConfig.backgroundImage ? (
+                                        <div style={{ position: 'relative', marginBottom: 6 }}>
+                                            <img src={certConfig.backgroundImage} alt="bg" style={{ width: '100%', borderRadius: 6, border: '1px solid #e5e7eb', aspectRatio: '297/210', objectFit: 'cover' }} />
+                                            <button onClick={() => setCertConfig(c => ({ ...c, backgroundImage: '' }))}
+                                                style={{ position: 'absolute', top: 4, right: 4, background: 'rgba(239,68,68,0.9)', color: '#fff', border: 'none', borderRadius: 4, padding: '2px 8px', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
+                                                ✕ {language === 'th' ? 'ลบ' : 'Remove'}
+                                            </button>
+                                        </div>
+                                    ) : null}
+                                    <input type="file" id="cert-bg-upload" accept="image/*" style={{ display: 'none' }} onChange={handleBgImageUpload} />
+                                    <label htmlFor="cert-bg-upload" style={{
+                                        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                                        padding: '8px 12px', borderRadius: 6, border: '1px dashed #ccc',
+                                        background: '#f9fafb', cursor: bgUploading ? 'wait' : 'pointer',
+                                        fontSize: 12, fontWeight: 600, color: '#666',
+                                    }}>
+                                        {bgUploading ? '⏳ กำลังอัปโหลด...' : (certConfig.backgroundImage ? '📷 เปลี่ยนรูป' : '📷 อัปโหลดภาพพื้นหลัง')}
+                                    </label>
+                                    <p style={{ fontSize: 10, color: '#999', marginTop: 4 }}>
+                                        {language === 'th' ? 'แนะนำ: ขนาด 297×210mm, ไม่เกิน 5MB' : 'Recommended: 297×210mm, max 5MB'}
+                                    </p>
+                                </div>
+
+                                {/* Save Config Button */}
+                                <button onClick={handleSaveCertConfig} disabled={configSaving}
+                                    style={{
+                                        width: '100%', padding: '8px', borderRadius: 6, border: 'none',
+                                        background: configSaving ? '#94a3b8' : '#00a65a', color: '#fff',
+                                        fontWeight: 700, fontSize: 12, cursor: configSaving ? 'wait' : 'pointer',
+                                        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                                    }}>
+                                    {configSaving ? (language === 'th' ? 'กำลังบันทึก...' : 'Saving...') :
+                                     configSaved ? (language === 'th' ? '✓ บันทึกแล้ว' : '✓ Saved') :
+                                     (language === 'th' ? '💾 บันทึกการตั้งค่า' : '💾 Save Settings')}
+                                </button>
                             </div>
                         </div>
 
@@ -320,7 +417,8 @@ body { width: 297mm; height: 210mm; display: flex; align-items: center; justify-
                             </div>
                             <div ref={certRef} style={{
                                 width: '100%', aspectRatio: '297/210', borderRadius: 8, overflow: 'hidden',
-                                background: certConfig.bgColor, color: certConfig.textColor,
+                                background: certConfig.backgroundImage ? `url(${certConfig.backgroundImage}) center/cover` : certConfig.bgColor,
+                                color: certConfig.textColor,
                                 display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
                                 position: 'relative', fontSize: '0.6em', border: '2px solid #e5e7eb',
                             }}>

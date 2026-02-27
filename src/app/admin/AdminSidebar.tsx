@@ -64,6 +64,7 @@ const menuSections: MenuSection[] = [
             { href: '/admin/results', label: 'ผลการแข่งขัน', labelEn: 'Results', icon: 'trophy', iconColor: '#f39c12' },
             { href: '/admin/display', label: 'การแสดงผล', labelEn: 'Display Settings', icon: 'desktop' },
             { href: '/admin/certificates', label: 'ใบประกาศ', labelEn: 'Certificates', icon: 'print' },
+            { href: '/admin/eslip', label: 'E-Slip', labelEn: 'E-Slip', icon: 'id-card' },
             { href: '/admin/export', label: 'ส่งออกข้อมูล', labelEn: 'Export Data', icon: 'file-excel' },
         ]
     },

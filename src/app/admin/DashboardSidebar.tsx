@@ -27,23 +27,21 @@ const menuSections: MenuSection[] = [
         items: [
             { href: '/admin/categories', label: 'ประเภทการแข่งขัน', icon: 'fa-layer-group' },
             { href: '/admin/checkpoints', label: 'จุด Checkpoint', icon: 'fa-map-marker-alt' },
-            { href: '/admin/courses', label: 'เส้นทาง', icon: 'fa-route' },
+            { href: '/admin/display', label: 'การแสดงผลคอลัมน์', icon: 'fa-columns' },
         ]
     },
     {
         header: 'PARTICIPANTS',
         items: [
-            { href: '/admin/runners', label: 'นักกีฬา', icon: 'fa-running' },
-            { href: '/admin/registration', label: 'ลงทะเบียน', icon: 'fa-user-plus' },
-            { href: '/admin/bib', label: 'จัดการ BIB', icon: 'fa-id-card' },
+            { href: '/admin/participants', label: 'นักกีฬา / Runners', icon: 'fa-running' },
+            { href: '/admin/bib-check', label: 'ตรวจสอบ BIB', icon: 'fa-id-card' },
         ]
     },
     {
         header: 'RFID & TIMING',
         items: [
-            { href: '/admin/rfid-readers', label: 'RFID Readers', icon: 'fa-broadcast-tower' },
-            { href: '/admin/timing', label: 'ระบบจับเวลา', icon: 'fa-stopwatch' },
-            { href: '/admin/chip-assign', label: 'ผูก Chip กับ BIB', icon: 'fa-link' },
+            { href: '/admin/rfid-config', label: 'RFID Config', icon: 'fa-broadcast-tower' },
+            { href: '/admin/chip-mapping', label: 'ผูก Chip กับ BIB', icon: 'fa-link' },
             { href: '/admin/live-monitor', label: 'Live Monitor', icon: 'fa-tv' },
         ]
     },
@@ -52,15 +50,16 @@ const menuSections: MenuSection[] = [
         items: [
             { href: '/admin/results', label: 'ผลการแข่งขัน', icon: 'fa-trophy' },
             { href: '/admin/certificates', label: 'ใบประกาศนียบัตร', icon: 'fa-certificate' },
-            { href: '/admin/reports', label: 'รายงาน', icon: 'fa-chart-bar' },
+            { href: '/admin/eslip', label: 'E-Slip', icon: 'fa-id-badge' },
+            { href: '/admin/export', label: 'ส่งออกรายงาน', icon: 'fa-file-export' },
         ]
     },
     {
         header: 'SYSTEM',
         items: [
             { href: '/admin/users', label: 'ผู้ใช้งาน', icon: 'fa-users-cog' },
+            { href: '/admin/admin-logs', label: 'ประวัติการใช้งาน', icon: 'fa-history' },
             { href: '/admin/settings', label: 'ตั้งค่าระบบ', icon: 'fa-cog' },
-            { href: '/admin/logs', label: 'ประวัติการใช้งาน', icon: 'fa-history' },
         ]
     },
 ];
