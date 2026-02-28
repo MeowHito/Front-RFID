@@ -62,6 +62,15 @@ interface CampaignData {
     eslipTemplate?: string;
 }
 
+interface CheckpointMappingData {
+    _id: string;
+    checkpointId: { _id: string; name: string; type: string; orderNum?: number; kmCumulative?: number } | string;
+    eventId: string;
+    orderNum: number;
+    distanceFromStart?: number;
+    active?: boolean;
+}
+
 function formatTime(ms?: number | null): string {
     if (!ms || ms <= 0) return '--:--:--';
     const totalSeconds = Math.floor(ms / 1000);
@@ -104,6 +113,7 @@ export default function RunnerProfilePage() {
     const [runner, setRunner] = useState<RunnerData | null>(null);
     const [timings, setTimings] = useState<TimingRecord[]>([]);
     const [campaign, setCampaign] = useState<CampaignData | null>(null);
+    const [cpMappings, setCpMappings] = useState<CheckpointMappingData[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
@@ -118,6 +128,7 @@ export default function RunnerProfilePage() {
                     setRunner(json.data.runner);
                     setTimings(json.data.timingRecords || []);
                     setCampaign(json.data.campaign || null);
+                    setCpMappings(json.data.checkpointMappings || []);
                 } else {
                     setError(json.status?.description || 'Runner not found');
                 }
@@ -170,7 +181,31 @@ export default function RunnerProfilePage() {
     // Sort timings by order
     const sortedTimings = [...timings].sort((a, b) => (a.order || 0) - (b.order || 0));
 
-    // Find latest checkpoint index
+    // Build checkpoint rows from checkpoint mappings (fallback when no timing records)
+    const checkpointRows = cpMappings
+        .filter(m => typeof m.checkpointId === 'object' && m.checkpointId?.name)
+        .sort((a, b) => (a.orderNum || 0) - (b.orderNum || 0))
+        .map(m => {
+            const cp = m.checkpointId as { _id: string; name: string; type: string; orderNum?: number; kmCumulative?: number };
+            return {
+                name: cp.name,
+                type: cp.type,
+                distanceFromStart: m.distanceFromStart ?? cp.kmCumulative ?? undefined,
+                orderNum: m.orderNum,
+            };
+        });
+
+    // Determine which checkpoints the runner has passed (based on latestCheckpoint)
+    const latestCpName = runner.latestCheckpoint?.trim().toLowerCase() || '';
+    let passedUpToIdx = -1;
+    if (latestCpName) {
+        passedUpToIdx = checkpointRows.findIndex(cp => cp.name.trim().toLowerCase() === latestCpName);
+    }
+    if (isFinished) {
+        passedUpToIdx = checkpointRows.length - 1; // all checkpoints passed
+    }
+
+    // Find latest checkpoint index for timing records
     const latestCpIdx = sortedTimings.length - 1;
 
     return (
@@ -265,6 +300,42 @@ export default function RunnerProfilePage() {
                     </div>
                 </div>
 
+                {/* DISTANCE PROGRESS BAR */}
+                {checkpointRows.length > 0 && (() => {
+                    const maxDist = checkpointRows.reduce((max, cp) => Math.max(max, cp.distanceFromStart || 0), 0);
+                    const totalDist = maxDist || (parseDistanceValue(runner.category) || 0);
+                    const currentDist = passedUpToIdx >= 0 && checkpointRows[passedUpToIdx]?.distanceFromStart != null
+                        ? checkpointRows[passedUpToIdx].distanceFromStart!
+                        : 0;
+                    const pct = isFinished ? 100 : (totalDist > 0 ? Math.min(99, Math.round((currentDist / totalDist) * 100)) : 0);
+                    return (
+                        <div style={{ background: '#fff', borderRadius: 16, border: '1px solid #e2e8f0', padding: 24, marginBottom: 24, boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 12 }}>
+                                <h3 style={{ fontWeight: 900, textTransform: 'uppercase', fontSize: 13, letterSpacing: 2, color: '#64748b', margin: 0 }}>Distance Progress</h3>
+                                <span style={{ fontSize: 20, fontWeight: 900, color: isFinished ? '#16a34a' : '#0f172a' }}>
+                                    {isFinished ? `${totalDist} KM` : `${currentDist} / ${totalDist} KM`}
+                                </span>
+                            </div>
+                            <div style={{ position: 'relative', height: 12, background: '#f1f5f9', borderRadius: 6, overflow: 'hidden' }}>
+                                <div style={{
+                                    height: '100%', borderRadius: 6, transition: 'width 0.5s ease',
+                                    width: `${pct}%`,
+                                    background: pct >= 100 ? '#22c55e'
+                                        : pct > 75 ? 'linear-gradient(90deg, #334155 0%, #ef4444 33%, #eab308 66%, #22c55e 100%)'
+                                        : pct > 50 ? 'linear-gradient(90deg, #334155 0%, #ef4444 50%, #eab308 100%)'
+                                        : pct > 25 ? 'linear-gradient(90deg, #334155 0%, #ef4444 100%)'
+                                        : '#334155',
+                                }} />
+                            </div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8, fontSize: 10, fontWeight: 700, color: '#94a3b8' }}>
+                                <span>0 KM</span>
+                                <span style={{ color: isFinished ? '#16a34a' : '#64748b', fontWeight: 900 }}>{pct}%</span>
+                                <span>{totalDist} KM</span>
+                            </div>
+                        </div>
+                    );
+                })()}
+
                 {/* CHECKPOINT HISTORY TABLE */}
                 <div style={{ background: '#fff', borderRadius: 16, border: '1px solid #e2e8f0', overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
                     <div style={{ padding: '16px 24px', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -322,6 +393,32 @@ export default function RunnerProfilePage() {
                                             </td>
                                             <td style={{ padding: '16px 24px', textAlign: 'right', fontSize: 12, color: '#475569' }}>
                                                 {isStartCp ? '--' : segPace}
+                                            </td>
+                                        </tr>
+                                    );
+                                }) : checkpointRows.length > 0 ? checkpointRows.map((cp, i) => {
+                                    const passed = i <= passedUpToIdx;
+                                    const isCurrent = i === passedUpToIdx && !isFinished;
+                                    const isFinishCp = cp.type === 'finish';
+                                    const isStartCp = cp.type === 'start';
+                                    return (
+                                        <tr key={`cp-${i}`} className="checkpoint-row" style={{ background: isCurrent ? 'rgba(34,197,94,0.05)' : undefined, opacity: passed ? 1 : 0.4 }}>
+                                            <td style={{ padding: '16px 24px', fontWeight: 700, fontSize: 14, display: 'flex', alignItems: 'center', gap: 8, color: passed ? (isFinishCp ? '#0f172a' : '#16a34a') : '#cbd5e1' }}>
+                                                {isCurrent && <span style={{ fontSize: 10, background: '#16a34a', color: '#fff', padding: '1px 6px', borderRadius: 4 }}>Current</span>}
+                                                {passed && !isCurrent && <span style={{ color: '#22c55e', fontSize: 14 }}>✓</span>}
+                                                {!passed && <span style={{ color: '#cbd5e1', fontSize: 14 }}>○</span>}
+                                                {cp.name}
+                                            </td>
+                                            <td style={{ padding: '16px 8px', fontSize: 12, fontWeight: 700, color: passed ? '#64748b' : '#cbd5e1' }}>
+                                                {cp.distanceFromStart != null ? `${cp.distanceFromStart} KM` : '-'}
+                                            </td>
+                                            <td style={{ padding: '16px 8px', fontSize: 12, color: '#cbd5e1' }}>-</td>
+                                            <td style={{ padding: '16px 8px', fontSize: 12, fontWeight: 900, color: passed && isFinishCp ? '#16a34a' : passed ? '#0f172a' : '#cbd5e1' }}>
+                                                {passed && isFinished && isFinishCp ? finishTimeStr : '-'}
+                                            </td>
+                                            <td style={{ padding: '16px 8px', fontSize: 12, color: '#cbd5e1' }}>-</td>
+                                            <td style={{ padding: '16px 24px', textAlign: 'right', fontSize: 12, color: '#cbd5e1' }}>
+                                                {isStartCp ? '--' : '-'}
                                             </td>
                                         </tr>
                                     );

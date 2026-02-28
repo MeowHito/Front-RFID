@@ -36,6 +36,7 @@ interface RaceCategory {
 
 interface Runner {
     _id: string;
+    eventId?: string;
     bib: string;
     firstName: string;
     lastName: string;
@@ -62,6 +63,7 @@ interface Runner {
     team?: string;
     teamName?: string;
     latestCheckpoint?: string;
+    isStarted?: boolean;
     gunPace?: string;
     netPace?: string;
     totalFinishers?: number;
@@ -83,11 +85,19 @@ interface TimingRecord {
 
 interface CheckpointMapping {
     _id: string;
-    checkpointId: string;
+    checkpointId: string | { _id: string; name: string; type: string; orderNum?: number; kmCumulative?: number };
     eventId: string;
     orderNum: number;
     distanceFromStart?: number;
     checkpoint?: { name: string; type: string; kmCumulative?: number };
+}
+
+// Resolved checkpoint distance info per event
+interface CheckpointDistanceLookup {
+    [eventId: string]: {
+        totalDistance: number;
+        checkpoints: { [cpName: string]: number }; // checkpointName → distanceFromStart (km)
+    };
 }
 
 function normalizeComparableText(value: unknown): string {
@@ -151,6 +161,7 @@ export default function EventLivePage() {
     const [searchQuery, setSearchQuery] = useState('');
     const [filterGender, setFilterGender] = useState('ALL');
     const [filterCategory, setFilterCategory] = useState('');
+    const [filterStatus, setFilterStatus] = useState('ALL');
     // Runner detail is now handled by /runner/[id] page
 
     const [showGenRank, setShowGenRank] = useState(true);
@@ -163,6 +174,7 @@ export default function EventLivePage() {
     const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
     const [checkpointMappings, setCheckpointMappings] = useState<CheckpointMapping[]>([]);
     const [totalDistance, setTotalDistance] = useState<number>(0);
+    const [cpDistanceLookup, setCpDistanceLookup] = useState<CheckpointDistanceLookup>({});
 
     const toApiData = (payload: any) => payload?.data ?? payload;
 
@@ -216,7 +228,39 @@ export default function EventLivePage() {
             if (runnersRes.ok) {
                 const runnersData = await runnersRes.json().catch(() => ({}));
                 const list = (runnersData?.data?.data as Runner[]) || (runnersData?.data as Runner[]) || (Array.isArray(runnersData) ? runnersData : []);
-                setRunners(Array.isArray(list) ? list : []);
+                const runnerList = Array.isArray(list) ? list : [];
+                setRunners(runnerList);
+
+                // Fetch checkpoint mappings per event for distance-based progress
+                const uniqueEventIds = Array.from(new Set(runnerList.map(r => r.eventId).filter(Boolean))) as string[];
+                const lookup: CheckpointDistanceLookup = {};
+                await Promise.all(uniqueEventIds.map(async (evId) => {
+                    try {
+                        const mapRes = await fetch(`/api/checkpoints/mapping/event/${evId}`, { cache: 'no-store' });
+                        if (!mapRes.ok) return;
+                        const mapData = await mapRes.json();
+                        const mappings: CheckpointMapping[] = Array.isArray(mapData) ? mapData : (mapData?.data || []);
+                        const cpMap: { [name: string]: number } = {};
+                        let maxDist = 0;
+                        for (const m of mappings) {
+                            const cpObj = typeof m.checkpointId === 'object' ? m.checkpointId : null;
+                            const cpName = cpObj?.name || '';
+                            const dist = m.distanceFromStart ?? cpObj?.kmCumulative ?? 0;
+                            if (cpName) cpMap[cpName.trim().toLowerCase()] = dist;
+                            if (dist > maxDist) maxDist = dist;
+                        }
+                        // Find matching category distance from campaign categories
+                        const evCategory = campaignData.categories?.find((c: any) =>
+                            String(c.eventId || '') === evId || String(c._id || '') === evId
+                        );
+                        const catDist = evCategory ? (parseDistanceValue(evCategory.distance || evCategory.name) || 0) : 0;
+                        lookup[evId] = {
+                            totalDistance: maxDist > 0 ? maxDist : catDist,
+                            checkpoints: cpMap,
+                        };
+                    } catch { /* skip */ }
+                }));
+                setCpDistanceLookup(lookup);
             }
         } catch (err: unknown) {
             setError(err instanceof Error ? err.message : 'Error');
@@ -368,13 +412,42 @@ export default function EventLivePage() {
         });
     }, [isMobile, showAllColumns, campaign?.displayColumns, showGenRank, showCatRank]);
 
+    // Compute median finish time per category for real progress estimation
+    const categoryMedianTime = useMemo(() => {
+        const map: Record<string, number[]> = {};
+        runners.forEach(r => {
+            if (r.status === 'finished' && (r.netTime || r.gunTime)) {
+                const cat = r.category || '_';
+                if (!map[cat]) map[cat] = [];
+                map[cat].push(r.netTime || r.gunTime || 0);
+            }
+        });
+        const medians: Record<string, number> = {};
+        Object.entries(map).forEach(([cat, times]) => {
+            const sorted = times.filter(t => t > 0).sort((a, b) => a - b);
+            medians[cat] = sorted.length > 0 ? sorted[Math.floor(sorted.length / 2)] : 0;
+        });
+        return medians;
+    }, [runners]);
+
+    // Status counts for filter badges
+    const statusCounts = useMemo(() => {
+        const counts: Record<string, number> = { ALL: 0, finished: 0, in_progress: 0, not_started: 0, dnf: 0, dns: 0 };
+        runners.forEach(r => {
+            counts.ALL++;
+            counts[r.status] = (counts[r.status] || 0) + 1;
+        });
+        return counts;
+    }, [runners]);
+
     const filteredRunners = useMemo(() => {
         return runners
             .filter(runner => {
                 const matchesSearch = !searchQuery || runner.firstName?.toLowerCase().includes(searchQuery.toLowerCase()) || runner.lastName?.toLowerCase().includes(searchQuery.toLowerCase()) || runner.bib?.includes(searchQuery);
                 const matchesGender = filterGender === 'ALL' || runner.gender === filterGender;
                 const matchesCategory = !filterCategory || resolveRunnerCategoryKey(runner) === filterCategory;
-                return matchesSearch && matchesGender && matchesCategory;
+                const matchesStatus = filterStatus === 'ALL' || runner.status === filterStatus;
+                return matchesSearch && matchesGender && matchesCategory && matchesStatus;
             })
             .sort((a, b) => {
                 // Primary: runners with netTime first, sorted ascending (fastest = #1)
@@ -395,7 +468,7 @@ export default function EventLivePage() {
                 const statusOrder: Record<string, number> = { 'finished': 0, 'in_progress': 1, 'not_started': 2, 'dns': 3, 'dnf': 4 };
                 return (statusOrder[a.status] ?? 5) - (statusOrder[b.status] ?? 5);
             });
-    }, [runners, searchQuery, filterGender, filterCategory, resolveRunnerCategoryKey]);
+    }, [runners, searchQuery, filterGender, filterCategory, filterStatus, resolveRunnerCategoryKey]);
 
     const handleViewRunner = (runner: Runner) => {
         router.push(`/runner/${runner._id}`);
@@ -562,6 +635,35 @@ export default function EventLivePage() {
                             ))}
                         </div>
                     )}
+
+                    {/* Status Filter */}
+                    <div style={{ display: 'flex', background: themeStyles.inputBg, padding: 3, borderRadius: 8, flexWrap: 'wrap' }}>
+                        {([
+                            { key: 'ALL', label: language === 'th' ? 'ทั้งหมด' : 'All', color: '#22c55e' },
+                            { key: 'finished', label: 'Finish', color: '#22c55e' },
+                            { key: 'in_progress', label: 'Racing', color: '#f97316' },
+                            { key: 'dnf', label: 'DNF', color: '#ef4444' },
+                            { key: 'dns', label: 'DNS', color: '#ef4444' },
+                            { key: 'not_started', label: language === 'th' ? 'รอ' : 'Wait', color: '#94a3b8' },
+                        ] as const).map(s => (
+                            <button
+                                key={s.key}
+                                onClick={() => setFilterStatus(s.key)}
+                                style={{
+                                    padding: isMobile ? '4px 6px' : '4px 10px', fontSize: isMobile ? 9 : 10, fontWeight: 700, borderRadius: 6, border: 'none', cursor: 'pointer', transition: 'all 0.2s', whiteSpace: 'nowrap',
+                                    display: 'flex', alignItems: 'center', gap: 4,
+                                    ...(filterStatus === s.key
+                                        ? { background: s.color, color: '#fff' }
+                                        : { background: 'transparent', color: themeStyles.textMuted })
+                                }}
+                            >
+                                {s.label}
+                                {statusCounts[s.key] > 0 && (
+                                    <span style={{ fontSize: 8, opacity: filterStatus === s.key ? 1 : 0.7 }}>{statusCounts[s.key]}</span>
+                                )}
+                            </button>
+                        ))}
+                    </div>
                 </div>
 
                 {/* Right controls */}
@@ -666,14 +768,39 @@ export default function EventLivePage() {
                                         : `${runner.firstName} ${runner.lastName}`;
                                     const initials = getInitials(runner.firstName, runner.lastName);
                                     const avatarBg = getAvatarColor(runner.firstName + runner.lastName);
-                                    // Calculate progress percentage
+                                    // Calculate progress % based on real checkpoint distance from RaceTiger sync
                                     let progressPct = 0;
+                                    let progressDistKm = 0;
+                                    let eventTotalKm = 0;
                                     if (runner.status === 'finished') {
                                         progressPct = 100;
-                                    } else if (runner.status === 'in_progress') {
-                                        progressPct = runner.latestCheckpoint ? 50 : 10;
-                                    } else if (runner.status === 'dnf') {
-                                        progressPct = runner.latestCheckpoint ? 40 : 0;
+                                    } else if (runner.status === 'in_progress' || runner.status === 'dnf') {
+                                        // Try distance-based calculation from checkpoint mappings
+                                        const evLookup = runner.eventId ? cpDistanceLookup[runner.eventId] : null;
+                                        if (evLookup && runner.latestCheckpoint) {
+                                            const cpKey = runner.latestCheckpoint.trim().toLowerCase();
+                                            const cpDist = evLookup.checkpoints[cpKey] ?? 0;
+                                            const total = evLookup.totalDistance || (parseDistanceValue(runner.category) || 0);
+                                            if (cpDist > 0 && total > 0) {
+                                                progressPct = Math.min(99, Math.round((cpDist / total) * 100));
+                                                progressDistKm = cpDist;
+                                                eventTotalKm = total;
+                                            }
+                                        }
+                                        // Fallback: use elapsed time vs median finish time
+                                        if (progressPct === 0) {
+                                            const elapsed = runner.gunTime || runner.elapsedTime || 0;
+                                            const median = categoryMedianTime[runner.category] || 0;
+                                            if (elapsed > 0 && median > 0) {
+                                                progressPct = Math.min(runner.status === 'dnf' ? 90 : 95, Math.round((elapsed / median) * 100));
+                                            } else if (runner.latestCheckpoint) {
+                                                progressPct = runner.status === 'in_progress' ? 50 : 40;
+                                            } else if (runner.isStarted || runner.status === 'in_progress') {
+                                                progressPct = 5;
+                                            }
+                                        }
+                                    } else if (runner.status === 'dns') {
+                                        progressPct = 0;
                                     }
 
                                     // Render cell content per column key
@@ -798,21 +925,30 @@ export default function EventLivePage() {
                                                 return (
                                                     <td key={key} style={{ padding: '12px 12px', textAlign: 'right' }}>
                                                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
-                                                            <span style={{ fontWeight: 700, fontSize: 11, color: themeStyles.text, marginBottom: 4 }}>
-                                                                {progressPct}%
-                                                            </span>
+                                                            <div style={{ display: 'flex', alignItems: 'baseline', gap: 4, marginBottom: 4 }}>
+                                                                <span style={{ fontWeight: 700, fontSize: 11, color: themeStyles.text }}>
+                                                                    {progressPct}%
+                                                                </span>
+                                                                {progressDistKm > 0 && eventTotalKm > 0 && (
+                                                                    <span style={{ fontSize: 9, color: themeStyles.textSecondary, fontWeight: 500 }}>
+                                                                        {progressDistKm.toFixed(1)}/{eventTotalKm.toFixed(0)}km
+                                                                    </span>
+                                                                )}
+                                                            </div>
                                                             <div style={{ width: '100%', maxWidth: 80, height: 6, borderRadius: 3, background: isDark ? 'rgba(255,255,255,0.1)' : '#f1f5f9', overflow: 'hidden' }}>
                                                                 <div style={{
                                                                     height: '100%',
                                                                     width: `${progressPct}%`,
                                                                     borderRadius: 3,
-                                                                    background: progressPct > 75
-                                                                        ? 'linear-gradient(90deg, #334155 0%, #ef4444 33%, #eab308 66%, #22c55e 100%)'
-                                                                        : progressPct > 50
-                                                                            ? 'linear-gradient(90deg, #334155 0%, #ef4444 50%, #eab308 100%)'
-                                                                            : progressPct > 25
-                                                                                ? 'linear-gradient(90deg, #334155 0%, #ef4444 100%)'
-                                                                                : '#334155',
+                                                                    background: progressPct >= 100
+                                                                        ? '#22c55e'
+                                                                        : progressPct > 75
+                                                                            ? 'linear-gradient(90deg, #334155 0%, #ef4444 33%, #eab308 66%, #22c55e 100%)'
+                                                                            : progressPct > 50
+                                                                                ? 'linear-gradient(90deg, #334155 0%, #ef4444 50%, #eab308 100%)'
+                                                                                : progressPct > 25
+                                                                                    ? 'linear-gradient(90deg, #334155 0%, #ef4444 100%)'
+                                                                                    : '#334155',
                                                                     transition: 'width 0.5s ease',
                                                                 }} />
                                                             </div>
