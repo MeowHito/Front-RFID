@@ -36,6 +36,8 @@ export default function DisplaySettingsPage() {
 
     const dragKey = useRef<string | null>(null);
     const dragOverKey = useRef<string | null>(null);
+    const [draggingKey, setDraggingKey] = useState<string | null>(null);
+    const [dropTargetKey, setDropTargetKey] = useState<string | null>(null);
 
     useEffect(() => { fetchCampaign(); }, []);
 
@@ -92,13 +94,21 @@ export default function DisplaySettingsPage() {
     const selectNone = () => setSelectedCols([]);
 
     // Drag handlers — only toggleable columns
-    const handleDragStart = (key: string) => { dragKey.current = key; };
-    const handleDragEnter = (key: string) => { dragOverKey.current = key; };
+    const handleDragStart = (key: string) => {
+        dragKey.current = key;
+        setDraggingKey(key);
+    };
+    const handleDragEnter = (key: string) => {
+        dragOverKey.current = key;
+        setDropTargetKey(key);
+    };
     const handleDragEnd = () => {
         const from = dragKey.current;
         const to = dragOverKey.current;
         dragKey.current = null;
         dragOverKey.current = null;
+        setDraggingKey(null);
+        setDropTargetKey(null);
         if (!from || !to || from === to) return;
         // Only swap if both are toggleable
         if (TABLE_COLUMNS.find(c => c.key === from)?.fixed || TABLE_COLUMNS.find(c => c.key === to)?.fixed) return;
@@ -251,15 +261,24 @@ export default function DisplaySettingsPage() {
                                                     style={{
                                                         padding: '12px 6px', textAlign: col.align, width: col.width,
                                                         cursor: isDraggable ? 'grab' : 'default',
-                                                        opacity: isOn ? 1 : 0.3,
+                                                        opacity: draggingKey === key ? 0.4 : (isOn ? 1 : 0.3),
                                                         background: isFixed ? '#ecfdf5' : (isOn ? '#eff6ff' : '#f8fafc'),
-                                                        borderLeft: isDraggable ? '1px dashed #cbd5e1' : 'none',
+                                                        borderLeft: dropTargetKey === key && draggingKey !== key ? '3px solid #f97316' : (isDraggable ? '1px dashed #cbd5e1' : 'none'),
                                                         borderRight: isDraggable ? '1px dashed #cbd5e1' : 'none',
-                                                        transition: 'opacity 0.15s',
+                                                        transition: 'all 0.2s ease',
                                                         userSelect: 'none',
                                                         position: 'relative',
+                                                        transform: draggingKey === key ? 'scale(1.05)' : 'scale(1)',
+                                                        boxShadow: draggingKey === key ? '0 8px 25px rgba(0,0,0,0.2)' : 'none',
+                                                        zIndex: draggingKey === key ? 100 : 'auto',
                                                     }}
                                                 >
+                                                    {/* Drag handle icon */}
+                                                    {isDraggable && isOn && (
+                                                        <div style={{ position: 'absolute', top: 2, right: 2, opacity: 0.4, fontSize: 8 }}>
+                                                            ⋮⋮
+                                                        </div>
+                                                    )}
                                                     <span style={{ color: isFixed ? '#16a34a' : (isOn ? '#1e40af' : '#94a3b8') }}>
                                                         {col.thLabel}
                                                     </span>
