@@ -127,37 +127,37 @@ type ColDef = { key: string; label: string; w: string; mw: string; align: 'left'
 
 // Marathon column definitions
 const COL_DEFS: ColDef[] = [
-    { key: 'rank',     label: 'Rank',     w: '3%',  mw: '8%',  align: 'center', fixed: true },
-    { key: 'genRank',  label: 'Gen',      w: '3%',  mw: '8%',  align: 'center' },
-    { key: 'catRank',  label: 'Cat',      w: '3%',  mw: '8%',  align: 'center' },
-    { key: 'runner',   label: 'Runner',   w: '15%', mw: '30%', align: 'left',   fixed: true },
-    { key: 'sex',      label: 'Sex',      w: '3%',  mw: '6%',  align: 'center' },
-    { key: 'status',   label: 'Status',   w: '8%',  mw: '9%',  align: 'left',   fixed: true },
-    { key: 'gunTime',  label: 'Gun Time', w: '7%',  mw: '16%', align: 'center' },
-    { key: 'netTime',  label: 'Net Time', w: '7%',  mw: '7%',  align: 'center' },
-    { key: 'genNet',   label: 'Gen Net',  w: '4%',  mw: '4%',  align: 'center' },
-    { key: 'gunPace',  label: 'Gun Pace', w: '5%',  mw: '5%',  align: 'center' },
-    { key: 'netPace',  label: 'Net Pace', w: '5%',  mw: '5%',  align: 'center' },
-    { key: 'finish',   label: 'Finish',   w: '4%',  mw: '4%',  align: 'center' },
-    { key: 'genFin',   label: 'Gen Fin',  w: '4%',  mw: '4%',  align: 'center' },
-    { key: 'progress', label: 'Progress', w: '8%',  mw: '8%',  align: 'right',  fixed: true, desktopOnly: true },
+    { key: 'rank', label: 'Rank', w: '3%', mw: '8%', align: 'center', fixed: true },
+    { key: 'genRank', label: 'Gen', w: '3%', mw: '8%', align: 'center' },
+    { key: 'catRank', label: 'Cat', w: '3%', mw: '8%', align: 'center' },
+    { key: 'runner', label: 'Runner', w: '15%', mw: '30%', align: 'left', fixed: true },
+    { key: 'sex', label: 'Sex', w: '3%', mw: '6%', align: 'center' },
+    { key: 'status', label: 'Status', w: '8%', mw: '9%', align: 'left', fixed: true },
+    { key: 'gunTime', label: 'Gun Time', w: '7%', mw: '16%', align: 'center' },
+    { key: 'netTime', label: 'Net Time', w: '7%', mw: '7%', align: 'center' },
+    { key: 'genNet', label: 'Gen Net', w: '4%', mw: '4%', align: 'center' },
+    { key: 'gunPace', label: 'Gun Pace', w: '5%', mw: '5%', align: 'center' },
+    { key: 'netPace', label: 'Net Pace', w: '5%', mw: '5%', align: 'center' },
+    { key: 'finish', label: 'Finish', w: '4%', mw: '4%', align: 'center' },
+    { key: 'genFin', label: 'Gen Fin', w: '4%', mw: '4%', align: 'center' },
+    { key: 'progress', label: 'Progress', w: '8%', mw: '8%', align: 'right', fixed: true, desktopOnly: true },
 ];
 const TOGGLEABLE_KEYS = COL_DEFS.filter(c => !c.fixed).map(c => c.key);
 
 // Lab (lap-based) column definitions
 const LAB_COL_DEFS: ColDef[] = [
-    { key: 'rank',      label: 'Rank',       w: '4%',  mw: '8%',  align: 'center', fixed: true },
-    { key: 'runner',    label: 'Runner',     w: '16%', mw: '32%', align: 'left',   fixed: true },
-    { key: 'sex',       label: 'Sex',        w: '4%',  mw: '6%',  align: 'center' },
-    { key: 'laps',      label: 'Laps',       w: '5%',  mw: '8%',  align: 'center', fixed: true },
-    { key: 'bestLap',   label: 'Best Lap',   w: '8%',  mw: '12%', align: 'center' },
-    { key: 'avgLap',    label: 'Avg Lap',    w: '8%',  mw: '12%', align: 'center' },
-    { key: 'lastLap',   label: 'Last Lap',   w: '8%',  mw: '12%', align: 'center' },
-    { key: 'totalTime', label: 'Total Time', w: '8%',  mw: '12%', align: 'center' },
-    { key: 'lastPass',  label: 'Last Pass',  w: '10%', mw: '14%', align: 'center' },
-    { key: 'lapPace',   label: 'Lap Pace',   w: '7%',  mw: '10%', align: 'center' },
-    { key: 'status',    label: 'Status',     w: '7%',  mw: '9%',  align: 'left' },
-    { key: 'progress',  label: 'Progress',   w: '8%',  mw: '8%',  align: 'right',  fixed: true, desktopOnly: true },
+    { key: 'rank', label: 'Rank', w: '4%', mw: '8%', align: 'center', fixed: true },
+    { key: 'runner', label: 'Runner', w: '16%', mw: '32%', align: 'left', fixed: true },
+    { key: 'sex', label: 'Sex', w: '4%', mw: '6%', align: 'center' },
+    { key: 'laps', label: 'Laps', w: '5%', mw: '8%', align: 'center', fixed: true },
+    { key: 'bestLap', label: 'Best Lap', w: '8%', mw: '12%', align: 'center' },
+    { key: 'avgLap', label: 'Avg Lap', w: '8%', mw: '12%', align: 'center' },
+    { key: 'lastLap', label: 'Last Lap', w: '8%', mw: '12%', align: 'center' },
+    { key: 'totalTime', label: 'Total Time', w: '8%', mw: '12%', align: 'center' },
+    { key: 'lastPass', label: 'Last Pass', w: '10%', mw: '14%', align: 'center' },
+    { key: 'lapPace', label: 'Lap Pace', w: '7%', mw: '10%', align: 'center' },
+    { key: 'status', label: 'Status', w: '7%', mw: '9%', align: 'left' },
+    { key: 'progress', label: 'Progress', w: '8%', mw: '8%', align: 'right', fixed: true, desktopOnly: true },
 ];
 const LAB_TOGGLEABLE_KEYS = LAB_COL_DEFS.filter(c => !c.fixed).map(c => c.key);
 
@@ -761,26 +761,26 @@ export default function EventLivePage() {
 
                     {/* Column dropdown */}
                     {!isMobile && (
-                    <div style={{ position: 'relative' }}>
-                        <button
-                            onClick={() => setShowColDropdown(!showColDropdown)}
-                            style={{ background: themeStyles.cardBg, border: `1px solid ${themeStyles.border}`, color: themeStyles.textMuted, padding: '6px 12px', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}
-                        >
-                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /><rect x="14" y="14" width="7" height="7" /></svg>
-                            Columns
-                        </button>
-                        {showColDropdown && (
-                            <div style={{ position: 'absolute', right: 0, top: 36, background: themeStyles.cardBg, minWidth: 160, boxShadow: isDark ? '0 8px 16px rgba(0,0,0,0.4)' : '0 8px 16px rgba(0,0,0,0.1)', borderRadius: 8, zIndex: 30, border: `1px solid ${themeStyles.border}`, padding: 8 }}>
-                                <p style={{ fontSize: 10, fontWeight: 700, color: themeStyles.textSecondary, textTransform: 'uppercase', marginBottom: 4, padding: '0 8px' }}>Display</p>
-                                <label style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 8px', fontSize: 12, cursor: 'pointer', color: themeStyles.text }}>
-                                    <input type="checkbox" checked={showGenRank} onChange={e => setShowGenRank(e.target.checked)} /> Gender Rank
-                                </label>
-                                <label style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 8px', fontSize: 12, cursor: 'pointer', color: themeStyles.text }}>
-                                    <input type="checkbox" checked={showCatRank} onChange={e => setShowCatRank(e.target.checked)} /> Category Rank
-                                </label>
-                            </div>
-                        )}
-                    </div>
+                        <div style={{ position: 'relative' }}>
+                            <button
+                                onClick={() => setShowColDropdown(!showColDropdown)}
+                                style={{ background: themeStyles.cardBg, border: `1px solid ${themeStyles.border}`, color: themeStyles.textMuted, padding: '6px 12px', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}
+                            >
+                                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /><rect x="14" y="14" width="7" height="7" /></svg>
+                                Columns
+                            </button>
+                            {showColDropdown && (
+                                <div style={{ position: 'absolute', right: 0, top: 36, background: themeStyles.cardBg, minWidth: 160, boxShadow: isDark ? '0 8px 16px rgba(0,0,0,0.4)' : '0 8px 16px rgba(0,0,0,0.1)', borderRadius: 8, zIndex: 30, border: `1px solid ${themeStyles.border}`, padding: 8 }}>
+                                    <p style={{ fontSize: 10, fontWeight: 700, color: themeStyles.textSecondary, textTransform: 'uppercase', marginBottom: 4, padding: '0 8px' }}>Display</p>
+                                    <label style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 8px', fontSize: 12, cursor: 'pointer', color: themeStyles.text }}>
+                                        <input type="checkbox" checked={showGenRank} onChange={e => setShowGenRank(e.target.checked)} /> Gender Rank
+                                    </label>
+                                    <label style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 8px', fontSize: 12, cursor: 'pointer', color: themeStyles.text }}>
+                                        <input type="checkbox" checked={showCatRank} onChange={e => setShowCatRank(e.target.checked)} /> Category Rank
+                                    </label>
+                                </div>
+                            )}
+                        </div>
                     )}
                 </div>
             </div>
@@ -794,7 +794,7 @@ export default function EventLivePage() {
                                 {visibleColumns.map(key => {
                                     const def = activeColDefs.find(c => c.key === key)!;
                                     return (
-                                        <th key={key} style={{ padding: isMobile ? '10px 4px' : '12px 6px', textAlign: def.align, width: isMobile ? def.mw : def.w }}>
+                                        <th key={key} style={{ padding: isMobile ? '6px 4px' : '8px 6px', textAlign: def.align, width: isMobile ? def.mw : def.w }}>
                                             {def.label}
                                         </th>
                                     );
@@ -887,25 +887,25 @@ export default function EventLivePage() {
                                         switch (key) {
                                             case 'rank':
                                                 return (
-                                                    <td key={key} style={{ padding: '12px 12px', textAlign: 'center' }}>
+                                                    <td key={key} style={{ padding: '6px 8px', textAlign: 'center' }}>
                                                         <span style={{ fontSize: 16, fontWeight: 900, color: rank <= 3 ? (rank === 1 ? '#22c55e' : isDark ? '#94a3b8' : '#334155') : (isDark ? '#64748b' : '#cbd5e1') }}>{rank}</span>
                                                     </td>
                                                 );
                                             case 'genRank':
                                                 return (
-                                                    <td key={key} style={{ padding: '12px 6px', textAlign: 'center' }}>
+                                                    <td key={key} style={{ padding: '6px 6px', textAlign: 'center' }}>
                                                         <span style={{ fontSize: 12, fontWeight: 700, color: themeStyles.textMuted }}>{runner.genderRank || '-'}</span>
                                                     </td>
                                                 );
                                             case 'catRank':
                                                 return (
-                                                    <td key={key} style={{ padding: '12px 6px', textAlign: 'center' }}>
+                                                    <td key={key} style={{ padding: '6px 6px', textAlign: 'center' }}>
                                                         <span style={{ fontSize: 12, fontWeight: 700, color: themeStyles.textMuted }}>{runner.categoryRank || '-'}</span>
                                                     </td>
                                                 );
                                             case 'runner':
                                                 return (
-                                                    <td key={key} style={{ padding: isMobile ? '8px 4px' : '12px 8px', overflow: 'hidden' }}>
+                                                    <td key={key} style={{ padding: isMobile ? '4px 4px' : '6px 8px', overflow: 'hidden' }}>
                                                         <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 6 : 10 }}>
                                                             {!isMobile && (
                                                                 <div style={{ position: 'relative', flexShrink: 0 }}>
@@ -933,13 +933,13 @@ export default function EventLivePage() {
                                                 );
                                             case 'sex':
                                                 return (
-                                                    <td key={key} style={{ padding: '12px 6px', textAlign: 'center', fontSize: 10, fontWeight: 700, color: runner.gender === 'M' ? '#3b82f6' : '#ec4899' }}>
+                                                    <td key={key} style={{ padding: '6px 6px', textAlign: 'center', fontSize: 10, fontWeight: 700, color: runner.gender === 'M' ? '#3b82f6' : '#ec4899' }}>
                                                         {runner.gender}
                                                     </td>
                                                 );
                                             case 'status':
                                                 return (
-                                                    <td key={key} style={{ padding: isMobile ? '8px 2px' : '12px 6px' }}>
+                                                    <td key={key} style={{ padding: isMobile ? '4px 2px' : '6px 6px' }}>
                                                         <span style={{ display: 'inline-block', padding: isMobile ? '1px 4px' : '2px 8px', borderRadius: 3, fontWeight: 700, fontSize: isMobile ? 8 : 10, color: '#fff', background: getStatusBgColor(runner.status), lineHeight: 1.3 }}>
                                                             {getStatusLabel(runner.status)}
                                                         </span>
@@ -952,7 +952,7 @@ export default function EventLivePage() {
                                                 );
                                             case 'gunTime':
                                                 return (
-                                                    <td key={key} style={{ padding: isMobile ? '8px 2px' : '12px 6px', textAlign: 'center' }}>
+                                                    <td key={key} style={{ padding: isMobile ? '4px 2px' : '6px 6px', textAlign: 'center' }}>
                                                         <span style={{ fontSize: isMobile ? 11 : 12, fontWeight: 700, color: themeStyles.text, fontFamily: 'monospace' }}>
                                                             {runner.gunTimeStr || formatTime(runner.gunTime || runner.elapsedTime)}
                                                         </span>
@@ -960,7 +960,7 @@ export default function EventLivePage() {
                                                 );
                                             case 'netTime':
                                                 return (
-                                                    <td key={key} style={{ padding: '12px 6px', textAlign: 'center' }}>
+                                                    <td key={key} style={{ padding: '6px 6px', textAlign: 'center' }}>
                                                         <span style={{ fontSize: 12, fontWeight: 700, color: (runner.netTimeStr || runner.netTime) ? '#22c55e' : themeStyles.textSecondary, fontFamily: 'monospace' }}>
                                                             {runner.netTimeStr || formatTime(runner.netTime)}
                                                         </span>
@@ -968,13 +968,13 @@ export default function EventLivePage() {
                                                 );
                                             case 'genNet':
                                                 return (
-                                                    <td key={key} style={{ padding: '12px 4px', textAlign: 'center', fontSize: 11, fontWeight: 600, color: themeStyles.textMuted }}>
+                                                    <td key={key} style={{ padding: '6px 4px', textAlign: 'center', fontSize: 11, fontWeight: 600, color: themeStyles.textMuted }}>
                                                         {runner.genderNetRank || '-'}
                                                     </td>
                                                 );
                                             case 'gunPace':
                                                 return (
-                                                    <td key={key} style={{ padding: '12px 6px', textAlign: 'center' }}>
+                                                    <td key={key} style={{ padding: '6px 6px', textAlign: 'center' }}>
                                                         <span style={{ fontSize: 11, fontWeight: 600, color: themeStyles.textMuted, fontFamily: 'monospace' }}>
                                                             {runner.gunPace || '-'}
                                                         </span>
@@ -982,7 +982,7 @@ export default function EventLivePage() {
                                                 );
                                             case 'netPace':
                                                 return (
-                                                    <td key={key} style={{ padding: '12px 6px', textAlign: 'center' }}>
+                                                    <td key={key} style={{ padding: '6px 6px', textAlign: 'center' }}>
                                                         <span style={{ fontSize: 11, fontWeight: 600, color: runner.netPace ? '#22c55e' : themeStyles.textSecondary, fontFamily: 'monospace' }}>
                                                             {runner.netPace || '-'}
                                                         </span>
@@ -990,19 +990,19 @@ export default function EventLivePage() {
                                                 );
                                             case 'finish':
                                                 return (
-                                                    <td key={key} style={{ padding: '12px 4px', textAlign: 'center', fontSize: 11, fontWeight: 600, color: themeStyles.textMuted }}>
+                                                    <td key={key} style={{ padding: '6px 4px', textAlign: 'center', fontSize: 11, fontWeight: 600, color: themeStyles.textMuted }}>
                                                         {runner.totalFinishers || '-'}
                                                     </td>
                                                 );
                                             case 'genFin':
                                                 return (
-                                                    <td key={key} style={{ padding: '12px 4px', textAlign: 'center', fontSize: 11, fontWeight: 600, color: themeStyles.textMuted }}>
+                                                    <td key={key} style={{ padding: '6px 4px', textAlign: 'center', fontSize: 11, fontWeight: 600, color: themeStyles.textMuted }}>
                                                         {runner.genderFinishers || '-'}
                                                     </td>
                                                 );
                                             case 'progress':
                                                 return (
-                                                    <td key={key} style={{ padding: '12px 12px', textAlign: 'right' }}>
+                                                    <td key={key} style={{ padding: '6px 8px', textAlign: 'right' }}>
                                                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
                                                             <div style={{ display: 'flex', alignItems: 'baseline', gap: 4, marginBottom: 4 }}>
                                                                 <span style={{ fontWeight: 700, fontSize: 11, color: themeStyles.text }}>
@@ -1041,7 +1041,7 @@ export default function EventLivePage() {
                                             // ===== LAB / LAP columns =====
                                             case 'laps':
                                                 return (
-                                                    <td key={key} style={{ padding: '12px 6px', textAlign: 'center' }}>
+                                                    <td key={key} style={{ padding: '6px 6px', textAlign: 'center' }}>
                                                         <span style={{ fontSize: 18, fontWeight: 900, color: (runner.lapCount || runner.passedCount || 0) > 0 ? '#8b5cf6' : themeStyles.textSecondary }}>
                                                             {runner.lapCount || runner.passedCount || 0}
                                                         </span>
@@ -1049,7 +1049,7 @@ export default function EventLivePage() {
                                                 );
                                             case 'bestLap':
                                                 return (
-                                                    <td key={key} style={{ padding: '12px 6px', textAlign: 'center' }}>
+                                                    <td key={key} style={{ padding: '6px 6px', textAlign: 'center' }}>
                                                         <span style={{ fontSize: 12, fontWeight: 700, color: runner.bestLapTime ? '#22c55e' : themeStyles.textSecondary, fontFamily: 'monospace' }}>
                                                             {runner.bestLapTime ? formatTime(runner.bestLapTime) : '-'}
                                                         </span>
@@ -1057,7 +1057,7 @@ export default function EventLivePage() {
                                                 );
                                             case 'avgLap':
                                                 return (
-                                                    <td key={key} style={{ padding: '12px 6px', textAlign: 'center' }}>
+                                                    <td key={key} style={{ padding: '6px 6px', textAlign: 'center' }}>
                                                         <span style={{ fontSize: 12, fontWeight: 600, color: runner.avgLapTime ? themeStyles.text : themeStyles.textSecondary, fontFamily: 'monospace' }}>
                                                             {runner.avgLapTime ? formatTime(runner.avgLapTime) : '-'}
                                                         </span>
@@ -1065,7 +1065,7 @@ export default function EventLivePage() {
                                                 );
                                             case 'lastLap':
                                                 return (
-                                                    <td key={key} style={{ padding: '12px 6px', textAlign: 'center' }}>
+                                                    <td key={key} style={{ padding: '6px 6px', textAlign: 'center' }}>
                                                         <span style={{ fontSize: 12, fontWeight: 600, color: runner.lastLapTime ? themeStyles.text : themeStyles.textSecondary, fontFamily: 'monospace' }}>
                                                             {runner.lastLapTime ? formatTime(runner.lastLapTime) : '-'}
                                                         </span>
@@ -1073,7 +1073,7 @@ export default function EventLivePage() {
                                                 );
                                             case 'totalTime':
                                                 return (
-                                                    <td key={key} style={{ padding: '12px 6px', textAlign: 'center' }}>
+                                                    <td key={key} style={{ padding: '6px 6px', textAlign: 'center' }}>
                                                         <span style={{ fontSize: 12, fontWeight: 700, color: themeStyles.text, fontFamily: 'monospace' }}>
                                                             {formatTime(runner.elapsedTime || runner.gunTime)}
                                                         </span>
@@ -1081,7 +1081,7 @@ export default function EventLivePage() {
                                                 );
                                             case 'lastPass':
                                                 return (
-                                                    <td key={key} style={{ padding: '12px 6px', textAlign: 'center' }}>
+                                                    <td key={key} style={{ padding: '6px 6px', textAlign: 'center' }}>
                                                         <span style={{ fontSize: 11, color: runner.lastPassTime ? themeStyles.text : themeStyles.textSecondary, fontFamily: 'monospace' }}>
                                                             {runner.lastPassTime ? new Date(runner.lastPassTime).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '-'}
                                                         </span>
@@ -1099,7 +1099,7 @@ export default function EventLivePage() {
                                                     lapPaceStr = `${pM.toString().padStart(2, '0')}:${pS.toString().padStart(2, '0')}`;
                                                 }
                                                 return (
-                                                    <td key={key} style={{ padding: '12px 6px', textAlign: 'center' }}>
+                                                    <td key={key} style={{ padding: '6px 6px', textAlign: 'center' }}>
                                                         <span style={{ fontSize: 11, fontWeight: 600, color: lapPaceStr !== '-' ? '#8b5cf6' : themeStyles.textSecondary, fontFamily: 'monospace' }}>
                                                             {lapPaceStr}
                                                         </span>

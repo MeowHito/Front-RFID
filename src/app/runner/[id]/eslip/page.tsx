@@ -431,27 +431,11 @@ export default function ESlipPage() {
             const dataUrl = canvas.toDataURL('image/jpeg', 0.95);
             const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
 
-            // Mobile: try Web Share API first (pops share sheet with "Save to Photos")
-            if (isMobile && typeof navigator !== 'undefined' && navigator.share) {
-                try {
-                    const blob = await new Promise<Blob>((resolve, reject) => {
-                        canvas.toBlob(b => b ? resolve(b) : reject(new Error('toBlob failed')), 'image/jpeg', 0.95);
-                    });
-                    const file = new File([blob], fileName, { type: 'image/jpeg' });
-                    const canShareFile = navigator.canShare ? navigator.canShare({ files: [file] }) : true;
-                    if (canShareFile) {
-                        await navigator.share({ files: [file], title: 'E-Slip' });
-                        setDownloading(false);
-                        return;
-                    }
-                } catch (shareErr: any) {
-                    if (shareErr?.name === 'AbortError') { setDownloading(false); return; }
-                    // Share failed — fall through to new-tab method
-                }
-                // Mobile fallback: open image in new tab so user can long-press → Save to Photos
+            if (isMobile) {
+                // Mobile: open image directly in new tab for long-press → Save to Photos
                 const newTab = window.open('', '_blank');
                 if (newTab) {
-                    newTab.document.write(`<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width"><title>E-Slip</title><style>body{margin:0;background:#0f172a;display:flex;justify-content:center;align-items:center;min-height:100vh;flex-direction:column;gap:12px;} img{max-width:100%;border-radius:12px;} p{color:#94a3b8;font-size:13px;font-family:sans-serif;text-align:center;padding:0 16px;}</style></head><body><img src="${dataUrl}"><p>กดค้างที่รูป → บันทึกภาพ เพื่อบันทึกลงแกลเลอรี</p></body></html>`);
+                    newTab.document.write(`<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>E-Slip ${runner?.bib || ''}</title><style>*{margin:0;padding:0;box-sizing:border-box;}body{background:#0f172a;display:flex;justify-content:center;align-items:center;min-height:100vh;flex-direction:column;gap:16px;padding:16px;} img{max-width:100%;border-radius:16px;box-shadow:0 8px 32px rgba(0,0,0,0.5);} .hint{color:#94a3b8;font-size:14px;font-family:'Prompt',sans-serif;text-align:center;padding:8px 20px;background:rgba(255,255,255,0.08);border-radius:12px;line-height:1.6;} .hint b{color:#4ade80;}</style></head><body><img src="${dataUrl}"><div class="hint">📲 <b>กดค้างที่รูป</b> → เลือก <b>"เพิ่มไปยังรูปภาพ"</b><br>เพื่อบันทึกลงแกลเลอรีของคุณ</div></body></html>`);
                     newTab.document.close();
                 }
                 setDownloading(false);
@@ -527,63 +511,69 @@ export default function ESlipPage() {
 
             <div style={{ padding: '20px 10px', display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%' }}>
 
-            {/* Template Selector — only show if admin enabled multiple templates */}
-            {availableTemplates.length > 1 && (
-                <div style={{
-                    marginBottom: 16, position: 'relative', display: 'inline-block',
-                    border: activeTemplate === 'template3' ? '2px solid #cbd5e1' : '2px solid rgba(255,255,255,0.3)',
-                    borderRadius: 12, padding: 2,
-                    boxShadow: activeTemplate === 'template3' ? '0 2px 8px rgba(0,0,0,0.08)' : '0 2px 12px rgba(0,0,0,0.4)',
-                }}>
-                    <select
-                        value={activeTemplate}
-                        onChange={e => setActiveTemplate(e.target.value)}
-                        style={{
-                            padding: '10px 40px 10px 16px', borderRadius: 10, fontSize: 14, fontWeight: 700,
-                            cursor: 'pointer', border: 'none', appearance: 'none',
-                            background: activeTemplate === 'template3' ? '#f8fafc' : 'rgba(255,255,255,0.12)',
-                            color: activeTemplate === 'template3' ? '#0f172a' : '#fff',
-                            WebkitAppearance: 'none', minWidth: 180, outline: 'none',
-                        }}
-                    >
-                        {availableTemplates.map(t => (
-                            <option key={t} value={t} style={{ color: '#000', background: '#fff' }}>
-                                {t === 'template1' ? '🌙 Dark Style' : t === 'template2' ? '📷 Photo Style' : '🤍 Clean White'}
-                            </option>
-                        ))}
-                    </select>
-                    <span style={{ position: 'absolute', right: 14, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', fontSize: 11, color: activeTemplate === 'template3' ? '#64748b' : 'rgba(255,255,255,0.7)' }}>▼</span>
-                </div>
-            )}
-
-            {/* Render Active Template */}
-            {activeTemplate === 'template1' && <Template1 runner={runner} timings={timings} campaign={campaign} bgImage={bgImage} slipRef={slipRef} />}
-            {activeTemplate === 'template2' && <Template2 runner={runner} timings={timings} campaign={campaign} bgImage={bgImage} slipRef={slipRef} />}
-            {activeTemplate === 'template3' && <Template3 runner={runner} timings={timings} campaign={campaign} bgImage={null} slipRef={slipRef} />}
-
-            {/* Action Buttons */}
-            <div style={{ display: 'flex', gap: 12, width: '100%', maxWidth: 380, marginTop: 20 }}>
-                {activeTemplate !== 'template3' && (
-                    <>
-                        <input type="file" id="eslip-bg" accept="image/*" style={{ display: 'none' }} onChange={handleBgUpload} />
-                        <label htmlFor="eslip-bg" style={{ flex: 1, padding: 15, borderRadius: 15, fontWeight: 800, fontSize: 14, textAlign: 'center', cursor: 'pointer', background: '#fff', color: '#000', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8 }}>
-                            📷 เลือกรูปถ่าย
-                        </label>
-                    </>
+                {/* Template Selector — show buttons for admin-enabled templates */}
+                {availableTemplates.length > 1 && (
+                    <div style={{
+                        marginBottom: 16, display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'center',
+                    }}>
+                        {availableTemplates.map(t => {
+                            const isActive = activeTemplate === t;
+                            const label = t === 'template1' ? '🌙 Dark' : t === 'template2' ? '📷 Photo' : '🤍 White';
+                            const isWhiteTheme = activeTemplate === 'template3';
+                            return (
+                                <button
+                                    key={t}
+                                    onClick={() => setActiveTemplate(t)}
+                                    style={{
+                                        padding: '10px 20px', borderRadius: 14, fontSize: 14, fontWeight: 800,
+                                        cursor: 'pointer', transition: 'all 0.2s ease',
+                                        border: isActive
+                                            ? '2px solid #22c55e'
+                                            : isWhiteTheme ? '2px solid #e2e8f0' : '2px solid rgba(255,255,255,0.15)',
+                                        background: isActive
+                                            ? 'linear-gradient(135deg, #16a34a 0%, #22c55e 100%)'
+                                            : isWhiteTheme ? 'rgba(0,0,0,0.03)' : 'rgba(255,255,255,0.08)',
+                                        color: isActive ? '#fff' : isWhiteTheme ? '#475569' : 'rgba(255,255,255,0.7)',
+                                        boxShadow: isActive ? '0 4px 12px rgba(34,197,94,0.4)' : 'none',
+                                        transform: isActive ? 'scale(1.05)' : 'scale(1)',
+                                        minWidth: 100,
+                                    }}
+                                >
+                                    {label}
+                                </button>
+                            );
+                        })}
+                    </div>
                 )}
-                <button onClick={handleDownload} disabled={downloading} style={{
-                    flex: 1, padding: 15, borderRadius: 15, fontWeight: 800, fontSize: 14, textAlign: 'center', cursor: downloading ? 'wait' : 'pointer',
-                    background: '#16a34a', color: '#fff', border: 'none', opacity: downloading ? 0.7 : 1,
-                    display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8,
-                }}>
-                    {downloading ? '⏳ กำลังประมวลผล...' : '📥 บันทึกภาพ'}
-                </button>
-            </div>
 
-            {/* Back link */}
-            <button onClick={() => router.back()} style={{ marginTop: 20, background: 'none', border: 'none', color: '#64748b', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
-                ← ย้อนกลับ
-            </button>
+                {/* Render Active Template */}
+                {activeTemplate === 'template1' && <Template1 runner={runner} timings={timings} campaign={campaign} bgImage={bgImage} slipRef={slipRef} />}
+                {activeTemplate === 'template2' && <Template2 runner={runner} timings={timings} campaign={campaign} bgImage={bgImage} slipRef={slipRef} />}
+                {activeTemplate === 'template3' && <Template3 runner={runner} timings={timings} campaign={campaign} bgImage={null} slipRef={slipRef} />}
+
+                {/* Action Buttons */}
+                <div style={{ display: 'flex', gap: 12, width: '100%', maxWidth: 380, marginTop: 20 }}>
+                    {activeTemplate !== 'template3' && (
+                        <>
+                            <input type="file" id="eslip-bg" accept="image/*" style={{ display: 'none' }} onChange={handleBgUpload} />
+                            <label htmlFor="eslip-bg" style={{ flex: 1, padding: 15, borderRadius: 15, fontWeight: 800, fontSize: 14, textAlign: 'center', cursor: 'pointer', background: '#fff', color: '#000', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8 }}>
+                                📷 เลือกรูปถ่าย
+                            </label>
+                        </>
+                    )}
+                    <button onClick={handleDownload} disabled={downloading} style={{
+                        flex: 1, padding: 15, borderRadius: 15, fontWeight: 800, fontSize: 14, textAlign: 'center', cursor: downloading ? 'wait' : 'pointer',
+                        background: '#16a34a', color: '#fff', border: 'none', opacity: downloading ? 0.7 : 1,
+                        display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8,
+                    }}>
+                        {downloading ? '⏳ กำลังประมวลผล...' : '📥 บันทึกภาพ'}
+                    </button>
+                </div>
+
+                {/* Back link */}
+                <button onClick={() => router.back()} style={{ marginTop: 20, background: 'none', border: 'none', color: '#64748b', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+                    ← ย้อนกลับ
+                </button>
             </div>
         </div>
     );
