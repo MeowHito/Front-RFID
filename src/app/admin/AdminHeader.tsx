@@ -11,7 +11,11 @@ interface FeaturedCampaign {
     uuid?: string;
 }
 
-export default function AdminHeader() {
+interface AdminHeaderProps {
+    onToggleSidebar?: () => void;
+}
+
+export default function AdminHeader({ onToggleSidebar }: AdminHeaderProps) {
     const { language, setLanguage } = useLanguage();
     const { user, logout } = useAuth();
     const [profileOpen, setProfileOpen] = useState(false);
@@ -58,6 +62,16 @@ export default function AdminHeader() {
     return (
         <header className="admin-header">
             <div className="header-left-group">
+                {/* Mobile hamburger */}
+                {onToggleSidebar && (
+                    <button className="sidebar-toggle-btn" onClick={onToggleSidebar} aria-label="Toggle sidebar">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <line x1="3" y1="6" x2="21" y2="6" />
+                            <line x1="3" y1="12" x2="21" y2="12" />
+                            <line x1="3" y1="18" x2="21" y2="18" />
+                        </svg>
+                    </button>
+                )}
                 <Link href="/" className="brand-logo">
                     ACTION <span className="text-blue-500">ADMIN</span>
                 </Link>

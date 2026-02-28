@@ -14,31 +14,26 @@ interface Campaign {
     uuid?: string;
 }
 
-interface LinkItem {
+interface LinkRow {
     id: string;
     label: string;
     labelEn: string;
-    description: string;
-    descriptionEn: string;
-    path: string;
-    icon: string;
+    buildUrl: (origin: string) => string;
 }
 
-const LINK_ITEMS: LinkItem[] = [
+const LINK_ROWS: LinkRow[] = [
     {
         id: 'result-winners',
-        label: 'อันดับกลุ่มอายุ',
+        label: 'อันดับกลุ่มอายุ (Age Group Rankings)',
         labelEn: 'Age Group Rankings',
-        description: 'หน้าแสดงอันดับ Top 5 แยกตามกลุ่มอายุ เพศ และระยะทาง (รีเฟรชอัตโนมัติ)',
-        descriptionEn: 'Top 5 winners by age group, gender, and distance (auto-refresh)',
-        path: '/Result-Winners',
-        icon: '🏆',
+        buildUrl: (origin) => `${origin}/Result-Winners`,
     },
 ];
 
 export default function LinksPage() {
     const { language } = useLanguage();
     const [campaign, setCampaign] = useState<Campaign | null>(null);
+    const [loading, setLoading] = useState(true);
     const [copiedId, setCopiedId] = useState<string | null>(null);
 
     useEffect(() => {
@@ -50,128 +45,156 @@ export default function LinksPage() {
                     if (data?._id) setCampaign(data);
                 }
             } catch { /* */ }
+            finally { setLoading(false); }
         })();
     }, []);
 
-    const getFullUrl = (path: string) => {
-        if (typeof window === 'undefined') return path;
-        return `${window.location.origin}${path}`;
-    };
+    const origin = typeof window !== 'undefined' ? window.location.origin : '';
 
-    const handleCopy = async (linkItem: LinkItem) => {
-        const url = getFullUrl(linkItem.path);
+    const handleCopy = async (url: string, id: string) => {
         try {
             await navigator.clipboard.writeText(url);
-            setCopiedId(linkItem.id);
-            setTimeout(() => setCopiedId(null), 2500);
         } catch {
-            // Fallback
             const input = document.createElement('input');
             input.value = url;
             document.body.appendChild(input);
             input.select();
             document.execCommand('copy');
             document.body.removeChild(input);
-            setCopiedId(linkItem.id);
-            setTimeout(() => setCopiedId(null), 2500);
         }
+        setCopiedId(id);
+        setTimeout(() => setCopiedId(null), 2000);
     };
 
     return (
         <AdminLayout breadcrumbItems={[{ label: language === 'th' ? 'ลิงก์แชร์' : 'Share Links' }]}>
-            <div style={{ maxWidth: 800, margin: '0 auto' }}>
+            <div className="max-w-4xl mx-auto">
                 {/* Header */}
-                <div style={{ marginBottom: 24 }}>
-                    <h2 style={{ fontSize: 22, fontWeight: 800, color: '#1e293b', margin: 0 }}>
-                        {language === 'th' ? '🔗 ลิงก์สำหรับแชร์' : '🔗 Share Links'}
+                <div className="mb-5">
+                    <h2 className="text-xl font-extrabold text-slate-800 m-0">
+                        {language === 'th' ? '🔗 ลิงก์แชร์' : '🔗 Share Links'}
                     </h2>
-                    <p style={{ fontSize: 13, color: '#64748b', marginTop: 4 }}>
+                    <p className="text-xs text-slate-500 mt-1">
                         {language === 'th'
-                            ? 'รวมลิงก์หน้าเว็บสำหรับแชร์ให้ผู้เข้าชม คัดลอกลิงก์แล้วนำไปเปิดบนจอโปรเจกเตอร์หรือแชร์ผ่านโซเชียลมีเดีย'
-                            : 'Collection of shareable page links for spectators. Copy and open on projector screens or share via social media.'}
+                            ? 'ลิงก์สำหรับกิจกรรมที่ตั้งเป็นดาว (Featured) ใน /admin/events — คัดลอกแล้วนำไปเปิดบนจอโปรเจกเตอร์หรือแชร์ได้เลย'
+                            : 'Links for the starred (featured) campaign in /admin/events — copy and share on projector or social media'}
                     </p>
                 </div>
 
-                {campaign && (
-                    <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 10, padding: '10px 16px', marginBottom: 20, display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <span style={{ fontSize: 16 }}>📌</span>
-                        <span style={{ fontSize: 13, color: '#166534', fontWeight: 600 }}>
-                            {language === 'th' ? 'กิจกรรมปัจจุบัน: ' : 'Current campaign: '}
-                            <strong>{campaign.nameTh || campaign.nameEn || campaign.name}</strong>
+                {/* Featured campaign badge */}
+                {loading ? (
+                    <div className="p-5 text-center text-slate-400 text-sm">Loading...</div>
+                ) : !campaign ? (
+                    <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 mb-5 flex items-center gap-2.5">
+                        <span className="text-lg">⚠️</span>
+                        <span className="text-sm text-red-800 font-semibold">
+                            {language === 'th'
+                                ? 'ยังไม่มีกิจกรรมที่ตั้งเป็นดาว — กรุณาไปที่ /admin/events แล้วกดดาวเพื่อเลือกกิจกรรม'
+                                : 'No featured campaign — go to /admin/events and star a campaign first'}
                         </span>
                     </div>
-                )}
+                ) : (
+                    <>
+                        <div className="bg-green-50 border border-green-200 rounded-xl px-4 py-2.5 mb-5 flex items-center gap-2">
+                            <span className="text-lg">⭐</span>
+                            <span className="text-sm text-green-800 font-semibold">
+                                {language === 'th' ? 'กิจกรรมที่เลือก: ' : 'Featured campaign: '}
+                                <strong>{campaign.nameTh || campaign.nameEn || campaign.name}</strong>
+                            </span>
+                        </div>
 
-                {/* Link Cards */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                    {LINK_ITEMS.map(item => {
-                        const fullUrl = getFullUrl(item.path);
-                        const isCopied = copiedId === item.id;
-                        return (
-                            <div key={item.id} style={{
-                                background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12,
-                                padding: 20, boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
-                                transition: 'box-shadow 0.2s',
-                            }}>
-                                {/* Title row */}
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
-                                    <span style={{ fontSize: 28 }}>{item.icon}</span>
-                                    <div>
-                                        <div style={{ fontSize: 16, fontWeight: 800, color: '#1e293b' }}>
-                                            {language === 'th' ? item.label : item.labelEn}
+                        {/* Links Table */}
+                        <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
+                            {/* Desktop table */}
+                            <table className="w-full border-collapse text-sm hidden sm:table">
+                                <thead>
+                                    <tr className="bg-slate-50 border-b-2 border-slate-200">
+                                        <th className="px-4 py-2.5 text-left font-bold text-slate-600 w-[30%] whitespace-nowrap">
+                                            {language === 'th' ? 'หัวข้อ' : 'Label'}
+                                        </th>
+                                        <th className="px-4 py-2.5 text-left font-bold text-slate-600">
+                                            URL
+                                        </th>
+                                        <th className="px-4 py-2.5 text-center font-bold text-slate-600 w-[100px]">
+                                            {language === 'th' ? 'คัดลอก' : 'Copy'}
+                                        </th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {LINK_ROWS.map((row, idx) => {
+                                        const url = row.buildUrl(origin);
+                                        const isCopied = copiedId === row.id;
+                                        return (
+                                            <tr key={row.id} className={idx < LINK_ROWS.length - 1 ? 'border-b border-slate-100' : ''}>
+                                                <td className="px-4 py-3 font-bold text-slate-800 align-middle">
+                                                    {language === 'th' ? row.label : row.labelEn}
+                                                </td>
+                                                <td className="px-4 py-3 align-middle">
+                                                    <div className="flex items-center gap-2">
+                                                        <code className="flex-1 text-xs text-slate-700 font-mono bg-slate-50 border border-slate-200 rounded-md px-2.5 py-1.5 overflow-hidden text-ellipsis whitespace-nowrap select-all block">
+                                                            {url}
+                                                        </code>
+                                                        <a href={url} target="_blank" rel="noopener noreferrer"
+                                                            className="shrink-0 text-blue-600 text-sm flex items-center hover:text-blue-800"
+                                                            title={language === 'th' ? 'เปิดในแท็บใหม่' : 'Open in new tab'}
+                                                        >
+                                                            ↗
+                                                        </a>
+                                                    </div>
+                                                </td>
+                                                <td className="px-4 py-3 text-center align-middle">
+                                                    <button
+                                                        onClick={() => handleCopy(url, row.id)}
+                                                        className={`px-3.5 py-1.5 rounded-md border-none text-white font-bold text-xs cursor-pointer whitespace-nowrap transition-colors min-w-[70px] ${isCopied ? 'bg-green-500' : 'bg-blue-500 hover:bg-blue-600'}`}
+                                                    >
+                                                        {isCopied ? '✓ Copied!' : '📋 Copy'}
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
+
+                            {/* Mobile card layout */}
+                            <div className="sm:hidden divide-y divide-slate-100">
+                                {LINK_ROWS.map((row) => {
+                                    const url = row.buildUrl(origin);
+                                    const isCopied = copiedId === row.id;
+                                    return (
+                                        <div key={row.id} className="p-4 space-y-2">
+                                            <div className="font-bold text-sm text-slate-800">
+                                                {language === 'th' ? row.label : row.labelEn}
+                                            </div>
+                                            <code className="block text-xs text-slate-700 font-mono bg-slate-50 border border-slate-200 rounded-md px-2.5 py-1.5 overflow-hidden text-ellipsis whitespace-nowrap select-all">
+                                                {url}
+                                            </code>
+                                            <div className="flex gap-2">
+                                                <button
+                                                    onClick={() => handleCopy(url, row.id)}
+                                                    className={`flex-1 py-2 rounded-md border-none text-white font-bold text-xs cursor-pointer transition-colors ${isCopied ? 'bg-green-500' : 'bg-blue-500 hover:bg-blue-600'}`}
+                                                >
+                                                    {isCopied ? '✓ Copied!' : '📋 Copy'}
+                                                </button>
+                                                <a href={url} target="_blank" rel="noopener noreferrer"
+                                                    className="px-4 py-2 rounded-md border border-slate-300 text-slate-700 text-xs font-semibold flex items-center gap-1 hover:bg-slate-50"
+                                                >
+                                                    ↗ {language === 'th' ? 'เปิด' : 'Open'}
+                                                </a>
+                                            </div>
                                         </div>
-                                        <div style={{ fontSize: 12, color: '#64748b' }}>
-                                            {language === 'th' ? item.description : item.descriptionEn}
-                                        </div>
-                                    </div>
-                                </div>
-
-                                {/* URL + Copy */}
-                                <div style={{
-                                    display: 'flex', alignItems: 'center', gap: 8, marginTop: 12,
-                                    background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8,
-                                    padding: '8px 12px',
-                                }}>
-                                    <code style={{
-                                        flex: 1, fontSize: 13, color: '#334155', fontFamily: 'monospace',
-                                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                                        userSelect: 'all',
-                                    }}>
-                                        {fullUrl}
-                                    </code>
-                                    <button
-                                        onClick={() => handleCopy(item)}
-                                        style={{
-                                            padding: '6px 16px', borderRadius: 6, border: 'none',
-                                            background: isCopied ? '#22c55e' : '#2563eb',
-                                            color: '#fff', fontWeight: 700, fontSize: 12,
-                                            cursor: 'pointer', whiteSpace: 'nowrap',
-                                            transition: 'background 0.2s',
-                                            display: 'flex', alignItems: 'center', gap: 6,
-                                        }}
-                                    >
-                                        {isCopied ? '✓ Copied!' : (language === 'th' ? '📋 คัดลอก' : '📋 Copy')}
-                                    </button>
-                                </div>
-
-                                {/* Open in new tab */}
-                                <div style={{ marginTop: 10, display: 'flex', gap: 8 }}>
-                                    <a
-                                        href={item.path}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        style={{
-                                            fontSize: 12, fontWeight: 600, color: '#2563eb',
-                                            textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 4,
-                                        }}
-                                    >
-                                        🔗 {language === 'th' ? 'เปิดในแท็บใหม่' : 'Open in new tab'} ↗
-                                    </a>
-                                </div>
+                                    );
+                                })}
                             </div>
-                        );
-                    })}
-                </div>
+                        </div>
+
+                        <p className="text-xs text-slate-400 mt-3">
+                            {language === 'th'
+                                ? '* ลิงก์เหล่านี้จะแสดงข้อมูลของกิจกรรมที่ตั้งเป็นดาว (⭐) ใน /admin/events เสมอ — เปลี่ยนดาวเมื่อต้องการเปลี่ยนกิจกรรมที่แสดง'
+                                : '* These links always show data for the starred (⭐) campaign in /admin/events — change the star to switch campaigns'}
+                        </p>
+                    </>
+                )}
             </div>
         </AdminLayout>
     );

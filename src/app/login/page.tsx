@@ -21,7 +21,7 @@ export default function LoginPage() {
     useEffect(() => {
         if (isAuthenticated) {
             if (isAdmin) {
-                router.push('/admin');
+                router.push('/admin/events');
             } else {
                 router.push('/');
             }
@@ -39,7 +39,7 @@ export default function LoginPage() {
 
         try {
             await login(email, password);
-            router.push('/admin');
+            router.push('/admin/events');
         } catch (err: unknown) {
             console.error('Login failed:', err);
             const errorMessage = err instanceof Error ? err.message : 'อีเมลหรือรหัสผ่านไม่ถูกต้อง';

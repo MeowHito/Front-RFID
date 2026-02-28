@@ -1,6 +1,7 @@
 'use client';
 
-import { ReactNode } from 'react';
+import { ReactNode, useState, useEffect } from 'react';
+import { usePathname } from 'next/navigation';
 import AdminHeader from './AdminHeader';
 import AdminSidebar from './AdminSidebar';
 import AdminBreadcrumb from './AdminBreadcrumb';
@@ -16,11 +17,25 @@ interface AdminLayoutProps {
 }
 
 function AdminLayoutContent({ children, breadcrumbItems = [], breadcrumbRight, pageTitle, pageTitleEn }: AdminLayoutProps) {
+    const [sidebarOpen, setSidebarOpen] = useState(false);
+    const pathname = usePathname();
+
+    // Close sidebar on route change (mobile)
+    useEffect(() => {
+        setSidebarOpen(false);
+    }, [pathname]);
+
     return (
         <div className="admin-container">
-            <AdminHeader />
+            <AdminHeader onToggleSidebar={() => setSidebarOpen(!sidebarOpen)} />
+            {/* Mobile overlay */}
+            {sidebarOpen && (
+                <div className="sidebar-overlay" onClick={() => setSidebarOpen(false)} />
+            )}
             <div className="admin-body">
-                <AdminSidebar />
+                <div className={`sidebar-wrapper ${sidebarOpen ? 'open' : ''}`}>
+                    <AdminSidebar />
+                </div>
                 <main className="admin-main">
                     {breadcrumbItems.length > 0 && (
                         <AdminBreadcrumb items={breadcrumbItems} rightContent={breadcrumbRight} />

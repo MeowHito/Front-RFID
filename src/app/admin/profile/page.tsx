@@ -86,15 +86,6 @@ export default function ProfilePage() {
         const file = e.target.files?.[0];
         if (!file) return;
 
-        // Validate file size (max 5MB)
-        if (file.size > 5 * 1024 * 1024) {
-            setSaveMessage({
-                type: 'error',
-                text: language === 'th' ? 'ไฟล์ใหญ่เกินไป (สูงสุด 5MB)' : 'File too large (max 5MB)',
-            });
-            return;
-        }
-
         // Validate file type
         const validTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
         if (!validTypes.includes(file.type)) {
@@ -105,12 +96,27 @@ export default function ProfilePage() {
             return;
         }
 
-        // Show preview immediately
-        const reader = new FileReader();
-        reader.onload = (event) => {
-            setPreviewUrl(event.target?.result as string);
-        };
-        reader.readAsDataURL(file);
+        // Auto-compress if >5MB
+        if (file.size > 5 * 1024 * 1024) {
+            try {
+                const { compressImage } = await import('@/lib/image-utils');
+                const compressed = await compressImage(file);
+                setPreviewUrl(compressed);
+            } catch {
+                setSaveMessage({
+                    type: 'error',
+                    text: language === 'th' ? 'ไม่สามารถบีบอัดรูปภาพได้' : 'Failed to compress image',
+                });
+                return;
+            }
+        } else {
+            // Show preview immediately
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                setPreviewUrl(event.target?.result as string);
+            };
+            reader.readAsDataURL(file);
+        }
 
         // Upload to server
         setUploadingAvatar(true);

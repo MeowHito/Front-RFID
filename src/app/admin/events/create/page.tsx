@@ -40,6 +40,7 @@ interface CreateEventForm {
     raceId: string;
     partnerCode: string;
     raceTigerBaseUrl: string;
+    cardColor: string;
     categories: RaceCategory[];
 }
 
@@ -110,6 +111,7 @@ function CreateEventForm() {
         raceId: '',
         partnerCode: '',
         raceTigerBaseUrl: '',
+        cardColor: '',
         categories: [],
     });
 
@@ -141,6 +143,7 @@ function CreateEventForm() {
                     raceId: campaign.raceId || '',
                     partnerCode: campaign.partnerCode || '',
                     raceTigerBaseUrl: campaign.raceTigerBaseUrl || '',
+                    cardColor: campaign.cardColor || '',
                     categories: (campaign.categories || []).map((cat: RaceCategory) => ({
                         name: cat.name || '',
                         distance: cat.distance || '',
@@ -287,6 +290,7 @@ function CreateEventForm() {
             if (form.raceId.trim()) payload.raceId = form.raceId.trim();
             if (form.partnerCode.trim()) payload.partnerCode = form.partnerCode.trim();
             if (form.raceTigerBaseUrl.trim()) payload.raceTigerBaseUrl = form.raceTigerBaseUrl.trim();
+            if (form.cardColor.trim()) payload.cardColor = form.cardColor.trim();
             if (cleanCategories.length > 0) payload.categories = cleanCategories;
             // Use API proxy route to work on both localhost and Vercel
             const url = isEdit ? `/api/campaigns/${editId}` : '/api/campaigns';
@@ -449,6 +453,25 @@ function CreateEventForm() {
                                     </option>
                                 ))}
                             </select>
+                        </div>
+                        <div className="ce-form-group">
+                            <label className="ce-label">{language === 'th' ? 'สีแถบ Card หน้าแรก' : 'Homepage Card Strip Color'}</label>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <input
+                                    type="color"
+                                    value={form.cardColor || '#dc2626'}
+                                    onChange={(e) => updateField('cardColor', e.target.value)}
+                                    style={{ width: 36, height: 36, border: '1px solid #d2d6de', borderRadius: 4, cursor: 'pointer', padding: 2 }}
+                                />
+                                <input
+                                    type="text"
+                                    className="ce-input"
+                                    placeholder="#dc2626"
+                                    value={form.cardColor}
+                                    onChange={(e) => updateField('cardColor', e.target.value)}
+                                    style={{ flex: 1 }}
+                                />
+                            </div>
                         </div>
                         <div className="ce-form-group">
                             <label className="ce-label">{language === 'th' ? 'วันที่จัดงาน' : 'Event Date'} *</label>

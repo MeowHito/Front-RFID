@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import AdminLayout from '../AdminLayout';
 
 interface Campaign {
     _id: string;
@@ -117,15 +118,26 @@ export default function AdminESlipPage() {
 
     if (loading) {
         return (
-            <div style={{ padding: 40, textAlign: 'center', fontFamily: "'Prompt', sans-serif" }}>
-                <div style={{ width: 32, height: 32, border: '3px solid #e2e8f0', borderTopColor: '#3b82f6', borderRadius: '50%', animation: 'spin 1s linear infinite', margin: '0 auto 16px' }} />
-                <p style={{ color: '#94a3b8' }}>กำลังโหลด...</p>
-                <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-            </div>
+            <AdminLayout
+                breadcrumbItems={[
+                    { label: 'E-Slip', labelEn: 'E-Slip' }
+                ]}
+            >
+                <div style={{ padding: 40, textAlign: 'center', fontFamily: "'Prompt', sans-serif" }}>
+                    <div style={{ width: 32, height: 32, border: '3px solid #e2e8f0', borderTopColor: '#3b82f6', borderRadius: '50%', animation: 'spin 1s linear infinite', margin: '0 auto 16px' }} />
+                    <p style={{ color: '#94a3b8' }}>กำลังโหลด...</p>
+                    <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+                </div>
+            </AdminLayout>
         );
     }
 
     return (
+        <AdminLayout
+            breadcrumbItems={[
+                { label: 'E-Slip', labelEn: 'E-Slip' }
+            ]}
+        >
         <div style={{ padding: '24px 32px', fontFamily: "'Prompt', sans-serif", maxWidth: 1200 }}>
             <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
 
@@ -249,5 +261,6 @@ export default function AdminESlipPage() {
                 </ul>
             </div>
         </div>
+        </AdminLayout>
     );
 }

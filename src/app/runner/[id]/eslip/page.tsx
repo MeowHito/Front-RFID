@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
+import Link from 'next/link';
+import Image from 'next/image';
 
 
 interface RunnerData {
@@ -102,13 +104,13 @@ function Template1({ runner, timings, campaign, bgImage, slipRef }: TemplateProp
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
                     {/* Profile */}
                     <div style={{ display: 'flex', alignItems: 'center', gap: 15 }}>
-                        <div style={{ width: 64, height: 64, borderRadius: '50%', border: '3px solid #22c55e', background: '#16a34a', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 22, fontWeight: 800 }}>
+                        <div style={{ width: 64, height: 64, borderRadius: '50%', border: '3px solid #22c55e', background: '#16a34a', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 22, fontWeight: 800, flexShrink: 0 }}>
                             {(runner.firstName?.[0] || '') + (runner.lastName?.[0] || '')}
                         </div>
-                        <div>
-                            <div style={{ fontSize: 26, fontWeight: 900, color: '#fff', lineHeight: 1, textTransform: 'uppercase' }}>{displayName}</div>
-                            <div style={{ fontSize: 13, fontWeight: 600, color: '#cbd5e1', marginTop: 6 }}>
-                                <span style={{ background: '#fff', color: '#000', fontWeight: 900, borderRadius: 6, padding: '2px 8px', marginRight: 5 }}>#{runner.bib}</span>
+                        <div style={{ minWidth: 0 }}>
+                            <div style={{ fontSize: 22, fontWeight: 900, color: '#fff', lineHeight: 1.15, textTransform: 'uppercase', wordBreak: 'break-word' }}>{displayName}</div>
+                            <div style={{ fontSize: 13, fontWeight: 600, color: '#cbd5e1', marginTop: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                                <span style={{ background: '#fff', color: '#000', fontWeight: 900, borderRadius: 6, padding: '2px 8px', fontSize: 12, flexShrink: 0 }}>#{runner.bib}</span>
                                 <span style={{ opacity: 0.8 }}>{genderLabel} {runner.ageGroup || ''}</span>
                             </div>
                         </div>
@@ -132,11 +134,11 @@ function Template1({ runner, timings, campaign, bgImage, slipRef }: TemplateProp
                     <div style={{ display: 'flex', justifyContent: 'space-between', padding: '20px 0', borderTop: '1px solid rgba(255,255,255,0.1)', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
                         <div>
                             <div style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase' }}>Distance</div>
-                            <div style={{ fontSize: 28, fontWeight: 900, color: '#fff', lineHeight: 1 }}>{dist ?? '-'}<span style={{ fontSize: 12, fontWeight: 700, color: '#cbd5e1' }}>km</span></div>
+                            <div style={{ fontSize: 28, fontWeight: 900, color: '#fff', lineHeight: 1, display: 'flex', alignItems: 'baseline' }}>{dist ?? '-'}<span style={{ fontSize: 15, fontWeight: 700, color: '#cbd5e1', marginLeft: 2 }}>km</span></div>
                         </div>
                         <div style={{ textAlign: 'center' }}>
                             <div style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase' }}>Pace</div>
-                            <div style={{ fontSize: 28, fontWeight: 900, color: '#fff', lineHeight: 1 }}>{pace}<span style={{ fontSize: 12, fontWeight: 700, color: '#cbd5e1' }}>/k</span></div>
+                            <div style={{ fontSize: 28, fontWeight: 900, color: '#fff', lineHeight: 1, display: 'flex', alignItems: 'baseline', justifyContent: 'center' }}>{pace}<span style={{ fontSize: 15, fontWeight: 700, color: '#cbd5e1', marginLeft: 2 }}>/km</span></div>
                         </div>
                         <div style={{ textAlign: 'right' }}>
                             <div style={{ fontSize: 11, fontWeight: 700, color: '#4ade80', textTransform: 'uppercase' }}>Total Time</div>
@@ -388,13 +390,24 @@ export default function ESlipPage() {
         })();
     }, [runnerId]);
 
-    const handleBgUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const handleBgUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
-        if (file.size > 5 * 1024 * 1024) { alert('Max 5MB'); return; }
-        const reader = new FileReader();
-        reader.onload = (ev) => setBgImage(ev.target?.result as string);
-        reader.readAsDataURL(file);
+        if (file.size > 5 * 1024 * 1024) {
+            // Auto-compress large images instead of rejecting
+            try {
+                const { compressImage } = await import('@/lib/image-utils');
+                const compressed = await compressImage(file);
+                setBgImage(compressed);
+            } catch (err) {
+                console.error('Compress error:', err);
+                alert('ไม่สามารถบีบอัดรูปภาพได้');
+            }
+        } else {
+            const reader = new FileReader();
+            reader.onload = (ev) => setBgImage(ev.target?.result as string);
+            reader.readAsDataURL(file);
+        }
     };
 
     const handleDownload = async () => {
@@ -403,8 +416,29 @@ export default function ESlipPage() {
         try {
             const html2canvas = (await import('html2canvas')).default;
             const canvas = await html2canvas(slipRef.current, { scale: 3, backgroundColor: activeTemplate === 'template3' ? '#f1f5f9' : '#0f172a', useCORS: true });
+            const fileName = `ACTION_ESlip_${runner?.bib || 'runner'}.jpg`;
+
+            // Try Web Share API first (saves to gallery on mobile)
+            if (typeof navigator !== 'undefined' && navigator.share && navigator.canShare) {
+                try {
+                    const blob = await new Promise<Blob>((resolve, reject) => {
+                        canvas.toBlob(b => b ? resolve(b) : reject(new Error('toBlob failed')), 'image/jpeg', 0.95);
+                    });
+                    const file = new File([blob], fileName, { type: 'image/jpeg' });
+                    if (navigator.canShare({ files: [file] })) {
+                        await navigator.share({ files: [file], title: 'E-Slip' });
+                        setDownloading(false);
+                        return;
+                    }
+                } catch (shareErr: any) {
+                    // User cancelled or share not supported — fall through to download
+                    if (shareErr?.name === 'AbortError') { setDownloading(false); return; }
+                }
+            }
+
+            // Fallback: regular file download
             const link = document.createElement('a');
-            link.download = `ACTION_ESlip_${runner?.bib || 'runner'}.jpg`;
+            link.download = fileName;
             link.href = canvas.toDataURL('image/jpeg', 0.95);
             link.click();
         } catch (err) { console.error('E-Slip download error:', err); }
@@ -451,8 +485,25 @@ export default function ESlipPage() {
     const bgColor = activeTemplate === 'template3' ? '#f1f5f9' : '#0f172a';
 
     return (
-        <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', background: bgColor, padding: '20px 10px', fontFamily: "'Prompt', sans-serif" }}>
+        <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', background: bgColor, fontFamily: "'Prompt', sans-serif" }}>
             <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+
+            {/* HEADER / NAVBAR */}
+            <header style={{ background: activeTemplate === 'template3' ? '#fff' : '#1e293b', borderBottom: `1px solid ${activeTemplate === 'template3' ? '#e2e8f0' : 'rgba(255,255,255,0.1)'}`, padding: '10px 16px', width: '100%', position: 'sticky', top: 0, zIndex: 50 }}>
+                <div style={{ maxWidth: 1024, margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                        <Link href="/" style={{ display: 'flex', alignItems: 'center', borderRight: `1px solid ${activeTemplate === 'template3' ? '#e2e8f0' : 'rgba(255,255,255,0.2)'}`, paddingRight: 12, textDecoration: 'none' }}>
+                            <Image src={activeTemplate === 'template3' ? '/logo-black.png' : '/logo-white.png'} alt="ACTION" width={80} height={26} style={{ objectFit: 'contain' }} />
+                        </Link>
+                        <span style={{ fontSize: 14, fontWeight: 800, color: '#22c55e', textTransform: 'uppercase' }}>E-Slip</span>
+                    </div>
+                    <button onClick={() => router.back()} style={{ fontSize: 12, fontWeight: 700, color: activeTemplate === 'template3' ? '#64748b' : '#94a3b8', background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
+                        ← กลับหน้าผลการแข่งขัน
+                    </button>
+                </div>
+            </header>
+
+            <div style={{ padding: '20px 10px', display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%' }}>
 
             {/* Template Selector (only show if admin hasn't locked to a single template) */}
             <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
@@ -495,6 +546,7 @@ export default function ESlipPage() {
             <button onClick={() => router.back()} style={{ marginTop: 20, background: 'none', border: 'none', color: '#64748b', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
                 ← ย้อนกลับ
             </button>
+            </div>
         </div>
     );
 }

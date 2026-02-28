@@ -85,58 +85,32 @@ function resolveAgeGroup(runner: Runner): string {
 const REFRESH_INTERVAL = 15; // seconds
 
 export default function ResultWinnersPage() {
-    const [campaigns, setCampaigns] = useState<Campaign[]>([]);
-    const [selectedCampaignId, setSelectedCampaignId] = useState<string>('');
     const [campaign, setCampaign] = useState<Campaign | null>(null);
     const [selectedCategory, setSelectedCategory] = useState<string>('');
     const [runners, setRunners] = useState<Runner[]>([]);
     const [loading, setLoading] = useState(true);
-    const [dropdownOpen, setDropdownOpen] = useState(false);
-    const dropdownRef = useRef<HTMLDivElement>(null);
     const [countdown, setCountdown] = useState(REFRESH_INTERVAL);
     const [refreshing, setRefreshing] = useState(false);
     const refreshTimerRef = useRef<NodeJS.Timeout | null>(null);
     const countdownRef = useRef<NodeJS.Timeout | null>(null);
 
-    // Close dropdown on outside click
+    // Load featured campaign automatically
     useEffect(() => {
-        function handleClick(e: MouseEvent) {
-            if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) setDropdownOpen(false);
-        }
-        document.addEventListener('mousedown', handleClick);
-        return () => document.removeEventListener('mousedown', handleClick);
-    }, []);
-
-    // Load all campaigns
-    useEffect(() => {
-        async function loadCampaigns() {
+        (async () => {
             try {
-                const res = await fetch('/api/campaigns', { cache: 'no-store' });
+                const res = await fetch('/api/campaigns/featured', { cache: 'no-store' });
                 if (res.ok) {
-                    const json = await res.json();
-                    const list: Campaign[] = json?.data || json || [];
-                    setCampaigns(Array.isArray(list) ? list : []);
-                    // Auto-select first
-                    if (list.length > 0) setSelectedCampaignId(list[0]._id);
+                    const data = await res.json();
+                    if (data?._id) {
+                        setCampaign(data);
+                        if (data.categories?.length > 0) {
+                            setSelectedCategory(data.categories[0].name);
+                        }
+                    }
                 }
             } catch { /* */ } finally { setLoading(false); }
-        }
-        loadCampaigns();
+        })();
     }, []);
-
-    // When selectedCampaignId changes, set campaign and auto-select first category
-    useEffect(() => {
-        if (!selectedCampaignId) return;
-        const c = campaigns.find(c => c._id === selectedCampaignId);
-        if (c) {
-            setCampaign(c);
-            if (c.categories && c.categories.length > 0) {
-                setSelectedCategory(c.categories[0].name);
-            } else {
-                setSelectedCategory('');
-            }
-        }
-    }, [selectedCampaignId, campaigns]);
 
     // Load runners — called on campaign/category change + auto-refresh
     const loadRunners = useCallback(async (isRefresh = false) => {
@@ -275,29 +249,13 @@ export default function ResultWinnersPage() {
                             {refreshing ? 'Updating...' : `Refresh ${countdown}s`}
                         </span>
                     </div>
-                    {/* Campaign Dropdown */}
-                    <div ref={dropdownRef} style={{ position: 'relative' }}>
-                        <button
-                            onClick={() => setDropdownOpen(!dropdownOpen)}
-                            style={{ padding: '0.5vh 1.5vw', borderRadius: 8, fontSize: '1.4vh', fontWeight: 700, background: '#334155', color: 'white', border: '1px solid #475569', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, maxWidth: '25vw', overflow: 'hidden' }}
-                        >
-                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{campaign?.name || 'เลือกกิจกรรม'}</span>
-                            <span style={{ fontSize: '1vh', opacity: 0.6 }}>▼</span>
-                        </button>
-                        {dropdownOpen && (
-                            <div style={{ position: 'absolute', top: '100%', left: 0, marginTop: 4, background: '#1e293b', border: '1px solid #475569', borderRadius: 8, zIndex: 100, minWidth: '25vw', maxHeight: '40vh', overflowY: 'auto', boxShadow: '0 10px 30px rgba(0,0,0,0.5)' }}>
-                                {campaigns.map(c => (
-                                    <button
-                                        key={c._id}
-                                        onClick={() => { setSelectedCampaignId(c._id); setDropdownOpen(false); }}
-                                        style={{ display: 'block', width: '100%', textAlign: 'left', padding: '1vh 1.2vw', fontSize: '1.4vh', fontWeight: selectedCampaignId === c._id ? 800 : 500, color: selectedCampaignId === c._id ? '#22c55e' : '#cbd5e1', background: selectedCampaignId === c._id ? '#334155' : 'transparent', border: 'none', cursor: 'pointer', borderBottom: '1px solid #334155' }}
-                                    >
-                                        {c.name}
-                                    </button>
-                                ))}
-                            </div>
-                        )}
-                    </div>
+
+                    {/* Campaign name label */}
+                    {campaign && (
+                        <span style={{ fontSize: '1.3vh', fontWeight: 700, color: '#94a3b8', maxWidth: '25vw', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {campaign.name}
+                        </span>
+                    )}
 
                     {/* Distance/Category tabs */}
                     {campaign?.categories && campaign.categories.length > 0 && (

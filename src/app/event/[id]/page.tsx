@@ -468,9 +468,9 @@ export default function EventLivePage() {
             </header>
 
             {/* ===== FILTER BAR ===== */}
-            <div style={{ background: themeStyles.cardBg, borderBottom: `1px solid ${themeStyles.border}`, padding: '8px 16px', display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-                {/* Distance filter */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{ background: themeStyles.cardBg, borderBottom: `1px solid ${themeStyles.border}`, padding: '8px 16px', display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: isMobile ? 8 : 12 }}>
+                {/* Distance filter + Gender filter (on mobile, gender goes after distance) */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
                     <span style={{ fontSize: 10, fontWeight: 700, color: themeStyles.textSecondary, textTransform: 'uppercase', whiteSpace: 'nowrap' }}>
                         Distance:
                     </span>
@@ -507,27 +507,49 @@ export default function EventLivePage() {
                             ))}
                         </div>
                     )}
+
+                    {/* Gender Filter — on mobile, placed right after distance */}
+                    {isMobile && (
+                        <div style={{ display: 'flex', background: themeStyles.inputBg, padding: 3, borderRadius: 8 }}>
+                            {(['ALL', 'M', 'F'] as const).map(g => (
+                                <button
+                                    key={g}
+                                    onClick={() => setFilterGender(g)}
+                                    style={{
+                                        padding: '4px 10px', fontSize: 10, fontWeight: 700, borderRadius: 6, border: 'none', cursor: 'pointer', transition: 'all 0.2s', whiteSpace: 'nowrap',
+                                        ...(filterGender === g
+                                            ? { background: '#22c55e', color: '#fff' }
+                                            : { background: 'transparent', color: themeStyles.textMuted })
+                                    }}
+                                >
+                                    {g === 'ALL' ? (language === 'th' ? 'ทั้งหมด' : 'All') : g === 'M' ? (language === 'th' ? 'ชาย' : 'Male') : (language === 'th' ? 'หญิง' : 'Female')}
+                                </button>
+                            ))}
+                        </div>
+                    )}
                 </div>
 
                 {/* Right controls */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    {/* Gender Filter */}
-                    <div style={{ display: 'flex', background: themeStyles.inputBg, padding: 3, borderRadius: 8 }}>
-                        {(['ALL', 'M', 'F'] as const).map(g => (
-                            <button
-                                key={g}
-                                onClick={() => setFilterGender(g)}
-                                style={{
-                                    padding: '4px 12px', fontSize: 10, fontWeight: 700, borderRadius: 6, border: 'none', cursor: 'pointer', transition: 'all 0.2s', whiteSpace: 'nowrap',
-                                    ...(filterGender === g
-                                        ? { background: '#22c55e', color: '#fff' }
-                                        : { background: 'transparent', color: themeStyles.textMuted })
-                                }}
-                            >
-                                {g === 'ALL' ? (language === 'th' ? 'ทั้งหมด' : 'All') : g === 'M' ? (language === 'th' ? 'ชาย' : 'Male') : (language === 'th' ? 'หญิง' : 'Female')}
-                            </button>
-                        ))}
-                    </div>
+                    {/* Gender Filter — desktop only (mobile is above) */}
+                    {!isMobile && (
+                        <div style={{ display: 'flex', background: themeStyles.inputBg, padding: 3, borderRadius: 8 }}>
+                            {(['ALL', 'M', 'F'] as const).map(g => (
+                                <button
+                                    key={g}
+                                    onClick={() => setFilterGender(g)}
+                                    style={{
+                                        padding: '4px 12px', fontSize: 10, fontWeight: 700, borderRadius: 6, border: 'none', cursor: 'pointer', transition: 'all 0.2s', whiteSpace: 'nowrap',
+                                        ...(filterGender === g
+                                            ? { background: '#22c55e', color: '#fff' }
+                                            : { background: 'transparent', color: themeStyles.textMuted })
+                                    }}
+                                >
+                                    {g === 'ALL' ? (language === 'th' ? 'ทั้งหมด' : 'All') : g === 'M' ? (language === 'th' ? 'ชาย' : 'Male') : (language === 'th' ? 'หญิง' : 'Female')}
+                                </button>
+                            ))}
+                        </div>
+                    )}
 
                     {/* Search */}
                     <div style={{ position: 'relative' }}>
@@ -539,7 +561,7 @@ export default function EventLivePage() {
                             placeholder={language === 'th' ? 'BIB หรือ ชื่อ...' : 'BIB or Name...'}
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
-                            style={{ paddingLeft: 30, paddingRight: 16, paddingTop: 6, paddingBottom: 6, background: themeStyles.inputBg, border: 'none', borderRadius: 8, fontSize: 12, width: 180, outline: 'none', color: themeStyles.text }}
+                            style={{ paddingLeft: 30, paddingRight: 16, paddingTop: 6, paddingBottom: 6, background: themeStyles.inputBg, border: 'none', borderRadius: 8, fontSize: 12, width: isMobile ? 130 : 180, outline: 'none', color: themeStyles.text }}
                         />
                     </div>
 
@@ -555,6 +577,7 @@ export default function EventLivePage() {
                     )}
 
                     {/* Column dropdown */}
+                    {!isMobile && (
                     <div style={{ position: 'relative' }}>
                         <button
                             onClick={() => setShowColDropdown(!showColDropdown)}
@@ -575,6 +598,7 @@ export default function EventLivePage() {
                             </div>
                         )}
                     </div>
+                    )}
                 </div>
             </div>
 
@@ -584,13 +608,13 @@ export default function EventLivePage() {
                     <table style={{ width: isMobile && showAllColumns ? 1200 : '100%', textAlign: 'left', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
                         <thead>
                             <tr style={{ fontSize: 10, fontWeight: 700, color: themeStyles.textSecondary, textTransform: 'uppercase', letterSpacing: '-0.02em', position: 'sticky', top: 0, background: themeStyles.cardBg, zIndex: 20, borderBottom: `2px solid ${themeStyles.border}` }}>
-                                <th style={{ padding: '12px 6px', textAlign: 'center', width: '3%' }}>Rank</th>
-                                {shouldShowColumn('genRank') && showGenRank && <th style={{ padding: '12px 4px', textAlign: 'center', width: '3%' }}>Gen</th>}
-                                {shouldShowColumn('catRank') && showCatRank && <th style={{ padding: '12px 4px', textAlign: 'center', width: '3%' }}>Cat</th>}
-                                <th style={{ padding: '12px 6px', width: '15%' }}>Runner</th>
-                                {shouldShowColumn('sex') && <th style={{ padding: '12px 4px', textAlign: 'center', width: '3%' }}>Sex</th>}
-                                <th style={{ padding: '12px 6px', width: '8%' }}>Status</th>
-                                <th style={{ padding: '12px 6px', textAlign: 'center', width: '7%' }}>Gun Time</th>
+                                <th style={{ padding: isMobile ? '10px 4px' : '12px 6px', textAlign: 'center', width: isMobile ? '8%' : '3%' }}>Rank</th>
+                                {shouldShowColumn('genRank') && showGenRank && <th style={{ padding: isMobile ? '10px 2px' : '12px 4px', textAlign: 'center', width: isMobile ? '8%' : '3%' }}>Gen</th>}
+                                {shouldShowColumn('catRank') && showCatRank && <th style={{ padding: isMobile ? '10px 2px' : '12px 4px', textAlign: 'center', width: isMobile ? '8%' : '3%' }}>Cat</th>}
+                                <th style={{ padding: isMobile ? '10px 4px' : '12px 6px', width: isMobile ? '30%' : '15%' }}>Runner</th>
+                                {shouldShowColumn('sex') && <th style={{ padding: isMobile ? '10px 2px' : '12px 4px', textAlign: 'center', width: isMobile ? '6%' : '3%' }}>Sex</th>}
+                                <th style={{ padding: isMobile ? '10px 2px' : '12px 6px', width: isMobile ? '12%' : '8%' }}>Status</th>
+                                <th style={{ padding: isMobile ? '10px 2px' : '12px 6px', textAlign: 'center', width: isMobile ? '14%' : '7%' }}>Gun Time</th>
                                 {shouldShowColumn('netTime') && <th style={{ padding: '12px 6px', textAlign: 'center', width: '7%' }}>Net Time</th>}
                                 {shouldShowColumn('genNet') && <th style={{ padding: '12px 4px', textAlign: 'center', width: '4%' }}>Gen Net</th>}
                                 {shouldShowColumn('gunPace') && <th style={{ padding: '12px 6px', textAlign: 'center', width: '5%' }}>Gun Pace</th>}
@@ -664,25 +688,27 @@ export default function EventLivePage() {
                                                 </td>
                                             )}
                                             {/* Runner */}
-                                            <td style={{ padding: '12px 8px', overflow: 'hidden' }}>
-                                                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                                                    <div style={{ position: 'relative', flexShrink: 0 }}>
-                                                        <div style={{ width: 32, height: 32, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 700, fontSize: 12, background: avatarBg }}>
-                                                            {initials}
+                                            <td style={{ padding: isMobile ? '8px 4px' : '12px 8px', overflow: 'hidden' }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 6 : 10 }}>
+                                                    {!isMobile && (
+                                                        <div style={{ position: 'relative', flexShrink: 0 }}>
+                                                            <div style={{ width: 32, height: 32, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 700, fontSize: 12, background: avatarBg }}>
+                                                                {initials}
+                                                            </div>
+                                                            {runner.status === 'in_progress' && (
+                                                                <span className="live-dot" style={{ background: '#22c55e', position: 'absolute', bottom: -1, right: -1 }} />
+                                                            )}
                                                         </div>
-                                                        {runner.status === 'in_progress' && (
-                                                            <span className="live-dot" style={{ background: '#22c55e', position: 'absolute', bottom: -1, right: -1 }} />
-                                                        )}
-                                                    </div>
+                                                    )}
                                                     <div style={{ overflow: 'hidden' }}>
-                                                        <span style={{ display: 'block', fontWeight: 700, fontSize: 13, color: themeStyles.text, lineHeight: 1, textTransform: 'uppercase', marginBottom: 3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                                        <span style={{ display: 'block', fontWeight: 700, fontSize: isMobile ? 11 : 13, color: themeStyles.text, lineHeight: 1, textTransform: 'uppercase', marginBottom: 3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                                                             {displayName.trim()}
                                                         </span>
-                                                        <span style={{ fontSize: 10, color: themeStyles.textSecondary, fontWeight: 500, display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
+                                                        <span style={{ fontSize: isMobile ? 9 : 10, color: themeStyles.textSecondary, fontWeight: 500, display: 'flex', alignItems: 'center', gap: isMobile ? 4 : 6, whiteSpace: 'nowrap' }}>
                                                             <span style={{
-                                                                background: '#dc2626', color: '#fff', padding: '1px 6px', borderRadius: 4, fontSize: 10, fontWeight: 800, letterSpacing: '0.05em', border: '1px solid #dc2626'
+                                                                background: '#dc2626', color: '#fff', padding: '1px 6px', borderRadius: 4, fontSize: isMobile ? 9 : 10, fontWeight: 800, letterSpacing: '0.05em', border: '1px solid #dc2626'
                                                             }}>
-                                                                #{runner.bib}
+                                                                {runner.bib}
                                                             </span>
                                                             {runner.nationality ? `${runner.nationality} | ` : ''}{runner.ageGroup || runner.category}
                                                         </span>

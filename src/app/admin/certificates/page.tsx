@@ -134,17 +134,30 @@ export default function CertificatesPage() {
         }
     }, [campaign, certConfig, language]);
 
-    const handleBgImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const handleBgImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
-        if (file.size > 5 * 1024 * 1024) { showToast('Max file size 5MB', 'error'); return; }
         setBgUploading(true);
-        const reader = new FileReader();
-        reader.onload = (ev) => {
-            setCertConfig(prev => ({ ...prev, backgroundImage: ev.target?.result as string }));
+        try {
+            let dataUrl: string;
+            if (file.size > 5 * 1024 * 1024) {
+                const { compressImage } = await import('@/lib/image-utils');
+                dataUrl = await compressImage(file);
+            } else {
+                dataUrl = await new Promise<string>((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onload = (ev) => resolve(ev.target?.result as string);
+                    reader.onerror = () => reject(new Error('Failed to read file'));
+                    reader.readAsDataURL(file);
+                });
+            }
+            setCertConfig(prev => ({ ...prev, backgroundImage: dataUrl }));
+        } catch (err) {
+            console.error('Image upload error:', err);
+            showToast(language === 'th' ? 'ไม่สามารถอัปโหลดรูปได้' : 'Failed to upload image', 'error');
+        } finally {
             setBgUploading(false);
-        };
-        reader.readAsDataURL(file);
+        }
     };
 
     const handleSaveCertConfig = async () => {

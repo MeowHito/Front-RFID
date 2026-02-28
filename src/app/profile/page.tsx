@@ -72,17 +72,27 @@ export default function ProfilePage() {
             return;
         }
 
-        // Validate file size (max 5MB)
-        if (file.size > 5 * 1024 * 1024) {
-            setMessage({ type: 'error', text: language === 'th' ? 'ไฟล์ต้องมีขนาดไม่เกิน 5MB' : 'File must be less than 5MB' });
-            return;
-        }
-
         setUploadingAvatar(true);
         setMessage(null);
 
+        let uploadFile = file;
+        // Auto-compress if >5MB
+        if (file.size > 5 * 1024 * 1024) {
+            try {
+                const { compressImage } = await import('@/lib/image-utils');
+                const compressed = await compressImage(file);
+                const res = await fetch(compressed);
+                const blob = await res.blob();
+                uploadFile = new File([blob], file.name, { type: 'image/jpeg' });
+            } catch {
+                setMessage({ type: 'error', text: language === 'th' ? 'ไม่สามารถบีบอัดรูปภาพได้' : 'Failed to compress image' });
+                setUploadingAvatar(false);
+                return;
+            }
+        }
+
         try {
-            await updateAvatar(file);
+            await updateAvatar(uploadFile);
             setMessage({ type: 'success', text: language === 'th' ? 'อัพเดทรูปโปรไฟล์สำเร็จ' : 'Profile picture updated successfully' });
         } catch (err) {
             console.error('Avatar upload failed:', err);

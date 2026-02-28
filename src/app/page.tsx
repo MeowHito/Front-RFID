@@ -42,6 +42,7 @@ interface Campaign {
   status: string;
   categories: RaceCategory[];
   countdownDate?: string;
+  cardColor?: string;
 }
 
 export default function Home() {
@@ -178,29 +179,22 @@ export default function Home() {
                 {/* Language Toggle for non-authenticated users */}
                 <button
                   onClick={() => setLanguage(language === 'th' ? 'en' : 'th')}
-                  className="p-2 rounded-xl glass scale-hover"
+                  className="w-9 h-9 flex items-center justify-center rounded-xl glass scale-hover"
                   title={language === 'th' ? 'Switch to English' : 'เปลี่ยนเป็นภาษาไทย'}
                 >
                   {language === 'th' ? (
-                    <img src="https://flagcdn.com/w40/us.png" alt="EN" className="w-5 h-3.5 object-cover rounded" />
+                    <img src="https://flagcdn.com/w40/us.png" alt="EN" className="w-5 h-4 object-cover rounded" />
                   ) : (
-                    <img src="https://flagcdn.com/w40/th.png" alt="TH" className="w-5 h-3.5 object-cover rounded" />
+                    <img src="https://flagcdn.com/w40/th.png" alt="TH" className="w-5 h-4 object-cover rounded" />
                   )}
                 </button>
                 {/* Theme Toggle for non-authenticated users */}
                 <button
                   onClick={toggleTheme}
-                  className="p-2 rounded-xl glass scale-hover"
+                  className="w-9 h-9 flex items-center justify-center rounded-xl glass scale-hover"
                 >
-                  <span className="text-base">{theme === 'dark' ? '☀️' : '🌙'}</span>
+                  <span className="text-base leading-none">{theme === 'dark' ? '☀️' : '🌙'}</span>
                 </button>
-                <Link
-                  href="/login"
-                  className="hidden sm:block px-4 py-2 text-sm font-medium rounded-xl btn-glow text-center min-w-[100px]"
-                  style={{ background: 'var(--accent)', color: 'var(--accent-foreground)' }}
-                >
-                  {t('nav.login')}
-                </Link>
               </>
             )}
 
@@ -300,22 +294,38 @@ export default function Home() {
                 </>
               ) : (
                 <>
-                  <Link
-                    href="/login"
-                    onClick={() => setMobileMenuOpen(false)}
-                    className="px-4 py-3 rounded-xl text-sm font-medium text-center btn-glow"
-                    style={{ background: 'var(--accent)', color: 'var(--accent-foreground)' }}
-                  >
-                    {t('nav.login')}
-                  </Link>
-                  <Link
-                    href="/register"
-                    onClick={() => setMobileMenuOpen(false)}
-                    className="px-4 py-3 rounded-xl text-sm font-medium text-center border"
-                    style={{ borderColor: 'var(--accent)', color: 'var(--accent)' }}
-                  >
-                    {language === 'th' ? 'สมัครสมาชิก' : 'Register'}
-                  </Link>
+                  {/* Language Toggle - Mobile (non-authenticated) */}
+                  <div className="flex items-center justify-between px-4 py-2 rounded-xl glass">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm">🌐</span>
+                      <span className="text-xs font-medium" style={{ color: 'var(--muted-foreground)' }}>Language</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <img src="https://flagcdn.com/w40/th.png" alt="TH" className={`w-5 h-3.5 object-cover rounded transition-opacity ${language === 'th' ? 'opacity-100' : 'opacity-40'}`} />
+                      <label className="relative inline-block w-10 h-[22px] cursor-pointer">
+                        <input type="checkbox" className="sr-only" checked={language === 'en'} onChange={() => setLanguage(language === 'th' ? 'en' : 'th')} />
+                        <span className="absolute inset-0 rounded-full transition-colors duration-300" style={{ background: language === 'en' ? '#3b82f6' : '#6b7280' }} />
+                        <span className="absolute left-[3px] top-[3px] w-4 h-4 bg-white rounded-full shadow-md transition-transform duration-300" style={{ transform: language === 'en' ? 'translateX(18px)' : 'translateX(0)' }} />
+                      </label>
+                      <img src="https://flagcdn.com/w40/us.png" alt="EN" className={`w-5 h-3.5 object-cover rounded transition-opacity ${language === 'en' ? 'opacity-100' : 'opacity-40'}`} />
+                    </div>
+                  </div>
+                  {/* Theme Toggle - Mobile (non-authenticated) */}
+                  <div className="flex items-center justify-between px-4 py-2 rounded-xl glass">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm">{theme === 'dark' ? '🌙' : '☀️'}</span>
+                      <span className="text-xs font-medium" style={{ color: 'var(--muted-foreground)' }}>Theme</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className={`text-sm transition-opacity ${theme === 'light' ? 'opacity-100' : 'opacity-40'}`}>☀️</span>
+                      <label className="relative inline-block w-10 h-[22px] cursor-pointer">
+                        <input type="checkbox" className="sr-only" checked={theme === 'dark'} onChange={toggleTheme} />
+                        <span className="absolute inset-0 rounded-full transition-colors duration-300" style={{ background: theme === 'dark' ? '#6366f1' : '#6b7280' }} />
+                        <span className="absolute left-[3px] top-[3px] w-4 h-4 bg-white rounded-full shadow-md transition-transform duration-300" style={{ transform: theme === 'dark' ? 'translateX(18px)' : 'translateX(0)' }} />
+                      </label>
+                      <span className={`text-sm transition-opacity ${theme === 'dark' ? 'opacity-100' : 'opacity-40'}`}>🌙</span>
+                    </div>
+                  </div>
                 </>
               )}
             </nav>
@@ -366,7 +376,7 @@ export default function Home() {
                   locationEn={campaign.locationEn}
                   date={formatDate(campaign.eventDate, campaign.eventEndDate)}
                   imageUrl={campaign.pictureUrl || 'https://images.unsplash.com/photo-1516214104703-d870798883c5?auto=format&fit=crop&w=600&q=80'}
-                  color={campaign.categories[0]?.badgeColor || 'var(--accent)'}
+                  color={campaign.cardColor || campaign.categories[0]?.badgeColor || 'var(--accent)'}
                   link={`/event/${campaign.slug || campaign._id}`}
                   status={getStatusInfo(campaign.status)}
                   countdown={campaign.status === 'upcoming' ? calculateCountdown(campaign.countdownDate || campaign.eventDate) : undefined}
