@@ -11,6 +11,18 @@ interface RFIDDashboardModalProps {
     eventName: string;
 }
 
+interface SyncLogEntry {
+    _id: string;
+    status: string;
+    message: string;
+    recordsProcessed?: number;
+    recordsFailed?: number;
+    startTime?: string;
+    endTime?: string;
+    createdAt?: string;
+    errorDetails?: Record<string, any>;
+}
+
 interface RFIDStatus {
     status: 'Running' | 'Stopped';
     healthy: boolean;
@@ -18,6 +30,7 @@ interface RFIDStatus {
     lastCompletedTime: string;
     lastErrorTime: string;
     errors: string[];
+    recentLogs: SyncLogEntry[];
     statistics: {
         total: number;
         success: number;
@@ -52,6 +65,7 @@ export default function RFIDDashboardModal({ isOpen, onClose, eventId, eventName
         lastCompletedTime: '-',
         lastErrorTime: '-',
         errors: [],
+        recentLogs: [],
         statistics: {
             total: 0,
             success: 0,
@@ -217,6 +231,7 @@ export default function RFIDDashboardModal({ isOpen, onClose, eventId, eventName
                 lastCompletedTime: formatDate(latestSuccess?.createdAt),
                 lastErrorTime: formatDate(latestError?.createdAt),
                 errors,
+                recentLogs: logs,
                 statistics: {
                     total: syncData?.statistics?.total || 0,
                     success: syncData?.statistics?.success || 0,
@@ -569,24 +584,97 @@ export default function RFIDDashboardModal({ isOpen, onClose, eventId, eventName
                                     </div>
                                 )}
 
-                                {/* Error Details */}
+                                {/* Sync Logs — detailed */}
                                 <div className="rfid-errors-section">
-                                    <h4 className="rfid-errors-title">Error Details:</h4>
+                                    <h4 className="rfid-errors-title">
+                                        {language === 'th' ? 'Sync Logs (ลบอัตโนมัติทุก 1 ชม.)' : 'Sync Logs (auto-deleted every 1hr)'}
+                                    </h4>
                                     <div className="rfid-errors-list">
-                                        {rfidStatus.errors.slice(0, showAllErrors ? undefined : 2).map((error, idx) => (
-                                            <div key={idx} className="rfid-error-item">
-                                                {error}
+                                        {rfidStatus.recentLogs.length === 0 && (
+                                            <div className="rfid-error-item" style={{ color: '#94a3b8' }}>
+                                                {language === 'th' ? 'ไม่มี log' : 'No logs'}
                                             </div>
-                                        ))}
+                                        )}
+                                        {rfidStatus.recentLogs
+                                            .slice(0, showAllErrors ? 10 : 3)
+                                            .map((log, idx) => {
+                                                const isError = log.status === 'error';
+                                                const isSuccess = log.status === 'success';
+                                                const errObj = log.errorDetails?.error;
+                                                const fullSyncSummary = log.errorDetails?.fullSync?.summary;
+                                                const duration = log.startTime && log.endTime
+                                                    ? Math.round((new Date(log.endTime).getTime() - new Date(log.startTime).getTime()) / 1000)
+                                                    : null;
+                                                return (
+                                                    <div key={log._id || idx} className="rfid-error-item" style={{
+                                                        borderLeft: `3px solid ${isError ? '#ef4444' : isSuccess ? '#22c55e' : '#f59e0b'}`,
+                                                        marginBottom: 8, padding: '8px 12px',
+                                                    }}>
+                                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                                                            <span style={{ fontWeight: 700, fontSize: 12, color: isError ? '#ef4444' : isSuccess ? '#22c55e' : '#f59e0b' }}>
+                                                                {isError ? '❌ ERROR' : isSuccess ? '✅ SUCCESS' : '⏳ PENDING'}
+                                                            </span>
+                                                            <span style={{ fontSize: 10, color: '#94a3b8' }}>
+                                                                {formatDate(log.createdAt)}
+                                                                {duration !== null && ` (${duration}s)`}
+                                                            </span>
+                                                        </div>
+                                                        <div style={{ fontSize: 12, color: '#334155', marginBottom: 4, wordBreak: 'break-word' }}>
+                                                            {log.message}
+                                                        </div>
+                                                        {(log.recordsProcessed != null || log.recordsFailed != null) && (
+                                                            <div style={{ fontSize: 11, color: '#64748b' }}>
+                                                                ✅ Processed: {log.recordsProcessed ?? 0} | ❌ Failed: {log.recordsFailed ?? 0}
+                                                            </div>
+                                                        )}
+                                                        {/* Full sync summary */}
+                                                        {fullSyncSummary && (
+                                                            <div style={{ fontSize: 11, color: '#475569', marginTop: 4, background: '#f8fafc', padding: '6px 8px', borderRadius: 4 }}>
+                                                                <div>📄 Pages: {fullSyncSummary.pagesFetched} | Rows: {fullSyncSummary.rowsFetched} | Mapped: {fullSyncSummary.rowsMapped}</div>
+                                                                <div>🏃 Inserted: {fullSyncSummary.inserted} | Updated: {fullSyncSummary.updated} | Skipped: {fullSyncSummary.rowsSkipped}</div>
+                                                                {fullSyncSummary.skippedNoResult > 0 && (
+                                                                    <div>🚫 No score data: {fullSyncSummary.skippedNoResult}</div>
+                                                                )}
+                                                                {fullSyncSummary.scoreUpdates > 0 && (
+                                                                    <div>⏱️ Score updates: {fullSyncSummary.scoreUpdates} | Status changes: {fullSyncSummary.scoreStatusChanges}</div>
+                                                                )}
+                                                                {Array.isArray(fullSyncSummary.errors) && fullSyncSummary.errors.length > 0 && (
+                                                                    <div style={{ color: '#ef4444', marginTop: 4 }}>
+                                                                        ⚠️ Processing errors:
+                                                                        {fullSyncSummary.errors.slice(0, 5).map((e: string, i: number) => (
+                                                                            <div key={i} style={{ marginLeft: 8, fontSize: 10 }}>• {e}</div>
+                                                                        ))}
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        )}
+                                                        {/* Error details */}
+                                                        {isError && errObj && (
+                                                            <div style={{ fontSize: 11, color: '#dc2626', marginTop: 4, background: '#fef2f2', padding: '6px 8px', borderRadius: 4 }}>
+                                                                <div><strong>Error:</strong> {errObj.message || 'Unknown'}</div>
+                                                                {errObj.name && <div><strong>Type:</strong> {errObj.name}</div>}
+                                                                {errObj.stack && (
+                                                                    <details style={{ marginTop: 4 }}>
+                                                                        <summary style={{ cursor: 'pointer', fontSize: 10, color: '#94a3b8' }}>Stack trace</summary>
+                                                                        <pre style={{ fontSize: 9, maxHeight: 120, overflow: 'auto', whiteSpace: 'pre-wrap', marginTop: 4 }}>
+                                                                            {errObj.stack}
+                                                                        </pre>
+                                                                    </details>
+                                                                )}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                );
+                                            })}
                                     </div>
-                                    {rfidStatus.errors.length > 2 && (
+                                    {rfidStatus.recentLogs.length > 3 && (
                                         <button
                                             className="rfid-show-more"
                                             onClick={() => setShowAllErrors(!showAllErrors)}
                                         >
                                             {showAllErrors
                                                 ? (language === 'th' ? 'แสดงน้อยลง' : 'Show less')
-                                                : (language === 'th' ? 'แสดงเพิ่มเติม' : 'Show more')
+                                                : (language === 'th' ? `แสดงทั้งหมด (${rfidStatus.recentLogs.length})` : `Show all (${rfidStatus.recentLogs.length})`)
                                             }
                                         </button>
                                     )}

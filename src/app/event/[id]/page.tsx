@@ -6,6 +6,7 @@ import Image from 'next/image';
 import { useParams, useRouter } from 'next/navigation';
 import { useLanguage } from '@/lib/language-context';
 import { useTheme } from '@/lib/theme-context';
+import { useAuth } from '@/lib/auth-context';
 
 interface Campaign {
     _id: string;
@@ -63,6 +64,7 @@ interface Runner {
     team?: string;
     teamName?: string;
     latestCheckpoint?: string;
+    passedCount?: number;
     isStarted?: boolean;
     gunPace?: string;
     netPace?: string;
@@ -96,7 +98,9 @@ interface CheckpointMapping {
 interface CheckpointDistanceLookup {
     [eventId: string]: {
         totalDistance: number;
+        totalCheckpoints: number;
         checkpoints: { [cpName: string]: number }; // checkpointName → distanceFromStart (km)
+        cpOrders: { [cpName: string]: number }; // checkpointName → orderNum (1-based position)
     };
 }
 
@@ -149,6 +153,7 @@ function getInitials(firstName: string, lastName: string): string {
 export default function EventLivePage() {
     const { language } = useLanguage();
     const { theme } = useTheme();
+    const { isAdmin } = useAuth();
     const params = useParams();
     const router = useRouter();
     const eventKey = params.id as string;
@@ -241,12 +246,17 @@ export default function EventLivePage() {
                         const mapData = await mapRes.json();
                         const mappings: CheckpointMapping[] = Array.isArray(mapData) ? mapData : (mapData?.data || []);
                         const cpMap: { [name: string]: number } = {};
+                        const cpOrders: { [name: string]: number } = {};
                         let maxDist = 0;
                         for (const m of mappings) {
                             const cpObj = typeof m.checkpointId === 'object' ? m.checkpointId : null;
                             const cpName = cpObj?.name || '';
                             const dist = m.distanceFromStart ?? cpObj?.kmCumulative ?? 0;
-                            if (cpName) cpMap[cpName.trim().toLowerCase()] = dist;
+                            if (cpName) {
+                                const key = cpName.trim().toLowerCase();
+                                cpMap[key] = dist;
+                                cpOrders[key] = m.orderNum || 0;
+                            }
                             if (dist > maxDist) maxDist = dist;
                         }
                         // Find matching category distance from campaign categories
@@ -256,7 +266,9 @@ export default function EventLivePage() {
                         const catDist = evCategory ? (parseDistanceValue(evCategory.distance || evCategory.name) || 0) : 0;
                         lookup[evId] = {
                             totalDistance: maxDist > 0 ? maxDist : catDist,
+                            totalCheckpoints: mappings.length,
                             checkpoints: cpMap,
+                            cpOrders,
                         };
                     } catch { /* skip */ }
                 }));
@@ -573,6 +585,41 @@ export default function EventLivePage() {
                         </div>
                     )}
                 </div>
+                {/* Status Filter — admin only, inside header */}
+                {isAdmin && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6, flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: 9, fontWeight: 700, color: themeStyles.textSecondary, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                            Status:
+                        </span>
+                        <div style={{ display: 'flex', background: themeStyles.inputBg, padding: 3, borderRadius: 8, flexWrap: 'wrap' }}>
+                            {([
+                                { key: 'ALL', label: language === 'th' ? 'ทั้งหมด' : 'All', color: '#22c55e' },
+                                { key: 'finished', label: 'Finish', color: '#22c55e' },
+                                { key: 'in_progress', label: 'Racing', color: '#f97316' },
+                                { key: 'dnf', label: 'DNF', color: '#ef4444' },
+                                { key: 'dns', label: 'DNS', color: '#ef4444' },
+                                { key: 'not_started', label: language === 'th' ? 'รอ' : 'SD', color: '#94a3b8' },
+                            ] as const).map(s => (
+                                <button
+                                    key={s.key}
+                                    onClick={() => setFilterStatus(s.key)}
+                                    style={{
+                                        padding: isMobile ? '4px 6px' : '4px 10px', fontSize: isMobile ? 9 : 10, fontWeight: 700, borderRadius: 6, border: 'none', cursor: 'pointer', transition: 'all 0.2s', whiteSpace: 'nowrap',
+                                        display: 'flex', alignItems: 'center', gap: 4,
+                                        ...(filterStatus === s.key
+                                            ? { background: s.color, color: '#fff' }
+                                            : { background: 'transparent', color: themeStyles.textMuted })
+                                    }}
+                                >
+                                    {s.label}
+                                    {statusCounts[s.key] > 0 && (
+                                        <span style={{ fontSize: 8, opacity: filterStatus === s.key ? 1 : 0.7 }}>{statusCounts[s.key]}</span>
+                                    )}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                )}
             </header>
 
             {/* ===== FILTER BAR ===== */}
@@ -636,34 +683,6 @@ export default function EventLivePage() {
                         </div>
                     )}
 
-                    {/* Status Filter */}
-                    <div style={{ display: 'flex', background: themeStyles.inputBg, padding: 3, borderRadius: 8, flexWrap: 'wrap' }}>
-                        {([
-                            { key: 'ALL', label: language === 'th' ? 'ทั้งหมด' : 'All', color: '#22c55e' },
-                            { key: 'finished', label: 'Finish', color: '#22c55e' },
-                            { key: 'in_progress', label: 'Racing', color: '#f97316' },
-                            { key: 'dnf', label: 'DNF', color: '#ef4444' },
-                            { key: 'dns', label: 'DNS', color: '#ef4444' },
-                            { key: 'not_started', label: language === 'th' ? 'รอ' : 'Wait', color: '#94a3b8' },
-                        ] as const).map(s => (
-                            <button
-                                key={s.key}
-                                onClick={() => setFilterStatus(s.key)}
-                                style={{
-                                    padding: isMobile ? '4px 6px' : '4px 10px', fontSize: isMobile ? 9 : 10, fontWeight: 700, borderRadius: 6, border: 'none', cursor: 'pointer', transition: 'all 0.2s', whiteSpace: 'nowrap',
-                                    display: 'flex', alignItems: 'center', gap: 4,
-                                    ...(filterStatus === s.key
-                                        ? { background: s.color, color: '#fff' }
-                                        : { background: 'transparent', color: themeStyles.textMuted })
-                                }}
-                            >
-                                {s.label}
-                                {statusCounts[s.key] > 0 && (
-                                    <span style={{ fontSize: 8, opacity: filterStatus === s.key ? 1 : 0.7 }}>{statusCounts[s.key]}</span>
-                                )}
-                            </button>
-                        ))}
-                    </div>
                 </div>
 
                 {/* Right controls */}
@@ -768,18 +787,42 @@ export default function EventLivePage() {
                                         : `${runner.firstName} ${runner.lastName}`;
                                     const initials = getInitials(runner.firstName, runner.lastName);
                                     const avatarBg = getAvatarColor(runner.firstName + runner.lastName);
-                                    // Calculate progress % based on real checkpoint distance from RaceTiger sync
+                                    // Calculate progress % based on RaceTiger checkpoint data
                                     let progressPct = 0;
                                     let progressDistKm = 0;
                                     let eventTotalKm = 0;
+                                    let progressLabel = '';
                                     if (runner.status === 'finished') {
                                         progressPct = 100;
-                                    } else if (runner.status === 'in_progress' || runner.status === 'dnf') {
-                                        // Try distance-based calculation from checkpoint mappings
+                                    } else {
+                                        // Calculate progress for ALL non-finished statuses
                                         const evLookup = runner.eventId ? cpDistanceLookup[runner.eventId] : null;
-                                        if (evLookup && runner.latestCheckpoint) {
-                                            const cpKey = runner.latestCheckpoint.trim().toLowerCase();
-                                            const cpDist = evLookup.checkpoints[cpKey] ?? 0;
+                                        const totalCps = evLookup?.totalCheckpoints || 0;
+
+                                        // Helper: try matching latestCheckpoint name to checkpoint mappings (exact + normalized)
+                                        const cpKey = runner.latestCheckpoint?.trim().toLowerCase() || '';
+                                        const cpKeyNorm = normalizeComparableText(runner.latestCheckpoint);
+                                        let matchedCpKey = '';
+                                        if (cpKey && evLookup) {
+                                            if (evLookup.checkpoints[cpKey] !== undefined) {
+                                                matchedCpKey = cpKey;
+                                            } else if (cpKeyNorm) {
+                                                // Fuzzy match: compare normalized names
+                                                for (const k of Object.keys(evLookup.checkpoints)) {
+                                                    if (normalizeComparableText(k) === cpKeyNorm) { matchedCpKey = k; break; }
+                                                }
+                                            }
+                                        }
+
+                                        // Method 1: passedCount / totalCheckpoints (from RaceTiger sync)
+                                        if ((runner.passedCount ?? 0) > 0 && totalCps > 0) {
+                                            progressPct = Math.min(99, Math.round((runner.passedCount! / totalCps) * 100));
+                                            progressLabel = `${runner.passedCount}/${totalCps} CP`;
+                                        }
+
+                                        // Method 2: distance-based from checkpoint mapping
+                                        if (progressPct === 0 && evLookup && matchedCpKey) {
+                                            const cpDist = evLookup.checkpoints[matchedCpKey] ?? 0;
                                             const total = evLookup.totalDistance || (parseDistanceValue(runner.category) || 0);
                                             if (cpDist > 0 && total > 0) {
                                                 progressPct = Math.min(99, Math.round((cpDist / total) * 100));
@@ -787,20 +830,29 @@ export default function EventLivePage() {
                                                 eventTotalKm = total;
                                             }
                                         }
-                                        // Fallback: use elapsed time vs median finish time
+
+                                        // Method 2.5: order-based from checkpoint mapping (fallback when distance is 0)
+                                        if (progressPct === 0 && evLookup && matchedCpKey && totalCps > 0) {
+                                            const cpOrder = evLookup.cpOrders[matchedCpKey] ?? 0;
+                                            if (cpOrder > 0) {
+                                                progressPct = Math.min(99, Math.round((cpOrder / totalCps) * 100));
+                                                progressLabel = `${cpOrder}/${totalCps} CP`;
+                                            }
+                                        }
+
+                                        // Method 3: elapsed time vs median finish time
                                         if (progressPct === 0) {
                                             const elapsed = runner.gunTime || runner.elapsedTime || 0;
                                             const median = categoryMedianTime[runner.category] || 0;
                                             if (elapsed > 0 && median > 0) {
-                                                progressPct = Math.min(runner.status === 'dnf' ? 90 : 95, Math.round((elapsed / median) * 100));
+                                                const maxPct = runner.status === 'dnf' ? 90 : runner.status === 'dns' ? 0 : 95;
+                                                progressPct = Math.min(maxPct, Math.round((elapsed / median) * 100));
                                             } else if (runner.latestCheckpoint) {
                                                 progressPct = runner.status === 'in_progress' ? 50 : 40;
                                             } else if (runner.isStarted || runner.status === 'in_progress') {
                                                 progressPct = 5;
                                             }
                                         }
-                                    } else if (runner.status === 'dns') {
-                                        progressPct = 0;
                                     }
 
                                     // Render cell content per column key
@@ -929,11 +981,15 @@ export default function EventLivePage() {
                                                                 <span style={{ fontWeight: 700, fontSize: 11, color: themeStyles.text }}>
                                                                     {progressPct}%
                                                                 </span>
-                                                                {progressDistKm > 0 && eventTotalKm > 0 && (
+                                                                {progressLabel ? (
+                                                                    <span style={{ fontSize: 9, color: themeStyles.textSecondary, fontWeight: 500 }}>
+                                                                        {progressLabel}
+                                                                    </span>
+                                                                ) : progressDistKm > 0 && eventTotalKm > 0 ? (
                                                                     <span style={{ fontSize: 9, color: themeStyles.textSecondary, fontWeight: 500 }}>
                                                                         {progressDistKm.toFixed(1)}/{eventTotalKm.toFixed(0)}km
                                                                     </span>
-                                                                )}
+                                                                ) : null}
                                                             </div>
                                                             <div style={{ width: '100%', maxWidth: 80, height: 6, borderRadius: 3, background: isDark ? 'rgba(255,255,255,0.1)' : '#f1f5f9', overflow: 'hidden' }}>
                                                                 <div style={{
