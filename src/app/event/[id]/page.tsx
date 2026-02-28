@@ -613,8 +613,8 @@ export default function EventLivePage() {
                                 {shouldShowColumn('catRank') && showCatRank && <th style={{ padding: isMobile ? '10px 2px' : '12px 4px', textAlign: 'center', width: isMobile ? '8%' : '3%' }}>Cat</th>}
                                 <th style={{ padding: isMobile ? '10px 4px' : '12px 6px', width: isMobile ? '30%' : '15%' }}>Runner</th>
                                 {shouldShowColumn('sex') && <th style={{ padding: isMobile ? '10px 2px' : '12px 4px', textAlign: 'center', width: isMobile ? '6%' : '3%' }}>Sex</th>}
-                                <th style={{ padding: isMobile ? '10px 2px' : '12px 6px', width: isMobile ? '12%' : '8%' }}>Status</th>
-                                <th style={{ padding: isMobile ? '10px 2px' : '12px 6px', textAlign: 'center', width: isMobile ? '14%' : '7%' }}>Gun Time</th>
+                                <th style={{ padding: isMobile ? '10px 2px' : '12px 6px', width: isMobile ? '9%' : '8%' }}>Status</th>
+                                <th style={{ padding: isMobile ? '10px 2px' : '12px 6px', textAlign: 'center', width: isMobile ? '16%' : '7%' }}>Gun Time</th>
                                 {shouldShowColumn('netTime') && <th style={{ padding: '12px 6px', textAlign: 'center', width: '7%' }}>Net Time</th>}
                                 {shouldShowColumn('genNet') && <th style={{ padding: '12px 4px', textAlign: 'center', width: '4%' }}>Gen Net</th>}
                                 {shouldShowColumn('gunPace') && <th style={{ padding: '12px 6px', textAlign: 'center', width: '5%' }}>Gun Pace</th>}
@@ -722,19 +722,19 @@ export default function EventLivePage() {
                                                 </td>
                                             )}
                                             {/* Status */}
-                                            <td style={{ padding: '12px 6px' }}>
-                                                <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 4, fontWeight: 700, fontSize: 10, color: '#fff', background: getStatusBgColor(runner.status), lineHeight: 1.4, marginBottom: 3 }}>
+                                            <td style={{ padding: isMobile ? '8px 2px' : '12px 6px' }}>
+                                                <span style={{ display: 'inline-block', padding: isMobile ? '1px 4px' : '2px 8px', borderRadius: 3, fontWeight: 700, fontSize: isMobile ? 8 : 10, color: '#fff', background: getStatusBgColor(runner.status), lineHeight: 1.3 }}>
                                                     {getStatusLabel(runner.status)}
                                                 </span>
-                                                {runner.latestCheckpoint && (
+                                                {!isMobile && runner.latestCheckpoint && (
                                                     <span style={{ display: 'block', fontSize: 9, color: themeStyles.textSecondary, textTransform: 'uppercase', fontWeight: 500, marginTop: 2 }}>
                                                         {runner.latestCheckpoint}
                                                     </span>
                                                 )}
                                             </td>
                                             {/* Gun Time */}
-                                            <td style={{ padding: '12px 6px', textAlign: 'center' }}>
-                                                <span style={{ fontSize: 12, fontWeight: 700, color: themeStyles.text, fontFamily: 'monospace' }}>
+                                            <td style={{ padding: isMobile ? '8px 2px' : '12px 6px', textAlign: 'center' }}>
+                                                <span style={{ fontSize: isMobile ? 11 : 12, fontWeight: 700, color: themeStyles.text, fontFamily: 'monospace' }}>
                                                     {runner.gunTimeStr || formatTime(runner.gunTime || runner.elapsedTime)}
                                                 </span>
                                             </td>
