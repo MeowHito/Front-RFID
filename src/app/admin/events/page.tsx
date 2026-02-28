@@ -551,7 +551,7 @@ export default function EventsPage() {
             {/* Modals */}
             <RFIDDashboardModal
                 isOpen={rfidModalOpen}
-                onClose={() => setRfidModalOpen(false)}
+                onClose={() => { setRfidModalOpen(false); loadCampaigns(); }}
                 eventId={selectedCampaign?._id || ''}
                 eventName={selectedCampaign?.name || ''}
             />

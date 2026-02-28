@@ -433,6 +433,84 @@ export default function RunnerProfilePage() {
                         </table>
                     </div>
                 </div>
+
+                {/* LAP RESULTS TABLE (Lab mode — shown when timing records have sequential laps) */}
+                {sortedTimings.length > 1 && (() => {
+                    // Calculate lap-level stats
+                    const laps = sortedTimings.map((rec, i) => {
+                        const lapNum = i;
+                        const lapTimeMs = rec.splitTime || 0;
+                        const lapMin = lapTimeMs > 0 ? lapTimeMs / 60000 : 0;
+                        // Lap pace (assume ~1 lap distance; user can interpret)
+                        let lapPaceStr = '-';
+                        if (lapMin > 0) {
+                            const pM = Math.floor(lapMin);
+                            const pS = Math.round((lapMin - pM) * 60);
+                            lapPaceStr = `${pM.toString().padStart(2, '0')}:${pS.toString().padStart(2, '0')}`;
+                        }
+                        return { lapNum, record: rec, lapTimeMs, lapPaceStr };
+                    });
+                    const validLapTimes = laps.filter(l => l.lapTimeMs > 0).map(l => l.lapTimeMs);
+                    const bestLap = validLapTimes.length > 0 ? Math.min(...validLapTimes) : 0;
+                    const avgLap = validLapTimes.length > 0 ? validLapTimes.reduce((a, b) => a + b, 0) / validLapTimes.length : 0;
+
+                    return (
+                        <div style={{ background: '#fff', borderRadius: 16, border: '1px solid #e2e8f0', overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.04)', marginTop: 24 }}>
+                            <div style={{ padding: '16px 24px', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <h3 style={{ fontWeight: 900, textTransform: 'uppercase', fontSize: 13, letterSpacing: 2, color: '#8b5cf6', margin: 0 }}>
+                                    Lap Results
+                                </h3>
+                                <div style={{ display: 'flex', gap: 16, fontSize: 11, fontWeight: 700, color: '#64748b' }}>
+                                    <span>Laps: <strong style={{ color: '#0f172a' }}>{sortedTimings.length}</strong></span>
+                                    {bestLap > 0 && <span>Best: <strong style={{ color: '#16a34a' }}>{formatTime(bestLap)}</strong></span>}
+                                    {avgLap > 0 && <span>Avg: <strong style={{ color: '#0f172a' }}>{formatTime(Math.round(avgLap))}</strong></span>}
+                                </div>
+                            </div>
+                            <div style={{ overflowX: 'auto' }}>
+                                <table style={{ width: '100%', textAlign: 'left', borderCollapse: 'collapse', minWidth: 500 }}>
+                                    <thead>
+                                        <tr style={{ fontSize: 10, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', background: '#faf5ff' }}>
+                                            <th style={{ padding: '12px 24px', width: '8%' }}>Lap</th>
+                                            <th style={{ padding: '12px 8px' }}>Pass Time</th>
+                                            <th style={{ padding: '12px 8px' }}>Lap Time</th>
+                                            <th style={{ padding: '12px 8px' }}>Lap Pace</th>
+                                            <th style={{ padding: '12px 8px' }}>Elapsed</th>
+                                            <th style={{ padding: '12px 24px', textAlign: 'right' }}>Checkpoint</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {laps.map((lap) => {
+                                            const isBest = lap.lapTimeMs > 0 && lap.lapTimeMs === bestLap;
+                                            return (
+                                                <tr key={lap.lapNum} className="checkpoint-row" style={{ background: isBest ? 'rgba(34,197,94,0.04)' : undefined }}>
+                                                    <td style={{ padding: '14px 24px', fontWeight: 800, fontSize: 16, color: '#0f172a' }}>
+                                                        {lap.lapNum}
+                                                    </td>
+                                                    <td style={{ padding: '14px 8px', fontSize: 12, color: '#475569', fontFamily: 'monospace' }}>
+                                                        {formatTimeOfDay(lap.record.scanTime)}
+                                                    </td>
+                                                    <td style={{ padding: '14px 8px', fontSize: 13, fontWeight: 700, fontFamily: 'monospace', color: isBest ? '#16a34a' : '#0f172a' }}>
+                                                        {lap.lapTimeMs > 0 ? formatTime(lap.lapTimeMs) : '-'}
+                                                        {isBest && <span style={{ marginLeft: 6, fontSize: 9, background: '#dcfce7', color: '#16a34a', padding: '1px 5px', borderRadius: 3, fontWeight: 800 }}>BEST</span>}
+                                                    </td>
+                                                    <td style={{ padding: '14px 8px', fontSize: 12, fontWeight: 700, fontFamily: 'monospace', color: '#8b5cf6' }}>
+                                                        {lap.lapPaceStr}
+                                                    </td>
+                                                    <td style={{ padding: '14px 8px', fontSize: 12, fontFamily: 'monospace', color: '#64748b' }}>
+                                                        {(lap.record.elapsedTime || lap.record.netTime) ? formatTime(lap.record.elapsedTime || lap.record.netTime) : '-'}
+                                                    </td>
+                                                    <td style={{ padding: '14px 24px', textAlign: 'right', fontSize: 11, color: '#94a3b8', fontWeight: 600 }}>
+                                                        {lap.record.checkpoint}
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    );
+                })()}
             </main>
 
             <footer style={{ padding: 32, textAlign: 'center', background: '#fff', borderTop: '1px solid #f1f5f9', marginTop: 40 }}>
