@@ -65,6 +65,7 @@ const menuSections: MenuSection[] = [
             { href: '/admin/display', label: 'การแสดงผล', labelEn: 'Display Settings', icon: 'desktop' },
             { href: '/admin/certificates', label: 'ใบประกาศ', labelEn: 'Certificates', icon: 'print' },
             { href: '/admin/eslip', label: 'E-Slip', labelEn: 'E-Slip', icon: 'id-card' },
+            { href: '/admin/links', label: 'ลิงก์แชร์', labelEn: 'Share Links', icon: 'route' },
             { href: '/admin/export', label: 'ส่งออกข้อมูล', labelEn: 'Export Data', icon: 'file-excel' },
         ]
     },

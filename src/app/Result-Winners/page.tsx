@@ -2,7 +2,7 @@
 
 import Image from 'next/image';
 import Link from 'next/link';
-import { useEffect, useState, useMemo, useRef } from 'react';
+import { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 
 interface Runner {
     _id: string;
@@ -82,6 +82,8 @@ function resolveAgeGroup(runner: Runner): string {
     return 'Unknown';
 }
 
+const REFRESH_INTERVAL = 15; // seconds
+
 export default function ResultWinnersPage() {
     const [campaigns, setCampaigns] = useState<Campaign[]>([]);
     const [selectedCampaignId, setSelectedCampaignId] = useState<string>('');
@@ -91,6 +93,10 @@ export default function ResultWinnersPage() {
     const [loading, setLoading] = useState(true);
     const [dropdownOpen, setDropdownOpen] = useState(false);
     const dropdownRef = useRef<HTMLDivElement>(null);
+    const [countdown, setCountdown] = useState(REFRESH_INTERVAL);
+    const [refreshing, setRefreshing] = useState(false);
+    const refreshTimerRef = useRef<NodeJS.Timeout | null>(null);
+    const countdownRef = useRef<NodeJS.Timeout | null>(null);
 
     // Close dropdown on outside click
     useEffect(() => {
@@ -132,24 +138,48 @@ export default function ResultWinnersPage() {
         }
     }, [selectedCampaignId, campaigns]);
 
-    // Load runners when campaign/category changes
-    useEffect(() => {
+    // Load runners — called on campaign/category change + auto-refresh
+    const loadRunners = useCallback(async (isRefresh = false) => {
         if (!campaign?._id || !selectedCategory) { setRunners([]); return; }
-        let cancelled = false;
-        async function loadRunners() {
-            setLoading(true);
-            try {
-                const params = new URLSearchParams({ campaignId: campaign!._id, category: selectedCategory, limit: '10000' });
-                const res = await fetch(`/api/runners/paged?${params.toString()}`, { cache: 'no-store' });
-                if (res.ok && !cancelled) {
-                    const data = await res.json();
-                    setRunners(data.data || []);
-                }
-            } catch { /* */ } finally { if (!cancelled) setLoading(false); }
+        if (isRefresh) setRefreshing(true); else setLoading(true);
+        try {
+            const params = new URLSearchParams({ campaignId: campaign._id, category: selectedCategory, limit: '10000' });
+            const res = await fetch(`/api/runners/paged?${params.toString()}`, { cache: 'no-store' });
+            if (res.ok) {
+                const data = await res.json();
+                setRunners(data.data || []);
+            }
+        } catch { /* */ } finally {
+            setLoading(false);
+            setRefreshing(false);
         }
-        loadRunners();
-        return () => { cancelled = true; };
     }, [campaign, selectedCategory]);
+
+    // Initial load + re-load on campaign/category change
+    useEffect(() => {
+        loadRunners(false);
+    }, [loadRunners]);
+
+    // Auto-refresh every 15 seconds
+    useEffect(() => {
+        if (!campaign?._id || !selectedCategory) return;
+        setCountdown(REFRESH_INTERVAL);
+
+        // Countdown ticker
+        countdownRef.current = setInterval(() => {
+            setCountdown(prev => (prev <= 1 ? REFRESH_INTERVAL : prev - 1));
+        }, 1000);
+
+        // Data refresh
+        refreshTimerRef.current = setInterval(() => {
+            loadRunners(true);
+        }, REFRESH_INTERVAL * 1000);
+
+        return () => {
+            if (refreshTimerRef.current) clearInterval(refreshTimerRef.current);
+            if (countdownRef.current) clearInterval(countdownRef.current);
+        };
+    }, [campaign, selectedCategory, loadRunners]);
 
     // Build winners per gender per age group
     const { maleWinners, femaleWinners } = useMemo(() => {
@@ -177,41 +207,58 @@ export default function ResultWinnersPage() {
     const rankBg = ['#f59e0b', '#9ca3af', '#92400e', '#e2e8f0', '#e2e8f0'];
     const rankFg = ['#000', '#fff', '#fff', '#475569', '#475569'];
 
+    // Render a single runner row
+    const renderRunnerRow = (runner: Runner, idx: number) => (
+        <div key={runner._id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '0.3vh 8px', borderRadius: 5, background: idx === 0 ? '#fffbeb' : 'transparent', height: '2.8vh', minHeight: '22px' }}>
+            <div style={{ width: '2.2vh', height: '2.2vh', minWidth: 18, minHeight: 18, borderRadius: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.3vh', fontWeight: 900, flexShrink: 0, background: rankBg[idx] || '#e2e8f0', color: rankFg[idx] || '#475569' }}>
+                {idx + 1}
+            </div>
+            <span style={{ fontSize: '1.35vh', fontWeight: 700, color: '#1e293b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1, textTransform: 'uppercase' }}>
+                {runner.firstName} {runner.lastName}
+            </span>
+            <span style={{ fontFamily: 'monospace', fontWeight: 800, fontSize: '1.35vh', color: '#1e293b', flexShrink: 0 }}>
+                {runner.netTimeStr || formatTime(runner.netTime || runner.gunTime)}
+            </span>
+        </div>
+    );
+
+    // Render an empty placeholder row
+    const renderEmptyRow = (idx: number) => (
+        <div key={`empty-${idx}`} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '0.3vh 8px', height: '2.8vh', minHeight: '22px' }}>
+            <div style={{ width: '2.2vh', height: '2.2vh', minWidth: 18, minHeight: 18, borderRadius: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.3vh', fontWeight: 900, flexShrink: 0, background: '#f1f5f9', color: '#cbd5e1' }}>
+                {idx + 1}
+            </div>
+            <span style={{ fontSize: '1.2vh', color: '#cbd5e1', fontStyle: 'italic' }}>—</span>
+        </div>
+    );
+
     // Render a winners column
     const renderColumn = (title: string, bgHeader: string, bgAgeHeader: string, winners: Record<string, Runner[]>) => (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4vh', minHeight: 0, flex: 1 }}>
             <div style={{ padding: '0.7vh 0', fontWeight: 900, fontSize: '2vh', textAlign: 'center', textTransform: 'uppercase', borderRadius: 8, color: 'white', letterSpacing: 2, background: bgHeader, flexShrink: 0 }}>
                 {title}
             </div>
-            {AGE_GROUPS.map(g => (
-                <div key={g.label} style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: 8, overflow: 'hidden', display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
-                    <div style={{ background: bgAgeHeader, color: 'white', fontWeight: 800, fontSize: '1.6vh', padding: '0.3vh 12px', textAlign: 'center', flexShrink: 0 }}>
-                        {g.label}
+            {AGE_GROUPS.map(g => {
+                const list = winners[g.label] || [];
+                // Always render TOP_N rows — fill empties
+                const rows = Array.from({ length: TOP_N }, (_, i) => i);
+                return (
+                    <div key={g.label} style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: 8, overflow: 'hidden', display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+                        <div style={{ background: bgAgeHeader, color: 'white', fontWeight: 800, fontSize: '1.5vh', padding: '0.25vh 12px', textAlign: 'center', flexShrink: 0 }}>
+                            {g.label}
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', flex: 1, padding: '0.15vh 4px', minHeight: 0 }}>
+                            {rows.map(i => list[i] ? renderRunnerRow(list[i], i) : renderEmptyRow(i))}
+                        </div>
                     </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-evenly', flex: 1, padding: '0.2vh 6px', minHeight: 0 }}>
-                        {(winners[g.label] || []).length > 0 ? (winners[g.label] || []).map((runner, idx) => (
-                            <div key={runner._id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '0.2vh 8px', borderRadius: 5, background: idx === 0 ? '#fffbeb' : 'transparent' }}>
-                                <div style={{ width: '2.2vh', height: '2.2vh', borderRadius: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.3vh', fontWeight: 900, flexShrink: 0, background: rankBg[idx] || '#e2e8f0', color: rankFg[idx] || '#475569' }}>
-                                    {idx + 1}
-                                </div>
-                                <span style={{ fontSize: '1.4vh', fontWeight: 700, color: '#1e293b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1, textTransform: 'uppercase' }}>
-                                    {runner.firstName} {runner.lastName}
-                                </span>
-                                <span style={{ fontFamily: 'monospace', fontWeight: 800, fontSize: '1.4vh', color: '#1e293b', flexShrink: 0 }}>
-                                    {runner.netTimeStr || formatTime(runner.netTime || runner.gunTime)}
-                                </span>
-                            </div>
-                        )) : (
-                            <div style={{ textAlign: 'center', fontSize: '1.2vh', color: '#94a3b8' }}>-</div>
-                        )}
-                    </div>
-                </div>
-            ))}
+                );
+            })}
         </div>
     );
 
     return (
         <div style={{ fontFamily: "'Prompt', 'Inter', sans-serif", background: '#0f172a', height: '100vh', overflow: 'hidden', display: 'flex', flexDirection: 'column', padding: '0.8vh 1vw' }}>
+            <style>{`@keyframes pulse { 0%,100% { opacity:1 } 50% { opacity:0.3 } }`}</style>
             {/* Header */}
             <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.6vh 1.5vw', background: '#1e293b', borderRadius: 10, marginBottom: '0.8vh', flexShrink: 0, border: '1px solid #334155' }}>
                 {/* Logo → Home */}
@@ -220,7 +267,14 @@ export default function ResultWinnersPage() {
                     <span style={{ color: '#22c55e', fontWeight: 900, fontSize: '2vh', letterSpacing: 2, textTransform: 'uppercase' }}>Winners</span>
                 </Link>
 
-                <div style={{ display: 'flex', alignItems: 'center', gap: '1.2vw' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '1vw' }}>
+                    {/* Auto-refresh indicator */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        {refreshing && <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#22c55e', animation: 'pulse 0.8s ease-in-out infinite' }} />}
+                        <span style={{ fontSize: '1.1vh', color: '#94a3b8', fontFamily: 'monospace', minWidth: 60 }}>
+                            {refreshing ? 'Updating...' : `Refresh ${countdown}s`}
+                        </span>
+                    </div>
                     {/* Campaign Dropdown */}
                     <div ref={dropdownRef} style={{ position: 'relative' }}>
                         <button

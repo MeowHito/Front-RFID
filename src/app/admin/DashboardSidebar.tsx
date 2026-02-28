@@ -51,6 +51,7 @@ const menuSections: MenuSection[] = [
             { href: '/admin/results', label: 'ผลการแข่งขัน', icon: 'fa-trophy' },
             { href: '/admin/certificates', label: 'ใบประกาศนียบัตร', icon: 'fa-certificate' },
             { href: '/admin/eslip', label: 'E-Slip', icon: 'fa-id-badge' },
+            { href: '/admin/links', label: 'ลิงก์แชร์', icon: 'fa-share-alt' },
             { href: '/admin/export', label: 'ส่งออกรายงาน', icon: 'fa-file-export' },
         ]
     },
