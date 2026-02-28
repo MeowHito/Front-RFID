@@ -102,6 +102,25 @@ function parseDistanceValue(value: unknown): number | null {
     return Number.isFinite(parsed) ? parsed : null;
 }
 
+// Column definitions — same keys/widths as admin display page
+const COL_DEFS: { key: string; label: string; w: string; mw: string; align: 'left' | 'center' | 'right'; fixed?: boolean; desktopOnly?: boolean }[] = [
+    { key: 'rank',     label: 'Rank',     w: '3%',  mw: '8%',  align: 'center', fixed: true },
+    { key: 'genRank',  label: 'Gen',      w: '3%',  mw: '8%',  align: 'center' },
+    { key: 'catRank',  label: 'Cat',      w: '3%',  mw: '8%',  align: 'center' },
+    { key: 'runner',   label: 'Runner',   w: '15%', mw: '30%', align: 'left',   fixed: true },
+    { key: 'sex',      label: 'Sex',      w: '3%',  mw: '6%',  align: 'center' },
+    { key: 'status',   label: 'Status',   w: '8%',  mw: '9%',  align: 'left',   fixed: true },
+    { key: 'gunTime',  label: 'Gun Time', w: '7%',  mw: '16%', align: 'center' },
+    { key: 'netTime',  label: 'Net Time', w: '7%',  mw: '7%',  align: 'center' },
+    { key: 'genNet',   label: 'Gen Net',  w: '4%',  mw: '4%',  align: 'center' },
+    { key: 'gunPace',  label: 'Gun Pace', w: '5%',  mw: '5%',  align: 'center' },
+    { key: 'netPace',  label: 'Net Pace', w: '5%',  mw: '5%',  align: 'center' },
+    { key: 'finish',   label: 'Finish',   w: '4%',  mw: '4%',  align: 'center' },
+    { key: 'genFin',   label: 'Gen Fin',  w: '4%',  mw: '4%',  align: 'center' },
+    { key: 'progress', label: 'Progress', w: '8%',  mw: '8%',  align: 'right',  fixed: true, desktopOnly: true },
+];
+const TOGGLEABLE_KEYS = COL_DEFS.filter(c => !c.fixed).map(c => c.key);
+
 const AVATAR_COLORS = [
     '#ef4444', '#f97316', '#eab308', '#22c55e', '#06b6d4',
     '#3b82f6', '#8b5cf6', '#ec4899', '#f43f5e', '#14b8a6',
@@ -220,16 +239,6 @@ export default function EventLivePage() {
         return date.toLocaleDateString(language === 'th' ? 'th-TH' : 'en-US', { day: '2-digit', month: 'short', year: 'numeric' });
     }
 
-    function getStatusColor(status: string) {
-        switch (status) {
-            case 'finished': return '#22c55e';
-            case 'in_progress': return '#f97316';
-            case 'dnf': return '#ef4444';
-            case 'dns': return '#ef4444';
-            default: return '#94a3b8';
-        }
-    }
-
     function getStatusLabel(status: string) {
         switch (status) {
             case 'finished': return 'FINISH';
@@ -314,24 +323,50 @@ export default function EventLivePage() {
         return runner.category;
     }, [categories]);
 
-    // Determine which columns to show (admin settings + mobile)
-    const shouldShowColumn = useCallback((col: string) => {
-        // Always-on columns (genRank/catRank have their own toggles)
-        const alwaysOn = ['rank', 'runner', 'status', 'progress', 'genRank', 'catRank', 'sex'];
-        if (alwaysOn.includes(col)) return true;
-
-        // Admin-configured display columns (if set)
+    // Build ordered list of visible columns based on admin displayColumns + mobile
+    const visibleColumns = useMemo(() => {
         const adminCols = campaign?.displayColumns;
-        if (adminCols && adminCols.length > 0 && !adminCols.includes(col)) {
-            return false;
+        // Rebuild full column order from admin settings
+        let fullOrder: string[];
+        if (adminCols && adminCols.length > 0) {
+            // Admin saved toggleable columns in order. Reconstruct full order:
+            // fixed columns keep their natural positions, toggleable slots filled by adminCols order
+            const toggleOrdered = [
+                ...adminCols.filter((k: string) => TOGGLEABLE_KEYS.includes(k)),
+                ...TOGGLEABLE_KEYS.filter(k => !adminCols.includes(k)),
+            ];
+            fullOrder = [];
+            let tIdx = 0;
+            for (const col of COL_DEFS) {
+                if (col.fixed) {
+                    fullOrder.push(col.key);
+                } else {
+                    fullOrder.push(toggleOrdered[tIdx++]);
+                }
+            }
+        } else {
+            fullOrder = COL_DEFS.map(c => c.key);
         }
 
-        // Mobile: show only essential columns unless toggled
-        if (isMobile && !showAllColumns) {
-            return ['gunTime'].includes(col);
-        }
-        return true;
-    }, [isMobile, showAllColumns, campaign?.displayColumns]);
+        // Filter to only visible columns
+        return fullOrder.filter(key => {
+            const def = COL_DEFS.find(c => c.key === key)!;
+            // Desktop-only columns hidden on mobile
+            if (def.desktopOnly && isMobile) return false;
+            // Fixed columns always visible
+            if (def.fixed) return true;
+            // genRank/catRank have their own data toggles
+            if (key === 'genRank' && !showGenRank) return false;
+            if (key === 'catRank' && !showCatRank) return false;
+            // Admin-configured: if set, only show columns in the list
+            if (adminCols && adminCols.length > 0 && !adminCols.includes(key)) return false;
+            // Mobile: show only essential toggleable columns unless showAllColumns
+            if (isMobile && !showAllColumns) {
+                return ['gunTime'].includes(key);
+            }
+            return true;
+        });
+    }, [isMobile, showAllColumns, campaign?.displayColumns, showGenRank, showCatRank]);
 
     const filteredRunners = useMemo(() => {
         return runners
@@ -608,25 +643,19 @@ export default function EventLivePage() {
                     <table style={{ width: isMobile && showAllColumns ? 1200 : '100%', textAlign: 'left', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
                         <thead>
                             <tr style={{ fontSize: 10, fontWeight: 700, color: themeStyles.textSecondary, textTransform: 'uppercase', letterSpacing: '-0.02em', position: 'sticky', top: 0, background: themeStyles.cardBg, zIndex: 20, borderBottom: `2px solid ${themeStyles.border}` }}>
-                                <th style={{ padding: isMobile ? '10px 4px' : '12px 6px', textAlign: 'center', width: isMobile ? '8%' : '3%' }}>Rank</th>
-                                {shouldShowColumn('genRank') && showGenRank && <th style={{ padding: isMobile ? '10px 2px' : '12px 4px', textAlign: 'center', width: isMobile ? '8%' : '3%' }}>Gen</th>}
-                                {shouldShowColumn('catRank') && showCatRank && <th style={{ padding: isMobile ? '10px 2px' : '12px 4px', textAlign: 'center', width: isMobile ? '8%' : '3%' }}>Cat</th>}
-                                <th style={{ padding: isMobile ? '10px 4px' : '12px 6px', width: isMobile ? '30%' : '15%' }}>Runner</th>
-                                {shouldShowColumn('sex') && <th style={{ padding: isMobile ? '10px 2px' : '12px 4px', textAlign: 'center', width: isMobile ? '6%' : '3%' }}>Sex</th>}
-                                <th style={{ padding: isMobile ? '10px 2px' : '12px 6px', width: isMobile ? '9%' : '8%' }}>Status</th>
-                                <th style={{ padding: isMobile ? '10px 2px' : '12px 6px', textAlign: 'center', width: isMobile ? '16%' : '7%' }}>Gun Time</th>
-                                {shouldShowColumn('netTime') && <th style={{ padding: '12px 6px', textAlign: 'center', width: '7%' }}>Net Time</th>}
-                                {shouldShowColumn('genNet') && <th style={{ padding: '12px 4px', textAlign: 'center', width: '4%' }}>Gen Net</th>}
-                                {shouldShowColumn('gunPace') && <th style={{ padding: '12px 6px', textAlign: 'center', width: '5%' }}>Gun Pace</th>}
-                                {shouldShowColumn('netPace') && <th style={{ padding: '12px 6px', textAlign: 'center', width: '5%' }}>Net Pace</th>}
-                                {shouldShowColumn('finish') && <th style={{ padding: '12px 4px', textAlign: 'center', width: '4%' }}>Finish</th>}
-                                {shouldShowColumn('genFin') && <th style={{ padding: '12px 4px', textAlign: 'center', width: '4%' }}>Gen Fin</th>}
-                                {!isMobile && <th style={{ padding: '12px 8px', textAlign: 'right', width: '8%' }}>Progress</th>}
+                                {visibleColumns.map(key => {
+                                    const def = COL_DEFS.find(c => c.key === key)!;
+                                    return (
+                                        <th key={key} style={{ padding: isMobile ? '10px 4px' : '12px 6px', textAlign: def.align, width: isMobile ? def.mw : def.w }}>
+                                            {def.label}
+                                        </th>
+                                    );
+                                })}
                             </tr>
                         </thead>
                         <tbody>
                             {filteredRunners.length === 0 ? (
-                                <tr><td colSpan={showGenRank && showCatRank ? 15 : showGenRank || showCatRank ? 14 : 13} style={{ padding: '48px 16px', textAlign: 'center', color: '#94a3b8', fontSize: 14 }}>
+                                <tr><td colSpan={visibleColumns.length} style={{ padding: '48px 16px', textAlign: 'center', color: '#94a3b8', fontSize: 14 }}>
                                     {language === 'th' ? 'ไม่พบข้อมูลผู้เข้าแข่งขัน' : 'No participants found'}
                                 </td></tr>
                             ) : (
@@ -637,32 +666,163 @@ export default function EventLivePage() {
                                         : `${runner.firstName} ${runner.lastName}`;
                                     const initials = getInitials(runner.firstName, runner.lastName);
                                     const avatarBg = getAvatarColor(runner.firstName + runner.lastName);
-                                    const statusColor = getStatusColor(runner.status);
-
                                     // Calculate progress percentage
                                     let progressPct = 0;
                                     if (runner.status === 'finished') {
                                         progressPct = 100;
                                     } else if (runner.status === 'in_progress') {
-                                        // Estimate from checkpoint position or elapsed time
-                                        progressPct = runner.latestCheckpoint ? 50 : 10; // Default estimate
+                                        progressPct = runner.latestCheckpoint ? 50 : 10;
                                     } else if (runner.status === 'dnf') {
                                         progressPct = runner.latestCheckpoint ? 40 : 0;
                                     }
 
-                                    // Progress bar color based on percentage with gradient
-                                    const getProgressColor = (pct: number) => {
-                                        if (pct <= 25) return '#334155'; // dark/black
-                                        if (pct <= 50) return '#ef4444'; // red
-                                        if (pct <= 75) return '#eab308'; // yellow/amber
-                                        return '#22c55e'; // green
+                                    // Render cell content per column key
+                                    const renderCell = (key: string) => {
+                                        switch (key) {
+                                            case 'rank':
+                                                return (
+                                                    <td key={key} style={{ padding: '12px 12px', textAlign: 'center' }}>
+                                                        <span style={{ fontSize: 16, fontWeight: 900, color: rank <= 3 ? (rank === 1 ? '#22c55e' : isDark ? '#94a3b8' : '#334155') : (isDark ? '#64748b' : '#cbd5e1') }}>{rank}</span>
+                                                    </td>
+                                                );
+                                            case 'genRank':
+                                                return (
+                                                    <td key={key} style={{ padding: '12px 6px', textAlign: 'center' }}>
+                                                        <span style={{ fontSize: 12, fontWeight: 700, color: themeStyles.textMuted }}>{runner.genderRank || '-'}</span>
+                                                    </td>
+                                                );
+                                            case 'catRank':
+                                                return (
+                                                    <td key={key} style={{ padding: '12px 6px', textAlign: 'center' }}>
+                                                        <span style={{ fontSize: 12, fontWeight: 700, color: themeStyles.textMuted }}>{runner.categoryRank || '-'}</span>
+                                                    </td>
+                                                );
+                                            case 'runner':
+                                                return (
+                                                    <td key={key} style={{ padding: isMobile ? '8px 4px' : '12px 8px', overflow: 'hidden' }}>
+                                                        <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 6 : 10 }}>
+                                                            {!isMobile && (
+                                                                <div style={{ position: 'relative', flexShrink: 0 }}>
+                                                                    <div style={{ width: 32, height: 32, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 700, fontSize: 12, background: avatarBg }}>
+                                                                        {initials}
+                                                                    </div>
+                                                                    {runner.status === 'in_progress' && (
+                                                                        <span className="live-dot" style={{ background: '#22c55e', position: 'absolute', bottom: -1, right: -1 }} />
+                                                                    )}
+                                                                </div>
+                                                            )}
+                                                            <div style={{ overflow: 'hidden' }}>
+                                                                <span style={{ display: 'block', fontWeight: 700, fontSize: isMobile ? 11 : 13, color: themeStyles.text, lineHeight: 1, textTransform: 'uppercase', marginBottom: 3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                                                    {displayName.trim()}
+                                                                </span>
+                                                                <span style={{ fontSize: isMobile ? 9 : 10, color: themeStyles.textSecondary, fontWeight: 500, display: 'flex', alignItems: 'center', gap: isMobile ? 4 : 6, whiteSpace: 'nowrap' }}>
+                                                                    <span style={{ background: '#dc2626', color: '#fff', padding: '1px 6px', borderRadius: 4, fontSize: isMobile ? 9 : 10, fontWeight: 800, letterSpacing: '0.05em', border: '1px solid #dc2626' }}>
+                                                                        {runner.bib}
+                                                                    </span>
+                                                                    {runner.nationality ? `${runner.nationality} | ` : ''}{runner.ageGroup || runner.category}
+                                                                </span>
+                                                            </div>
+                                                        </div>
+                                                    </td>
+                                                );
+                                            case 'sex':
+                                                return (
+                                                    <td key={key} style={{ padding: '12px 6px', textAlign: 'center', fontSize: 10, fontWeight: 700, color: runner.gender === 'M' ? '#3b82f6' : '#ec4899' }}>
+                                                        {runner.gender}
+                                                    </td>
+                                                );
+                                            case 'status':
+                                                return (
+                                                    <td key={key} style={{ padding: isMobile ? '8px 2px' : '12px 6px' }}>
+                                                        <span style={{ display: 'inline-block', padding: isMobile ? '1px 4px' : '2px 8px', borderRadius: 3, fontWeight: 700, fontSize: isMobile ? 8 : 10, color: '#fff', background: getStatusBgColor(runner.status), lineHeight: 1.3 }}>
+                                                            {getStatusLabel(runner.status)}
+                                                        </span>
+                                                        {!isMobile && runner.latestCheckpoint && (
+                                                            <span style={{ display: 'block', fontSize: 9, color: themeStyles.textSecondary, textTransform: 'uppercase', fontWeight: 500, marginTop: 2 }}>
+                                                                {runner.latestCheckpoint}
+                                                            </span>
+                                                        )}
+                                                    </td>
+                                                );
+                                            case 'gunTime':
+                                                return (
+                                                    <td key={key} style={{ padding: isMobile ? '8px 2px' : '12px 6px', textAlign: 'center' }}>
+                                                        <span style={{ fontSize: isMobile ? 11 : 12, fontWeight: 700, color: themeStyles.text, fontFamily: 'monospace' }}>
+                                                            {runner.gunTimeStr || formatTime(runner.gunTime || runner.elapsedTime)}
+                                                        </span>
+                                                    </td>
+                                                );
+                                            case 'netTime':
+                                                return (
+                                                    <td key={key} style={{ padding: '12px 6px', textAlign: 'center' }}>
+                                                        <span style={{ fontSize: 12, fontWeight: 700, color: (runner.netTimeStr || runner.netTime) ? '#22c55e' : themeStyles.textSecondary, fontFamily: 'monospace' }}>
+                                                            {runner.netTimeStr || formatTime(runner.netTime)}
+                                                        </span>
+                                                    </td>
+                                                );
+                                            case 'genNet':
+                                                return (
+                                                    <td key={key} style={{ padding: '12px 4px', textAlign: 'center', fontSize: 11, fontWeight: 600, color: themeStyles.textMuted }}>
+                                                        {runner.genderNetRank || '-'}
+                                                    </td>
+                                                );
+                                            case 'gunPace':
+                                                return (
+                                                    <td key={key} style={{ padding: '12px 6px', textAlign: 'center' }}>
+                                                        <span style={{ fontSize: 11, fontWeight: 600, color: themeStyles.textMuted, fontFamily: 'monospace' }}>
+                                                            {runner.gunPace || '-'}
+                                                        </span>
+                                                    </td>
+                                                );
+                                            case 'netPace':
+                                                return (
+                                                    <td key={key} style={{ padding: '12px 6px', textAlign: 'center' }}>
+                                                        <span style={{ fontSize: 11, fontWeight: 600, color: runner.netPace ? '#22c55e' : themeStyles.textSecondary, fontFamily: 'monospace' }}>
+                                                            {runner.netPace || '-'}
+                                                        </span>
+                                                    </td>
+                                                );
+                                            case 'finish':
+                                                return (
+                                                    <td key={key} style={{ padding: '12px 4px', textAlign: 'center', fontSize: 11, fontWeight: 600, color: themeStyles.textMuted }}>
+                                                        {runner.totalFinishers || '-'}
+                                                    </td>
+                                                );
+                                            case 'genFin':
+                                                return (
+                                                    <td key={key} style={{ padding: '12px 4px', textAlign: 'center', fontSize: 11, fontWeight: 600, color: themeStyles.textMuted }}>
+                                                        {runner.genderFinishers || '-'}
+                                                    </td>
+                                                );
+                                            case 'progress':
+                                                return (
+                                                    <td key={key} style={{ padding: '12px 12px', textAlign: 'right' }}>
+                                                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
+                                                            <span style={{ fontWeight: 700, fontSize: 11, color: themeStyles.text, marginBottom: 4 }}>
+                                                                {progressPct}%
+                                                            </span>
+                                                            <div style={{ width: '100%', maxWidth: 80, height: 6, borderRadius: 3, background: isDark ? 'rgba(255,255,255,0.1)' : '#f1f5f9', overflow: 'hidden' }}>
+                                                                <div style={{
+                                                                    height: '100%',
+                                                                    width: `${progressPct}%`,
+                                                                    borderRadius: 3,
+                                                                    background: progressPct > 75
+                                                                        ? 'linear-gradient(90deg, #334155 0%, #ef4444 33%, #eab308 66%, #22c55e 100%)'
+                                                                        : progressPct > 50
+                                                                            ? 'linear-gradient(90deg, #334155 0%, #ef4444 50%, #eab308 100%)'
+                                                                            : progressPct > 25
+                                                                                ? 'linear-gradient(90deg, #334155 0%, #ef4444 100%)'
+                                                                                : '#334155',
+                                                                    transition: 'width 0.5s ease',
+                                                                }} />
+                                                            </div>
+                                                        </div>
+                                                    </td>
+                                                );
+                                            default:
+                                                return null;
+                                        }
                                     };
-                                    const progressColor = getProgressColor(progressPct);
-
-                                    // Est. finish (placeholder based on status)
-                                    const estFinish = runner.status === 'finished' ? '--:--:--'
-                                        : runner.status === 'in_progress' ? (runner.netTime ? `~ ${formatTime(runner.netTime)}` : '-')
-                                            : '--:--';
 
                                     return (
                                         <tr
@@ -671,140 +831,7 @@ export default function EventLivePage() {
                                             onClick={() => handleViewRunner(runner)}
                                             style={{ cursor: 'pointer', transition: 'all 0.15s', borderBottom: `1px solid ${themeStyles.border}`, borderLeft: '4px solid transparent' }}
                                         >
-                                            {/* Rank */}
-                                            <td style={{ padding: '12px 12px', textAlign: 'center' }}>
-                                                <span style={{ fontSize: 16, fontWeight: 900, color: rank <= 3 ? (rank === 1 ? '#22c55e' : isDark ? '#94a3b8' : '#334155') : (isDark ? '#64748b' : '#cbd5e1') }}>{rank}</span>
-                                            </td>
-                                            {/* Gen Rank */}
-                                            {shouldShowColumn('genRank') && showGenRank && (
-                                                <td style={{ padding: '12px 6px', textAlign: 'center' }}>
-                                                    <span style={{ fontSize: 12, fontWeight: 700, color: themeStyles.textMuted }}>{runner.genderRank || '-'}</span>
-                                                </td>
-                                            )}
-                                            {/* Cat Rank */}
-                                            {shouldShowColumn('catRank') && showCatRank && (
-                                                <td style={{ padding: '12px 6px', textAlign: 'center' }}>
-                                                    <span style={{ fontSize: 12, fontWeight: 700, color: themeStyles.textMuted }}>{runner.categoryRank || '-'}</span>
-                                                </td>
-                                            )}
-                                            {/* Runner */}
-                                            <td style={{ padding: isMobile ? '8px 4px' : '12px 8px', overflow: 'hidden' }}>
-                                                <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 6 : 10 }}>
-                                                    {!isMobile && (
-                                                        <div style={{ position: 'relative', flexShrink: 0 }}>
-                                                            <div style={{ width: 32, height: 32, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 700, fontSize: 12, background: avatarBg }}>
-                                                                {initials}
-                                                            </div>
-                                                            {runner.status === 'in_progress' && (
-                                                                <span className="live-dot" style={{ background: '#22c55e', position: 'absolute', bottom: -1, right: -1 }} />
-                                                            )}
-                                                        </div>
-                                                    )}
-                                                    <div style={{ overflow: 'hidden' }}>
-                                                        <span style={{ display: 'block', fontWeight: 700, fontSize: isMobile ? 11 : 13, color: themeStyles.text, lineHeight: 1, textTransform: 'uppercase', marginBottom: 3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                                            {displayName.trim()}
-                                                        </span>
-                                                        <span style={{ fontSize: isMobile ? 9 : 10, color: themeStyles.textSecondary, fontWeight: 500, display: 'flex', alignItems: 'center', gap: isMobile ? 4 : 6, whiteSpace: 'nowrap' }}>
-                                                            <span style={{
-                                                                background: '#dc2626', color: '#fff', padding: '1px 6px', borderRadius: 4, fontSize: isMobile ? 9 : 10, fontWeight: 800, letterSpacing: '0.05em', border: '1px solid #dc2626'
-                                                            }}>
-                                                                {runner.bib}
-                                                            </span>
-                                                            {runner.nationality ? `${runner.nationality} | ` : ''}{runner.ageGroup || runner.category}
-                                                        </span>
-                                                    </div>
-                                                </div>
-                                            </td>
-                                            {/* Gender */}
-                                            {shouldShowColumn('sex') && (
-                                                <td style={{ padding: '12px 6px', textAlign: 'center', fontSize: 10, fontWeight: 700, color: runner.gender === 'M' ? '#3b82f6' : '#ec4899' }}>
-                                                    {runner.gender}
-                                                </td>
-                                            )}
-                                            {/* Status */}
-                                            <td style={{ padding: isMobile ? '8px 2px' : '12px 6px' }}>
-                                                <span style={{ display: 'inline-block', padding: isMobile ? '1px 4px' : '2px 8px', borderRadius: 3, fontWeight: 700, fontSize: isMobile ? 8 : 10, color: '#fff', background: getStatusBgColor(runner.status), lineHeight: 1.3 }}>
-                                                    {getStatusLabel(runner.status)}
-                                                </span>
-                                                {!isMobile && runner.latestCheckpoint && (
-                                                    <span style={{ display: 'block', fontSize: 9, color: themeStyles.textSecondary, textTransform: 'uppercase', fontWeight: 500, marginTop: 2 }}>
-                                                        {runner.latestCheckpoint}
-                                                    </span>
-                                                )}
-                                            </td>
-                                            {/* Gun Time */}
-                                            <td style={{ padding: isMobile ? '8px 2px' : '12px 6px', textAlign: 'center' }}>
-                                                <span style={{ fontSize: isMobile ? 11 : 12, fontWeight: 700, color: themeStyles.text, fontFamily: 'monospace' }}>
-                                                    {runner.gunTimeStr || formatTime(runner.gunTime || runner.elapsedTime)}
-                                                </span>
-                                            </td>
-                                            {/* Net Time */}
-                                            {shouldShowColumn('netTime') && (
-                                                <td style={{ padding: '12px 6px', textAlign: 'center' }}>
-                                                    <span style={{ fontSize: 12, fontWeight: 700, color: (runner.netTimeStr || runner.netTime) ? '#22c55e' : themeStyles.textSecondary, fontFamily: 'monospace' }}>
-                                                        {runner.netTimeStr || formatTime(runner.netTime)}
-                                                    </span>
-                                                </td>
-                                            )}
-                                            {/* Gender Net Rank */}
-                                            {shouldShowColumn('genNet') && (
-                                                <td style={{ padding: '12px 4px', textAlign: 'center', fontSize: 11, fontWeight: 600, color: themeStyles.textMuted }}>
-                                                    {runner.genderNetRank || '-'}
-                                                </td>
-                                            )}
-                                            {/* Gun Pace */}
-                                            {shouldShowColumn('gunPace') && (
-                                                <td style={{ padding: '12px 6px', textAlign: 'center' }}>
-                                                    <span style={{ fontSize: 11, fontWeight: 600, color: themeStyles.textMuted, fontFamily: 'monospace' }}>
-                                                        {runner.gunPace || '-'}
-                                                    </span>
-                                                </td>
-                                            )}
-                                            {/* Net Pace */}
-                                            {shouldShowColumn('netPace') && (
-                                                <td style={{ padding: '12px 6px', textAlign: 'center' }}>
-                                                    <span style={{ fontSize: 11, fontWeight: 600, color: runner.netPace ? '#22c55e' : themeStyles.textSecondary, fontFamily: 'monospace' }}>
-                                                        {runner.netPace || '-'}
-                                                    </span>
-                                                </td>
-                                            )}
-                                            {/* Total Finishers */}
-                                            {shouldShowColumn('finish') && (
-                                                <td style={{ padding: '12px 4px', textAlign: 'center', fontSize: 11, fontWeight: 600, color: themeStyles.textMuted }}>
-                                                    {runner.totalFinishers || '-'}
-                                                </td>
-                                            )}
-                                            {/* Gender Finishers */}
-                                            {shouldShowColumn('genFin') && (
-                                                <td style={{ padding: '12px 4px', textAlign: 'center', fontSize: 11, fontWeight: 600, color: themeStyles.textMuted }}>
-                                                    {runner.genderFinishers || '-'}
-                                                </td>
-                                            )}
-                                            {/* Progress */}
-                                            {!isMobile && (
-                                            <td style={{ padding: '12px 12px', textAlign: 'right' }}>
-                                                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
-                                                    <span style={{ fontWeight: 700, fontSize: 11, color: themeStyles.text, marginBottom: 4 }}>
-                                                        {progressPct}%
-                                                    </span>
-                                                    <div style={{ width: '100%', maxWidth: 80, height: 6, borderRadius: 3, background: isDark ? 'rgba(255,255,255,0.1)' : '#f1f5f9', overflow: 'hidden' }}>
-                                                        <div style={{
-                                                            height: '100%',
-                                                            width: `${progressPct}%`,
-                                                            borderRadius: 3,
-                                                            background: progressPct > 75
-                                                                ? 'linear-gradient(90deg, #334155 0%, #ef4444 33%, #eab308 66%, #22c55e 100%)'
-                                                                : progressPct > 50
-                                                                    ? 'linear-gradient(90deg, #334155 0%, #ef4444 50%, #eab308 100%)'
-                                                                    : progressPct > 25
-                                                                        ? 'linear-gradient(90deg, #334155 0%, #ef4444 100%)'
-                                                                        : '#334155',
-                                                            transition: 'width 0.5s ease',
-                                                        }} />
-                                                    </div>
-                                                </div>
-                                            </td>
-                                            )}
+                                            {visibleColumns.map(renderCell)}
                                         </tr>
                                     );
                                 })

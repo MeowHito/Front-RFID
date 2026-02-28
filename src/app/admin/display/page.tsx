@@ -1,25 +1,29 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import AdminLayout from '@/app/admin/AdminLayout';
 import { useLanguage } from '@/lib/language-context';
 
-// All available column keys and labels
-const ALL_COLUMNS = [
-    { key: 'genRank', label: 'Gender Rank', labelTh: 'อันดับเพศ' },
-    { key: 'catRank', label: 'Category Rank', labelTh: 'อันดับประเภท' },
-    { key: 'sex', label: 'Sex', labelTh: 'เพศ' },
-    { key: 'gunTime', label: 'Gun Time', labelTh: 'เวลาปืน' },
-    { key: 'netTime', label: 'Net Time', labelTh: 'เวลาสุทธิ' },
-    { key: 'genNet', label: 'Gender Net Rank', labelTh: 'จัดเพศสุทธิ' },
-    { key: 'gunPace', label: 'Gun Pace', labelTh: 'เพสปืน' },
-    { key: 'netPace', label: 'Net Pace', labelTh: 'เพสสุทธิ' },
-    { key: 'finish', label: 'Total Finishers', labelTh: 'จบทั้งหมด' },
-    { key: 'genFin', label: 'Gender Finishers', labelTh: 'จบ/เพศ' },
+// Every column in the event table — same keys, labels, and widths as event/[id]/page.tsx <thead>
+// `fixed` = always-on, cannot toggle off or reorder
+const TABLE_COLUMNS: { key: string; thLabel: string; thLabelTh: string; width: string; align: 'left' | 'center' | 'right'; fixed?: boolean }[] = [
+    { key: 'rank',    thLabel: 'Rank',     thLabelTh: 'อันดับ',      width: '3%',  align: 'center', fixed: true },
+    { key: 'genRank', thLabel: 'Gen',      thLabelTh: 'Gen',         width: '3%',  align: 'center' },
+    { key: 'catRank', thLabel: 'Cat',      thLabelTh: 'Cat',         width: '3%',  align: 'center' },
+    { key: 'runner',  thLabel: 'Runner',   thLabelTh: 'นักวิ่ง',     width: '15%', align: 'left', fixed: true },
+    { key: 'sex',     thLabel: 'Sex',      thLabelTh: 'เพศ',         width: '3%',  align: 'center' },
+    { key: 'status',  thLabel: 'Status',   thLabelTh: 'สถานะ',       width: '8%',  align: 'left', fixed: true },
+    { key: 'gunTime', thLabel: 'Gun Time', thLabelTh: 'Gun Time',    width: '7%',  align: 'center' },
+    { key: 'netTime', thLabel: 'Net Time', thLabelTh: 'Net Time',    width: '7%',  align: 'center' },
+    { key: 'genNet',  thLabel: 'Gen Net',  thLabelTh: 'Gen Net',     width: '4%',  align: 'center' },
+    { key: 'gunPace', thLabel: 'Gun Pace', thLabelTh: 'Gun Pace',    width: '5%',  align: 'center' },
+    { key: 'netPace', thLabel: 'Net Pace', thLabelTh: 'Net Pace',    width: '5%',  align: 'center' },
+    { key: 'finish',  thLabel: 'Finish',   thLabelTh: 'จบ',          width: '4%',  align: 'center' },
+    { key: 'genFin',  thLabel: 'Gen Fin',  thLabelTh: 'Gen Fin',     width: '4%',  align: 'center' },
+    { key: 'progress',thLabel: 'Progress', thLabelTh: 'ความคืบหน้า', width: '8%',  align: 'right', fixed: true },
 ];
 
-// Always-on columns (cannot be toggled off)
-const ALWAYS_ON = ['rank', 'runner', 'status', 'progress'];
+const TOGGLEABLE_KEYS = TABLE_COLUMNS.filter(c => !c.fixed).map(c => c.key);
 
 export default function DisplaySettingsPage() {
     const { language } = useLanguage();
@@ -27,13 +31,13 @@ export default function DisplaySettingsPage() {
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [selectedCols, setSelectedCols] = useState<string[]>([]);
+    const [colOrder, setColOrder] = useState<string[]>(TABLE_COLUMNS.map(c => c.key));
     const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
-    const dragItem = useRef<number | null>(null);
-    const dragOverItem = useRef<number | null>(null);
 
-    useEffect(() => {
-        fetchCampaign();
-    }, []);
+    const dragKey = useRef<string | null>(null);
+    const dragOverKey = useRef<string | null>(null);
+
+    useEffect(() => { fetchCampaign(); }, []);
 
     const fetchCampaign = async () => {
         try {
@@ -41,14 +45,35 @@ export default function DisplaySettingsPage() {
             if (res.ok) {
                 const data = await res.json();
                 setCampaign(data);
-                // If displayColumns is set, use it; otherwise start with all columns selected
-                setSelectedCols(data.displayColumns?.length > 0 ? data.displayColumns : ALL_COLUMNS.map(c => c.key));
+                const saved: string[] = data.displayColumns?.length > 0 ? data.displayColumns : TOGGLEABLE_KEYS;
+                setSelectedCols(saved);
+                // Reconstruct full column order: fixed columns stay in their natural position,
+                // toggleable columns follow the saved order
+                rebuildOrder(saved);
             }
-        } catch {
-            /* */
-        } finally {
-            setLoading(false);
+        } catch { /* */ } finally { setLoading(false); }
+    };
+
+    // Rebuild colOrder from a given selectedCols list
+    const rebuildOrder = (selected: string[]) => {
+        // The ordered list: fixed columns keep their relative positions,
+        // toggleable columns are ordered by `selected` first, then unselected
+        const fixedKeys = TABLE_COLUMNS.filter(c => c.fixed).map(c => c.key);
+        const toggleOrdered = [
+            ...selected.filter(k => TOGGLEABLE_KEYS.includes(k)),
+            ...TOGGLEABLE_KEYS.filter(k => !selected.includes(k)),
+        ];
+        // Merge: walk through TABLE_COLUMNS, but replace toggleable positions with our order
+        const result: string[] = [];
+        let tIdx = 0;
+        for (const col of TABLE_COLUMNS) {
+            if (col.fixed) {
+                result.push(col.key);
+            } else {
+                result.push(toggleOrdered[tIdx++]);
+            }
         }
+        setColOrder(result);
     };
 
     const showToast = (message: string, type: 'success' | 'error') => {
@@ -57,45 +82,47 @@ export default function DisplaySettingsPage() {
     };
 
     const toggleColumn = (key: string) => {
-        setSelectedCols(prev => prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]);
+        setSelectedCols(prev => {
+            const next = prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key];
+            return next;
+        });
     };
 
-    const selectAll = () => setSelectedCols(ALL_COLUMNS.map(c => c.key));
+    const selectAll = () => setSelectedCols([...TOGGLEABLE_KEYS]);
     const selectNone = () => setSelectedCols([]);
 
-    const moveItem = useCallback((fromIndex: number, toIndex: number) => {
-        setSelectedCols(prev => {
-            const updated = [...prev];
-            const [removed] = updated.splice(fromIndex, 1);
-            updated.splice(toIndex, 0, removed);
-            return updated;
-        });
-    }, []);
-
-    const handleDragStart = (index: number) => {
-        dragItem.current = index;
-    };
-
-    const handleDragEnter = (index: number) => {
-        dragOverItem.current = index;
-    };
-
+    // Drag handlers — only toggleable columns
+    const handleDragStart = (key: string) => { dragKey.current = key; };
+    const handleDragEnter = (key: string) => { dragOverKey.current = key; };
     const handleDragEnd = () => {
-        if (dragItem.current !== null && dragOverItem.current !== null && dragItem.current !== dragOverItem.current) {
-            moveItem(dragItem.current, dragOverItem.current);
-        }
-        dragItem.current = null;
-        dragOverItem.current = null;
+        const from = dragKey.current;
+        const to = dragOverKey.current;
+        dragKey.current = null;
+        dragOverKey.current = null;
+        if (!from || !to || from === to) return;
+        // Only swap if both are toggleable
+        if (TABLE_COLUMNS.find(c => c.key === from)?.fixed || TABLE_COLUMNS.find(c => c.key === to)?.fixed) return;
+        setColOrder(prev => {
+            const arr = [...prev];
+            const fi = arr.indexOf(from);
+            const ti = arr.indexOf(to);
+            if (fi === -1 || ti === -1) return prev;
+            // swap
+            [arr[fi], arr[ti]] = [arr[ti], arr[fi]];
+            return arr;
+        });
     };
 
     const handleSave = async () => {
         if (!campaign?._id) return;
         setSaving(true);
         try {
+            // Save only the selected toggleable cols in displayed order
+            const orderedSelected = colOrder.filter(k => !TABLE_COLUMNS.find(c => c.key === k)?.fixed && selectedCols.includes(k));
             const res = await fetch(`/api/campaigns/${campaign._id}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ displayColumns: selectedCols }),
+                body: JSON.stringify({ displayColumns: orderedSelected }),
             });
             if (res.ok) {
                 showToast(language === 'th' ? 'บันทึกสำเร็จ' : 'Settings saved', 'success');
@@ -104,23 +131,21 @@ export default function DisplaySettingsPage() {
             }
         } catch {
             showToast('Error saving', 'error');
-        } finally {
-            setSaving(false);
-        }
+        } finally { setSaving(false); }
     };
 
-    // Build ordered list: selected first (in saved order), then unselected
-    const orderedColumns = [
-        ...selectedCols.map(key => ALL_COLUMNS.find(c => c.key === key)).filter(Boolean),
-        ...ALL_COLUMNS.filter(c => !selectedCols.includes(c.key)),
-    ] as typeof ALL_COLUMNS;
+    // Resolve column definition by key
+    const colDef = (key: string) => TABLE_COLUMNS.find(c => c.key === key)!;
+
+    // Dummy sample row data for preview
+    const sampleData: Record<string, string> = {
+        rank: '1', genRank: '1', catRank: '1', runner: 'John Doe', sex: 'M',
+        status: 'FINISH', gunTime: '1:23:45', netTime: '1:22:30', genNet: '1',
+        gunPace: '5:30', netPace: '5:25', finish: '120', genFin: '55', progress: '100%',
+    };
 
     return (
-        <AdminLayout
-            breadcrumbItems={[
-                { label: 'การแสดงผล', labelEn: 'Display Settings' }
-            ]}
-        >
+        <AdminLayout breadcrumbItems={[{ label: 'การแสดงผล', labelEn: 'Display Settings' }]}>
             {/* Toast */}
             {toast && (
                 <div style={{
@@ -144,114 +169,162 @@ export default function DisplaySettingsPage() {
                     </div>
                 ) : (
                     <>
+                        {/* Header info */}
                         <div style={{ marginBottom: 16 }}>
                             <h3 style={{ fontSize: 15, fontWeight: 700, color: '#333', margin: '0 0 4px 0' }}>
                                 {language === 'th' ? 'ตั้งค่าคอลัมน์ที่จะแสดงในหน้า Live' : 'Configure columns shown on the Live page'}
                             </h3>
                             <p style={{ fontSize: 12, color: '#888', margin: 0 }}>
                                 {language === 'th'
-                                    ? 'เลือกคอลัมน์ที่ต้องการให้ผู้ใช้เห็น และลากเพื่อเรียงลำดับ  (Rank, Runner, Status, Progress แสดงเสมอ)'
-                                    : 'Select columns to show and drag to reorder. Rank, Runner, Status, and Progress are always visible.'}
+                                    ? 'ติ๊กเปิด/ปิดคอลัมน์ และลากหัวตารางค้างเพื่อย้ายสลับตำแหน่ง (คอลัมน์สีเขียวแสดงเสมอ ย้ายไม่ได้)'
+                                    : 'Toggle columns on/off, drag headers to reorder. Green columns are always visible and locked.'}
                             </p>
-                            <div style={{ marginTop: 8, padding: '8px 12px', background: '#eff6ff', borderRadius: 6, border: '1px solid #bfdbfe', display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <div style={{ marginTop: 8, padding: '8px 12px', background: '#eff6ff', borderRadius: 6, border: '1px solid #bfdbfe', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                                 <i className="fas fa-star" style={{ color: '#f59e0b', fontSize: 12 }} />
                                 <span style={{ fontSize: 12, fontWeight: 700, color: '#1e40af' }}>{campaign.name}</span>
                             </div>
                         </div>
 
                         {/* Quick actions */}
-                        <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
-                            <button
-                                className="btn"
-                                onClick={selectAll}
-                                style={{ background: '#3c8dbc', fontSize: 12, padding: '5px 14px' }}
-                            >
+                        <div style={{ display: 'flex', gap: 8, marginBottom: 16, alignItems: 'center' }}>
+                            <button className="btn" onClick={selectAll} style={{ background: '#3c8dbc', fontSize: 12, padding: '5px 14px' }}>
                                 {language === 'th' ? 'เลือกทั้งหมด' : 'Select All'}
                             </button>
-                            <button
-                                className="btn"
-                                onClick={selectNone}
-                                style={{ background: '#6c757d', fontSize: 12, padding: '5px 14px' }}
-                            >
+                            <button className="btn" onClick={selectNone} style={{ background: '#6c757d', fontSize: 12, padding: '5px 14px' }}>
                                 {language === 'th' ? 'ยกเลิกทั้งหมด' : 'Deselect All'}
                             </button>
+                            <span style={{ fontSize: 11, color: '#999', marginLeft: 8 }}>
+                                {language === 'th'
+                                    ? '* ลากหัวตาราง (สีฟ้า) ค้างเพื่อสลับตำแหน่ง'
+                                    : '* Drag blue headers to swap positions'}
+                            </span>
                         </div>
 
-                        {/* Always-on columns */}
-                        <div style={{ marginBottom: 16 }}>
-                            <div style={{ fontSize: 11, fontWeight: 700, color: '#999', textTransform: 'uppercase', marginBottom: 8 }}>
-                                {language === 'th' ? 'คอลัมน์หลัก (แสดงเสมอ)' : 'Core Columns (Always Shown)'}
-                            </div>
-                            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                                {ALWAYS_ON.map(key => (
-                                    <div key={key} style={{
-                                        padding: '8px 16px', borderRadius: 6,
-                                        background: '#e8f5e9', color: '#2e7d32', fontSize: 12,
-                                        fontWeight: 700, border: '1px solid #c8e6c9',
+                        {/* ===== TABLE PREVIEW ===== */}
+                        <div style={{ overflowX: 'auto', border: '1px solid #dee2e6', borderRadius: 8, background: '#fff' }}>
+                            <table style={{ width: '100%', minWidth: 900, textAlign: 'left', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+                                {/* Checkbox row */}
+                                <thead>
+                                    <tr style={{ borderBottom: '1px solid #e5e7eb' }}>
+                                        {colOrder.map(key => {
+                                            const col = colDef(key);
+                                            const isFixed = !!col.fixed;
+                                            const isOn = isFixed || selectedCols.includes(key);
+                                            return (
+                                                <th key={key} style={{ width: col.width, textAlign: col.align, padding: '8px 4px', verticalAlign: 'bottom' }}>
+                                                    {isFixed ? (
+                                                        <div style={{ display: 'flex', justifyContent: col.align === 'right' ? 'flex-end' : col.align === 'center' ? 'center' : 'flex-start' }}>
+                                                            <span style={{ fontSize: 9, fontWeight: 700, color: '#16a34a', background: '#dcfce7', padding: '2px 6px', borderRadius: 4 }}>LOCK</span>
+                                                        </div>
+                                                    ) : (
+                                                        <div style={{ display: 'flex', justifyContent: col.align === 'right' ? 'flex-end' : col.align === 'center' ? 'center' : 'flex-start' }}>
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={isOn}
+                                                                onChange={() => toggleColumn(key)}
+                                                                style={{ width: 15, height: 15, cursor: 'pointer', accentColor: '#3b82f6' }}
+                                                            />
+                                                        </div>
+                                                    )}
+                                                </th>
+                                            );
+                                        })}
+                                    </tr>
+                                    {/* Table header row — matching event page style */}
+                                    <tr style={{
+                                        fontSize: 10, fontWeight: 700, color: '#64748b', textTransform: 'uppercase',
+                                        letterSpacing: '-0.02em', background: '#f8fafc', borderBottom: '2px solid #e2e8f0',
                                     }}>
-                                        ✓ {key.charAt(0).toUpperCase() + key.slice(1)}
-                                    </div>
-                                ))}
-                            </div>
+                                        {colOrder.map(key => {
+                                            const col = colDef(key);
+                                            const isFixed = !!col.fixed;
+                                            const isOn = isFixed || selectedCols.includes(key);
+                                            const isDraggable = !isFixed;
+                                            return (
+                                                <th
+                                                    key={key}
+                                                    draggable={isDraggable}
+                                                    onDragStart={() => isDraggable && handleDragStart(key)}
+                                                    onDragEnter={() => isDraggable && handleDragEnter(key)}
+                                                    onDragEnd={handleDragEnd}
+                                                    onDragOver={e => { if (isDraggable) e.preventDefault(); }}
+                                                    style={{
+                                                        padding: '12px 6px', textAlign: col.align, width: col.width,
+                                                        cursor: isDraggable ? 'grab' : 'default',
+                                                        opacity: isOn ? 1 : 0.3,
+                                                        background: isFixed ? '#ecfdf5' : (isOn ? '#eff6ff' : '#f8fafc'),
+                                                        borderLeft: isDraggable ? '1px dashed #cbd5e1' : 'none',
+                                                        borderRight: isDraggable ? '1px dashed #cbd5e1' : 'none',
+                                                        transition: 'opacity 0.15s',
+                                                        userSelect: 'none',
+                                                        position: 'relative',
+                                                    }}
+                                                >
+                                                    <span style={{ color: isFixed ? '#16a34a' : (isOn ? '#1e40af' : '#94a3b8') }}>
+                                                        {col.thLabel}
+                                                    </span>
+                                                </th>
+                                            );
+                                        })}
+                                    </tr>
+                                </thead>
+                                {/* Sample data rows for visual preview */}
+                                <tbody>
+                                    {[1, 2, 3].map(rowIdx => (
+                                        <tr key={rowIdx} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                                            {colOrder.map(key => {
+                                                const col = colDef(key);
+                                                const isFixed = !!col.fixed;
+                                                const isOn = isFixed || selectedCols.includes(key);
+                                                let cellContent = sampleData[key] || '-';
+                                                if (key === 'rank') cellContent = String(rowIdx);
+                                                if (key === 'runner') cellContent = ['John Doe', 'Jane Smith', 'Bob Runner'][rowIdx - 1];
+                                                if (key === 'status') {
+                                                    const statuses = ['FINISH', 'RACING', 'DNS'];
+                                                    const colors = ['#22c55e', '#f97316', '#dc2626'];
+                                                    return (
+                                                        <td key={key} style={{ padding: '10px 6px', width: col.width, opacity: isOn ? 1 : 0.15 }}>
+                                                            <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 3, fontWeight: 700, fontSize: 10, color: '#fff', background: colors[rowIdx - 1] }}>
+                                                                {statuses[rowIdx - 1]}
+                                                            </span>
+                                                        </td>
+                                                    );
+                                                }
+                                                if (key === 'progress') {
+                                                    const pcts = [100, 60, 0];
+                                                    return (
+                                                        <td key={key} style={{ padding: '10px 6px', textAlign: 'right', width: col.width, opacity: isOn ? 1 : 0.15 }}>
+                                                            <span style={{ fontSize: 11, fontWeight: 700 }}>{pcts[rowIdx - 1]}%</span>
+                                                        </td>
+                                                    );
+                                                }
+                                                if (key === 'sex') cellContent = rowIdx === 2 ? 'F' : 'M';
+                                                if (key === 'genRank' || key === 'catRank' || key === 'genNet') cellContent = String(rowIdx);
+                                                return (
+                                                    <td key={key} style={{
+                                                        padding: '10px 6px', textAlign: col.align, width: col.width,
+                                                        fontSize: 12, fontWeight: key === 'runner' ? 700 : 500,
+                                                        color: key === 'runner' ? '#1e293b' : '#64748b',
+                                                        fontFamily: ['gunTime', 'netTime', 'gunPace', 'netPace'].includes(key) ? 'monospace' : 'inherit',
+                                                        opacity: isOn ? 1 : 0.15,
+                                                        whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                                                    }}>
+                                                        {cellContent}
+                                                    </td>
+                                                );
+                                            })}
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
                         </div>
 
-                        {/* Toggleable + Reorderable columns */}
-                        <div style={{ marginBottom: 24 }}>
-                            <div style={{ fontSize: 11, fontWeight: 700, color: '#999', textTransform: 'uppercase', marginBottom: 8 }}>
-                                {language === 'th' ? 'คอลัมน์ที่เปิด/ปิดได้ — ลากเพื่อเรียงลำดับ' : 'Toggleable Columns — Drag to Reorder'}
-                            </div>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                                {orderedColumns.map((col, idx) => {
-                                    const isSelected = selectedCols.includes(col.key);
-                                    const selectedIndex = selectedCols.indexOf(col.key);
-                                    return (
-                                        <div
-                                            key={col.key}
-                                            draggable={isSelected}
-                                            onDragStart={() => isSelected && handleDragStart(selectedIndex)}
-                                            onDragEnter={() => isSelected && handleDragEnter(selectedIndex)}
-                                            onDragEnd={handleDragEnd}
-                                            onDragOver={e => e.preventDefault()}
-                                            style={{
-                                                display: 'flex', alignItems: 'center', gap: 10,
-                                                padding: '8px 12px', borderRadius: 6,
-                                                background: isSelected ? '#e3f2fd' : '#f8f9fa',
-                                                border: `1px solid ${isSelected ? '#90caf9' : '#e5e7eb'}`,
-                                                cursor: isSelected ? 'grab' : 'default',
-                                                transition: 'all 0.15s',
-                                                opacity: isSelected ? 1 : 0.6,
-                                            }}
-                                        >
-                                            {/* Drag Handle */}
-                                            {isSelected && (
-                                                <span style={{ color: '#90caf9', fontSize: 14, cursor: 'grab', userSelect: 'none' }}>☰</span>
-                                            )}
-                                            {/* Toggle */}
-                                            <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', flex: 1 }}>
-                                                <input
-                                                    type="checkbox"
-                                                    checked={isSelected}
-                                                    onChange={() => toggleColumn(col.key)}
-                                                    style={{ width: 14, height: 14, cursor: 'pointer' }}
-                                                />
-                                                <span style={{ fontSize: 13, fontWeight: 600, color: isSelected ? '#1565c0' : '#888' }}>
-                                                    {language === 'th' ? col.labelTh : col.label}
-                                                </span>
-                                            </label>
-                                            {/* Order badge */}
-                                            {isSelected && (
-                                                <span style={{ fontSize: 10, fontWeight: 800, color: '#90caf9', background: '#e3f2fd', border: '1px solid #90caf9', borderRadius: 4, padding: '1px 6px' }}>
-                                                    #{selectedIndex + 1}
-                                                </span>
-                                            )}
-                                        </div>
-                                    );
-                                })}
-                            </div>
-                        </div>
+                        <p style={{ fontSize: 11, color: '#aaa', margin: '8px 0 0', fontStyle: 'italic' }}>
+                            {language === 'th' ? '* ตัวอย่างข้อมูลจำลอง — คอลัมน์ที่ปิดจะจางลง' : '* Sample preview data — disabled columns are dimmed'}
+                        </p>
 
                         {/* Save */}
-                        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 20 }}>
                             <button
                                 className="btn"
                                 onClick={handleSave}
@@ -263,7 +336,7 @@ export default function DisplaySettingsPage() {
                             >
                                 {saving
                                     ? (language === 'th' ? 'กำลังบันทึก...' : 'Saving...')
-                                    : (language === 'th' ? '💾 บันทึกการตั้งค่า' : '💾 Save Settings')}
+                                    : (language === 'th' ? 'บันทึกการตั้งค่า' : 'Save Settings')}
                             </button>
                         </div>
                     </>
