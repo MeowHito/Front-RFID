@@ -32,6 +32,7 @@ interface Campaign {
     slug?: string;
     uuid?: string;
     categories?: { name: string; distance?: string }[];
+    excludeOverallFromAgeGroup?: number;
 }
 
 const AGE_GROUPS = [
@@ -93,6 +94,14 @@ export default function ResultWinnersPage() {
     const [refreshing, setRefreshing] = useState(false);
     const refreshTimerRef = useRef<NodeJS.Timeout | null>(null);
     const countdownRef = useRef<NodeJS.Timeout | null>(null);
+    const [isMobile, setIsMobile] = useState(false);
+
+    useEffect(() => {
+        const check = () => setIsMobile(window.innerWidth < 768);
+        check();
+        window.addEventListener('resize', check);
+        return () => window.removeEventListener('resize', check);
+    }, []);
 
     // Load featured campaign automatically
     useEffect(() => {
@@ -164,11 +173,20 @@ export default function ResultWinnersPage() {
             return at - bt;
         });
 
+        // Exclude top N overall winners from age group rankings if configured
+        const excludeN = campaign?.excludeOverallFromAgeGroup || 0;
+        const excludedBibs = new Set<string>();
+        if (excludeN > 0) {
+            // Top N overall = first N in sorted list (regardless of gender)
+            sorted.slice(0, excludeN).forEach(r => excludedBibs.add(r.bib));
+        }
+
         const maleWinners: Record<string, Runner[]> = {};
         const femaleWinners: Record<string, Runner[]> = {};
         for (const g of AGE_GROUPS) { maleWinners[g.label] = []; femaleWinners[g.label] = []; }
 
         for (const runner of sorted) {
+            if (excludedBibs.has(runner.bib)) continue;
             const ag = resolveAgeGroup(runner);
             const bucket = runner.gender === 'F' ? femaleWinners : maleWinners;
             if (bucket[ag] && bucket[ag].length < TOP_N) {
@@ -176,21 +194,21 @@ export default function ResultWinnersPage() {
             }
         }
         return { maleWinners, femaleWinners };
-    }, [runners]);
+    }, [runners, campaign]);
 
     const rankBg = ['#f59e0b', '#9ca3af', '#92400e', '#e2e8f0', '#e2e8f0'];
     const rankFg = ['#000', '#fff', '#fff', '#475569', '#475569'];
 
     // Render a single runner row
     const renderRunnerRow = (runner: Runner, idx: number) => (
-        <div key={runner._id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '0.3vh 8px', borderRadius: 5, background: idx === 0 ? '#fffbeb' : 'transparent', height: '2.8vh', minHeight: '22px' }}>
-            <div style={{ width: '2.2vh', height: '2.2vh', minWidth: 18, minHeight: 18, borderRadius: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.3vh', fontWeight: 900, flexShrink: 0, background: rankBg[idx] || '#e2e8f0', color: rankFg[idx] || '#475569' }}>
+        <div key={runner._id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: isMobile ? '4px 8px' : '0.3vh 8px', borderRadius: 5, background: idx === 0 ? '#fffbeb' : 'transparent', height: isMobile ? 'auto' : '2.8vh', minHeight: isMobile ? 28 : 22 }}>
+            <div style={{ width: isMobile ? 22 : '2.2vh', height: isMobile ? 22 : '2.2vh', minWidth: 18, minHeight: 18, borderRadius: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: isMobile ? 12 : '1.3vh', fontWeight: 900, flexShrink: 0, background: rankBg[idx] || '#e2e8f0', color: rankFg[idx] || '#475569' }}>
                 {idx + 1}
             </div>
-            <span style={{ fontSize: '1.35vh', fontWeight: 700, color: '#1e293b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1, textTransform: 'uppercase' }}>
+            <span style={{ fontSize: isMobile ? 12 : '1.35vh', fontWeight: 700, color: '#1e293b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1, textTransform: 'uppercase' }}>
                 {runner.firstName} {runner.lastName}
             </span>
-            <span style={{ fontFamily: 'monospace', fontWeight: 800, fontSize: '1.35vh', color: '#1e293b', flexShrink: 0 }}>
+            <span style={{ fontFamily: 'monospace', fontWeight: 800, fontSize: isMobile ? 11 : '1.35vh', color: '#1e293b', flexShrink: 0 }}>
                 {runner.netTimeStr || formatTime(runner.netTime || runner.gunTime)}
             </span>
         </div>
@@ -198,18 +216,18 @@ export default function ResultWinnersPage() {
 
     // Render an empty placeholder row
     const renderEmptyRow = (idx: number) => (
-        <div key={`empty-${idx}`} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '0.3vh 8px', height: '2.8vh', minHeight: '22px' }}>
-            <div style={{ width: '2.2vh', height: '2.2vh', minWidth: 18, minHeight: 18, borderRadius: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.3vh', fontWeight: 900, flexShrink: 0, background: '#f1f5f9', color: '#cbd5e1' }}>
+        <div key={`empty-${idx}`} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: isMobile ? '4px 8px' : '0.3vh 8px', height: isMobile ? 'auto' : '2.8vh', minHeight: isMobile ? 28 : 22 }}>
+            <div style={{ width: isMobile ? 22 : '2.2vh', height: isMobile ? 22 : '2.2vh', minWidth: 18, minHeight: 18, borderRadius: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: isMobile ? 12 : '1.3vh', fontWeight: 900, flexShrink: 0, background: '#f1f5f9', color: '#cbd5e1' }}>
                 {idx + 1}
             </div>
-            <span style={{ fontSize: '1.2vh', color: '#cbd5e1', fontStyle: 'italic' }}>—</span>
+            <span style={{ fontSize: isMobile ? 11 : '1.2vh', color: '#cbd5e1', fontStyle: 'italic' }}>—</span>
         </div>
     );
 
     // Render a winners column
     const renderColumn = (title: string, bgHeader: string, bgAgeHeader: string, winners: Record<string, Runner[]>) => (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4vh', minHeight: 0, flex: 1 }}>
-            <div style={{ padding: '0.7vh 0', fontWeight: 900, fontSize: '2vh', textAlign: 'center', textTransform: 'uppercase', borderRadius: 8, color: 'white', letterSpacing: 2, background: bgHeader, flexShrink: 0 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: isMobile ? 8 : '0.4vh', minHeight: 0, flex: 1 }}>
+            <div style={{ padding: isMobile ? '8px 0' : '0.7vh 0', fontWeight: 900, fontSize: isMobile ? 16 : '2vh', textAlign: 'center', textTransform: 'uppercase', borderRadius: 8, color: 'white', letterSpacing: 2, background: bgHeader, flexShrink: 0 }}>
                 {title}
             </div>
             {AGE_GROUPS.map(g => {
@@ -217,11 +235,11 @@ export default function ResultWinnersPage() {
                 // Always render TOP_N rows — fill empties
                 const rows = Array.from({ length: TOP_N }, (_, i) => i);
                 return (
-                    <div key={g.label} style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: 8, overflow: 'hidden', display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
-                        <div style={{ background: bgAgeHeader, color: 'white', fontWeight: 800, fontSize: '1.5vh', padding: '0.25vh 12px', textAlign: 'center', flexShrink: 0 }}>
+                    <div key={g.label} style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: 8, overflow: 'hidden', display: 'flex', flexDirection: 'column', flex: isMobile ? undefined : 1, minHeight: 0 }}>
+                        <div style={{ background: bgAgeHeader, color: 'white', fontWeight: 800, fontSize: isMobile ? 13 : '1.5vh', padding: isMobile ? '4px 12px' : '0.25vh 12px', textAlign: 'center', flexShrink: 0 }}>
                             {g.label}
                         </div>
-                        <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', flex: 1, padding: '0.15vh 4px', minHeight: 0 }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', flex: isMobile ? undefined : 1, padding: isMobile ? '4px' : '0.15vh 4px', minHeight: 0 }}>
                             {rows.map(i => list[i] ? renderRunnerRow(list[i], i) : renderEmptyRow(i))}
                         </div>
                     </div>
@@ -231,45 +249,45 @@ export default function ResultWinnersPage() {
     );
 
     return (
-        <div style={{ fontFamily: "'Prompt', 'Inter', sans-serif", background: '#0f172a', height: '100vh', overflow: 'hidden', display: 'flex', flexDirection: 'column', padding: '0.8vh 1vw' }}>
+        <div style={{ fontFamily: "'Prompt', 'Inter', sans-serif", background: '#0f172a', height: isMobile ? 'auto' : '100vh', minHeight: '100vh', overflow: isMobile ? 'auto' : 'hidden', display: 'flex', flexDirection: 'column', padding: isMobile ? '8px' : '0.8vh 1vw' }}>
             <style>{`@keyframes pulse { 0%,100% { opacity:1 } 50% { opacity:0.3 } }`}</style>
             {/* Header */}
-            <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.6vh 1.5vw', background: '#1e293b', borderRadius: 10, marginBottom: '0.8vh', flexShrink: 0, border: '1px solid #334155' }}>
-                {/* Logo → Home */}
-                <Link href="/" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <Image src="/logo-white.png" alt="ACTION" width={120} height={40} style={{ height: '3.5vh', width: 'auto' }} />
-                    <span style={{ color: '#22c55e', fontWeight: 900, fontSize: '2vh', letterSpacing: 2, textTransform: 'uppercase' }}>Winners</span>
-                </Link>
+            <header style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', justifyContent: 'space-between', alignItems: isMobile ? 'stretch' : 'center', padding: isMobile ? '10px 12px' : '0.6vh 1.5vw', background: '#1e293b', borderRadius: 10, marginBottom: isMobile ? 8 : '0.8vh', flexShrink: 0, border: '1px solid #334155', gap: isMobile ? 8 : 0 }}>
+                {/* Top row: Logo + refresh */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <Link href="/" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <Image src="/logo-white.png" alt="ACTION" width={120} height={40} style={{ height: isMobile ? 28 : '3.5vh', width: 'auto' }} />
+                        <span style={{ color: '#22c55e', fontWeight: 900, fontSize: isMobile ? 14 : '2vh', letterSpacing: 2, textTransform: 'uppercase' }}>Winners</span>
+                    </Link>
 
-                <div style={{ display: 'flex', alignItems: 'center', gap: '1vw' }}>
-                    {/* Auto-refresh indicator */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                         {refreshing && <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#22c55e', animation: 'pulse 0.8s ease-in-out infinite' }} />}
-                        <span style={{ fontSize: '1.1vh', color: '#94a3b8', fontFamily: 'monospace', minWidth: 60 }}>
+                        <span style={{ fontSize: isMobile ? 10 : '1.1vh', color: '#94a3b8', fontFamily: 'monospace' }}>
                             {refreshing ? 'Updating...' : `Refresh ${countdown}s`}
                         </span>
                     </div>
+                </div>
 
-                    {/* Campaign name label */}
+                {/* Bottom row on mobile: Campaign name + category tabs */}
+                <div style={{ display: 'flex', alignItems: isMobile ? 'stretch' : 'center', gap: isMobile ? 6 : '1vw', flexDirection: isMobile ? 'column' : 'row' }}>
                     {campaign && (
-                        <span style={{ fontSize: '1.3vh', fontWeight: 700, color: '#94a3b8', maxWidth: '25vw', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        <span style={{ fontSize: isMobile ? 11 : '1.3vh', fontWeight: 700, color: '#94a3b8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: isMobile ? '100%' : '25vw' }}>
                             {campaign.name}
                         </span>
                     )}
 
-                    {/* Distance/Category tabs */}
                     {campaign?.categories && campaign.categories.length > 0 && (
-                        <div style={{ display: 'flex', gap: '0.4vw' }}>
+                        <div style={{ display: 'flex', gap: isMobile ? 6 : '0.4vw', overflowX: 'auto', WebkitOverflowScrolling: 'touch', paddingBottom: isMobile ? 2 : 0 }}>
                             {campaign.categories.map(cat => (
                                 <button
                                     key={cat.name}
                                     onClick={() => setSelectedCategory(cat.name)}
                                     style={{
-                                        padding: '0.4vh 1vw', borderRadius: 6, fontSize: '1.3vh', fontWeight: 700,
+                                        padding: isMobile ? '6px 12px' : '0.4vh 1vw', borderRadius: 6, fontSize: isMobile ? 12 : '1.3vh', fontWeight: 700,
                                         border: selectedCategory === cat.name ? '2px solid #22c55e' : '1px solid #475569',
                                         background: selectedCategory === cat.name ? '#22c55e' : 'transparent',
                                         color: selectedCategory === cat.name ? '#000' : '#cbd5e1',
-                                        cursor: 'pointer', whiteSpace: 'nowrap',
+                                        cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
                                     }}
                                 >
                                     {cat.name}{cat.distance ? ` (${cat.distance})` : ''}
@@ -282,11 +300,11 @@ export default function ResultWinnersPage() {
 
             {/* Content */}
             {loading ? (
-                <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', fontSize: '2vh' }}>
+                <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', fontSize: isMobile ? 16 : '2vh' }}>
                     Loading...
                 </div>
             ) : (
-                <div style={{ display: 'flex', gap: '1vw', flex: 1, minHeight: 0 }}>
+                <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: isMobile ? 12 : '1vw', flex: isMobile ? undefined : 1, minHeight: 0, paddingBottom: isMobile ? 16 : 0 }}>
                     {renderColumn('♂ MALE WINNERS', '#2563eb', '#1e3a5f', maleWinners)}
                     {renderColumn('♀ FEMALE WINNERS', '#db2777', '#831843', femaleWinners)}
                 </div>

@@ -347,7 +347,7 @@ export default function Home() {
 
       {/* Events Section - UTMB Style */}
       <section id="events" className="relative z-10 py-12 px-4 sm:px-6" style={{ background: 'var(--muted)' }}>
-        <div className="max-w-5xl mx-auto ">
+        <div className="max-w-6xl mx-auto ">
           <div className="flex items-center justify-between mb-8">
             <h2 className="text-3xl font-bold" style={{ color: 'var(--foreground)' }}>
               {t('events.title')}

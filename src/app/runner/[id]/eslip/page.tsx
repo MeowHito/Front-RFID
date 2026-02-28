@@ -51,6 +51,7 @@ interface CampaignData {
     eventDate: string;
     location?: string;
     eslipTemplate?: string;
+    eslipTemplates?: string[];
 }
 
 function formatTime(ms?: number | null): string {
@@ -83,7 +84,7 @@ function Template1({ runner, timings, campaign, bgImage, slipRef }: TemplateProp
 
     return (
         <div ref={slipRef} style={{
-            width: '100%', maxWidth: 380, aspectRatio: '1/2', position: 'relative', borderRadius: 30, overflow: 'hidden',
+            width: '100%', maxWidth: 380, minHeight: 760, position: 'relative', borderRadius: 30, overflow: 'hidden',
             backgroundImage: bgImage ? `url(${bgImage})` : 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)',
             backgroundSize: 'cover', backgroundPosition: 'center',
             boxShadow: '0 25px 50px -12px rgba(0,0,0,0.7)',
@@ -110,7 +111,7 @@ function Template1({ runner, timings, campaign, bgImage, slipRef }: TemplateProp
                         <div style={{ minWidth: 0 }}>
                             <div style={{ fontSize: 22, fontWeight: 900, color: '#fff', lineHeight: 1.15, textTransform: 'uppercase', wordBreak: 'break-word' }}>{displayName}</div>
                             <div style={{ fontSize: 13, fontWeight: 600, color: '#cbd5e1', marginTop: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
-                                <span style={{ background: '#fff', color: '#000', fontWeight: 900, borderRadius: 6, padding: '2px 8px', fontSize: 12, flexShrink: 0 }}>#{runner.bib}</span>
+                                <span style={{ background: '#fff', color: '#000', fontWeight: 900, borderRadius: 6, padding: '2px 8px', fontSize: 12, flexShrink: 0 }}>{runner.bib}</span>
                                 <span style={{ opacity: 0.8 }}>{genderLabel} {runner.ageGroup || ''}</span>
                             </div>
                         </div>
@@ -123,7 +124,7 @@ function Template1({ runner, timings, campaign, bgImage, slipRef }: TemplateProp
                             { label: 'Gender', val: runner.genderRank || runner.genderNetRank || '-' },
                             { label: 'Category', val: runner.categoryRank || runner.categoryNetRank || '-' },
                         ].map((r, i) => (
-                            <div key={i} style={{ background: 'rgba(255,255,255,0.1)', backdropFilter: 'blur(8px)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 12, padding: 10, textAlign: 'center' }}>
+                            <div key={i} style={{ background: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 12, padding: 10, textAlign: 'center' }}>
                                 <div style={{ fontSize: 10, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase' }}>{r.label}</div>
                                 <div style={{ fontSize: 18, fontWeight: 900, color: '#fff' }}>{r.val}</div>
                             </div>
@@ -184,7 +185,7 @@ function Template2({ runner, timings, campaign, bgImage, slipRef }: TemplateProp
 
     return (
         <div ref={slipRef} style={{
-            width: '100%', maxWidth: 380, aspectRatio: '1/2', position: 'relative', borderRadius: 35, overflow: 'hidden',
+            width: '100%', maxWidth: 380, minHeight: 760, position: 'relative', borderRadius: 35, overflow: 'hidden',
             backgroundImage: bgImage ? `url(${bgImage})` : 'linear-gradient(135deg, #1e293b 0%, #334155 100%)',
             backgroundSize: 'cover', backgroundPosition: 'center',
             boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5)',
@@ -201,7 +202,7 @@ function Template2({ runner, timings, campaign, bgImage, slipRef }: TemplateProp
                 </div>
 
                 {/* Bottom Panel */}
-                <div style={{ background: 'rgba(0,0,0,0.35)', backdropFilter: 'blur(4px)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 25, padding: 20, marginBottom: 5 }}>
+                <div style={{ background: 'rgba(0,0,0,0.5)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 25, padding: 20, marginBottom: 5 }}>
                     {/* Rank Tags */}
                     <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
                         {[
@@ -216,7 +217,7 @@ function Template2({ runner, timings, campaign, bgImage, slipRef }: TemplateProp
                     {/* Runner Info */}
                     <div style={{ marginBottom: 16 }}>
                         <h1 style={{ fontSize: 30, fontWeight: 900, color: '#fff', textTransform: 'uppercase', lineHeight: 1, margin: 0, textShadow: '0 2px 4px rgba(0,0,0,0.8)' }}>{displayName}</h1>
-                        <p style={{ fontSize: 13, fontWeight: 600, color: '#cbd5e1', margin: '6px 0 0', textShadow: '0 1px 3px rgba(0,0,0,0.8)' }}>BIB #{runner.bib} • {genderLabel} {runner.ageGroup || ''}</p>
+                        <p style={{ fontSize: 13, fontWeight: 600, color: '#cbd5e1', margin: '6px 0 0', textShadow: '0 1px 3px rgba(0,0,0,0.8)' }}>BIB {runner.bib} • {genderLabel} {runner.ageGroup || ''}</p>
                     </div>
 
                     {/* Stats Grid */}
@@ -268,7 +269,7 @@ function Template3({ runner, timings, campaign, slipRef }: TemplateProps) {
 
     return (
         <div ref={slipRef} style={{
-            width: '100%', maxWidth: 360, aspectRatio: '1/2', background: '#fff', borderRadius: 32, overflow: 'hidden',
+            width: '100%', maxWidth: 360, minHeight: 720, background: '#fff', borderRadius: 32, overflow: 'hidden',
             boxShadow: '0 25px 50px -12px rgba(0,0,0,0.15)', border: '1px solid #e2e8f0',
             display: 'flex', flexDirection: 'column',
         }}>
@@ -282,7 +283,7 @@ function Template3({ runner, timings, campaign, slipRef }: TemplateProps) {
             <div style={{ padding: '25px 15px', display: 'flex', flexDirection: 'column', flexGrow: 1, overflow: 'hidden' }}>
                 {/* Runner */}
                 <div style={{ textAlign: 'center', marginBottom: 20 }}>
-                    <div style={{ background: '#0f172a', color: '#fff', padding: '2px 12px', borderRadius: 8, fontSize: 14, fontWeight: 800, display: 'inline-block', marginBottom: 8 }}>#{runner.bib}</div>
+                    <div style={{ background: '#0f172a', color: '#fff', padding: '2px 12px', borderRadius: 8, fontSize: 14, fontWeight: 800, display: 'inline-block', marginBottom: 8 }}>{runner.bib}</div>
                     <div style={{ fontSize: 28, fontWeight: 900, textTransform: 'uppercase', color: '#0f172a', lineHeight: 1 }}>{displayName}</div>
                     <div style={{ fontSize: 12, fontWeight: 600, color: '#64748b', marginTop: 4 }}>{runner.category} | {genderLabel} {runner.ageGroup || ''}</div>
                 </div>
@@ -365,6 +366,7 @@ export default function ESlipPage() {
     const [bgImage, setBgImage] = useState<string | null>(null);
     const [downloading, setDownloading] = useState(false);
     const [activeTemplate, setActiveTemplate] = useState<string>('template1');
+    const [availableTemplates, setAvailableTemplates] = useState<string[]>(['template1', 'template2', 'template3']);
 
     useEffect(() => {
         if (!runnerId) return;
@@ -378,7 +380,14 @@ export default function ESlipPage() {
                     setTimings(json.data.timingRecords || []);
                     const c = json.data.campaign;
                     setCampaign(c || null);
-                    if (c?.eslipTemplate) setActiveTemplate(c.eslipTemplate);
+                    // Set available templates from admin config
+                    const adminTemplates = c?.eslipTemplates;
+                    if (Array.isArray(adminTemplates) && adminTemplates.length > 0) {
+                        setAvailableTemplates(adminTemplates);
+                        setActiveTemplate(adminTemplates[0]);
+                    } else if (c?.eslipTemplate) {
+                        setActiveTemplate(c.eslipTemplate);
+                    }
                 } else {
                     setError(json.status?.description || 'Runner not found');
                 }
@@ -505,18 +514,29 @@ export default function ESlipPage() {
 
             <div style={{ padding: '20px 10px', display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%' }}>
 
-            {/* Template Selector (only show if admin hasn't locked to a single template) */}
-            <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
-                {['template1', 'template2', 'template3'].map((t) => (
-                    <button key={t} onClick={() => setActiveTemplate(t)} style={{
-                        padding: '6px 16px', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer', border: 'none', transition: '0.2s',
-                        background: activeTemplate === t ? '#22c55e' : 'rgba(255,255,255,0.1)',
-                        color: activeTemplate === t ? '#fff' : '#94a3b8',
-                    }}>
-                        {t === 'template1' ? '🌙 Dark' : t === 'template2' ? '📷 Photo' : '🤍 Clean'}
-                    </button>
-                ))}
-            </div>
+            {/* Template Selector — only show if admin enabled multiple templates */}
+            {availableTemplates.length > 1 && (
+                <div style={{ marginBottom: 16, position: 'relative', display: 'inline-block' }}>
+                    <select
+                        value={activeTemplate}
+                        onChange={e => setActiveTemplate(e.target.value)}
+                        style={{
+                            padding: '8px 32px 8px 14px', borderRadius: 10, fontSize: 13, fontWeight: 700,
+                            cursor: 'pointer', border: 'none', appearance: 'none',
+                            background: activeTemplate === 'template3' ? '#f1f5f9' : 'rgba(255,255,255,0.15)',
+                            color: activeTemplate === 'template3' ? '#0f172a' : '#fff',
+                            WebkitAppearance: 'none',
+                        }}
+                    >
+                        {availableTemplates.map(t => (
+                            <option key={t} value={t} style={{ color: '#000', background: '#fff' }}>
+                                {t === 'template1' ? '🌙 Dark' : t === 'template2' ? '📷 Photo' : '🤍 Clean White'}
+                            </option>
+                        ))}
+                    </select>
+                    <span style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', fontSize: 10, color: activeTemplate === 'template3' ? '#64748b' : '#94a3b8' }}>▼</span>
+                </div>
+            )}
 
             {/* Render Active Template */}
             {activeTemplate === 'template1' && <Template1 runner={runner} timings={timings} campaign={campaign} bgImage={bgImage} slipRef={slipRef} />}

@@ -621,7 +621,7 @@ export default function EventLivePage() {
                                 {shouldShowColumn('netPace') && <th style={{ padding: '12px 6px', textAlign: 'center', width: '5%' }}>Net Pace</th>}
                                 {shouldShowColumn('finish') && <th style={{ padding: '12px 4px', textAlign: 'center', width: '4%' }}>Finish</th>}
                                 {shouldShowColumn('genFin') && <th style={{ padding: '12px 4px', textAlign: 'center', width: '4%' }}>Gen Fin</th>}
-                                <th style={{ padding: '12px 8px', textAlign: 'right', width: '8%' }}>Progress</th>
+                                {!isMobile && <th style={{ padding: '12px 8px', textAlign: 'right', width: '8%' }}>Progress</th>}
                             </tr>
                         </thead>
                         <tbody>
@@ -781,6 +781,7 @@ export default function EventLivePage() {
                                                 </td>
                                             )}
                                             {/* Progress */}
+                                            {!isMobile && (
                                             <td style={{ padding: '12px 12px', textAlign: 'right' }}>
                                                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
                                                     <span style={{ fontWeight: 700, fontSize: 11, color: themeStyles.text, marginBottom: 4 }}>
@@ -803,6 +804,7 @@ export default function EventLivePage() {
                                                     </div>
                                                 </div>
                                             </td>
+                                            )}
                                         </tr>
                                     );
                                 })

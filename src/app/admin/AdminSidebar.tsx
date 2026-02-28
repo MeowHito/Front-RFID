@@ -63,6 +63,7 @@ const menuSections: MenuSection[] = [
         items: [
             { href: '/admin/results', label: 'ผลการแข่งขัน', labelEn: 'Results', icon: 'trophy', iconColor: '#f39c12' },
             { href: '/admin/display', label: 'การแสดงผล', labelEn: 'Display Settings', icon: 'desktop' },
+            { href: '/admin/age-group-ranking', label: 'อันดับกลุ่มอายุ', labelEn: 'Age Group Ranking', icon: 'ranking-star' },
             { href: '/admin/certificates', label: 'ใบประกาศ', labelEn: 'Certificates', icon: 'print' },
             { href: '/admin/eslip', label: 'E-Slip', labelEn: 'E-Slip', icon: 'id-card' },
             { href: '/admin/links', label: 'ลิงก์แชร์', labelEn: 'Share Links', icon: 'route' },

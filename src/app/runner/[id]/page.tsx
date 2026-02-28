@@ -207,7 +207,7 @@ export default function RunnerProfilePage() {
                             {initials}
                         </div>
                         <span style={{ position: 'absolute', bottom: -6, right: -6, background: '#0f172a', color: '#fff', padding: '2px 10px', borderRadius: 8, fontSize: 16, fontWeight: 800, border: '2px solid #fff', boxShadow: '0 0 0 1px #000, 0 4px 6px rgba(0,0,0,0.1)' }}>
-                            #{runner.bib}
+                            {runner.bib}
                         </span>
                     </div>
 
