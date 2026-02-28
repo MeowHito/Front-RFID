@@ -365,8 +365,8 @@ export default function ESlipPage() {
     const [error, setError] = useState<string | null>(null);
     const [bgImage, setBgImage] = useState<string | null>(null);
     const [downloading, setDownloading] = useState(false);
-    const [activeTemplate, setActiveTemplate] = useState<string>('template1');
-    const [availableTemplates, setAvailableTemplates] = useState<string[]>(['template1', 'template2', 'template3']);
+    const [activeTemplate, setActiveTemplate] = useState<string>('template2');
+    const [availableTemplates, setAvailableTemplates] = useState<string[]>(['template2', 'template1', 'template3']);
 
     useEffect(() => {
         if (!runnerId) return;
@@ -384,7 +384,9 @@ export default function ESlipPage() {
                     const adminTemplates = c?.eslipTemplates;
                     if (Array.isArray(adminTemplates) && adminTemplates.length > 0) {
                         setAvailableTemplates(adminTemplates);
-                        setActiveTemplate(adminTemplates[0]);
+                        // Prefer non-white template as default
+                        const preferred = adminTemplates.find(t => t !== 'template3') || adminTemplates[0];
+                        setActiveTemplate(preferred);
                     } else if (c?.eslipTemplate) {
                         setActiveTemplate(c.eslipTemplate);
                     }
@@ -426,29 +428,40 @@ export default function ESlipPage() {
             const html2canvas = (await import('html2canvas')).default;
             const canvas = await html2canvas(slipRef.current, { scale: 3, backgroundColor: activeTemplate === 'template3' ? '#f1f5f9' : '#0f172a', useCORS: true });
             const fileName = `ACTION_ESlip_${runner?.bib || 'runner'}.jpg`;
+            const dataUrl = canvas.toDataURL('image/jpeg', 0.95);
+            const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
 
-            // Try Web Share API first (saves to gallery on mobile)
-            if (typeof navigator !== 'undefined' && navigator.share && navigator.canShare) {
+            // Mobile: try Web Share API first (pops share sheet with "Save to Photos")
+            if (isMobile && typeof navigator !== 'undefined' && navigator.share) {
                 try {
                     const blob = await new Promise<Blob>((resolve, reject) => {
                         canvas.toBlob(b => b ? resolve(b) : reject(new Error('toBlob failed')), 'image/jpeg', 0.95);
                     });
                     const file = new File([blob], fileName, { type: 'image/jpeg' });
-                    if (navigator.canShare({ files: [file] })) {
+                    const canShareFile = navigator.canShare ? navigator.canShare({ files: [file] }) : true;
+                    if (canShareFile) {
                         await navigator.share({ files: [file], title: 'E-Slip' });
                         setDownloading(false);
                         return;
                     }
                 } catch (shareErr: any) {
-                    // User cancelled or share not supported — fall through to download
                     if (shareErr?.name === 'AbortError') { setDownloading(false); return; }
+                    // Share failed — fall through to new-tab method
                 }
+                // Mobile fallback: open image in new tab so user can long-press → Save to Photos
+                const newTab = window.open('', '_blank');
+                if (newTab) {
+                    newTab.document.write(`<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width"><title>E-Slip</title><style>body{margin:0;background:#0f172a;display:flex;justify-content:center;align-items:center;min-height:100vh;flex-direction:column;gap:12px;} img{max-width:100%;border-radius:12px;} p{color:#94a3b8;font-size:13px;font-family:sans-serif;text-align:center;padding:0 16px;}</style></head><body><img src="${dataUrl}"><p>กดค้างที่รูป → บันทึกภาพ เพื่อบันทึกลงแกลเลอรี</p></body></html>`);
+                    newTab.document.close();
+                }
+                setDownloading(false);
+                return;
             }
 
-            // Fallback: regular file download
+            // Desktop: regular file download
             const link = document.createElement('a');
             link.download = fileName;
-            link.href = canvas.toDataURL('image/jpeg', 0.95);
+            link.href = dataUrl;
             link.click();
         } catch (err) { console.error('E-Slip download error:', err); }
         finally { setDownloading(false); }
@@ -516,25 +529,30 @@ export default function ESlipPage() {
 
             {/* Template Selector — only show if admin enabled multiple templates */}
             {availableTemplates.length > 1 && (
-                <div style={{ marginBottom: 16, position: 'relative', display: 'inline-block' }}>
+                <div style={{
+                    marginBottom: 16, position: 'relative', display: 'inline-block',
+                    border: activeTemplate === 'template3' ? '2px solid #cbd5e1' : '2px solid rgba(255,255,255,0.3)',
+                    borderRadius: 12, padding: 2,
+                    boxShadow: activeTemplate === 'template3' ? '0 2px 8px rgba(0,0,0,0.08)' : '0 2px 12px rgba(0,0,0,0.4)',
+                }}>
                     <select
                         value={activeTemplate}
                         onChange={e => setActiveTemplate(e.target.value)}
                         style={{
-                            padding: '8px 32px 8px 14px', borderRadius: 10, fontSize: 13, fontWeight: 700,
+                            padding: '10px 40px 10px 16px', borderRadius: 10, fontSize: 14, fontWeight: 700,
                             cursor: 'pointer', border: 'none', appearance: 'none',
-                            background: activeTemplate === 'template3' ? '#f1f5f9' : 'rgba(255,255,255,0.15)',
+                            background: activeTemplate === 'template3' ? '#f8fafc' : 'rgba(255,255,255,0.12)',
                             color: activeTemplate === 'template3' ? '#0f172a' : '#fff',
-                            WebkitAppearance: 'none',
+                            WebkitAppearance: 'none', minWidth: 180, outline: 'none',
                         }}
                     >
                         {availableTemplates.map(t => (
                             <option key={t} value={t} style={{ color: '#000', background: '#fff' }}>
-                                {t === 'template1' ? '🌙 Dark' : t === 'template2' ? '📷 Photo' : '🤍 Clean White'}
+                                {t === 'template1' ? '🌙 Dark Style' : t === 'template2' ? '📷 Photo Style' : '🤍 Clean White'}
                             </option>
                         ))}
                     </select>
-                    <span style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', fontSize: 10, color: activeTemplate === 'template3' ? '#64748b' : '#94a3b8' }}>▼</span>
+                    <span style={{ position: 'absolute', right: 14, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', fontSize: 11, color: activeTemplate === 'template3' ? '#64748b' : 'rgba(255,255,255,0.7)' }}>▼</span>
                 </div>
             )}
 
