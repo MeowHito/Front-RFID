@@ -22,6 +22,8 @@ interface Campaign {
     status: string;
     categories: RaceCategory[];
     displayColumns?: string[];
+    displayColumnsLab?: string[];
+    displayMode?: string;
 }
 
 interface RaceCategory {
@@ -65,6 +67,11 @@ interface Runner {
     teamName?: string;
     latestCheckpoint?: string;
     passedCount?: number;
+    lapCount?: number;
+    bestLapTime?: number;
+    avgLapTime?: number;
+    lastLapTime?: number;
+    lastPassTime?: string;
     isStarted?: boolean;
     gunPace?: string;
     netPace?: string;
@@ -116,8 +123,10 @@ function parseDistanceValue(value: unknown): number | null {
     return Number.isFinite(parsed) ? parsed : null;
 }
 
-// Column definitions — same keys/widths as admin display page
-const COL_DEFS: { key: string; label: string; w: string; mw: string; align: 'left' | 'center' | 'right'; fixed?: boolean; desktopOnly?: boolean }[] = [
+type ColDef = { key: string; label: string; w: string; mw: string; align: 'left' | 'center' | 'right'; fixed?: boolean; desktopOnly?: boolean };
+
+// Marathon column definitions
+const COL_DEFS: ColDef[] = [
     { key: 'rank',     label: 'Rank',     w: '3%',  mw: '8%',  align: 'center', fixed: true },
     { key: 'genRank',  label: 'Gen',      w: '3%',  mw: '8%',  align: 'center' },
     { key: 'catRank',  label: 'Cat',      w: '3%',  mw: '8%',  align: 'center' },
@@ -134,6 +143,23 @@ const COL_DEFS: { key: string; label: string; w: string; mw: string; align: 'lef
     { key: 'progress', label: 'Progress', w: '8%',  mw: '8%',  align: 'right',  fixed: true, desktopOnly: true },
 ];
 const TOGGLEABLE_KEYS = COL_DEFS.filter(c => !c.fixed).map(c => c.key);
+
+// Lab (lap-based) column definitions
+const LAB_COL_DEFS: ColDef[] = [
+    { key: 'rank',      label: 'Rank',       w: '4%',  mw: '8%',  align: 'center', fixed: true },
+    { key: 'runner',    label: 'Runner',     w: '16%', mw: '32%', align: 'left',   fixed: true },
+    { key: 'sex',       label: 'Sex',        w: '4%',  mw: '6%',  align: 'center' },
+    { key: 'laps',      label: 'Laps',       w: '5%',  mw: '8%',  align: 'center', fixed: true },
+    { key: 'bestLap',   label: 'Best Lap',   w: '8%',  mw: '12%', align: 'center' },
+    { key: 'avgLap',    label: 'Avg Lap',    w: '8%',  mw: '12%', align: 'center' },
+    { key: 'lastLap',   label: 'Last Lap',   w: '8%',  mw: '12%', align: 'center' },
+    { key: 'totalTime', label: 'Total Time', w: '8%',  mw: '12%', align: 'center' },
+    { key: 'lastPass',  label: 'Last Pass',  w: '10%', mw: '14%', align: 'center' },
+    { key: 'lapPace',   label: 'Lap Pace',   w: '7%',  mw: '10%', align: 'center' },
+    { key: 'status',    label: 'Status',     w: '7%',  mw: '9%',  align: 'left' },
+    { key: 'progress',  label: 'Progress',   w: '8%',  mw: '8%',  align: 'right',  fixed: true, desktopOnly: true },
+];
+const LAB_TOGGLEABLE_KEYS = LAB_COL_DEFS.filter(c => !c.fixed).map(c => c.key);
 
 const AVATAR_COLORS = [
     '#ef4444', '#f97316', '#eab308', '#22c55e', '#06b6d4',
@@ -379,21 +405,24 @@ export default function EventLivePage() {
         return runner.category;
     }, [categories]);
 
+    // Determine active display mode and column set
+    const isLabMode = campaign?.displayMode === 'lab';
+    const activeColDefs = isLabMode ? LAB_COL_DEFS : COL_DEFS;
+    const activeToggleableKeys = isLabMode ? LAB_TOGGLEABLE_KEYS : TOGGLEABLE_KEYS;
+
     // Build ordered list of visible columns based on admin displayColumns + mobile
     const visibleColumns = useMemo(() => {
-        const adminCols = campaign?.displayColumns;
+        const adminCols = isLabMode ? campaign?.displayColumnsLab : campaign?.displayColumns;
         // Rebuild full column order from admin settings
         let fullOrder: string[];
         if (adminCols && adminCols.length > 0) {
-            // Admin saved toggleable columns in order. Reconstruct full order:
-            // fixed columns keep their natural positions, toggleable slots filled by adminCols order
             const toggleOrdered = [
-                ...adminCols.filter((k: string) => TOGGLEABLE_KEYS.includes(k)),
-                ...TOGGLEABLE_KEYS.filter(k => !adminCols.includes(k)),
+                ...adminCols.filter((k: string) => activeToggleableKeys.includes(k)),
+                ...activeToggleableKeys.filter(k => !adminCols.includes(k)),
             ];
             fullOrder = [];
             let tIdx = 0;
-            for (const col of COL_DEFS) {
+            for (const col of activeColDefs) {
                 if (col.fixed) {
                     fullOrder.push(col.key);
                 } else {
@@ -401,28 +430,26 @@ export default function EventLivePage() {
                 }
             }
         } else {
-            fullOrder = COL_DEFS.map(c => c.key);
+            fullOrder = activeColDefs.map(c => c.key);
         }
 
         // Filter to only visible columns
         return fullOrder.filter(key => {
-            const def = COL_DEFS.find(c => c.key === key)!;
-            // Desktop-only columns hidden on mobile
+            const def = activeColDefs.find(c => c.key === key)!;
+            if (!def) return false;
             if (def.desktopOnly && isMobile) return false;
-            // Fixed columns always visible
             if (def.fixed) return true;
-            // genRank/catRank have their own data toggles
-            if (key === 'genRank' && !showGenRank) return false;
-            if (key === 'catRank' && !showCatRank) return false;
-            // Admin-configured: if set, only show columns in the list
+            if (!isLabMode) {
+                if (key === 'genRank' && !showGenRank) return false;
+                if (key === 'catRank' && !showCatRank) return false;
+            }
             if (adminCols && adminCols.length > 0 && !adminCols.includes(key)) return false;
-            // Mobile: show only essential toggleable columns unless showAllColumns
             if (isMobile && !showAllColumns) {
-                return ['gunTime'].includes(key);
+                return isLabMode ? ['laps'].includes(key) : ['gunTime'].includes(key);
             }
             return true;
         });
-    }, [isMobile, showAllColumns, campaign?.displayColumns, showGenRank, showCatRank]);
+    }, [isMobile, showAllColumns, campaign?.displayColumns, campaign?.displayColumnsLab, campaign?.displayMode, showGenRank, showCatRank, isLabMode, activeColDefs, activeToggleableKeys]);
 
     // Compute median finish time per category for real progress estimation
     const categoryMedianTime = useMemo(() => {
@@ -765,7 +792,7 @@ export default function EventLivePage() {
                         <thead>
                             <tr style={{ fontSize: 10, fontWeight: 700, color: themeStyles.textSecondary, textTransform: 'uppercase', letterSpacing: '-0.02em', position: 'sticky', top: 0, background: themeStyles.cardBg, zIndex: 20, borderBottom: `2px solid ${themeStyles.border}` }}>
                                 {visibleColumns.map(key => {
-                                    const def = COL_DEFS.find(c => c.key === key)!;
+                                    const def = activeColDefs.find(c => c.key === key)!;
                                     return (
                                         <th key={key} style={{ padding: isMobile ? '10px 4px' : '12px 6px', textAlign: def.align, width: isMobile ? def.mw : def.w }}>
                                             {def.label}
@@ -1011,6 +1038,74 @@ export default function EventLivePage() {
                                                         </div>
                                                     </td>
                                                 );
+                                            // ===== LAB / LAP columns =====
+                                            case 'laps':
+                                                return (
+                                                    <td key={key} style={{ padding: '12px 6px', textAlign: 'center' }}>
+                                                        <span style={{ fontSize: 18, fontWeight: 900, color: (runner.lapCount || runner.passedCount || 0) > 0 ? '#8b5cf6' : themeStyles.textSecondary }}>
+                                                            {runner.lapCount || runner.passedCount || 0}
+                                                        </span>
+                                                    </td>
+                                                );
+                                            case 'bestLap':
+                                                return (
+                                                    <td key={key} style={{ padding: '12px 6px', textAlign: 'center' }}>
+                                                        <span style={{ fontSize: 12, fontWeight: 700, color: runner.bestLapTime ? '#22c55e' : themeStyles.textSecondary, fontFamily: 'monospace' }}>
+                                                            {runner.bestLapTime ? formatTime(runner.bestLapTime) : '-'}
+                                                        </span>
+                                                    </td>
+                                                );
+                                            case 'avgLap':
+                                                return (
+                                                    <td key={key} style={{ padding: '12px 6px', textAlign: 'center' }}>
+                                                        <span style={{ fontSize: 12, fontWeight: 600, color: runner.avgLapTime ? themeStyles.text : themeStyles.textSecondary, fontFamily: 'monospace' }}>
+                                                            {runner.avgLapTime ? formatTime(runner.avgLapTime) : '-'}
+                                                        </span>
+                                                    </td>
+                                                );
+                                            case 'lastLap':
+                                                return (
+                                                    <td key={key} style={{ padding: '12px 6px', textAlign: 'center' }}>
+                                                        <span style={{ fontSize: 12, fontWeight: 600, color: runner.lastLapTime ? themeStyles.text : themeStyles.textSecondary, fontFamily: 'monospace' }}>
+                                                            {runner.lastLapTime ? formatTime(runner.lastLapTime) : '-'}
+                                                        </span>
+                                                    </td>
+                                                );
+                                            case 'totalTime':
+                                                return (
+                                                    <td key={key} style={{ padding: '12px 6px', textAlign: 'center' }}>
+                                                        <span style={{ fontSize: 12, fontWeight: 700, color: themeStyles.text, fontFamily: 'monospace' }}>
+                                                            {formatTime(runner.elapsedTime || runner.gunTime)}
+                                                        </span>
+                                                    </td>
+                                                );
+                                            case 'lastPass':
+                                                return (
+                                                    <td key={key} style={{ padding: '12px 6px', textAlign: 'center' }}>
+                                                        <span style={{ fontSize: 11, color: runner.lastPassTime ? themeStyles.text : themeStyles.textSecondary, fontFamily: 'monospace' }}>
+                                                            {runner.lastPassTime ? new Date(runner.lastPassTime).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '-'}
+                                                        </span>
+                                                    </td>
+                                                );
+                                            case 'lapPace': {
+                                                const lapsCount = runner.lapCount || runner.passedCount || 0;
+                                                const totalMs = runner.elapsedTime || runner.gunTime || 0;
+                                                let lapPaceStr = '-';
+                                                if (lapsCount > 0 && totalMs > 0) {
+                                                    const msPerLap = totalMs / lapsCount;
+                                                    const minPerLap = msPerLap / 60000;
+                                                    const pM = Math.floor(minPerLap);
+                                                    const pS = Math.round((minPerLap - pM) * 60);
+                                                    lapPaceStr = `${pM.toString().padStart(2, '0')}:${pS.toString().padStart(2, '0')}`;
+                                                }
+                                                return (
+                                                    <td key={key} style={{ padding: '12px 6px', textAlign: 'center' }}>
+                                                        <span style={{ fontSize: 11, fontWeight: 600, color: lapPaceStr !== '-' ? '#8b5cf6' : themeStyles.textSecondary, fontFamily: 'monospace' }}>
+                                                            {lapPaceStr}
+                                                        </span>
+                                                    </td>
+                                                );
+                                            }
                                             default:
                                                 return null;
                                         }
