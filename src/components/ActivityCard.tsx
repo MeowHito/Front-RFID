@@ -165,9 +165,9 @@ export default function ActivityCard({
             </div>
 
             {/* ===== DESKTOP LAYOUT ===== */}
-            <div className="hidden md:flex md:flex-row" style={{ borderLeft: `5px solid ${color}`, minHeight: 160 }}>
-                {/* Left: Cover Image — responsive width */}
-                <div className="relative shrink-0 overflow-hidden" style={{ width: '22%', minWidth: 200, minHeight: 160 }}>
+            <div className="hidden md:flex md:flex-row" style={{ borderLeft: `5px solid ${color}`, height: 160 }}>
+                {/* Left: Cover Image fixed 16:8 — image fills card height (160px → width 320px) */}
+                <div className="relative shrink-0 overflow-hidden" style={{ width: 300, height: 160 }}>
                     <img src={imageUrl} alt={displayTitle} className="absolute inset-0 w-full h-full object-cover" style={{ pointerEvents: 'none' }} />
                     {countdown && (
                         <div className="absolute top-2 left-2 bg-black/70 text-white p-1 rounded flex items-center gap-0.5 backdrop-blur-sm z-10">
@@ -192,8 +192,8 @@ export default function ActivityCard({
                 </div>
 
                 {/* Middle: Event Details */}
-                <div className="flex flex-col justify-center px-5 py-3 border-r border-gray-100 dark:border-gray-700 shrink-0" style={{ width: '25%', minWidth: 180 }}>
-                    <h2 className="text-base font-bold mb-1 leading-tight uppercase whitespace-nowrap overflow-hidden text-ellipsis" style={{ color: color }}>{displayTitle}</h2>
+                <div className="flex flex-col justify-center px-5 py-3 border-r border-gray-100 dark:border-gray-700 shrink-0" style={{ width: '22%' }}>
+                    <h2 className="text-base font-bold mb-1 leading-tight uppercase" style={{ color: color }}>{displayTitle}</h2>
                     <p className="text-[0.75rem] text-gray-700 dark:text-gray-300 font-medium mb-0.5 line-clamp-1">📍 {displayLocation}</p>
                     <p className="text-[0.7rem] text-gray-400 mb-2.5">📅 {date}</p>
                     <span className="inline-flex items-center px-3 py-1 border border-gray-300 dark:border-gray-600 rounded text-gray-700 dark:text-gray-200 font-semibold text-[0.7rem] w-fit">
