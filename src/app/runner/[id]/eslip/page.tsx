@@ -81,6 +81,22 @@ interface TemplateProps {
     showField: (key: string) => boolean;
 }
 
+/** Auto-shrink text to always fit one line within its container */
+function FitName({ children, className, style, maxSize = 28 }: { children: string; className?: string; style?: React.CSSProperties; maxSize?: number }) {
+    const ref = useRef<HTMLDivElement>(null);
+    useEffect(() => {
+        const el = ref.current;
+        if (!el) return;
+        let size = maxSize;
+        el.style.fontSize = `${size}px`;
+        while (el.scrollWidth > el.clientWidth && size > 12) {
+            size--;
+            el.style.fontSize = `${size}px`;
+        }
+    }, [children, maxSize]);
+    return <div ref={ref} className={className} style={{ ...style, whiteSpace: 'nowrap', overflow: 'hidden', width: '100%' }}>{children}</div>;
+}
+
 // ==================== TEMPLATE 1: Dark Photo Background ====================
 function Template1({ runner, timings, campaign, bgImage, slipRef, showField }: TemplateProps) {
     const displayName = `${runner.firstName} ${runner.lastName}`.trim();
@@ -123,7 +139,7 @@ function Template1({ runner, timings, campaign, bgImage, slipRef, showField }: T
                             {(runner.firstName?.[0] || '') + (runner.lastName?.[0] || '')}
                         </div>
                         <div className="min-w-0">
-                            <div className="text-[22px] font-black text-white leading-tight uppercase break-words">{displayName}</div>
+                            <FitName className="font-black text-white leading-tight uppercase" maxSize={24}>{displayName}</FitName>
                             <div className="text-[13px] font-semibold text-slate-300 mt-2 flex items-center gap-1.5">
                                 <span className="bg-white text-black font-black rounded-md px-2 py-0.5 text-xs shrink-0">{runner.bib}</span>
                                 <span className="opacity-80">{genderLabel} {runner.ageGroup || ''}</span>
@@ -154,11 +170,11 @@ function Template1({ runner, timings, campaign, bgImage, slipRef, showField }: T
                                 <div className="flex justify-center gap-8 pt-3">
                                     {showField('gunTime') && <div className="text-center min-w-[80px]">
                                         <div className="text-[10px] font-black text-white uppercase mb-1">Gun Time</div>
-                                        <div className="text-xl font-black text-white font-mono tracking-wide">{gunTimeStr}</div>
+                                        <div className="text-xl font-black text-white">{gunTimeStr}</div>
                                     </div>}
                                     {showField('netTime') && <div className="text-center min-w-[80px]">
                                         <div className="text-[10px] font-black text-white uppercase mb-1">Net Time</div>
-                                        <div className="text-xl font-black text-green-400 font-mono tracking-wide">{netTimeStr}</div>
+                                        <div className="text-xl font-black text-green-400">{netTimeStr}</div>
                                     </div>}
                                 </div>
                             )}
@@ -242,7 +258,7 @@ function Template2({ runner, timings, campaign, bgImage, slipRef, showField }: T
                 <div className="bg-black/50 border border-white/15 rounded-[25px] p-5 mb-1">
                     {/* Runner Info */}
                     <div className="mb-4">
-                        <h1 className="text-[30px] font-black text-white uppercase leading-none m-0" style={{ textShadow: '0 2px 4px rgba(0,0,0,0.8)' }}>{displayName}</h1>
+                        <FitName className="font-black text-white uppercase leading-none m-0" style={{ textShadow: '0 2px 4px rgba(0,0,0,0.8)' }} maxSize={28}>{displayName}</FitName>
                         <p className="text-[13px] font-semibold text-slate-300 mt-1.5" style={{ textShadow: '0 1px 3px rgba(0,0,0,0.8)' }}>BIB {runner.bib} • {genderLabel} {runner.ageGroup || ''}</p>
                     </div>
 
@@ -267,11 +283,11 @@ function Template2({ runner, timings, campaign, bgImage, slipRef, showField }: T
                                 <div className="flex justify-center gap-8 pt-3">
                                     {showField('gunTime') && <div className="text-center min-w-[80px]">
                                         <div className="text-[10px] font-black text-white uppercase mb-1">Gun Time</div>
-                                        <div className="text-lg font-black text-white font-mono tracking-wide">{gunTimeStr}</div>
+                                        <div className="text-lg font-black text-white">{gunTimeStr}</div>
                                     </div>}
                                     {showField('netTime') && <div className="text-center min-w-[80px]">
                                         <div className="text-[10px] font-black text-white uppercase mb-1">Net Time</div>
-                                        <div className="text-lg font-black text-green-400 font-mono tracking-wide">{netTimeStr}</div>
+                                        <div className="text-lg font-black text-green-400">{netTimeStr}</div>
                                     </div>}
                                 </div>
                             )}
@@ -337,7 +353,7 @@ function Template3({ runner, timings, campaign, slipRef, showField }: TemplatePr
                 {/* Runner */}
                 <div className="text-center mb-5">
                     <div className="bg-slate-900 text-white px-3 py-0.5 rounded-lg text-sm font-extrabold inline-block mb-2">{runner.bib}</div>
-                    <div className="text-[28px] font-black uppercase text-slate-900 leading-none">{displayName}</div>
+                    <FitName className="font-black uppercase text-slate-900 leading-none" maxSize={28}>{displayName}</FitName>
                     <div className="text-xs font-semibold text-slate-500 mt-1">{runner.category} | {genderLabel} {runner.ageGroup || ''}</div>
                 </div>
 
@@ -346,11 +362,11 @@ function Template3({ runner, timings, campaign, slipRef, showField }: TemplatePr
                     <div className="flex justify-center gap-2.5 mb-4">
                         {showField('gunTime') && <div className="bg-slate-50 border border-slate-200 rounded-xl py-2.5 px-3 text-center flex-1">
                             <div className="text-[8px] font-extrabold text-slate-400 uppercase mb-1">Gun Time</div>
-                            <div className="text-lg font-black text-slate-900 font-mono">{gunTimeStr}</div>
+                            <div className="text-lg font-black text-slate-900">{gunTimeStr}</div>
                         </div>}
                         {showField('netTime') && <div className="bg-green-50 border border-green-200 rounded-xl py-2.5 px-3 text-center flex-1">
                             <div className="text-[8px] font-extrabold text-green-600 uppercase mb-1">Net Time</div>
-                            <div className="text-lg font-black text-green-600 font-mono">{netTimeStr}</div>
+                            <div className="text-lg font-black text-green-600">{netTimeStr}</div>
                         </div>}
                     </div>
                 )}
