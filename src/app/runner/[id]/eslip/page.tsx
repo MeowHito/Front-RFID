@@ -139,7 +139,7 @@ function Template1({ runner, timings, campaign, bgImage, slipRef }: TemplateProp
                                 { label: 'Category', val: runner.categoryRank || runner.categoryNetRank || '-' },
                             ].map((r, i) => (
                                 <div key={i} className="text-center">
-                                    <div className="text-[10px] font-black text-black text-stroke-white uppercase">{r.label}</div>
+                                    <div className="text-[10px] font-black text-white  uppercase">{r.label}</div>
                                     <div className="text-xl font-black text-white">{r.val}</div>
                                 </div>
                             ))}
@@ -147,11 +147,11 @@ function Template1({ runner, timings, campaign, bgImage, slipRef }: TemplateProp
                         {/* Bottom row: Gun Time / Net Time */}
                         <div className="grid grid-cols-2 gap-3 pt-3">
                             <div className="text-center">
-                                <div className="text-[10px] font-black text-black text-stroke-white uppercase mb-1">Gun Time</div>
+                                <div className="text-[10px] font-black text-white  uppercase mb-1">Gun Time</div>
                                 <div className="text-xl font-black text-white font-mono tracking-wide">{gunTimeStr}</div>
                             </div>
                             <div className="text-center">
-                                <div className="text-[10px] font-black text-black text-stroke-white uppercase mb-1">Net Time</div>
+                                <div className="text-[10px] font-black text-white  uppercase mb-1">Net Time</div>
                                 <div className="text-xl font-black text-green-400 font-mono tracking-wide">{netTimeStr}</div>
                             </div>
                         </div>
