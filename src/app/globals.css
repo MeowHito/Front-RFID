@@ -102,7 +102,8 @@ body {
 }
 
 /* Header glass with accent tint for better visibility */
-header.glass, .glass-header {
+header.glass,
+.glass-header {
     background: linear-gradient(135deg, var(--card) 0%, var(--accent-light) 100%);
     border-bottom: 1px solid var(--accent);
     box-shadow:
@@ -343,5 +344,17 @@ header.glass, .glass-header {
 
     50% {
         opacity: 0.4;
+    }
+}
+
+/* E-Slip text stroke effect */
+.text-stroke-white {
+    -webkit-text-stroke: 0.25px #fff;
+    paint-order: stroke fill;
+}
+
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
     }
 }

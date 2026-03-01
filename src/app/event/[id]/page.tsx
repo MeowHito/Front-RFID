@@ -127,19 +127,19 @@ type ColDef = { key: string; label: string; w: string; mw: string; align: 'left'
 
 // Marathon column definitions
 const COL_DEFS: ColDef[] = [
-    { key: 'rank', label: 'Rank', w: '3%', mw: '8%', align: 'center', fixed: true },
-    { key: 'genRank', label: 'Gen', w: '3%', mw: '8%', align: 'center' },
-    { key: 'catRank', label: 'Cat', w: '3%', mw: '8%', align: 'center' },
-    { key: 'runner', label: 'Runner', w: '15%', mw: '30%', align: 'left', fixed: true },
-    { key: 'sex', label: 'Sex', w: '3%', mw: '6%', align: 'center' },
-    { key: 'status', label: 'Status', w: '8%', mw: '9%', align: 'left', fixed: true },
-    { key: 'gunTime', label: 'Gun Time', w: '7%', mw: '16%', align: 'center' },
-    { key: 'netTime', label: 'Net Time', w: '7%', mw: '7%', align: 'center' },
-    { key: 'genNet', label: 'Gen Net', w: '4%', mw: '4%', align: 'center' },
-    { key: 'gunPace', label: 'Gun Pace', w: '5%', mw: '5%', align: 'center' },
-    { key: 'netPace', label: 'Net Pace', w: '5%', mw: '5%', align: 'center' },
-    { key: 'finish', label: 'Finish', w: '4%', mw: '4%', align: 'center' },
-    { key: 'genFin', label: 'Gen Fin', w: '4%', mw: '4%', align: 'center' },
+    { key: 'rank', label: 'Rank', w: '3%', mw: '4%', align: 'center', fixed: true },
+    { key: 'genRank', label: 'Gen', w: '3%', mw: '4%', align: 'center' },
+    { key: 'catRank', label: 'Cat', w: '3%', mw: '4%', align: 'center' },
+    { key: 'runner', label: 'Runner', w: '15%', mw: '22%', align: 'left', fixed: true },
+    { key: 'sex', label: 'Sex', w: '3%', mw: '5%', align: 'center' },
+    { key: 'status', label: 'Status', w: '8%', mw: '8%', align: 'left', fixed: true },
+    { key: 'gunTime', label: 'Gun Time', w: '7%', mw: '10%', align: 'center' },
+    { key: 'netTime', label: 'Net Time', w: '7%', mw: '10%', align: 'center' },
+    { key: 'genNet', label: 'Gen Net', w: '4%', mw: '5%', align: 'center' },
+    { key: 'gunPace', label: 'Gun Pace', w: '5%', mw: '8%', align: 'center' },
+    { key: 'netPace', label: 'Net Pace', w: '5%', mw: '8%', align: 'center' },
+    { key: 'finish', label: 'Finish', w: '4%', mw: '5%', align: 'center' },
+    { key: 'genFin', label: 'Gen Fin', w: '4%', mw: '5%', align: 'center' },
     { key: 'progress', label: 'Progress', w: '8%', mw: '8%', align: 'right', fixed: true, desktopOnly: true },
 ];
 const TOGGLEABLE_KEYS = COL_DEFS.filter(c => !c.fixed).map(c => c.key);
@@ -650,9 +650,9 @@ export default function EventLivePage() {
             </header>
 
             {/* ===== FILTER BAR ===== */}
-            <div style={{ background: themeStyles.cardBg, borderBottom: `1px solid ${themeStyles.border}`, padding: '8px 16px', display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: isMobile ? 8 : 12 }}>
-                {/* Distance filter + Gender filter (on mobile, gender goes after distance) */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <div style={{ background: themeStyles.cardBg, borderBottom: `1px solid ${themeStyles.border}`, padding: '8px 16px', display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: isMobile ? 6 : 12 }}>
+                {/* Row 1: Distance + More button (mobile) */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', ...(isMobile ? { width: '100%' } : {}) }}>
                     <span style={{ fontSize: 10, fontWeight: 700, color: themeStyles.textSecondary, textTransform: 'uppercase', whiteSpace: 'nowrap' }}>
                         Distance:
                     </span>
@@ -665,6 +665,7 @@ export default function EventLivePage() {
                                 background: themeStyles.inputBg, color: themeStyles.text,
                                 border: `1px solid ${themeStyles.border}`, cursor: 'pointer',
                                 appearance: 'auto', WebkitAppearance: 'menulist',
+                                flex: 1,
                             }}
                         >
                             {categories.map(cat => (
@@ -690,9 +691,36 @@ export default function EventLivePage() {
                         </div>
                     )}
 
-                    {/* Gender Filter — on mobile, placed right after distance */}
+                    {/* Mobile toggle — placed on same row as distance */}
                     {isMobile && (
-                        <div style={{ display: 'flex', background: themeStyles.inputBg, padding: 3, borderRadius: 8 }}>
+                        <button
+                            onClick={() => setShowAllColumns(!showAllColumns)}
+                            style={{ background: showAllColumns ? '#22c55e' : themeStyles.cardBg, border: `1px solid ${showAllColumns ? '#22c55e' : themeStyles.border}`, color: showAllColumns ? '#fff' : themeStyles.textMuted, padding: '6px 12px', borderRadius: 8, fontSize: 11, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, whiteSpace: 'nowrap', marginLeft: 'auto' }}
+                        >
+                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 3v18M3 12h18" /></svg>
+                            {showAllColumns ? (language === 'th' ? 'ย่อ' : 'Less') : (language === 'th' ? 'เพิ่มเติม' : 'More')}
+                        </button>
+                    )}
+                </div>
+
+                {/* Row 2 (mobile): Search input + Gender filter — full width, gender flush right */}
+                {isMobile && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%' }}>
+                        {/* Search */}
+                        <div style={{ position: 'relative', flex: 1, minWidth: 0 }}>
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={themeStyles.textSecondary} strokeWidth="2" style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)' }}>
+                                <circle cx="11" cy="11" r="8" /><path d="M21 21l-4.35-4.35" />
+                            </svg>
+                            <input
+                                type="text"
+                                placeholder={language === 'th' ? 'BIB หรือ ชื่อ...' : 'BIB or Name...'}
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                                style={{ paddingLeft: 30, paddingRight: 10, paddingTop: 6, paddingBottom: 6, background: themeStyles.inputBg, border: 'none', borderRadius: 8, fontSize: 12, width: '100%', outline: 'none', color: themeStyles.text }}
+                            />
+                        </div>
+                        {/* Gender Filter */}
+                        <div style={{ display: 'flex', background: themeStyles.inputBg, padding: 3, borderRadius: 8, flexShrink: 0 }}>
                             {(['ALL', 'M', 'F'] as const).map(g => (
                                 <button
                                     key={g}
@@ -708,14 +736,13 @@ export default function EventLivePage() {
                                 </button>
                             ))}
                         </div>
-                    )}
+                    </div>
+                )}
 
-                </div>
-
-                {/* Right controls */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    {/* Gender Filter — desktop only (mobile is above) */}
-                    {!isMobile && (
+                {/* Right controls (desktop only) */}
+                {!isMobile && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        {/* Gender Filter — desktop only */}
                         <div style={{ display: 'flex', background: themeStyles.inputBg, padding: 3, borderRadius: 8 }}>
                             {(['ALL', 'M', 'F'] as const).map(g => (
                                 <button
@@ -732,35 +759,22 @@ export default function EventLivePage() {
                                 </button>
                             ))}
                         </div>
-                    )}
 
-                    {/* Search */}
-                    <div style={{ position: 'relative' }}>
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={themeStyles.textSecondary} strokeWidth="2" style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)' }}>
-                            <circle cx="11" cy="11" r="8" /><path d="M21 21l-4.35-4.35" />
-                        </svg>
-                        <input
-                            type="text"
-                            placeholder={language === 'th' ? 'BIB หรือ ชื่อ...' : 'BIB or Name...'}
-                            value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
-                            style={{ paddingLeft: 30, paddingRight: 16, paddingTop: 6, paddingBottom: 6, background: themeStyles.inputBg, border: 'none', borderRadius: 8, fontSize: 12, width: isMobile ? 130 : 180, outline: 'none', color: themeStyles.text }}
-                        />
-                    </div>
+                        {/* Search */}
+                        <div style={{ position: 'relative' }}>
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={themeStyles.textSecondary} strokeWidth="2" style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)' }}>
+                                <circle cx="11" cy="11" r="8" /><path d="M21 21l-4.35-4.35" />
+                            </svg>
+                            <input
+                                type="text"
+                                placeholder={language === 'th' ? 'BIB หรือ ชื่อ...' : 'BIB or Name...'}
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                                style={{ paddingLeft: 30, paddingRight: 16, paddingTop: 6, paddingBottom: 6, background: themeStyles.inputBg, border: 'none', borderRadius: 8, fontSize: 12, width: 180, outline: 'none', color: themeStyles.text }}
+                            />
+                        </div>
 
-                    {/* Mobile toggle */}
-                    {isMobile && (
-                        <button
-                            onClick={() => setShowAllColumns(!showAllColumns)}
-                            style={{ background: showAllColumns ? '#22c55e' : themeStyles.cardBg, border: `1px solid ${showAllColumns ? '#22c55e' : themeStyles.border}`, color: showAllColumns ? '#fff' : themeStyles.textMuted, padding: '6px 12px', borderRadius: 8, fontSize: 11, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, whiteSpace: 'nowrap' }}
-                        >
-                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 3v18M3 12h18" /></svg>
-                            {showAllColumns ? 'Less' : 'More'}
-                        </button>
-                    )}
-
-                    {/* Column dropdown */}
-                    {!isMobile && (
+                        {/* Column dropdown */}
                         <div style={{ position: 'relative' }}>
                             <button
                                 onClick={() => setShowColDropdown(!showColDropdown)}
@@ -781,14 +795,14 @@ export default function EventLivePage() {
                                 </div>
                             )}
                         </div>
-                    )}
-                </div>
+                    </div>
+                )}
             </div>
 
             {/* ===== TABLE ===== */}
             <main style={{ padding: '0 16px' }}>
                 <div className="table-scroll" style={{ background: themeStyles.cardBg, borderRadius: '0 0 12px 12px', boxShadow: isDark ? '0 1px 3px rgba(0,0,0,0.2)' : '0 1px 3px rgba(0,0,0,0.04)', border: `1px solid ${themeStyles.border}`, borderTop: 'none', height: 'calc(100vh - 140px)', overflowY: 'auto', overflowX: isMobile && showAllColumns ? 'auto' : 'hidden' }}>
-                    <table style={{ width: isMobile && showAllColumns ? 1200 : '100%', textAlign: 'left', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+                    <table style={{ width: isMobile && showAllColumns ? 800 : '100%', textAlign: 'left', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
                         <thead>
                             <tr style={{ fontSize: 10, fontWeight: 700, color: themeStyles.textSecondary, textTransform: 'uppercase', letterSpacing: '-0.02em', position: 'sticky', top: 0, background: themeStyles.cardBg, zIndex: 20, borderBottom: `2px solid ${themeStyles.border}` }}>
                                 {visibleColumns.map(key => {
@@ -887,20 +901,20 @@ export default function EventLivePage() {
                                         switch (key) {
                                             case 'rank':
                                                 return (
-                                                    <td key={key} style={{ padding: '6px 8px', textAlign: 'center' }}>
-                                                        <span style={{ fontSize: 16, fontWeight: 900, color: rank <= 3 ? (rank === 1 ? '#22c55e' : isDark ? '#94a3b8' : '#334155') : (isDark ? '#64748b' : '#cbd5e1') }}>{rank}</span>
+                                                    <td key={key} style={{ padding: isMobile ? '4px 2px' : '6px 8px', textAlign: 'center' }}>
+                                                        <span style={{ fontSize: isMobile ? 14 : 16, fontWeight: 900, color: isMobile ? '#0f172a' : (rank <= 3 ? (rank === 1 ? '#22c55e' : isDark ? '#94a3b8' : '#334155') : (isDark ? '#64748b' : '#cbd5e1')) }}>{rank}</span>
                                                     </td>
                                                 );
                                             case 'genRank':
                                                 return (
-                                                    <td key={key} style={{ padding: '6px 6px', textAlign: 'center' }}>
-                                                        <span style={{ fontSize: 12, fontWeight: 700, color: themeStyles.textMuted }}>{runner.genderRank || '-'}</span>
+                                                    <td key={key} style={{ padding: isMobile ? '4px 2px' : '6px 6px', textAlign: 'center' }}>
+                                                        <span style={{ fontSize: isMobile ? 11 : 12, fontWeight: 700, color: isMobile ? '#0f172a' : themeStyles.textMuted }}>{runner.genderRank || '-'}</span>
                                                     </td>
                                                 );
                                             case 'catRank':
                                                 return (
-                                                    <td key={key} style={{ padding: '6px 6px', textAlign: 'center' }}>
-                                                        <span style={{ fontSize: 12, fontWeight: 700, color: themeStyles.textMuted }}>{runner.categoryRank || '-'}</span>
+                                                    <td key={key} style={{ padding: isMobile ? '4px 2px' : '6px 6px', textAlign: 'center' }}>
+                                                        <span style={{ fontSize: isMobile ? 11 : 12, fontWeight: 700, color: isMobile ? '#0f172a' : themeStyles.textMuted }}>{runner.categoryRank || '-'}</span>
                                                     </td>
                                                 );
                                             case 'runner':
@@ -1131,7 +1145,7 @@ export default function EventLivePage() {
             {/* ===== FOOTER ===== */}
             <footer style={{ background: themeStyles.cardBg, borderTop: `1px solid ${themeStyles.border}`, padding: '8px 16px', position: 'fixed', bottom: 0, width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', zIndex: 30 }}>
                 <p style={{ fontSize: 9, fontWeight: 700, color: themeStyles.textSecondary, textTransform: 'uppercase', letterSpacing: '0.1em', margin: 0 }}>
-                    ACTION TIMING &copy; 2026
+                    Results
                 </p>
                 <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
                     <span style={{ fontSize: 9, fontWeight: 700, color: themeStyles.textMuted, textTransform: 'uppercase' }}>
