@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
@@ -103,6 +103,22 @@ function parseDistanceValue(value: unknown): number | null {
     if (!match) return null;
     const parsed = Number(match[0]);
     return Number.isFinite(parsed) ? parsed : null;
+}
+
+/** Auto-shrink text to always fit one line within its container */
+function FitName({ children, className, style, maxSize = 28 }: { children: string; className?: string; style?: React.CSSProperties; maxSize?: number }) {
+    const ref = useRef<HTMLDivElement>(null);
+    useEffect(() => {
+        const el = ref.current;
+        if (!el) return;
+        let size = maxSize;
+        el.style.fontSize = `${size}px`;
+        while (el.scrollWidth > el.clientWidth && size > 14) {
+            size--;
+            el.style.fontSize = `${size}px`;
+        }
+    }, [children, maxSize]);
+    return <div ref={ref} style={{ ...style, whiteSpace: 'nowrap', overflow: 'hidden', width: '100%', fontSize: maxSize, fontWeight: 900, textTransform: 'uppercase' as const }} className={className}>{children}</div>;
 }
 
 export default function RunnerProfilePage() {
@@ -248,7 +264,7 @@ export default function RunnerProfilePage() {
 
                     <div style={{ flex: 1, minWidth: 200 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
-                            <h2 style={{ fontSize: 28, fontWeight: 900, textTransform: 'uppercase', color: '#0f172a', margin: 0 }}>{displayName}</h2>
+                            <FitName style={{ color: '#0f172a' }} maxSize={28}>{displayName}</FitName>
                             {runner.status === 'in_progress' && <span className="live-dot" style={{ background: '#22c55e' }} title="Racing" />}
                         </div>
                         <p style={{ color: '#64748b', fontWeight: 700, fontSize: 14, margin: '4px 0', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
@@ -322,9 +338,9 @@ export default function RunnerProfilePage() {
                                     width: `${pct}%`,
                                     background: pct >= 100 ? '#22c55e'
                                         : pct > 75 ? 'linear-gradient(90deg, #334155 0%, #ef4444 33%, #eab308 66%, #22c55e 100%)'
-                                        : pct > 50 ? 'linear-gradient(90deg, #334155 0%, #ef4444 50%, #eab308 100%)'
-                                        : pct > 25 ? 'linear-gradient(90deg, #334155 0%, #ef4444 100%)'
-                                        : '#334155',
+                                            : pct > 50 ? 'linear-gradient(90deg, #334155 0%, #ef4444 50%, #eab308 100%)'
+                                                : pct > 25 ? 'linear-gradient(90deg, #334155 0%, #ef4444 100%)'
+                                                    : '#334155',
                                 }} />
                             </div>
                             <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8, fontSize: 10, fontWeight: 700, color: '#94a3b8' }}>
