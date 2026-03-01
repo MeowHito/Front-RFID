@@ -136,13 +136,13 @@ function Template1({ runner, timings, campaign, bgImage, slipRef, showField }: T
                         <div className="bg-white/10 border border-white/10 rounded-2xl p-4">
                             {/* Top row: Overall / Gender / Category */}
                             {(showField('overallRank') || showField('genderRank') || showField('categoryRank')) && (
-                                <div className={`grid grid-cols-3 gap-3 ${(showField('gunTime') || showField('netTime')) ? 'pb-3 border-b border-white/10' : ''}`}>
+                                <div className={`flex justify-center gap-8 ${(showField('gunTime') || showField('netTime')) ? 'pb-3 border-b border-white/10' : ''}`}>
                                     {[
                                         { key: 'overallRank', label: 'Overall', val: runner.overallRank || '-' },
                                         { key: 'genderRank', label: 'Gender', val: runner.genderRank || runner.genderNetRank || '-' },
                                         { key: 'categoryRank', label: 'Category', val: runner.categoryRank || runner.categoryNetRank || '-' },
                                     ].filter(r => showField(r.key)).map((r, i) => (
-                                        <div key={i} className="text-center">
+                                        <div key={i} className="text-center min-w-[60px]">
                                             <div className="text-[10px] font-black text-white uppercase">{r.label}</div>
                                             <div className="text-xl font-black text-white">{r.val}</div>
                                         </div>
@@ -151,12 +151,12 @@ function Template1({ runner, timings, campaign, bgImage, slipRef, showField }: T
                             )}
                             {/* Bottom row: Gun Time / Net Time */}
                             {(showField('gunTime') || showField('netTime')) && (
-                                <div className="grid grid-cols-2 gap-3 pt-3">
-                                    {showField('gunTime') && <div className="text-center">
+                                <div className="flex justify-center gap-8 pt-3">
+                                    {showField('gunTime') && <div className="text-center min-w-[80px]">
                                         <div className="text-[10px] font-black text-white uppercase mb-1">Gun Time</div>
                                         <div className="text-xl font-black text-white font-mono tracking-wide">{gunTimeStr}</div>
                                     </div>}
-                                    {showField('netTime') && <div className="text-center">
+                                    {showField('netTime') && <div className="text-center min-w-[80px]">
                                         <div className="text-[10px] font-black text-white uppercase mb-1">Net Time</div>
                                         <div className="text-xl font-black text-green-400 font-mono tracking-wide">{netTimeStr}</div>
                                     </div>}
@@ -250,13 +250,13 @@ function Template2({ runner, timings, campaign, bgImage, slipRef, showField }: T
                     {(showField('overallRank') || showField('genderRank') || showField('categoryRank') || showField('gunTime') || showField('netTime')) && (
                         <div className="bg-white/10 border border-white/10 rounded-2xl p-4 mb-3">
                             {(showField('overallRank') || showField('genderRank') || showField('categoryRank')) && (
-                                <div className={`grid grid-cols-3 gap-3 ${(showField('gunTime') || showField('netTime')) ? 'pb-3 border-b border-white/10' : ''}`}>
+                                <div className={`flex justify-center gap-8 ${(showField('gunTime') || showField('netTime')) ? 'pb-3 border-b border-white/10' : ''}`}>
                                     {[
                                         { key: 'overallRank', label: 'Overall', val: runner.overallRank || '-' },
                                         { key: 'genderRank', label: 'Gender', val: runner.genderRank || runner.genderNetRank || '-' },
                                         { key: 'categoryRank', label: 'Category', val: runner.categoryRank || runner.categoryNetRank || '-' },
                                     ].filter(r => showField(r.key)).map((r, i) => (
-                                        <div key={i} className="text-center">
+                                        <div key={i} className="text-center min-w-[60px]">
                                             <div className="text-[10px] font-black text-white uppercase">{r.label}</div>
                                             <div className="text-xl font-black text-white">{r.val}</div>
                                         </div>
@@ -264,12 +264,12 @@ function Template2({ runner, timings, campaign, bgImage, slipRef, showField }: T
                                 </div>
                             )}
                             {(showField('gunTime') || showField('netTime')) && (
-                                <div className="grid grid-cols-2 gap-3 pt-3">
-                                    {showField('gunTime') && <div className="text-center">
+                                <div className="flex justify-center gap-8 pt-3">
+                                    {showField('gunTime') && <div className="text-center min-w-[80px]">
                                         <div className="text-[10px] font-black text-white uppercase mb-1">Gun Time</div>
                                         <div className="text-lg font-black text-white font-mono tracking-wide">{gunTimeStr}</div>
                                     </div>}
-                                    {showField('netTime') && <div className="text-center">
+                                    {showField('netTime') && <div className="text-center min-w-[80px]">
                                         <div className="text-[10px] font-black text-white uppercase mb-1">Net Time</div>
                                         <div className="text-lg font-black text-green-400 font-mono tracking-wide">{netTimeStr}</div>
                                     </div>}
@@ -280,12 +280,12 @@ function Template2({ runner, timings, campaign, bgImage, slipRef, showField }: T
 
                     {/* Stats Grid */}
                     {(showField('distance') || showField('pace')) && (
-                        <div className="grid grid-cols-2 gap-3 pb-4 border-b border-white/15">
-                            {showField('distance') && <div className="text-center">
+                        <div className="flex justify-center gap-6 pb-4 border-b border-white/15">
+                            {showField('distance') && <div className="text-center min-w-[80px]">
                                 <div className="text-[10px] font-bold text-slate-400 uppercase mb-1">Distance</div>
                                 <div className="text-[19px] font-black text-white" style={{ textShadow: '0 2px 4px rgba(0,0,0,0.5)' }}>{dist ?? '-'}<span className="text-[11px] text-slate-400 ml-0.5">KM</span></div>
                             </div>}
-                            {showField('pace') && <div className="text-center">
+                            {showField('pace') && <div className="text-center min-w-[80px]">
                                 <div className="text-[10px] font-bold text-slate-400 uppercase mb-1">Avg Pace</div>
                                 <div className="text-[19px] font-black text-white" style={{ textShadow: '0 2px 4px rgba(0,0,0,0.5)' }}>{pace}<span className="text-[11px] text-slate-400 ml-0.5">/K</span></div>
                             </div>}
@@ -343,12 +343,12 @@ function Template3({ runner, timings, campaign, slipRef, showField }: TemplatePr
 
                 {/* Gun Time & Net Time */}
                 {(showField('gunTime') || showField('netTime')) && (
-                    <div className="grid grid-cols-2 gap-2.5 mb-4">
-                        {showField('gunTime') && <div className="bg-slate-50 border border-slate-200 rounded-xl py-2.5 px-3 text-center">
+                    <div className="flex justify-center gap-2.5 mb-4">
+                        {showField('gunTime') && <div className="bg-slate-50 border border-slate-200 rounded-xl py-2.5 px-3 text-center flex-1">
                             <div className="text-[8px] font-extrabold text-slate-400 uppercase mb-1">Gun Time</div>
                             <div className="text-lg font-black text-slate-900 font-mono">{gunTimeStr}</div>
                         </div>}
-                        {showField('netTime') && <div className="bg-green-50 border border-green-200 rounded-xl py-2.5 px-3 text-center">
+                        {showField('netTime') && <div className="bg-green-50 border border-green-200 rounded-xl py-2.5 px-3 text-center flex-1">
                             <div className="text-[8px] font-extrabold text-green-600 uppercase mb-1">Net Time</div>
                             <div className="text-lg font-black text-green-600 font-mono">{netTimeStr}</div>
                         </div>}
@@ -373,13 +373,13 @@ function Template3({ runner, timings, campaign, slipRef, showField }: TemplatePr
 
                 {/* Rank Grid */}
                 {(showField('overallRank') || showField('genderRank') || showField('categoryRank')) && (
-                    <div className="grid grid-cols-3 gap-1.5 mb-5">
+                    <div className="flex justify-center gap-1.5 mb-5">
                         {[
                             { key: 'overallRank', label: 'Overall', val: runner.overallRank || '-' },
                             { key: 'genderRank', label: 'Gender', val: runner.genderRank || runner.genderNetRank || '-' },
                             { key: 'categoryRank', label: 'Category', val: runner.categoryRank || runner.categoryNetRank || '-' },
                         ].filter(r => showField(r.key)).map((r, i) => (
-                            <div key={i} className="bg-slate-50 rounded-xl py-2.5 px-1 text-center border border-slate-100">
+                            <div key={i} className="bg-slate-50 rounded-xl py-2.5 px-3 text-center border border-slate-100 min-w-[80px]">
                                 <div className="text-base font-black text-slate-900">{r.val}</div>
                                 <div className="text-[8px] font-extrabold text-slate-500 uppercase">{r.label}</div>
                             </div>
