@@ -77,6 +77,10 @@ interface Runner {
     netPace?: string;
     totalFinishers?: number;
     genderFinishers?: number;
+    statusCheckpoint?: string;
+    statusNote?: string;
+    statusChangedBy?: string;
+    statusChangedAt?: string;
 }
 
 interface TimingRecord {
@@ -207,6 +211,13 @@ export default function EventLivePage() {
     const [totalDistance, setTotalDistance] = useState<number>(0);
     const [cpDistanceLookup, setCpDistanceLookup] = useState<CheckpointDistanceLookup>({});
 
+    // Admin status edit modal
+    const [editingRunner, setEditingRunner] = useState<Runner | null>(null);
+    const [editStatus, setEditStatus] = useState('');
+    const [editCheckpoint, setEditCheckpoint] = useState('');
+    const [editNote, setEditNote] = useState('');
+    const [editSaving, setEditSaving] = useState(false);
+
     const toApiData = (payload: any) => payload?.data ?? payload;
 
     useEffect(() => {
@@ -327,6 +338,7 @@ export default function EventLivePage() {
             case 'in_progress': return 'RACING';
             case 'dnf': return 'DNF';
             case 'dns': return 'DNS';
+            case 'dq': return 'DQ';
             case 'not_started': return language === 'th' ? 'ยังไม่เริ่ม' : 'NOT STARTED';
             default: return status?.toUpperCase() || '-';
         }
@@ -338,6 +350,7 @@ export default function EventLivePage() {
             case 'in_progress': return '#f97316';
             case 'dnf': return '#dc2626';
             case 'dns': return '#dc2626';
+            case 'dq': return '#7c2d12';
             default: return '#94a3b8';
         }
     }
@@ -347,7 +360,7 @@ export default function EventLivePage() {
         started: runners.filter(r => r.status !== 'not_started' && r.status !== 'dns').length,
         finished: runners.filter(r => r.status === 'finished').length,
         racing: runners.filter(r => r.status === 'in_progress').length,
-        dnf: runners.filter(r => r.status === 'dnf' || r.status === 'dns').length,
+        dnf: runners.filter(r => r.status === 'dnf' || r.status === 'dns' || r.status === 'dq').length,
     }), [runners]);
 
     const categories = useMemo(() => {
@@ -511,6 +524,41 @@ export default function EventLivePage() {
 
     const handleViewRunner = (runner: Runner) => {
         router.push(`/runner/${runner._id}`);
+    };
+
+    const openStatusEdit = (runner: Runner, e: React.MouseEvent) => {
+        e.stopPropagation(); // Don't navigate to runner page
+        setEditingRunner(runner);
+        setEditStatus(runner.status);
+        setEditCheckpoint(runner.statusCheckpoint || runner.latestCheckpoint || '');
+        setEditNote(runner.statusNote || '');
+    };
+
+    const handleStatusUpdate = async () => {
+        if (!editingRunner) return;
+        setEditSaving(true);
+        try {
+            const res = await fetch(`/api/runners/${editingRunner._id}/status`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    status: editStatus,
+                    statusCheckpoint: editCheckpoint || undefined,
+                    statusNote: editNote || undefined,
+                    changedBy: 'admin',
+                }),
+            });
+            if (res.ok) {
+                // Update local state immediately
+                setRunners(prev => prev.map(r =>
+                    r._id === editingRunner._id
+                        ? { ...r, status: editStatus, statusCheckpoint: editCheckpoint, statusNote: editNote, statusChangedAt: new Date().toISOString() }
+                        : r
+                ));
+                setEditingRunner(null);
+            }
+        } catch { /* ignore */ }
+        setEditSaving(false);
     };
 
     // Loading state
@@ -954,12 +1002,26 @@ export default function EventLivePage() {
                                             case 'status':
                                                 return (
                                                     <td key={key} style={{ padding: isMobile ? '4px 2px' : '6px 6px' }}>
-                                                        <span style={{ display: 'inline-block', padding: isMobile ? '1px 4px' : '2px 8px', borderRadius: 3, fontWeight: 700, fontSize: isMobile ? 8 : 10, color: '#fff', background: getStatusBgColor(runner.status), lineHeight: 1.3 }}>
-                                                            {getStatusLabel(runner.status)}
-                                                        </span>
-                                                        {!isMobile && runner.latestCheckpoint && (
-                                                            <span style={{ display: 'block', fontSize: 9, color: themeStyles.textSecondary, textTransform: 'uppercase', fontWeight: 500, marginTop: 2 }}>
-                                                                {runner.latestCheckpoint}
+                                                        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                                            <span style={{ display: 'inline-block', padding: isMobile ? '1px 4px' : '2px 8px', borderRadius: 3, fontWeight: 700, fontSize: isMobile ? 8 : 10, color: '#fff', background: getStatusBgColor(runner.status), lineHeight: 1.3 }}>
+                                                                {getStatusLabel(runner.status)}
+                                                            </span>
+                                                            {isAdmin && !isMobile && (
+                                                                <button
+                                                                    onClick={(e) => openStatusEdit(runner, e)}
+                                                                    title="Edit status"
+                                                                    style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2, fontSize: 11, color: themeStyles.textSecondary, opacity: 0.5, lineHeight: 1 }}
+                                                                    onMouseEnter={e => (e.currentTarget.style.opacity = '1')}
+                                                                    onMouseLeave={e => (e.currentTarget.style.opacity = '0.5')}
+                                                                >
+                                                                    ✏️
+                                                                </button>
+                                                            )}
+                                                        </div>
+                                                        {!isMobile && (runner.statusCheckpoint || runner.latestCheckpoint) && (
+                                                            <span style={{ display: 'block', fontSize: 9, color: runner.statusCheckpoint ? '#dc2626' : themeStyles.textSecondary, textTransform: 'uppercase', fontWeight: 500, marginTop: 2 }}>
+                                                                {runner.statusCheckpoint || runner.latestCheckpoint}
+                                                                {runner.statusNote ? ` · ${runner.statusNote}` : ''}
                                                             </span>
                                                         )}
                                                     </td>
@@ -1125,12 +1187,16 @@ export default function EventLivePage() {
                                         }
                                     };
 
+                                    const isDisqualified = runner.status === 'dnf' || runner.status === 'dns' || runner.status === 'dq';
+                                    const rowBorderColor = isDisqualified ? '#dc2626' : 'transparent';
+                                    const rowBg = isDisqualified ? (isDark ? 'rgba(220,38,38,0.08)' : 'rgba(220,38,38,0.04)') : undefined;
+
                                     return (
                                         <tr
                                             key={runner._id}
                                             className="runner-row"
                                             onClick={() => handleViewRunner(runner)}
-                                            style={{ cursor: 'pointer', transition: 'all 0.15s', borderBottom: `1px solid ${themeStyles.border}`, borderLeft: '4px solid transparent' }}
+                                            style={{ cursor: 'pointer', transition: 'all 0.15s', borderBottom: `1px solid ${themeStyles.border}`, borderLeft: `4px solid ${rowBorderColor}`, background: rowBg }}
                                         >
                                             {visibleColumns.map(renderCell)}
                                         </tr>
@@ -1165,6 +1231,90 @@ export default function EventLivePage() {
             </footer>
 
             {/* Runner detail now navigated to /runner/[id] page */}
+
+            {/* ===== ADMIN STATUS EDIT MODAL ===== */}
+            {editingRunner && (
+                <div
+                    onClick={() => setEditingRunner(null)}
+                    style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                >
+                    <div
+                        onClick={e => e.stopPropagation()}
+                        style={{ background: isDark ? '#1e293b' : '#fff', borderRadius: 12, padding: 24, width: 380, maxWidth: '90vw', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}
+                    >
+                        <h3 style={{ margin: '0 0 4px', fontSize: 16, fontWeight: 800, color: themeStyles.text }}>
+                            {language === 'th' ? 'แก้ไขสถานะ' : 'Edit Status'}
+                        </h3>
+                        <p style={{ margin: '0 0 16px', fontSize: 12, color: themeStyles.textSecondary }}>
+                            BIB {editingRunner.bib} — {editingRunner.firstName} {editingRunner.lastName}
+                        </p>
+
+                        <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: themeStyles.textSecondary, marginBottom: 4, textTransform: 'uppercase' }}>
+                            {language === 'th' ? 'สถานะ' : 'Status'}
+                        </label>
+                        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 14 }}>
+                            {[
+                                { value: 'not_started', label: 'Not Started', color: '#94a3b8' },
+                                { value: 'in_progress', label: 'Racing', color: '#f97316' },
+                                { value: 'finished', label: 'Finish', color: '#22c55e' },
+                                { value: 'dnf', label: 'DNF', color: '#dc2626' },
+                                { value: 'dns', label: 'DNS', color: '#dc2626' },
+                                { value: 'dq', label: 'DQ', color: '#7c2d12' },
+                            ].map(opt => (
+                                <button
+                                    key={opt.value}
+                                    onClick={() => setEditStatus(opt.value)}
+                                    style={{
+                                        padding: '6px 14px', borderRadius: 6, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                                        border: editStatus === opt.value ? `2px solid ${opt.color}` : '2px solid transparent',
+                                        background: editStatus === opt.value ? opt.color : (isDark ? '#334155' : '#f1f5f9'),
+                                        color: editStatus === opt.value ? '#fff' : themeStyles.text,
+                                        transition: 'all 0.15s',
+                                    }}
+                                >
+                                    {opt.label}
+                                </button>
+                            ))}
+                        </div>
+
+                        <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: themeStyles.textSecondary, marginBottom: 4, textTransform: 'uppercase' }}>
+                            {language === 'th' ? 'จุด Checkpoint' : 'Checkpoint'}
+                        </label>
+                        <input
+                            value={editCheckpoint}
+                            onChange={e => setEditCheckpoint(e.target.value)}
+                            placeholder={language === 'th' ? 'เช่น CP3, FINISH' : 'e.g. CP3, FINISH'}
+                            style={{ width: '100%', padding: '8px 12px', borderRadius: 6, border: `1px solid ${themeStyles.border}`, background: isDark ? '#0f172a' : '#fff', color: themeStyles.text, fontSize: 13, marginBottom: 14, boxSizing: 'border-box' }}
+                        />
+
+                        <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: themeStyles.textSecondary, marginBottom: 4, textTransform: 'uppercase' }}>
+                            {language === 'th' ? 'หมายเหตุ' : 'Note'}
+                        </label>
+                        <input
+                            value={editNote}
+                            onChange={e => setEditNote(e.target.value)}
+                            placeholder={language === 'th' ? 'เช่น ขาเจ็บ, หลงทาง' : 'e.g. injury, lost route'}
+                            style={{ width: '100%', padding: '8px 12px', borderRadius: 6, border: `1px solid ${themeStyles.border}`, background: isDark ? '#0f172a' : '#fff', color: themeStyles.text, fontSize: 13, marginBottom: 20, boxSizing: 'border-box' }}
+                        />
+
+                        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                            <button
+                                onClick={() => setEditingRunner(null)}
+                                style={{ padding: '8px 20px', borderRadius: 6, border: `1px solid ${themeStyles.border}`, background: 'transparent', color: themeStyles.text, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
+                            >
+                                {language === 'th' ? 'ยกเลิก' : 'Cancel'}
+                            </button>
+                            <button
+                                onClick={handleStatusUpdate}
+                                disabled={editSaving}
+                                style={{ padding: '8px 24px', borderRadius: 6, border: 'none', background: '#2563eb', color: '#fff', fontSize: 13, fontWeight: 700, cursor: editSaving ? 'not-allowed' : 'pointer', opacity: editSaving ? 0.6 : 1 }}
+                            >
+                                {editSaving ? '...' : (language === 'th' ? 'บันทึก' : 'Save')}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
