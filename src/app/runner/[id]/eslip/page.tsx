@@ -52,6 +52,7 @@ interface CampaignData {
     location?: string;
     eslipTemplate?: string;
     eslipTemplates?: string[];
+    eslipVisibleFields?: string[];
 }
 
 function formatTime(ms?: number | null): string {
@@ -77,10 +78,11 @@ interface TemplateProps {
     campaign: CampaignData | null;
     bgImage: string | null;
     slipRef: React.RefObject<HTMLDivElement | null>;
+    showField: (key: string) => boolean;
 }
 
 // ==================== TEMPLATE 1: Dark Photo Background ====================
-function Template1({ runner, timings, campaign, bgImage, slipRef }: TemplateProps) {
+function Template1({ runner, timings, campaign, bgImage, slipRef, showField }: TemplateProps) {
     const displayName = `${runner.firstName} ${runner.lastName}`.trim();
     const genderLabel = runner.gender === 'M' ? 'Male' : 'Female';
     const dist = parseDistanceValue(runner.category);
@@ -130,44 +132,52 @@ function Template1({ runner, timings, campaign, bgImage, slipRef }: TemplateProp
                     </div>
 
                     {/* Ranks + Times — unified card */}
-                    <div className="bg-white/10 border border-white/10 rounded-2xl p-4">
-                        {/* Top row: Overall / Gender / Category */}
-                        <div className="grid grid-cols-3 gap-3 pb-3 border-b border-white/10">
-                            {[
-                                { label: 'Overall', val: runner.overallRank || '-' },
-                                { label: 'Gender', val: runner.genderRank || runner.genderNetRank || '-' },
-                                { label: 'Category', val: runner.categoryRank || runner.categoryNetRank || '-' },
-                            ].map((r, i) => (
-                                <div key={i} className="text-center">
-                                    <div className="text-[10px] font-black text-white  uppercase">{r.label}</div>
-                                    <div className="text-xl font-black text-white">{r.val}</div>
+                    {(showField('overallRank') || showField('genderRank') || showField('categoryRank') || showField('gunTime') || showField('netTime')) && (
+                        <div className="bg-white/10 border border-white/10 rounded-2xl p-4">
+                            {/* Top row: Overall / Gender / Category */}
+                            {(showField('overallRank') || showField('genderRank') || showField('categoryRank')) && (
+                                <div className={`grid grid-cols-3 gap-3 ${(showField('gunTime') || showField('netTime')) ? 'pb-3 border-b border-white/10' : ''}`}>
+                                    {[
+                                        { key: 'overallRank', label: 'Overall', val: runner.overallRank || '-' },
+                                        { key: 'genderRank', label: 'Gender', val: runner.genderRank || runner.genderNetRank || '-' },
+                                        { key: 'categoryRank', label: 'Category', val: runner.categoryRank || runner.categoryNetRank || '-' },
+                                    ].filter(r => showField(r.key)).map((r, i) => (
+                                        <div key={i} className="text-center">
+                                            <div className="text-[10px] font-black text-white uppercase">{r.label}</div>
+                                            <div className="text-xl font-black text-white">{r.val}</div>
+                                        </div>
+                                    ))}
                                 </div>
-                            ))}
+                            )}
+                            {/* Bottom row: Gun Time / Net Time */}
+                            {(showField('gunTime') || showField('netTime')) && (
+                                <div className="grid grid-cols-2 gap-3 pt-3">
+                                    {showField('gunTime') && <div className="text-center">
+                                        <div className="text-[10px] font-black text-white uppercase mb-1">Gun Time</div>
+                                        <div className="text-xl font-black text-white font-mono tracking-wide">{gunTimeStr}</div>
+                                    </div>}
+                                    {showField('netTime') && <div className="text-center">
+                                        <div className="text-[10px] font-black text-white uppercase mb-1">Net Time</div>
+                                        <div className="text-xl font-black text-green-400 font-mono tracking-wide">{netTimeStr}</div>
+                                    </div>}
+                                </div>
+                            )}
                         </div>
-                        {/* Bottom row: Gun Time / Net Time */}
-                        <div className="grid grid-cols-2 gap-3 pt-3">
-                            <div className="text-center">
-                                <div className="text-[10px] font-black text-white  uppercase mb-1">Gun Time</div>
-                                <div className="text-xl font-black text-white font-mono tracking-wide">{gunTimeStr}</div>
-                            </div>
-                            <div className="text-center">
-                                <div className="text-[10px] font-black text-white  uppercase mb-1">Net Time</div>
-                                <div className="text-xl font-black text-green-400 font-mono tracking-wide">{netTimeStr}</div>
-                            </div>
-                        </div>
-                    </div>
+                    )}
 
                     {/* Distance / Pace */}
-                    <div className="flex justify-around py-3 border-t border-b border-white/10">
-                        <div className="text-center">
-                            <div className="text-[10px] font-bold text-slate-400 uppercase">Distance</div>
-                            <div className="text-[22px] font-black text-white leading-snug flex items-baseline justify-center">{dist ?? '-'}<span className="text-[13px] font-bold text-slate-300 ml-0.5">km</span></div>
+                    {(showField('distance') || showField('pace')) && (
+                        <div className="flex justify-around py-3 border-t border-b border-white/10">
+                            {showField('distance') && <div className="text-center">
+                                <div className="text-[10px] font-bold text-slate-400 uppercase">Distance</div>
+                                <div className="text-[22px] font-black text-white leading-snug flex items-baseline justify-center">{dist ?? '-'}<span className="text-[13px] font-bold text-slate-300 ml-0.5">km</span></div>
+                            </div>}
+                            {showField('pace') && <div className="text-center">
+                                <div className="text-[10px] font-bold text-slate-400 uppercase">Pace</div>
+                                <div className="text-[22px] font-black text-white leading-snug flex items-baseline justify-center">{pace}<span className="text-[13px] font-bold text-slate-300 ml-0.5">/km</span></div>
+                            </div>}
                         </div>
-                        <div className="text-center">
-                            <div className="text-[10px] font-bold text-slate-400 uppercase">Pace</div>
-                            <div className="text-[22px] font-black text-white leading-snug flex items-baseline justify-center">{pace}<span className="text-[13px] font-bold text-slate-300 ml-0.5">/km</span></div>
-                        </div>
-                    </div>
+                    )}
 
                     {/* Checkpoints */}
                     <div className="bg-black/30 rounded-2xl p-4">
@@ -196,7 +206,7 @@ function Template1({ runner, timings, campaign, bgImage, slipRef }: TemplateProp
 }
 
 // ==================== TEMPLATE 2: Semi-transparent Photo Background ====================
-function Template2({ runner, timings, campaign, bgImage, slipRef }: TemplateProps) {
+function Template2({ runner, timings, campaign, bgImage, slipRef, showField }: TemplateProps) {
     const displayName = `${runner.firstName} ${runner.lastName}`.trim();
     const genderLabel = runner.gender === 'M' ? 'Male' : 'Female';
     const dist = parseDistanceValue(runner.category);
@@ -230,46 +240,57 @@ function Template2({ runner, timings, campaign, bgImage, slipRef }: TemplateProp
 
                 {/* Bottom Panel */}
                 <div className="bg-black/50 border border-white/15 rounded-[25px] p-5 mb-1">
-                    {/* Rank Tags */}
-                    <div className="flex gap-2 mb-3">
-                        {[
-                            { label: 'OVERALL', val: runner.overallRank || '-' },
-                            { label: 'GENDER', val: runner.genderRank || runner.genderNetRank || '-' },
-                            { label: 'CATEGORY', val: runner.categoryRank || runner.categoryNetRank || '-' },
-                        ].map((r, i) => (
-                            <div key={i} className="bg-green-600 text-white text-[10px] font-extrabold px-2.5 py-0.5 rounded-md shadow-md">{r.label} #{r.val}</div>
-                        ))}
-                    </div>
-
                     {/* Runner Info */}
                     <div className="mb-4">
                         <h1 className="text-[30px] font-black text-white uppercase leading-none m-0" style={{ textShadow: '0 2px 4px rgba(0,0,0,0.8)' }}>{displayName}</h1>
                         <p className="text-[13px] font-semibold text-slate-300 mt-1.5" style={{ textShadow: '0 1px 3px rgba(0,0,0,0.8)' }}>BIB {runner.bib} • {genderLabel} {runner.ageGroup || ''}</p>
                     </div>
 
-                    {/* Gun Time & Net Time */}
-                    <div className="grid grid-cols-2 gap-2.5 mb-3">
-                        <div className="bg-white/5 border border-white/10 rounded-xl py-2.5 px-3 text-center">
-                            <div className="text-[10px] font-bold text-slate-400 uppercase mb-1">Gun Time</div>
-                            <div className="text-lg font-black text-black text-stroke-white font-mono tracking-wide">{gunTimeStr}</div>
+                    {/* Ranks + Times — unified card */}
+                    {(showField('overallRank') || showField('genderRank') || showField('categoryRank') || showField('gunTime') || showField('netTime')) && (
+                        <div className="bg-white/10 border border-white/10 rounded-2xl p-4 mb-3">
+                            {(showField('overallRank') || showField('genderRank') || showField('categoryRank')) && (
+                                <div className={`grid grid-cols-3 gap-3 ${(showField('gunTime') || showField('netTime')) ? 'pb-3 border-b border-white/10' : ''}`}>
+                                    {[
+                                        { key: 'overallRank', label: 'Overall', val: runner.overallRank || '-' },
+                                        { key: 'genderRank', label: 'Gender', val: runner.genderRank || runner.genderNetRank || '-' },
+                                        { key: 'categoryRank', label: 'Category', val: runner.categoryRank || runner.categoryNetRank || '-' },
+                                    ].filter(r => showField(r.key)).map((r, i) => (
+                                        <div key={i} className="text-center">
+                                            <div className="text-[10px] font-black text-white uppercase">{r.label}</div>
+                                            <div className="text-xl font-black text-white">{r.val}</div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                            {(showField('gunTime') || showField('netTime')) && (
+                                <div className="grid grid-cols-2 gap-3 pt-3">
+                                    {showField('gunTime') && <div className="text-center">
+                                        <div className="text-[10px] font-black text-white uppercase mb-1">Gun Time</div>
+                                        <div className="text-lg font-black text-white font-mono tracking-wide">{gunTimeStr}</div>
+                                    </div>}
+                                    {showField('netTime') && <div className="text-center">
+                                        <div className="text-[10px] font-black text-white uppercase mb-1">Net Time</div>
+                                        <div className="text-lg font-black text-green-400 font-mono tracking-wide">{netTimeStr}</div>
+                                    </div>}
+                                </div>
+                            )}
                         </div>
-                        <div className="bg-green-500/15 border border-green-500/30 rounded-xl py-2.5 px-3 text-center">
-                            <div className="text-[10px] font-bold text-green-400 uppercase mb-1">Net Time</div>
-                            <div className="text-lg font-black text-green-400 font-mono tracking-wide">{netTimeStr}</div>
-                        </div>
-                    </div>
+                    )}
 
                     {/* Stats Grid */}
-                    <div className="grid grid-cols-2 gap-3 pb-4 border-b border-white/15">
-                        <div className="text-center">
-                            <div className="text-[10px] font-bold text-slate-400 uppercase mb-1">Distance</div>
-                            <div className="text-[19px] font-black text-white" style={{ textShadow: '0 2px 4px rgba(0,0,0,0.5)' }}>{dist ?? '-'}<span className="text-[11px] text-slate-400 ml-0.5">KM</span></div>
+                    {(showField('distance') || showField('pace')) && (
+                        <div className="grid grid-cols-2 gap-3 pb-4 border-b border-white/15">
+                            {showField('distance') && <div className="text-center">
+                                <div className="text-[10px] font-bold text-slate-400 uppercase mb-1">Distance</div>
+                                <div className="text-[19px] font-black text-white" style={{ textShadow: '0 2px 4px rgba(0,0,0,0.5)' }}>{dist ?? '-'}<span className="text-[11px] text-slate-400 ml-0.5">KM</span></div>
+                            </div>}
+                            {showField('pace') && <div className="text-center">
+                                <div className="text-[10px] font-bold text-slate-400 uppercase mb-1">Avg Pace</div>
+                                <div className="text-[19px] font-black text-white" style={{ textShadow: '0 2px 4px rgba(0,0,0,0.5)' }}>{pace}<span className="text-[11px] text-slate-400 ml-0.5">/K</span></div>
+                            </div>}
                         </div>
-                        <div className="text-center">
-                            <div className="text-[10px] font-bold text-slate-400 uppercase mb-1">Avg Pace</div>
-                            <div className="text-[19px] font-black text-white" style={{ textShadow: '0 2px 4px rgba(0,0,0,0.5)' }}>{pace}<span className="text-[11px] text-slate-400 ml-0.5">/K</span></div>
-                        </div>
-                    </div>
+                    )}
 
                     {/* Splits */}
                     <div className="mt-4 flex flex-col gap-2">
@@ -293,7 +314,7 @@ function Template2({ runner, timings, campaign, bgImage, slipRef }: TemplateProp
 }
 
 // ==================== TEMPLATE 3: Clean White Card ====================
-function Template3({ runner, timings, campaign, slipRef }: TemplateProps) {
+function Template3({ runner, timings, campaign, slipRef, showField }: TemplateProps) {
     const displayName = `${runner.firstName} ${runner.lastName}`.trim();
     const genderLabel = runner.gender === 'M' ? 'Male' : 'Female';
     const dist = parseDistanceValue(runner.category);
@@ -321,44 +342,50 @@ function Template3({ runner, timings, campaign, slipRef }: TemplateProps) {
                 </div>
 
                 {/* Gun Time & Net Time */}
-                <div className="grid grid-cols-2 gap-2.5 mb-4">
-                    <div className="bg-slate-50 border border-slate-200 rounded-xl py-2.5 px-3 text-center">
-                        <div className="text-[8px] font-extrabold text-slate-400 uppercase mb-1 ">Gun Time</div>
-                        <div className="text-lg font-black text-slate-900 font-mono">{gunTimeStr}</div>
+                {(showField('gunTime') || showField('netTime')) && (
+                    <div className="grid grid-cols-2 gap-2.5 mb-4">
+                        {showField('gunTime') && <div className="bg-slate-50 border border-slate-200 rounded-xl py-2.5 px-3 text-center">
+                            <div className="text-[8px] font-extrabold text-slate-400 uppercase mb-1">Gun Time</div>
+                            <div className="text-lg font-black text-slate-900 font-mono">{gunTimeStr}</div>
+                        </div>}
+                        {showField('netTime') && <div className="bg-green-50 border border-green-200 rounded-xl py-2.5 px-3 text-center">
+                            <div className="text-[8px] font-extrabold text-green-600 uppercase mb-1">Net Time</div>
+                            <div className="text-lg font-black text-green-600 font-mono">{netTimeStr}</div>
+                        </div>}
                     </div>
-                    <div className="bg-green-50 border border-green-200 rounded-xl py-2.5 px-3 text-center">
-                        <div className="text-[8px] font-extrabold text-green-600 uppercase mb-1">Net Time</div>
-                        <div className="text-lg font-black text-green-600 font-mono">{netTimeStr}</div>
-                    </div>
-                </div>
+                )}
 
                 {/* Stats Panel */}
-                <div className="bg-white border border-slate-200 rounded-[20px] px-1 py-4 flex justify-around items-center mb-5">
-                    {[
-                        { label: 'Distance', val: `${dist ?? '-'}`, unit: 'KM' },
-                        { label: 'Avg Pace', val: pace, unit: '/K' },
-                    ].map((s, i) => (
-                        <div key={i} className="flex-1 text-center relative">
-                            {i < 1 && <div className="absolute right-0 top-[20%] h-[60%] w-px bg-slate-100" />}
-                            <div className="text-[8px] font-extrabold text-slate-400 uppercase mb-1">{s.label}</div>
-                            <div className="text-lg font-black text-slate-900 leading-none">{s.val}<span className="text-[10px] text-slate-400">{s.unit}</span></div>
-                        </div>
-                    ))}
-                </div>
+                {(showField('distance') || showField('pace')) && (
+                    <div className="bg-white border border-slate-200 rounded-[20px] px-1 py-4 flex justify-around items-center mb-5">
+                        {[
+                            { key: 'distance', label: 'Distance', val: `${dist ?? '-'}`, unit: 'KM' },
+                            { key: 'pace', label: 'Avg Pace', val: pace, unit: '/K' },
+                        ].filter(s => showField(s.key)).map((s, i) => (
+                            <div key={i} className="flex-1 text-center relative">
+                                {i < 1 && <div className="absolute right-0 top-[20%] h-[60%] w-px bg-slate-100" />}
+                                <div className="text-[8px] font-extrabold text-slate-400 uppercase mb-1">{s.label}</div>
+                                <div className="text-lg font-black text-slate-900 leading-none">{s.val}<span className="text-[10px] text-slate-400">{s.unit}</span></div>
+                            </div>
+                        ))}
+                    </div>
+                )}
 
                 {/* Rank Grid */}
-                <div className="grid grid-cols-3 gap-1.5 mb-5">
-                    {[
-                        { label: 'Overall', val: runner.overallRank || '-' },
-                        { label: 'Gender', val: runner.genderRank || runner.genderNetRank || '-' },
-                        { label: 'Category', val: runner.categoryRank || runner.categoryNetRank || '-' },
-                    ].map((r, i) => (
-                        <div key={i} className="bg-slate-50 rounded-xl py-2.5 px-1 text-center border border-slate-100">
-                            <div className="text-base font-black text-slate-900">{r.val}</div>
-                            <div className="text-[8px] font-extrabold text-slate-500 uppercase">{r.label}</div>
-                        </div>
-                    ))}
-                </div>
+                {(showField('overallRank') || showField('genderRank') || showField('categoryRank')) && (
+                    <div className="grid grid-cols-3 gap-1.5 mb-5">
+                        {[
+                            { key: 'overallRank', label: 'Overall', val: runner.overallRank || '-' },
+                            { key: 'genderRank', label: 'Gender', val: runner.genderRank || runner.genderNetRank || '-' },
+                            { key: 'categoryRank', label: 'Category', val: runner.categoryRank || runner.categoryNetRank || '-' },
+                        ].filter(r => showField(r.key)).map((r, i) => (
+                            <div key={i} className="bg-slate-50 rounded-xl py-2.5 px-1 text-center border border-slate-100">
+                                <div className="text-base font-black text-slate-900">{r.val}</div>
+                                <div className="text-[8px] font-extrabold text-slate-500 uppercase">{r.label}</div>
+                            </div>
+                        ))}
+                    </div>
+                )}
 
                 {/* Checkpoints */}
                 <div className="bg-white rounded-2xl p-3 border border-slate-100 grow flex flex-col">
@@ -454,6 +481,8 @@ export default function ESlipPage() {
         }
     };
 
+    const [previewImage, setPreviewImage] = useState<string | null>(null);
+
     const handleDownload = async () => {
         if (!slipRef.current) return;
         setDownloading(true);
@@ -468,11 +497,8 @@ export default function ESlipPage() {
             const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
 
             if (isMobile) {
-                const newTab = window.open('', '_blank');
-                if (newTab) {
-                    newTab.document.write(`<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>E-Slip ${runner?.bib || ''}</title><style>*{margin:0;padding:0;box-sizing:border-box;}body{background:#0f172a;display:flex;justify-content:center;align-items:center;min-height:100vh;flex-direction:column;gap:16px;padding:16px;} img{max-width:100%;border-radius:16px;box-shadow:0 8px 32px rgba(0,0,0,0.5);} .hint{color:#94a3b8;font-size:14px;font-family:'Prompt',sans-serif;text-align:center;padding:8px 20px;background:rgba(255,255,255,0.08);border-radius:12px;line-height:1.6;} .hint b{color:#4ade80;}</style></head><body><img src="${dataUrl}"><div class="hint">📲 <b>กดค้างที่รูป</b> → เลือก <b>"เพิ่มไปยังรูปภาพ"</b><br>เพื่อบันทึกลงแกลเลอรีของคุณ</div></body></html>`);
-                    newTab.document.close();
-                }
+                // Show image inline — user can long-press to save
+                setPreviewImage(dataUrl);
                 setDownloading(false);
                 return;
             }
@@ -568,9 +594,14 @@ export default function ESlipPage() {
                 )}
 
                 {/* Render Active Template */}
-                {activeTemplate === 'template1' && <Template1 runner={runner} timings={timings} campaign={campaign} bgImage={bgImage} slipRef={slipRef} />}
-                {activeTemplate === 'template2' && <Template2 runner={runner} timings={timings} campaign={campaign} bgImage={bgImage} slipRef={slipRef} />}
-                {activeTemplate === 'template3' && <Template3 runner={runner} timings={timings} campaign={campaign} bgImage={null} slipRef={slipRef} />}
+                {(() => {
+                    const vf = campaign?.eslipVisibleFields;
+                    const showField = (key: string) => !vf || vf.length === 0 || vf.includes(key);
+                    const common = { runner, timings, campaign, slipRef, showField };
+                    if (activeTemplate === 'template1') return <Template1 {...common} bgImage={bgImage} />;
+                    if (activeTemplate === 'template2') return <Template2 {...common} bgImage={bgImage} />;
+                    return <Template3 {...common} bgImage={null} />;
+                })()}
 
                 {/* Action Buttons */}
                 <div className="flex gap-3 w-full max-w-[380px] mt-5">
@@ -594,6 +625,19 @@ export default function ESlipPage() {
                     ← ย้อนกลับ
                 </button>
             </div>
+
+            {/* Mobile preview overlay */}
+            {previewImage && (
+                <div className="fixed inset-0 z-[100] bg-slate-900/95 flex flex-col items-center justify-center p-4 gap-4">
+                    <img src={previewImage} alt="E-Slip" className="max-w-full max-h-[75vh] rounded-2xl shadow-2xl" />
+                    <div className="text-center text-slate-300 text-sm bg-white/10 rounded-xl px-5 py-2.5 leading-relaxed">
+                        📲 <b className="text-green-400">กดค้างที่รูป</b> → เลือก <b className="text-green-400">&quot;บันทึกรูปภาพ&quot;</b><br />เพื่อบันทึกลงแกลเลอรีของคุณ
+                    </div>
+                    <button onClick={() => setPreviewImage(null)} className="mt-2 px-8 py-3 rounded-xl bg-white/10 text-white font-bold text-sm border border-white/20 cursor-pointer">
+                        ✕ ปิด
+                    </button>
+                </div>
+            )}
         </div>
     );
 }
