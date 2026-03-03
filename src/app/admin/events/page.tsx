@@ -43,6 +43,7 @@ interface Campaign {
     organizerName?: string;
     rfidToken?: string;
     raceId?: string;
+    raceFinished?: boolean;
 }
 
 export default function EventsPage() {
@@ -198,6 +199,28 @@ export default function EventsPage() {
             setCampaigns(prev => prev.map(c =>
                 c._id === campaignId ? { ...c, status: campaign.status } : c
             ));
+        }
+    };
+
+    const handleToggleRaceFinished = async (campaignId: string) => {
+        const campaign = campaigns.find(c => c._id === campaignId);
+        if (!campaign) return;
+        const newValue = !(campaign.raceFinished ?? false);
+        setCampaigns(prev => prev.map(c =>
+            c._id === campaignId ? { ...c, raceFinished: newValue } : c
+        ));
+        try {
+            const res = await fetch(`/api/campaigns/${campaignId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ raceFinished: newValue }),
+            });
+            if (!res.ok) throw new Error('Failed to update');
+        } catch (error) {
+            setCampaigns(prev => prev.map(c =>
+                c._id === campaignId ? { ...c, raceFinished: campaign.raceFinished } : c
+            ));
+            setToastMessage(language === 'th' ? 'เกิดข้อผิดพลาดในการอัปเดต' : 'Failed to update');
         }
     };
 
@@ -431,6 +454,7 @@ export default function EventsPage() {
                                     <th className="col-mode">{language === 'th' ? 'โหมด' : 'Mode'}</th>
                                     <th className="col-cert">{language === 'th' ? 'ใบเซอร์' : 'Certificate'}</th>
                                     <th className="col-rfid">RFID Sync</th>
+                                    <th className="col-finished">{language === 'th' ? 'จบแข่ง' : 'Finished'}</th>
                                     <th className="col-status">{language === 'th' ? 'สถานะ' : 'Status'}</th>
                                 </tr>
                             </thead>
@@ -516,6 +540,16 @@ export default function EventsPage() {
                                                     type="checkbox"
                                                     checked={campaign.allowRFIDSync ?? false}
                                                     onChange={() => handleToggleSync(campaign._id, 'allowRFIDSync')}
+                                                />
+                                                <span className="toggle-slider"></span>
+                                            </label>
+                                        </td>
+                                        <td className="col-finished">
+                                            <label className="toggle-switch small">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={campaign.raceFinished ?? false}
+                                                    onChange={() => handleToggleRaceFinished(campaign._id)}
                                                 />
                                                 <span className="toggle-slider"></span>
                                             </label>

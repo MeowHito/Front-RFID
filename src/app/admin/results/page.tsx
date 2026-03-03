@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useLanguage } from '@/lib/language-context';
 import AdminLayout from '../AdminLayout';
 import '../admin.css';
@@ -77,6 +77,7 @@ export default function ResultsPage() {
                 campaignId: campaign._id, category: selectedCategory,
                 page: String(page), limit: String(limit),
                 sortBy: 'netTime', sortOrder: 'asc',
+                skipStatusCounts: 'true',
             });
             if (genderFilter !== 'all') params.append('gender', genderFilter);
             if (statusFilter !== 'all') params.append('runnerStatus', statusFilter);
@@ -91,7 +92,16 @@ export default function ResultsPage() {
         finally { setRunnersLoading(false); }
     }, [campaign, selectedCategory, page, genderFilter, statusFilter, search]);
 
-    useEffect(() => { fetchRunners(); }, [fetchRunners]);
+    // Debounce search input
+    const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const [debouncedSearch, setDebouncedSearch] = useState(search);
+    useEffect(() => {
+        if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+        searchTimerRef.current = setTimeout(() => setDebouncedSearch(search), 300);
+        return () => { if (searchTimerRef.current) clearTimeout(searchTimerRef.current); };
+    }, [search]);
+
+    useEffect(() => { fetchRunners(); }, [fetchRunners, debouncedSearch]);
 
     // Fetch stats
     useEffect(() => {

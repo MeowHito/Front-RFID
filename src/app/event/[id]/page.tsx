@@ -24,6 +24,7 @@ interface Campaign {
     displayColumns?: string[];
     displayColumnsLab?: string[];
     displayMode?: string;
+    raceFinished?: boolean;
 }
 
 interface RaceCategory {
@@ -81,6 +82,9 @@ interface Runner {
     statusNote?: string;
     statusChangedBy?: string;
     statusChangedAt?: string;
+    scanTime?: string;
+    distanceFromStart?: number;
+    splitTime?: number;
 }
 
 interface TimingRecord {
@@ -235,12 +239,22 @@ export default function EventLivePage() {
 
     useEffect(() => { if (eventKey) fetchEventData(); }, [eventKey]);
 
-    // Auto-refresh runners every 15 seconds
+    // Choose API endpoint based on raceFinished flag
+    const isRaceFinished = campaign?.raceFinished ?? false;
+    const runnersApiUrl = isRaceFinished
+        ? `/api/runners?id=${campaign?._id}`
+        : `/api/runners/passtime?id=${campaign?._id}`;
+
+    // Auto-refresh runners every 10 seconds (5s for live passtime, 15s for finished)
     useEffect(() => {
         if (!campaign?._id) return;
+        const interval = isRaceFinished ? 15_000 : 10_000;
         const refreshInterval = setInterval(async () => {
             try {
-                const runnersRes = await fetch(`/api/runners?id=${campaign._id}`, { cache: 'no-store' });
+                const url = isRaceFinished
+                    ? `/api/runners?id=${campaign._id}`
+                    : `/api/runners/passtime?id=${campaign._id}`;
+                const runnersRes = await fetch(url, { cache: 'no-store' });
                 if (runnersRes.ok) {
                     const runnersData = await runnersRes.json().catch(() => ({}));
                     const list = (runnersData?.data?.data as Runner[]) || (runnersData?.data as Runner[]) || (Array.isArray(runnersData) ? runnersData : []);
@@ -250,9 +264,9 @@ export default function EventLivePage() {
                     }
                 }
             } catch { /* silently retry next interval */ }
-        }, 15_000);
+        }, interval);
         return () => clearInterval(refreshInterval);
-    }, [campaign?._id]);
+    }, [campaign?._id, isRaceFinished]);
 
     async function fetchEventData() {
         try {
@@ -266,7 +280,11 @@ export default function EventLivePage() {
             if (!campaignData?._id) throw new Error(language === 'th' ? 'ไม่พบข้อมูลกิจกรรม' : 'Event not found');
             setCampaign(campaignData);
 
-            const runnersRes = await fetch(`/api/runners?id=${campaignData._id}`, { cache: 'no-store' });
+            const usePassTime = !(campaignData.raceFinished ?? false);
+            const runnersUrl = usePassTime
+                ? `/api/runners/passtime?id=${campaignData._id}`
+                : `/api/runners?id=${campaignData._id}`;
+            const runnersRes = await fetch(runnersUrl, { cache: 'no-store' });
             if (runnersRes.ok) {
                 const runnersData = await runnersRes.json().catch(() => ({}));
                 const list = (runnersData?.data?.data as Runner[]) || (runnersData?.data as Runner[]) || (Array.isArray(runnersData) ? runnersData : []);
@@ -502,23 +520,35 @@ export default function EventLivePage() {
                 return matchesSearch && matchesGender && matchesCategory && matchesStatus;
             })
             .sort((a, b) => {
-                // Primary: runners with netTime first, sorted ascending (fastest = #1)
-                const aTime = a.netTime || 0;
-                const bTime = b.netTime || 0;
+                // Group by status: finished runners FIRST, then non-finished
+                const aFinished = a.status === 'finished' ? 0 : 1;
+                const bFinished = b.status === 'finished' ? 0 : 1;
+                if (aFinished !== bFinished) return aFinished - bFinished;
+
+                // Within finished group: sort by netTime ASC (fastest first)
+                if (a.status === 'finished' && b.status === 'finished') {
+                    const aNet = a.netTime || a.gunTime || 0;
+                    const bNet = b.netTime || b.gunTime || 0;
+                    if (aNet > 0 && bNet > 0) return aNet - bNet;
+                    if (aNet > 0 && bNet <= 0) return -1;
+                    if (aNet <= 0 && bNet > 0) return 1;
+                    return 0;
+                }
+
+                // Within non-finished group: sub-sort by status priority
+                const statusOrder: Record<string, number> = { 'in_progress': 0, 'not_started': 1, 'dns': 2, 'dnf': 3, 'dq': 4 };
+                const statusDiff = (statusOrder[a.status] ?? 5) - (statusOrder[b.status] ?? 5);
+                if (statusDiff !== 0) return statusDiff;
+
+                // Within same non-finished status: sort by time ascending
+                const aTime = a.netTime || a.gunTime || a.elapsedTime || 0;
+                const bTime = b.netTime || b.gunTime || b.elapsedTime || 0;
                 if (aTime > 0 && bTime > 0) return aTime - bTime;
                 if (aTime > 0 && bTime <= 0) return -1;
                 if (aTime <= 0 && bTime > 0) return 1;
 
-                // Secondary: runners with gunTime
-                const aGun = a.gunTime || a.elapsedTime || 0;
-                const bGun = b.gunTime || b.elapsedTime || 0;
-                if (aGun > 0 && bGun > 0) return aGun - bGun;
-                if (aGun > 0 && bGun <= 0) return -1;
-                if (aGun <= 0 && bGun > 0) return 1;
-
-                // Tertiary: status order
-                const statusOrder: Record<string, number> = { 'finished': 0, 'in_progress': 1, 'not_started': 2, 'dns': 3, 'dnf': 4 };
-                return (statusOrder[a.status] ?? 5) - (statusOrder[b.status] ?? 5);
+                // Fallback: by BIB
+                return (a.bib || '').localeCompare(b.bib || '', undefined, { numeric: true });
             });
     }, [runners, searchQuery, filterGender, filterCategory, filterStatus, resolveRunnerCategoryKey]);
 
@@ -626,8 +656,11 @@ export default function EventLivePage() {
                             />
                         </Link>
                         {!isMobile && (
-                            <span style={{ fontSize: 18, fontWeight: 900, fontStyle: 'italic', color: themeStyles.text, borderLeft: `1px solid ${themeStyles.border}`, paddingLeft: 12 }}>
-                                <span style={{ color: '#22c55e', fontWeight: 700, fontStyle: 'normal', textTransform: 'uppercase' }}>Live</span>
+                            <span style={{ fontSize: 18, fontWeight: 900, fontStyle: 'italic', color: themeStyles.text, borderLeft: `1px solid ${themeStyles.border}`, paddingLeft: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <span style={{ color: isRaceFinished ? '#3b82f6' : '#22c55e', fontWeight: 700, fontStyle: 'normal', textTransform: 'uppercase' }}>
+                                    {isRaceFinished ? 'Results' : 'Live'}
+                                </span>
+                                {!isRaceFinished && <span className="live-dot" style={{ background: '#22c55e' }} />}
                             </span>
                         )}
                         <div style={{ minWidth: 0 }}>
@@ -1024,6 +1057,11 @@ export default function EventLivePage() {
                                                                 {runner.statusNote ? ` · ${runner.statusNote}` : ''}
                                                             </span>
                                                         )}
+                                                        {!isMobile && !isRaceFinished && runner.scanTime && (
+                                                            <span style={{ display: 'block', fontSize: 8, color: themeStyles.textSecondary, fontFamily: 'monospace', marginTop: 1 }}>
+                                                                {new Date(runner.scanTime).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                                                            </span>
+                                                        )}
                                                     </td>
                                                 );
                                             case 'gunTime':
@@ -1222,7 +1260,7 @@ export default function EventLivePage() {
                     </span>
                     <span style={{ fontSize: 9, fontWeight: 700, color: '#22c55e', textTransform: 'uppercase' }}>
                         <span style={{ display: 'inline-block', width: 5, height: 5, borderRadius: '50%', background: '#22c55e', marginRight: 4, animation: 'pulseLive 1.5s infinite' }} />
-                        {language === 'th' ? 'Auto-refresh 15s' : 'Auto-refresh 15s'}
+                        {isRaceFinished ? 'Auto-refresh 15s' : 'Auto-refresh 10s'}
                     </span>
                     <span style={{ fontSize: 10, fontFamily: 'monospace', color: themeStyles.textSecondary }}>
                         {currentTime.toLocaleTimeString(language === 'th' ? 'th-TH' : 'en-US')}
