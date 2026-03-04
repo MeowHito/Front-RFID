@@ -37,6 +37,7 @@ interface AuthContextType {
     isLoading: boolean;
     isAuthenticated: boolean;
     isAdmin: boolean;
+    isAdminMaster: boolean;
     login: (email: string, password: string) => Promise<void>;
     register: (data: RegisterData) => Promise<void>;
     updateProfile: (data: UpdateProfileData) => Promise<void>;
@@ -205,7 +206,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         token,
         isLoading,
         isAuthenticated: !!token,
-        isAdmin: user?.role === 'admin' || user?.role === 'organizer',
+        isAdmin: user?.role === 'admin' || user?.role === 'admin_master' || user?.role === 'organizer',
+        isAdminMaster: user?.role === 'admin_master',
         login,
         register,
         updateProfile,

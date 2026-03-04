@@ -74,6 +74,7 @@ const menuSections: MenuSection[] = [
         header: 'SYSTEM',
         headerEn: 'SYSTEM',
         items: [
+            { href: '/admin/users', label: 'จัดการผู้ใช้งาน', labelEn: 'Manage Users', icon: 'users' },
             { href: '/admin/settings', label: 'ตั้งค่าระบบ', labelEn: 'System Settings', icon: 'gear' },
         ]
     },
