@@ -1,37 +1,34 @@
 'use client';
 
 import { useEffect, useState, useRef, useCallback } from 'react';
-import { useLanguage } from '@/lib/language-context';
-import AdminLayout from '../AdminLayout';
-import '../admin.css';
+import Script from 'next/script';
 
-interface Campaign { _id: string; name: string; }
 interface Runner {
     _id: string; bib: string; firstName: string; lastName: string;
     firstNameTh?: string; lastNameTh?: string;
     gender: string; category: string; ageGroup?: string; nationality?: string;
     status: string; chipCode?: string; printingCode?: string; rfidTag?: string;
-    netTime?: number; overallRank?: number;
-    team?: string; teamName?: string;
+    netTime?: number; gunTime?: number; overallRank?: number;
+    team?: string; teamName?: string; shirtSize?: string; age?: number;
+    gunPace?: string; netPace?: string;
 }
-interface ScanRecord {
-    code: string;
-    runner: Runner | null;
-    found: boolean;
-    time: Date;
-}
+interface Campaign { _id: string; name: string; }
+
+type TemplateStyle = 'classic' | 'split';
 
 export default function BibCheckPage() {
-    const { language } = useLanguage();
-    const t = (th: string, en: string) => language === 'th' ? th : en;
-
     const [campaigns, setCampaigns] = useState<Campaign[]>([]);
     const [selectedCampaign, setSelectedCampaign] = useState('');
+    const [campaignName, setCampaignName] = useState('');
     const [scanCode, setScanCode] = useState('');
     const [loading, setLoading] = useState(false);
-    const [scanHistory, setScanHistory] = useState<ScanRecord[]>([]);
-    const [lastResult, setLastResult] = useState<ScanRecord | null>(null);
+    const [runner, setRunner] = useState<Runner | null>(null);
+    const [found, setFound] = useState<boolean | null>(null);
+    const [template, setTemplate] = useState<TemplateStyle>('classic');
+    const [showSettings, setShowSettings] = useState(true);
+    const [animKey, setAnimKey] = useState(0);
     const inputRef = useRef<HTMLInputElement>(null);
+    const hiddenInputRef = useRef<HTMLInputElement>(null);
 
     // Load campaigns
     useEffect(() => {
@@ -42,16 +39,23 @@ export default function BibCheckPage() {
                 setCampaigns(list);
                 if (list.length > 0 && !selectedCampaign) {
                     setSelectedCampaign(list[0]._id);
+                    setCampaignName(list[0].name);
                 }
             })
             .catch(console.error);
     }, []);
 
-    // Auto-focus input for scanner
+    // Always keep hidden input focused for scanner
     useEffect(() => {
-        const timer = setTimeout(() => inputRef.current?.focus(), 200);
-        return () => clearTimeout(timer);
-    }, [selectedCampaign, lastResult]);
+        const keepFocus = () => {
+            if (!showSettings && hiddenInputRef.current) {
+                hiddenInputRef.current.focus();
+            }
+        };
+        const interval = setInterval(keepFocus, 500);
+        document.addEventListener('click', keepFocus);
+        return () => { clearInterval(interval); document.removeEventListener('click', keepFocus); };
+    }, [showSettings]);
 
     const formatTime = (ms?: number) => {
         if (!ms || ms <= 0) return '-';
@@ -59,351 +63,475 @@ export default function BibCheckPage() {
         const h = Math.floor(totalSec / 3600);
         const m = Math.floor((totalSec % 3600) / 60);
         const s = totalSec % 60;
-        return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-    };
-
-    const getStatusLabel = (status: string) => {
-        const map: Record<string, { th: string; en: string; color: string; bg: string }> = {
-            'not_started': { th: 'ยังไม่เริ่ม', en: 'Not Started', color: '#6b7280', bg: '#f3f4f6' },
-            'in_progress': { th: 'กำลังวิ่ง', en: 'In Progress', color: '#2563eb', bg: '#dbeafe' },
-            'finished': { th: 'จบแล้ว', en: 'Finished', color: '#16a34a', bg: '#dcfce7' },
-            'dnf': { th: 'ไม่จบ', en: 'DNF', color: '#dc2626', bg: '#fee2e2' },
-            'dns': { th: 'ไม่ออกวิ่ง', en: 'DNS', color: '#9333ea', bg: '#f3e8ff' },
-            'dq': { th: 'ถูกตัดสิทธิ์', en: 'DQ', color: '#dc2626', bg: '#fee2e2' },
-        };
-        return map[status] || { th: status, en: status, color: '#6b7280', bg: '#f3f4f6' };
+        return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
     };
 
     const handleScan = useCallback(async () => {
         const code = scanCode.trim();
-        if (!code || !selectedCampaign || loading) return;
-
+        if (!code || loading) return;
         setLoading(true);
         try {
             const params = new URLSearchParams({ campaignId: selectedCampaign, code });
             const res = await fetch(`/api/runners/lookup?${params.toString()}`);
             const data = await res.json();
-
-            const record: ScanRecord = {
-                code,
-                runner: data.runner || null,
-                found: !!data.found,
-                time: new Date(),
-            };
-
-            setLastResult(record);
-            setScanHistory(prev => [record, ...prev].slice(0, 50)); // Keep last 50 scans
-        } catch (err) {
-            const record: ScanRecord = { code, runner: null, found: false, time: new Date() };
-            setLastResult(record);
-            setScanHistory(prev => [record, ...prev].slice(0, 50));
+            setRunner(data.runner || null);
+            setFound(!!data.found);
+            setAnimKey(k => k + 1);
+        } catch {
+            setRunner(null);
+            setFound(false);
+            setAnimKey(k => k + 1);
         } finally {
             setLoading(false);
             setScanCode('');
-            // Re-focus input for next scan
-            setTimeout(() => inputRef.current?.focus(), 100);
         }
     }, [scanCode, selectedCampaign, loading]);
 
-    return (
-        <AdminLayout>
-            <div style={{ padding: '24px', maxWidth: '1200px', margin: '0 auto' }}>
-                {/* Header */}
+    // Settings panel (before entering display mode)
+    if (showSettings) {
+        return (
+            <div style={{
+                minHeight: '100vh', background: '#0f172a', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontFamily: "'Prompt', sans-serif",
+            }}>
                 <div style={{
-                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                    marginBottom: '24px', flexWrap: 'wrap', gap: '16px',
+                    background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)',
+                    borderRadius: 24, padding: '48px 48px 40px', width: 500, color: '#fff',
+                    backdropFilter: 'blur(20px)', boxShadow: '0 30px 60px rgba(0,0,0,0.4)',
                 }}>
-                    <div>
-                        <h1 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', margin: 0 }}>
-                            🔍 {t('เช็คบิบ / สแกน RFID', 'Check BIB / Scan RFID')}
-                        </h1>
-                        <p style={{ color: '#64748b', fontSize: '14px', margin: '4px 0 0' }}>
-                            {t('สแกนรหัสหรือพิมพ์ BIB เพื่อค้นหานักวิ่ง', 'Scan code or type BIB to find runner')}
-                        </p>
+                    <div style={{ textAlign: 'center', marginBottom: 32 }}>
+                        <div style={{ fontSize: 48, marginBottom: 12 }}>📡</div>
+                        <h1 style={{ fontSize: 28, fontWeight: 900, margin: 0 }}>RFID Check-in</h1>
+                        <p style={{ color: '#94a3b8', fontSize: 14, marginTop: 6 }}>ตั้งค่าก่อนเริ่มสแกน</p>
                     </div>
-                </div>
 
-                {/* Campaign Selector + Scanner Input */}
-                <div style={{
-                    background: '#fff', borderRadius: '12px', padding: '24px',
-                    boxShadow: '0 1px 3px rgba(0,0,0,0.1)', marginBottom: '24px',
-                }}>
-                    <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', alignItems: 'end' }}>
-                        {/* Campaign Select */}
-                        <div style={{ flex: '0 0 300px' }}>
-                            <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#475569', marginBottom: '6px' }}>
-                                {t('เลือกกิจกรรม', 'Select Campaign')}
-                            </label>
-                            <select
-                                value={selectedCampaign}
-                                onChange={e => setSelectedCampaign(e.target.value)}
+                    {/* Campaign */}
+                    <label style={{ display: 'block', fontSize: 13, fontWeight: 700, color: '#94a3b8', marginBottom: 6, textTransform: 'uppercase', letterSpacing: 1 }}>
+                        กิจกรรม / Campaign
+                    </label>
+                    <select
+                        value={selectedCampaign}
+                        onChange={e => {
+                            setSelectedCampaign(e.target.value);
+                            const c = campaigns.find(c => c._id === e.target.value);
+                            setCampaignName(c?.name || '');
+                        }}
+                        style={{
+                            width: '100%', padding: '12px 16px', borderRadius: 10, fontSize: 15,
+                            background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.2)',
+                            color: '#fff', marginBottom: 24, outline: 'none',
+                        }}
+                    >
+                        {campaigns.map(c => (
+                            <option key={c._id} value={c._id} style={{ background: '#1e293b' }}>{c.name}</option>
+                        ))}
+                    </select>
+
+                    {/* Template */}
+                    <label style={{ display: 'block', fontSize: 13, fontWeight: 700, color: '#94a3b8', marginBottom: 10, textTransform: 'uppercase', letterSpacing: 1 }}>
+                        Template
+                    </label>
+                    <div style={{ display: 'flex', gap: 12, marginBottom: 32 }}>
+                        {[
+                            { key: 'classic' as TemplateStyle, label: 'Classic (Top-Down)', icon: '🎯' },
+                            { key: 'split' as TemplateStyle, label: 'Split (Left-Right)', icon: '🖥️' },
+                        ].map(t => (
+                            <button key={t.key} onClick={() => setTemplate(t.key)}
                                 style={{
-                                    width: '100%', padding: '10px 12px', border: '2px solid #e2e8f0',
-                                    borderRadius: '8px', fontSize: '14px', background: '#fff',
+                                    flex: 1, padding: '16px 12px', borderRadius: 12, cursor: 'pointer',
+                                    background: template === t.key ? 'rgba(74,222,128,0.15)' : 'rgba(255,255,255,0.04)',
+                                    border: `2px solid ${template === t.key ? '#4ade80' : 'rgba(255,255,255,0.1)'}`,
+                                    color: template === t.key ? '#4ade80' : '#94a3b8',
+                                    textAlign: 'center', fontSize: 13, fontWeight: 700, transition: 'all 0.2s',
                                 }}
                             >
-                                {campaigns.map(c => (
-                                    <option key={c._id} value={c._id}>{c.name}</option>
-                                ))}
-                            </select>
-                        </div>
-
-                        {/* Scan Input */}
-                        <div style={{ flex: 1, minWidth: '250px' }}>
-                            <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#475569', marginBottom: '6px' }}>
-                                {t('สแกน / พิมพ์ BIB, ChipCode, หรือ PrintingCode', 'Scan / Type BIB, ChipCode, or PrintingCode')}
-                            </label>
-                            <div style={{ display: 'flex', gap: '8px' }}>
-                                <input
-                                    ref={inputRef}
-                                    type="text"
-                                    value={scanCode}
-                                    onChange={e => setScanCode(e.target.value)}
-                                    onKeyDown={e => e.key === 'Enter' && handleScan()}
-                                    placeholder={t('สแกนหรือพิมพ์รหัส...', 'Scan or type code...')}
-                                    autoFocus
-                                    style={{
-                                        flex: 1, padding: '10px 16px',
-                                        border: '2px solid #3b82f6', borderRadius: '8px',
-                                        fontSize: '18px', fontFamily: 'monospace', fontWeight: '600',
-                                        outline: 'none',
-                                    }}
-                                />
-                                <button
-                                    onClick={handleScan}
-                                    disabled={loading || !scanCode.trim()}
-                                    style={{
-                                        padding: '10px 24px', background: loading ? '#94a3b8' : '#3b82f6',
-                                        color: '#fff', border: 'none', borderRadius: '8px',
-                                        fontSize: '14px', fontWeight: '600', cursor: loading ? 'not-allowed' : 'pointer',
-                                        whiteSpace: 'nowrap',
-                                    }}
-                                >
-                                    {loading ? '...' : t('ค้นหา', 'Search')}
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                {/* Result Card */}
-                {lastResult && (
-                    <div style={{
-                        background: lastResult.found ? '#f0fdf4' : '#fef2f2',
-                        border: `2px solid ${lastResult.found ? '#86efac' : '#fca5a5'}`,
-                        borderRadius: '12px', padding: '24px', marginBottom: '24px',
-                        animation: 'fadeIn 0.3s ease',
-                    }}>
-                        {lastResult.found && lastResult.runner ? (
-                            <div>
-                                {/* Header: Status + Scan Time */}
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                                        <span style={{ fontSize: '28px' }}>✅</span>
-                                        <div>
-                                            <div style={{ fontSize: '18px', fontWeight: '700', color: '#166534' }}>
-                                                {t('พบนักวิ่ง!', 'Runner Found!')}
-                                            </div>
-                                            <div style={{ fontSize: '13px', color: '#4ade80' }}>
-                                                {t('สแกนรหัส:', 'Scanned code:')} <code style={{ fontFamily: 'monospace', fontWeight: '600' }}>{lastResult.code}</code>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <div style={{ textAlign: 'right' }}>
-                                        <div style={{
-                                            display: 'inline-block', padding: '6px 16px', borderRadius: '20px',
-                                            fontSize: '13px', fontWeight: '600',
-                                            color: getStatusLabel(lastResult.runner.status).color,
-                                            background: getStatusLabel(lastResult.runner.status).bg,
-                                        }}>
-                                            {t(getStatusLabel(lastResult.runner.status).th, getStatusLabel(lastResult.runner.status).en)}
-                                        </div>
-                                        <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '4px' }}>
-                                            {lastResult.time.toLocaleTimeString()}
-                                        </div>
-                                    </div>
-                                </div>
-
-                                {/* Runner Info Grid */}
-                                <div style={{
-                                    display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-                                    gap: '16px',
-                                }}>
-                                    <InfoCard label={t('BIB', 'BIB')} value={lastResult.runner.bib} large />
-                                    <InfoCard
-                                        label={t('ชื่อ', 'Name')}
-                                        value={`${lastResult.runner.firstName} ${lastResult.runner.lastName}`}
-                                        sub={lastResult.runner.firstNameTh ? `${lastResult.runner.firstNameTh} ${lastResult.runner.lastNameTh || ''}` : undefined}
-                                    />
-                                    <InfoCard label={t('เพศ', 'Gender')} value={lastResult.runner.gender === 'M' ? t('ชาย', 'Male') : t('หญิง', 'Female')} />
-                                    <InfoCard label={t('ประเภท', 'Category')} value={lastResult.runner.category} />
-                                    <InfoCard label={t('กลุ่มอายุ', 'Age Group')} value={lastResult.runner.ageGroup || '-'} />
-                                    <InfoCard label={t('สัญชาติ', 'Nationality')} value={lastResult.runner.nationality || '-'} />
-                                    <InfoCard label="ChipCode" value={lastResult.runner.chipCode || '-'} mono />
-                                    <InfoCard label="PrintingCode" value={lastResult.runner.printingCode || '-'} mono />
-                                    <InfoCard label={t('เวลา', 'Time')} value={formatTime(lastResult.runner.netTime)} />
-                                    <InfoCard label={t('อันดับ', 'Rank')} value={lastResult.runner.overallRank ? `#${lastResult.runner.overallRank}` : '-'} />
-                                    <InfoCard label={t('ทีม', 'Team')} value={lastResult.runner.teamName || lastResult.runner.team || '-'} />
-                                </div>
-                            </div>
-                        ) : (
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                                <span style={{ fontSize: '28px' }}>❌</span>
-                                <div>
-                                    <div style={{ fontSize: '18px', fontWeight: '700', color: '#991b1b' }}>
-                                        {t('ไม่พบนักวิ่ง', 'Runner Not Found')}
-                                    </div>
-                                    <div style={{ fontSize: '14px', color: '#dc2626' }}>
-                                        {t('รหัส:', 'Code:')} <code style={{ fontFamily: 'monospace', fontWeight: '600' }}>{lastResult.code}</code>
-                                        {' — '}{t('ไม่พบ BIB, ChipCode หรือ PrintingCode ที่ตรงกัน', 'No matching BIB, ChipCode, or PrintingCode found')}
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-                    </div>
-                )}
-
-                {/* Scan History */}
-                {scanHistory.length > 0 && (
-                    <div style={{
-                        background: '#fff', borderRadius: '12px', padding: '20px',
-                        boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
-                    }}>
-                        <div style={{
-                            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                            marginBottom: '16px',
-                        }}>
-                            <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', margin: 0 }}>
-                                📋 {t('ประวัติการสแกน', 'Scan History')} ({scanHistory.length})
-                            </h3>
-                            <button
-                                onClick={() => { setScanHistory([]); setLastResult(null); }}
-                                style={{
-                                    padding: '6px 12px', fontSize: '12px', border: '1px solid #e2e8f0',
-                                    borderRadius: '6px', background: '#fff', color: '#64748b', cursor: 'pointer',
-                                }}
-                            >
-                                {t('ล้าง', 'Clear')}
+                                <div style={{ fontSize: 28, marginBottom: 6 }}>{t.icon}</div>
+                                {t.label}
                             </button>
-                        </div>
-
-                        <div style={{ overflowX: 'auto' }}>
-                            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
-                                <thead>
-                                    <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
-                                        <th style={{ padding: '8px 12px', textAlign: 'left', color: '#64748b', fontWeight: '600' }}>#</th>
-                                        <th style={{ padding: '8px 12px', textAlign: 'left', color: '#64748b', fontWeight: '600' }}>{t('รหัสสแกน', 'Scanned Code')}</th>
-                                        <th style={{ padding: '8px 12px', textAlign: 'left', color: '#64748b', fontWeight: '600' }}>{t('ผลลัพธ์', 'Result')}</th>
-                                        <th style={{ padding: '8px 12px', textAlign: 'left', color: '#64748b', fontWeight: '600' }}>BIB</th>
-                                        <th style={{ padding: '8px 12px', textAlign: 'left', color: '#64748b', fontWeight: '600' }}>{t('ชื่อ', 'Name')}</th>
-                                        <th style={{ padding: '8px 12px', textAlign: 'left', color: '#64748b', fontWeight: '600' }}>{t('ประเภท', 'Category')}</th>
-                                        <th style={{ padding: '8px 12px', textAlign: 'left', color: '#64748b', fontWeight: '600' }}>{t('สถานะ', 'Status')}</th>
-                                        <th style={{ padding: '8px 12px', textAlign: 'left', color: '#64748b', fontWeight: '600' }}>{t('เวลา', 'Time')}</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {scanHistory.map((scan, i) => {
-                                        const statusInfo = scan.runner ? getStatusLabel(scan.runner.status) : null;
-                                        return (
-                                            <tr
-                                                key={i}
-                                                style={{
-                                                    borderBottom: '1px solid #f1f5f9',
-                                                    background: i === 0 ? (scan.found ? '#f0fdf4' : '#fef2f2') : undefined,
-                                                }}
-                                            >
-                                                <td style={{ padding: '8px 12px', color: '#94a3b8' }}>{scanHistory.length - i}</td>
-                                                <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontWeight: '600' }}>{scan.code}</td>
-                                                <td style={{ padding: '8px 12px' }}>
-                                                    <span style={{
-                                                        display: 'inline-block', padding: '2px 8px', borderRadius: '10px',
-                                                        fontSize: '11px', fontWeight: '600',
-                                                        background: scan.found ? '#dcfce7' : '#fee2e2',
-                                                        color: scan.found ? '#166534' : '#991b1b',
-                                                    }}>
-                                                        {scan.found ? t('พบ', 'Found') : t('ไม่พบ', 'Not Found')}
-                                                    </span>
-                                                </td>
-                                                <td style={{ padding: '8px 12px', fontWeight: '600' }}>{scan.runner?.bib || '-'}</td>
-                                                <td style={{ padding: '8px 12px' }}>
-                                                    {scan.runner ? `${scan.runner.firstName} ${scan.runner.lastName}` : '-'}
-                                                </td>
-                                                <td style={{ padding: '8px 12px' }}>{scan.runner?.category || '-'}</td>
-                                                <td style={{ padding: '8px 12px' }}>
-                                                    {statusInfo && (
-                                                        <span style={{
-                                                            display: 'inline-block', padding: '2px 8px', borderRadius: '10px',
-                                                            fontSize: '11px', fontWeight: '600',
-                                                            color: statusInfo.color, background: statusInfo.bg,
-                                                        }}>
-                                                            {t(statusInfo.th, statusInfo.en)}
-                                                        </span>
-                                                    )}
-                                                    {!scan.runner && '-'}
-                                                </td>
-                                                <td style={{ padding: '8px 12px', color: '#94a3b8', fontSize: '12px' }}>
-                                                    {scan.time.toLocaleTimeString()}
-                                                </td>
-                                            </tr>
-                                        );
-                                    })}
-                                </tbody>
-                            </table>
-                        </div>
+                        ))}
                     </div>
-                )}
 
-                {/* Empty State */}
-                {scanHistory.length === 0 && !lastResult && (
-                    <div style={{
-                        textAlign: 'center', padding: '60px 20px', color: '#94a3b8',
-                    }}>
-                        <div style={{ fontSize: '48px', marginBottom: '16px' }}>📡</div>
-                        <div style={{ fontSize: '16px', fontWeight: '600', marginBottom: '8px' }}>
-                            {t('รอการสแกน', 'Waiting for Scan')}
-                        </div>
-                        <div style={{ fontSize: '14px' }}>
-                            {t('ใช้เครื่องสแกน RFID หรือพิมพ์รหัส BIB / ChipCode / PrintingCode แล้วกด Enter',
-                                'Use RFID scanner or type BIB / ChipCode / PrintingCode and press Enter')}
-                        </div>
-                    </div>
-                )}
+                    <button
+                        onClick={() => setShowSettings(false)}
+                        disabled={!selectedCampaign}
+                        style={{
+                            width: '100%', padding: '14px 0', borderRadius: 12, border: 'none',
+                            background: '#4ade80', color: '#0f172a', fontSize: 16, fontWeight: 800,
+                            cursor: 'pointer', textTransform: 'uppercase', letterSpacing: 2,
+                        }}
+                    >
+                        เริ่มสแกน / Start Scanning
+                    </button>
+                </div>
             </div>
+        );
+    }
+
+    // === FULL SCREEN DISPLAY MODE ===
+    const r = runner;
+    const nameTh = r ? `${r.firstNameTh || ''} ${r.lastNameTh || ''}`.trim() : '';
+    const nameEn = r ? `${r.firstName} ${r.lastName}` : '';
+    const distance = r?.category || '-';
+    const bibNum = r?.bib || '-';
+    const genderLabel = r?.gender === 'M' ? 'Male' : r?.gender === 'F' ? 'Female' : '-';
+    const ageGroupLabel = r?.ageGroup || '-';
+    const shirtSizeLabel = r?.shirtSize || '-';
+
+    return (
+        <>
+            <Script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" strategy="afterInteractive" />
+            <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@400;600;700;800;900&family=Exo+2:wght@800;900&display=swap" rel="stylesheet" />
+            <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+
+            {/* Hidden scanner input — always captures keyboard */}
+            <input
+                ref={hiddenInputRef}
+                value={scanCode}
+                onChange={e => setScanCode(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') handleScan(); }}
+                style={{ position: 'fixed', top: -100, left: -100, opacity: 0 }}
+                autoFocus
+            />
+
+            {/* Settings gear button */}
+            <button onClick={() => setShowSettings(true)} style={{
+                position: 'fixed', top: 16, right: 16, zIndex: 100, width: 40, height: 40,
+                borderRadius: '50%', border: '1px solid rgba(255,255,255,0.2)',
+                background: 'rgba(0,0,0,0.5)', color: '#94a3b8', fontSize: 16, cursor: 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                backdropFilter: 'blur(10px)',
+            }}>
+                <i className="fa-solid fa-gear" />
+            </button>
+
+            {/* Loading overlay */}
+            {loading && (
+                <div style={{
+                    position: 'fixed', inset: 0, zIndex: 90, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)',
+                }}>
+                    <div style={{ color: '#4ade80', fontSize: 24, fontWeight: 800 }}>
+                        <i className="fas fa-spinner fa-spin" style={{ marginRight: 12 }} /> กำลังค้นหา...
+                    </div>
+                </div>
+            )}
+
+            {/* NOT FOUND overlay */}
+            {found === false && !runner && (
+                <div key={`nf-${animKey}`} style={{
+                    position: 'fixed', inset: 0, zIndex: 80, display: 'flex', flexDirection: 'column',
+                    alignItems: 'center', justifyContent: 'center',
+                    background: '#020617', animation: 'fadeIn 0.5s ease-out',
+                    fontFamily: "'Prompt', sans-serif",
+                }}>
+                    <div style={{ fontSize: 80, marginBottom: 24 }}>❌</div>
+                    <div style={{ fontSize: 36, fontWeight: 900, color: '#ef4444', marginBottom: 8 }}>ไม่พบนักวิ่ง</div>
+                    <div style={{ fontSize: 18, color: '#94a3b8' }}>Runner Not Found — สแกนใหม่เพื่อลองอีกครั้ง</div>
+                </div>
+            )}
+
+            {/* WAITING STATE */}
+            {found === null && (
+                <div style={{
+                    position: 'fixed', inset: 0, zIndex: 70, display: 'flex', flexDirection: 'column',
+                    alignItems: 'center', justifyContent: 'center',
+                    background: '#020617', fontFamily: "'Prompt', sans-serif",
+                }}>
+                    <div style={{ fontSize: 80, marginBottom: 24, animation: 'pulse 2s ease-in-out infinite' }}>📡</div>
+                    <div style={{ fontSize: 36, fontWeight: 900, color: '#fff', marginBottom: 8 }}>รอการสแกน</div>
+                    <div style={{ fontSize: 18, color: '#94a3b8' }}>Waiting for RFID scan...</div>
+                    <div style={{ fontSize: 14, color: '#64748b', marginTop: 20 }}>Campaign: {campaignName}</div>
+                </div>
+            )}
+
+            {/* === TEMPLATE 1: CLASSIC (Top-Down) === */}
+            {found && runner && template === 'classic' && (
+                <div key={`c-${animKey}`} style={{
+                    position: 'fixed', inset: 0, zIndex: 60,
+                    background: 'radial-gradient(circle at center, #1e293b 0%, #020617 100%)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontFamily: "'Prompt', sans-serif", animation: 'fadeIn 0.6s ease-out',
+                }}>
+                    <div style={{
+                        width: '95vw', height: '95vh', maxWidth: 1600,
+                        background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.1)',
+                        borderRadius: 40, display: 'flex', flexDirection: 'column',
+                        padding: '40px 60px', boxShadow: '0 30px 60px rgba(0,0,0,0.5)',
+                        backdropFilter: 'blur(20px)', position: 'relative', overflow: 'hidden',
+                    }}>
+                        {/* Header */}
+                        <div style={{ textAlign: 'center', borderBottom: '2px solid rgba(255,255,255,0.1)', paddingBottom: 20, marginBottom: 30 }}>
+                            <h1 style={{ fontSize: 'clamp(2rem,4vw,3rem)', fontWeight: 900, textTransform: 'uppercase', letterSpacing: 2, color: '#fff', margin: 0 }}>
+                                {campaignName}
+                            </h1>
+                            <h2 style={{ fontSize: 'clamp(1rem,2vw,1.5rem)', fontWeight: 700, color: '#4ade80', textTransform: 'uppercase', letterSpacing: 4, margin: '4px 0 0' }}>
+                                RFID Check-in • Action Timing
+                            </h2>
+                        </div>
+
+                        {/* Middle: Runner Info */}
+                        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 60, padding: '20px 0' }}>
+                            {/* Profile placeholder with QR */}
+                            <div style={{ position: 'relative', flexShrink: 0 }}>
+                                <div style={{
+                                    width: 300, height: 300, borderRadius: 30,
+                                    border: '6px solid #4ade80', overflow: 'hidden',
+                                    boxShadow: '0 20px 40px rgba(74,222,128,0.2)',
+                                    background: '#0f172a', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                }}>
+                                    <div style={{ textAlign: 'center', color: '#4ade80' }}>
+                                        <i className="fa-solid fa-running" style={{ fontSize: 80, marginBottom: 12 }} />
+                                        <div style={{ fontSize: 14, fontWeight: 700, color: '#94a3b8' }}>BIB {bibNum}</div>
+                                    </div>
+                                </div>
+                                {/* QR corner */}
+                                <div style={{
+                                    position: 'absolute', bottom: -15, right: -15,
+                                    background: '#fff', padding: 10, borderRadius: 16,
+                                    border: '4px solid #4ade80', boxShadow: '0 15px 30px rgba(0,0,0,0.5)',
+                                    display: 'flex', flexDirection: 'column', alignItems: 'center',
+                                }}>
+                                    <div style={{ width: 90, height: 90, background: '#f1f5f9', borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                        <i className="fa-solid fa-qrcode" style={{ fontSize: 50, color: '#0f172a' }} />
+                                    </div>
+                                    <p style={{ color: '#0f172a', fontSize: 10, fontWeight: 900, textTransform: 'uppercase', marginTop: 6 }}>Scan to Upload</p>
+                                </div>
+                            </div>
+
+                            {/* Name + BIB */}
+                            <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                                <div style={{ color: '#4ade80', fontWeight: 800, fontSize: '1.5rem', textTransform: 'uppercase', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 10 }}>
+                                    <i className="fa-solid fa-circle-check" /> Verified Runner
+                                </div>
+                                <h2 style={{ fontSize: 'clamp(3rem,5vw,5rem)', fontWeight: 900, lineHeight: 1, marginBottom: 5, color: '#fff', margin: '0 0 5px' }}>
+                                    {nameTh || nameEn}
+                                </h2>
+                                {nameTh && (
+                                    <h3 style={{ fontSize: 'clamp(1.5rem,2.5vw,2rem)', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', margin: '0 0 30px' }}>
+                                        {nameEn}
+                                    </h3>
+                                )}
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 20, marginTop: nameTh ? 0 : 25 }}>
+                                    <div style={{
+                                        background: '#ef4444', color: '#fff', padding: '10px 30px', borderRadius: 15,
+                                        fontSize: '2.5rem', fontWeight: 900, boxShadow: '0 10px 20px rgba(239,68,68,0.3)',
+                                    }}>
+                                        {distance}
+                                    </div>
+                                    <div style={{
+                                        fontSize: 'clamp(5rem,9vw,8rem)', fontWeight: 900, color: '#fff',
+                                        fontStyle: 'italic', lineHeight: 0.85, textShadow: '0 5px 15px rgba(0,0,0,0.5)',
+                                        fontFamily: "'Exo 2', sans-serif",
+                                    }}>
+                                        BIB {bibNum}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Bottom: Info bar */}
+                        <div style={{ marginTop: 40 }}>
+                            <div style={{
+                                display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)',
+                                background: 'rgba(255,255,255,0.05)', borderRadius: 30,
+                                overflow: 'hidden', border: '1px solid rgba(255,255,255,0.1)',
+                            }}>
+                                <InfoItem label="Gender" value={genderLabel} />
+                                <InfoItem label="Age Group" value={ageGroupLabel} />
+                                <InfoItem label="Shirt Size" value={shirtSizeLabel} highlight />
+                            </div>
+                        </div>
+
+                        {/* Progress bar */}
+                        <div style={{
+                            position: 'absolute', bottom: 0, left: 0, height: 10,
+                            background: '#4ade80', borderRadius: '0 0 40px 40px',
+                            animation: 'timer 8s linear forwards',
+                        }} />
+                    </div>
+                </div>
+            )}
+
+            {/* === TEMPLATE 2: SPLIT (Left-Right) === */}
+            {found && runner && template === 'split' && (
+                <div key={`s-${animKey}`} style={{
+                    position: 'fixed', inset: 0, zIndex: 60,
+                    background: 'linear-gradient(135deg, #020617 0%, #0f172a 100%)',
+                    display: 'flex', flexDirection: 'row',
+                    fontFamily: "'Prompt', sans-serif", animation: 'fadeIn 0.8s ease-out',
+                }}>
+                    {/* Left: Runner visual */}
+                    <div style={{ width: '45%', height: '100%', position: 'relative', overflow: 'hidden', background: '#000' }}>
+                        <div style={{
+                            width: '100%', height: '100%',
+                            background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 50%, #020617 100%)',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        }}>
+                            <div style={{ textAlign: 'center', color: '#4ade80' }}>
+                                <i className="fa-solid fa-person-running" style={{ fontSize: 160, marginBottom: 20 }} />
+                                <div style={{ fontSize: 28, fontWeight: 900, color: '#fff' }}>BIB {bibNum}</div>
+                                <div style={{ fontSize: 16, color: '#94a3b8', marginTop: 8 }}>{distance}</div>
+                            </div>
+                        </div>
+                        {/* Gradient overlay */}
+                        <div style={{
+                            position: 'absolute', inset: 0,
+                            background: 'linear-gradient(to right, rgba(2,6,23,0) 70%, rgba(2,6,23,1) 100%)',
+                        }} />
+                        {/* QR */}
+                        <div style={{
+                            position: 'absolute', bottom: 40, left: 40, zIndex: 10,
+                            background: '#fff', padding: 12, borderRadius: 16, width: 150,
+                            display: 'flex', flexDirection: 'column', alignItems: 'center',
+                            border: '4px solid #4ade80', boxShadow: '0 15px 30px rgba(0,0,0,0.5)',
+                        }}>
+                            <div style={{ width: 120, height: 120, background: '#f1f5f9', borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                <i className="fa-solid fa-qrcode" style={{ fontSize: 70, color: '#0f172a' }} />
+                            </div>
+                            <p style={{ color: '#0f172a', fontSize: 10, fontWeight: 900, textTransform: 'uppercase', marginTop: 8, textAlign: 'center' }}>
+                                Scan to upload<br />your photo
+                            </p>
+                        </div>
+                    </div>
+
+                    {/* Right: Data */}
+                    <div style={{ width: '55%', display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: '5vh 6vw', zIndex: 5 }}>
+                        {/* Event Header */}
+                        <div style={{ marginBottom: '4vh', borderLeft: '6px solid #4ade80', paddingLeft: 20 }}>
+                            <h2 style={{ fontSize: 'clamp(1.5rem,3vw,2.2rem)', fontWeight: 900, textTransform: 'uppercase', lineHeight: 1.1, color: '#fff', margin: 0 }}>
+                                {campaignName}
+                            </h2>
+                            <p style={{ fontSize: 'clamp(0.9rem,1.5vw,1.2rem)', fontWeight: 700, color: '#4ade80', textTransform: 'uppercase', letterSpacing: 2, marginTop: 4 }}>
+                                RFID Check-in • Action Timing
+                            </p>
+                        </div>
+
+                        {/* BIB + Distance skewed boxes */}
+                        <div style={{ display: 'flex', alignItems: 'flex-end', gap: 10, marginBottom: '5vh' }}>
+                            <div style={{
+                                background: 'rgba(255,255,255,0.04)', borderLeft: '10px solid #4ade80',
+                                padding: '15px 50px', transform: 'skewX(-15deg)', borderRadius: 6,
+                                boxShadow: '15px 15px 30px rgba(0,0,0,0.3)', zIndex: 2,
+                            }}>
+                                <div style={{ transform: 'skewX(15deg)' }}>
+                                    <p style={{ fontSize: '1.1rem', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 6, margin: '0 0 2px' }}>BIB Number</p>
+                                    <h1 style={{
+                                        fontSize: 'clamp(6rem,12vw,10rem)', fontWeight: 900, lineHeight: 0.85,
+                                        color: '#fff', fontStyle: 'italic', textShadow: '0 4px 10px rgba(0,0,0,0.5)',
+                                        fontFamily: "'Exo 2', sans-serif", margin: 0,
+                                    }}>
+                                        {bibNum}
+                                    </h1>
+                                </div>
+                            </div>
+                            <div style={{
+                                background: '#ef4444', padding: '8px 30px 8px 45px',
+                                transform: 'skewX(-15deg)', borderRadius: 6,
+                                marginBottom: 15, marginLeft: -35, zIndex: 1,
+                                boxShadow: 'inset 0 0 20px rgba(0,0,0,0.2)',
+                            }}>
+                                <div style={{ transform: 'skewX(15deg)' }}>
+                                    <span style={{
+                                        fontSize: 'clamp(1.5rem,3vw,2.2rem)', fontWeight: 900, color: '#fff',
+                                        whiteSpace: 'nowrap', fontStyle: 'italic', letterSpacing: 1,
+                                    }}>
+                                        {distance}
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Runner name section */}
+                        <div style={{ marginBottom: '4vh' }}>
+                            <div style={{ color: '#4ade80', fontWeight: 800, fontSize: '1.2rem', textTransform: 'uppercase', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 10 }}>
+                                <i className="fa-solid fa-square-check" style={{ fontSize: 24 }} /> Verified Participant
+                            </div>
+                            <h2 style={{ fontSize: 'clamp(2.5rem,5vw,4rem)', fontWeight: 900, lineHeight: 1.1, color: '#fff', margin: '0 0 5px', textShadow: '0 4px 10px rgba(0,0,0,0.5)' }}>
+                                {nameTh || nameEn}
+                            </h2>
+                            {nameTh && (
+                                <h3 style={{ fontSize: 'clamp(1.2rem,2.5vw,1.8rem)', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', margin: 0 }}>
+                                    {nameEn}
+                                </h3>
+                            )}
+                        </div>
+
+                        {/* Info bar */}
+                        <div style={{
+                            display: 'flex', alignItems: 'center',
+                            background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)',
+                            borderRadius: 24, padding: '25px 0', backdropFilter: 'blur(10px)',
+                            boxShadow: '0 10px 30px rgba(0,0,0,0.2)',
+                        }}>
+                            <SplitInfoItem label="Gender" value={genderLabel} />
+                            <SplitInfoItem label="Age Group" value={ageGroupLabel} />
+                            <SplitInfoItem label="Shirt Size" value={shirtSizeLabel} highlight />
+                        </div>
+                    </div>
+
+                    {/* Progress */}
+                    <div style={{
+                        position: 'absolute', bottom: 0, left: 0, height: 8,
+                        background: '#4ade80', width: '100%', animation: 'timer 8s linear forwards', zIndex: 100,
+                    }} />
+                    <div style={{
+                        position: 'absolute', bottom: 20, right: 40, fontSize: 11, fontWeight: 800,
+                        color: 'rgba(255,255,255,0.2)', textTransform: 'uppercase', letterSpacing: 4, zIndex: 100,
+                    }}>
+                        Action Timing System
+                    </div>
+                </div>
+            )}
 
             <style>{`
-                @keyframes fadeIn {
-                    from { opacity: 0; transform: translateY(-8px); }
-                    to { opacity: 1; transform: translateY(0); }
-                }
+                @keyframes fadeIn { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
+                @keyframes timer { from { width: 100%; } to { width: 0%; } }
+                @keyframes pulse { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.1); opacity: 0.7; } }
+                * { font-family: 'Prompt', sans-serif !important; margin: 0; padding: 0; box-sizing: border-box; }
             `}</style>
-        </AdminLayout>
+        </>
     );
 }
 
-function InfoCard({ label, value, sub, large, mono }: {
-    label: string; value: string; sub?: string; large?: boolean; mono?: boolean;
-}) {
+function InfoItem({ label, value, highlight }: { label: string; value: string; highlight?: boolean }) {
     return (
         <div style={{
-            background: '#fff', borderRadius: '8px', padding: '12px 16px',
-            border: '1px solid #e2e8f0',
+            padding: '30px 20px', textAlign: 'center', position: 'relative',
+            ...(highlight ? { background: 'rgba(74,222,128,0.1)' } : {}),
         }}>
-            <div style={{ fontSize: '11px', fontWeight: '600', color: '#94a3b8', textTransform: 'uppercase', marginBottom: '4px' }}>
-                {label}
-            </div>
-            <div style={{
-                fontSize: large ? '24px' : '15px',
-                fontWeight: large ? '800' : '600',
-                color: '#1e293b',
-                fontFamily: mono ? 'monospace' : 'inherit',
-            }}>
-                {value}
-            </div>
-            {sub && (
-                <div style={{ fontSize: '13px', color: '#64748b', marginTop: '2px' }}>
-                    {sub}
-                </div>
-            )}
+            <p style={{
+                fontSize: '1.2rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: 2,
+                marginBottom: 5, color: highlight ? '#4ade80' : '#94a3b8',
+            }}>{label}</p>
+            <p style={{
+                fontSize: highlight ? '4rem' : '3rem', fontWeight: 900, lineHeight: 1,
+                color: highlight ? '#4ade80' : '#fff',
+                textTransform: 'uppercase',
+                ...(highlight ? { textShadow: '0 0 20px rgba(74,222,128,0.3)' } : {}),
+            }}>{value}</p>
+        </div>
+    );
+}
+
+function SplitInfoItem({ label, value, highlight }: { label: string; value: string; highlight?: boolean }) {
+    return (
+        <div style={{
+            flex: 1, textAlign: 'center', position: 'relative',
+            ...(highlight ? {
+                background: 'rgba(74,222,128,0.06)', borderRadius: 16,
+                margin: '0 15px', padding: '15px 0',
+                border: '1px solid rgba(74,222,128,0.15)',
+            } : {}),
+        }}>
+            <p style={{
+                fontSize: 14, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 2,
+                marginBottom: 8, color: highlight ? '#4ade80' : '#64748b',
+            }}>{label}</p>
+            <p style={{
+                fontSize: highlight ? 'clamp(2.5rem,4.5vw,3.5rem)' : 'clamp(1.8rem,3.5vw,2.5rem)',
+                fontWeight: 900, lineHeight: 1, color: highlight ? '#4ade80' : '#fff',
+                ...(highlight ? { textShadow: '0 0 20px rgba(74,222,128,0.2)' } : {}),
+            }}>{value}</p>
         </div>
     );
 }
