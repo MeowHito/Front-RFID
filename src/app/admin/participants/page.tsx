@@ -51,6 +51,7 @@ interface Runner {
     age?: number;
     nationality?: string;
     chipCode?: string;
+    printingCode?: string;
     rfidTag?: string;
     status: string;
     team?: string;
@@ -406,6 +407,7 @@ export default function ParticipantsPage() {
             ageGroup: runner.ageGroup || '',
             nationality: runner.nationality || '',
             chipCode: runner.chipCode || '',
+            printingCode: (runner as any).printingCode || '',
             rfidTag: runner.rfidTag || '',
             team: runner.team || '',
             teamName: runner.teamName || '',
@@ -1380,6 +1382,7 @@ export default function ParticipantsPage() {
                                     { key: 'birthDate', label: 'วันเกิด', labelEn: 'Birth Date', type: 'date' },
                                     { key: 'nationality', label: 'สัญชาติ', labelEn: 'Nationality' },
                                     { key: 'chipCode', label: 'Chip Code', labelEn: 'Chip Code' },
+                                    { key: 'printingCode', label: 'Printing Code', labelEn: 'Printing Code' },
                                     { key: 'rfidTag', label: 'RFID Tag', labelEn: 'RFID Tag' },
                                     { key: 'idNo', label: 'เลขบัตรประชาชน', labelEn: 'ID No.' },
                                     {
