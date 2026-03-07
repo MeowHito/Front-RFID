@@ -4,6 +4,7 @@ import { useEffect, useState, useRef, useCallback } from 'react';
 import { useLanguage } from '@/lib/language-context';
 import * as XLSX from 'xlsx';
 import AdminLayout from '../AdminLayout';
+import { countryToFlag } from '@/lib/country-flags';
 import '../admin.css';
 
 interface RaceCategory {
@@ -68,6 +69,7 @@ interface Runner {
     bloodType?: string;
     chronicDiseases?: string;
     address?: string;
+    sourceFile?: string;
 }
 
 const IMPORT_TEMPLATE_HEADERS = [
@@ -1218,12 +1220,13 @@ export default function ParticipantsPage() {
                                                 <tr>
                                                     <th className="w-10">#</th>
                                                     <th className="w-20 cursor-pointer select-none" onClick={() => handleSort('bib')}>BIB <span className="inline-flex items-center align-middle ml-0.5 gap-0"><svg width="10" height="14" viewBox="0 0 10 14" className={`${sortBy === 'bib' && sortOrder === 'asc' ? 'text-[#3c8dbc]' : 'text-gray-300'}`}><path d="M5 1v10M5 1L2 4M5 1l3 3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" fill="none" /></svg><svg width="10" height="14" viewBox="0 0 10 14" className={`${sortBy === 'bib' && sortOrder === 'desc' ? 'text-[#3c8dbc]' : 'text-gray-300'}`}><path d="M5 3v10M5 13L2 10M5 13l3-3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" fill="none" /></svg></span></th>
-                                                    <th className="w-[38%] cursor-pointer select-none" onClick={() => handleSort('firstName')}>{language === 'th' ? 'ชื่อ-นามสกุล' : 'Name'} <span className="inline-flex items-center align-middle ml-0.5 gap-0"><svg width="10" height="14" viewBox="0 0 10 14" className={`${sortBy === 'firstName' && sortOrder === 'asc' ? 'text-[#3c8dbc]' : 'text-gray-300'}`}><path d="M5 1v10M5 1L2 4M5 1l3 3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" fill="none" /></svg><svg width="10" height="14" viewBox="0 0 10 14" className={`${sortBy === 'firstName' && sortOrder === 'desc' ? 'text-[#3c8dbc]' : 'text-gray-300'}`}><path d="M5 3v10M5 13L2 10M5 13l3-3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" fill="none" /></svg></span></th>
+                                                    <th className="w-[22%] cursor-pointer select-none" onClick={() => handleSort('firstName')}>{language === 'th' ? 'ชื่อ-นามสกุล' : 'Name'} <span className="inline-flex items-center align-middle ml-0.5 gap-0"><svg width="10" height="14" viewBox="0 0 10 14" className={`${sortBy === 'firstName' && sortOrder === 'asc' ? 'text-[#3c8dbc]' : 'text-gray-300'}`}><path d="M5 1v10M5 1L2 4M5 1l3 3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" fill="none" /></svg><svg width="10" height="14" viewBox="0 0 10 14" className={`${sortBy === 'firstName' && sortOrder === 'desc' ? 'text-[#3c8dbc]' : 'text-gray-300'}`}><path d="M5 3v10M5 13L2 10M5 13l3-3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" fill="none" /></svg></span></th>
                                                     <th className="w-10 text-center">{language === 'th' ? 'เพศ' : 'G'}</th>
                                                     <th className="w-16 cursor-pointer select-none" onClick={() => handleSort('ageGroup')}>{language === 'th' ? 'อายุ' : 'Age'} <span className="inline-flex items-center align-middle ml-0.5 gap-0"><svg width="10" height="14" viewBox="0 0 10 14" className={`${sortBy === 'ageGroup' && sortOrder === 'asc' ? 'text-[#3c8dbc]' : 'text-gray-300'}`}><path d="M5 1v10M5 1L2 4M5 1l3 3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" fill="none" /></svg><svg width="10" height="14" viewBox="0 0 10 14" className={`${sortBy === 'ageGroup' && sortOrder === 'desc' ? 'text-[#3c8dbc]' : 'text-gray-300'}`}><path d="M5 3v10M5 13L2 10M5 13l3-3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" fill="none" /></svg></span></th>
                                                     <th className="w-12 text-center">{language === 'th' ? 'สัญชาติ' : 'Nat.'}</th>
                                                     <th className="w-28 text-center cursor-pointer select-none" onClick={() => handleSort('chipCode')}>Chip Code <span className="inline-flex items-center align-middle ml-0.5 gap-0"><svg width="10" height="14" viewBox="0 0 10 14" className={`${sortBy === 'chipCode' && sortOrder === 'asc' ? 'text-[#3c8dbc]' : 'text-gray-300'}`}><path d="M5 1v10M5 1L2 4M5 1l3 3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" fill="none" /></svg><svg width="10" height="14" viewBox="0 0 10 14" className={`${sortBy === 'chipCode' && sortOrder === 'desc' ? 'text-[#3c8dbc]' : 'text-gray-300'}`}><path d="M5 3v10M5 13L2 10M5 13l3-3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" fill="none" /></svg></span></th>
                                                     <th className="w-20 text-center">{language === 'th' ? 'สถานะ' : 'Status'}</th>
+                                                    <th className="w-20 text-center">{language === 'th' ? 'หมายเหตุ' : 'Remark'}</th>
                                                     <th className="w-14"></th>
                                                     <th className="w-8"><input type="checkbox" checked={runners.length > 0 && runners.every(r => selectedIds.has(r._id))} onChange={e => { if (e.target.checked) { setSelectedIds(new Set(runners.map(r => r._id))); } else { setSelectedIds(new Set()); } }} /></th>
                                                 </tr>
@@ -1246,9 +1249,9 @@ export default function ParticipantsPage() {
                                                                     {r.bib || '—'}
                                                                 </span>
                                                             </td>
-                                                            <td className="max-w-[420px]">
-                                                                <div className="font-medium">{fullName}</div>
-                                                                {fullNameTh !== '-' && <div className="text-[11px] text-gray-400">{fullNameTh}</div>}
+                                                            <td className="max-w-[240px] truncate">
+                                                                <div className="font-medium truncate">{fullName}</div>
+                                                                {fullNameTh !== '-' && <div className="text-[11px] text-gray-400 truncate">{fullNameTh}</div>}
                                                             </td>
                                                             <td className="text-center">
                                                                 {r.gender === 'F' ? (
@@ -1266,7 +1269,7 @@ export default function ParticipantsPage() {
                                                                 )}
                                                             </td>
                                                             <td><span className={r.ageGroup ? 'text-[#3c8dbc]' : 'text-gray-300'}>{r.ageGroup ? r.ageGroup.replace(/[^0-9-]/g, '') || r.ageGroup : '-'}</span></td>
-                                                            <td className="text-center text-[11px] text-gray-600">{r.nationality || '-'}</td>
+                                                            <td className="text-center" title={r.nationality || ''}><span style={{ fontSize: 18 }}>{countryToFlag(r.nationality) || (r.nationality || '-')}</span></td>
                                                             <td className="text-center">
                                                                 <span className={`font-mono text-[11px] ${noChip ? 'text-amber-600 font-semibold' : isDupChip ? 'text-amber-800 font-semibold' : 'text-gray-700'}`}>
                                                                     {r.chipCode || (language === 'th' ? 'ไม่มี' : 'None')}
@@ -1280,6 +1283,17 @@ export default function ParticipantsPage() {
                                                                     {noChip && <span className="text-[10px] font-semibold text-amber-800 bg-amber-100 px-1.5 py-0.5 rounded-full">{language === 'th' ? 'ไม่มีChip' : 'No Chip'}</span>}
                                                                     {isDupChip && <span className="text-[10px] font-semibold text-amber-800 bg-amber-100 px-1.5 py-0.5 rounded-full">Chipซ้ำ</span>}
                                                                 </div>
+                                                            </td>
+                                                            <td className="text-center">
+                                                                {r.sourceFile === 'id-card-reader' ? (
+                                                                    <span className="text-[9px] font-bold text-orange-700 bg-orange-100 px-1.5 py-0.5 rounded-full">NEW</span>
+                                                                ) : r.sourceFile?.includes('RaceTiger') ? (
+                                                                    <span className="text-[9px] font-bold text-blue-700 bg-blue-100 px-1.5 py-0.5 rounded-full">RaceTiger</span>
+                                                                ) : r.sourceFile ? (
+                                                                    <span className="text-[9px] text-gray-400">{r.sourceFile.length > 12 ? r.sourceFile.slice(0, 12) + '…' : r.sourceFile}</span>
+                                                                ) : (
+                                                                    <span className="text-[9px] text-gray-300">-</span>
+                                                                )}
                                                             </td>
                                                             <td>
                                                                 <div className="flex gap-1 justify-center">

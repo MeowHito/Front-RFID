@@ -1,537 +1,292 @@
 'use client';
 
-import { useEffect, useState, useRef, useCallback } from 'react';
-import Script from 'next/script';
+import { useState, useEffect } from 'react';
+import AdminLayout from '../AdminLayout';
 
-interface Runner {
-    _id: string; bib: string; firstName: string; lastName: string;
-    firstNameTh?: string; lastNameTh?: string;
-    gender: string; category: string; ageGroup?: string; nationality?: string;
-    status: string; chipCode?: string; printingCode?: string; rfidTag?: string;
-    netTime?: number; gunTime?: number; overallRank?: number;
-    team?: string; teamName?: string; shirtSize?: string; age?: number;
-    gunPace?: string; netPace?: string;
+interface Campaign {
+    _id: string;
+    name: string;
+    scanningTemplate?: string;
 }
-interface Campaign { _id: string; name: string; }
 
-type TemplateStyle = 'classic' | 'split';
+const SCANNING_TEMPLATES = [
+    {
+        id: 'classic',
+        name: 'Classic — Top-Down',
+        description: 'แสดงเต็มจอ แบบ Card กลางจอ ชื่อ + BIB + ข้อมูล',
+        previewBg: 'linear-gradient(135deg, #0f172a, #1e293b)',
+        icon: '🎯',
+    },
+    {
+        id: 'split',
+        name: 'Split — Left-Right',
+        description: 'แบ่งซ้ายขวา รูปนักวิ่ง + ข้อมูล + BIB เฉียง',
+        previewBg: 'linear-gradient(135deg, #334155, #020617)',
+        icon: '🖥️',
+    },
+];
 
 export default function BibCheckPage() {
-    const [campaigns, setCampaigns] = useState<Campaign[]>([]);
-    const [selectedCampaign, setSelectedCampaign] = useState('');
-    const [campaignName, setCampaignName] = useState('');
-    const [scanCode, setScanCode] = useState('');
-    const [loading, setLoading] = useState(false);
-    const [runner, setRunner] = useState<Runner | null>(null);
-    const [found, setFound] = useState<boolean | null>(null);
-    const [template, setTemplate] = useState<TemplateStyle>('classic');
-    const [showSettings, setShowSettings] = useState(true);
-    const [animKey, setAnimKey] = useState(0);
-    const inputRef = useRef<HTMLInputElement>(null);
-    const hiddenInputRef = useRef<HTMLInputElement>(null);
+    const [campaign, setCampaign] = useState<Campaign | null>(null);
+    const [selectedTemplate, setSelectedTemplate] = useState('classic');
+    const [saving, setSaving] = useState(false);
+    const [saved, setSaved] = useState(false);
+    const [loading, setLoading] = useState(true);
 
-    // Load campaigns
     useEffect(() => {
-        fetch('/api/campaigns')
-            .then(r => r.json())
-            .then(data => {
-                const list = Array.isArray(data) ? data : data?.data || [];
-                setCampaigns(list);
-                if (list.length > 0 && !selectedCampaign) {
-                    setSelectedCampaign(list[0]._id);
-                    setCampaignName(list[0].name);
+        (async () => {
+            try {
+                const res = await fetch('/api/campaigns/featured');
+                if (res.ok) {
+                    const data = await res.json();
+                    setCampaign(data);
+                    const savedTmpl = data.scanningTemplate;
+                    if (savedTmpl) setSelectedTemplate(savedTmpl);
                 }
-            })
-            .catch(console.error);
+            } catch (err) {
+                console.error('Failed to load campaign:', err);
+            } finally {
+                setLoading(false);
+            }
+        })();
     }, []);
 
-    // Always keep hidden input focused for scanner
-    useEffect(() => {
-        const keepFocus = () => {
-            if (!showSettings && hiddenInputRef.current) {
-                hiddenInputRef.current.focus();
+    const handleSave = async () => {
+        if (!campaign?._id) return;
+        setSaving(true);
+        setSaved(false);
+        try {
+            const res = await fetch(`/api/campaigns/${campaign._id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ scanningTemplate: selectedTemplate }),
+            });
+            if (res.ok) {
+                setSaved(true);
+                setTimeout(() => setSaved(false), 3000);
             }
-        };
-        const interval = setInterval(keepFocus, 500);
-        document.addEventListener('click', keepFocus);
-        return () => { clearInterval(interval); document.removeEventListener('click', keepFocus); };
-    }, [showSettings]);
-
-    const formatTime = (ms?: number) => {
-        if (!ms || ms <= 0) return '-';
-        const totalSec = Math.floor(ms / 1000);
-        const h = Math.floor(totalSec / 3600);
-        const m = Math.floor((totalSec % 3600) / 60);
-        const s = totalSec % 60;
-        return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+        } catch (err) {
+            console.error('Save error:', err);
+        } finally {
+            setSaving(false);
+        }
     };
 
-    const handleScan = useCallback(async () => {
-        const code = scanCode.trim();
-        if (!code || loading) return;
-        setLoading(true);
-        try {
-            const params = new URLSearchParams({ campaignId: selectedCampaign, code });
-            const res = await fetch(`/api/runners/lookup?${params.toString()}`);
-            const data = await res.json();
-            setRunner(data.runner || null);
-            setFound(!!data.found);
-            setAnimKey(k => k + 1);
-        } catch {
-            setRunner(null);
-            setFound(false);
-            setAnimKey(k => k + 1);
-        } finally {
-            setLoading(false);
-            setScanCode('');
-        }
-    }, [scanCode, selectedCampaign, loading]);
-
-    // Settings panel (before entering display mode)
-    if (showSettings) {
+    if (loading) {
         return (
-            <div style={{
-                minHeight: '100vh', background: '#0f172a', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontFamily: "'Prompt', sans-serif",
-            }}>
-                <div style={{
-                    background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)',
-                    borderRadius: 24, padding: '48px 48px 40px', width: 500, color: '#fff',
-                    backdropFilter: 'blur(20px)', boxShadow: '0 30px 60px rgba(0,0,0,0.4)',
-                }}>
-                    <div style={{ textAlign: 'center', marginBottom: 32 }}>
-                        <div style={{ fontSize: 48, marginBottom: 12 }}>📡</div>
-                        <h1 style={{ fontSize: 28, fontWeight: 900, margin: 0 }}>RFID Check-in</h1>
-                        <p style={{ color: '#94a3b8', fontSize: 14, marginTop: 6 }}>ตั้งค่าก่อนเริ่มสแกน</p>
-                    </div>
-
-                    {/* Campaign */}
-                    <label style={{ display: 'block', fontSize: 13, fontWeight: 700, color: '#94a3b8', marginBottom: 6, textTransform: 'uppercase', letterSpacing: 1 }}>
-                        กิจกรรม / Campaign
-                    </label>
-                    <select
-                        value={selectedCampaign}
-                        onChange={e => {
-                            setSelectedCampaign(e.target.value);
-                            const c = campaigns.find(c => c._id === e.target.value);
-                            setCampaignName(c?.name || '');
-                        }}
-                        style={{
-                            width: '100%', padding: '12px 16px', borderRadius: 10, fontSize: 15,
-                            background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.2)',
-                            color: '#fff', marginBottom: 24, outline: 'none',
-                        }}
-                    >
-                        {campaigns.map(c => (
-                            <option key={c._id} value={c._id} style={{ background: '#1e293b' }}>{c.name}</option>
-                        ))}
-                    </select>
-
-                    {/* Template */}
-                    <label style={{ display: 'block', fontSize: 13, fontWeight: 700, color: '#94a3b8', marginBottom: 10, textTransform: 'uppercase', letterSpacing: 1 }}>
-                        Template
-                    </label>
-                    <div style={{ display: 'flex', gap: 12, marginBottom: 32 }}>
-                        {[
-                            { key: 'classic' as TemplateStyle, label: 'Classic (Top-Down)', icon: '🎯' },
-                            { key: 'split' as TemplateStyle, label: 'Split (Left-Right)', icon: '🖥️' },
-                        ].map(t => (
-                            <button key={t.key} onClick={() => setTemplate(t.key)}
-                                style={{
-                                    flex: 1, padding: '16px 12px', borderRadius: 12, cursor: 'pointer',
-                                    background: template === t.key ? 'rgba(74,222,128,0.15)' : 'rgba(255,255,255,0.04)',
-                                    border: `2px solid ${template === t.key ? '#4ade80' : 'rgba(255,255,255,0.1)'}`,
-                                    color: template === t.key ? '#4ade80' : '#94a3b8',
-                                    textAlign: 'center', fontSize: 13, fontWeight: 700, transition: 'all 0.2s',
-                                }}
-                            >
-                                <div style={{ fontSize: 28, marginBottom: 6 }}>{t.icon}</div>
-                                {t.label}
-                            </button>
-                        ))}
-                    </div>
-
-                    <button
-                        onClick={() => setShowSettings(false)}
-                        disabled={!selectedCampaign}
-                        style={{
-                            width: '100%', padding: '14px 0', borderRadius: 12, border: 'none',
-                            background: '#4ade80', color: '#0f172a', fontSize: 16, fontWeight: 800,
-                            cursor: 'pointer', textTransform: 'uppercase', letterSpacing: 2,
-                        }}
-                    >
-                        เริ่มสแกน / Start Scanning
-                    </button>
+            <AdminLayout breadcrumbItems={[{ label: 'Check BIB', labelEn: 'Check BIB' }]}>
+                <div style={{ padding: 40, textAlign: 'center', fontFamily: "'Prompt', sans-serif" }}>
+                    <div style={{ width: 32, height: 32, border: '3px solid #e2e8f0', borderTopColor: '#3b82f6', borderRadius: '50%', animation: 'spin 1s linear infinite', margin: '0 auto 16px' }} />
+                    <p style={{ color: '#94a3b8' }}>กำลังโหลด...</p>
+                    <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
                 </div>
-            </div>
+            </AdminLayout>
         );
     }
 
-    // === FULL SCREEN DISPLAY MODE ===
-    const r = runner;
-    const nameTh = r ? `${r.firstNameTh || ''} ${r.lastNameTh || ''}`.trim() : '';
-    const nameEn = r ? `${r.firstName} ${r.lastName}` : '';
-    const distance = r?.category || '-';
-    const bibNum = r?.bib || '-';
-    const genderLabel = r?.gender === 'M' ? 'Male' : r?.gender === 'F' ? 'Female' : '-';
-    const ageGroupLabel = r?.ageGroup || '-';
-    const shirtSizeLabel = r?.shirtSize || '-';
-
     return (
-        <>
-            <Script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" strategy="afterInteractive" />
-            <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@400;600;700;800;900&family=Exo+2:wght@800;900&display=swap" rel="stylesheet" />
-            <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+        <AdminLayout breadcrumbItems={[{ label: 'Check BIB', labelEn: 'Check BIB' }]}>
+            <div style={{ padding: '24px 32px', fontFamily: "'Prompt', sans-serif", maxWidth: 1200 }}>
+                <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
 
-            {/* Hidden scanner input — always captures keyboard */}
-            <input
-                ref={hiddenInputRef}
-                value={scanCode}
-                onChange={e => setScanCode(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter') handleScan(); }}
-                style={{ position: 'fixed', top: -100, left: -100, opacity: 0 }}
-                autoFocus
-            />
+                {/* Header */}
+                <div style={{ marginBottom: 32 }}>
+                    <h1 style={{ fontSize: 24, fontWeight: 800, color: '#0f172a', margin: '0 0 4px' }}>
+                        📡 Check BIB / Scanning Template
+                    </h1>
+                    <p style={{ fontSize: 14, color: '#64748b', margin: 0 }}>
+                        เลือก Template ที่จะใช้แสดงข้อมูลนักกีฬาเมื่อสแกน RFID — เปิดหน้า Scanning เพื่อเริ่มสแกน
+                    </p>
+                </div>
 
-            {/* Settings gear button */}
-            <button onClick={() => setShowSettings(true)} style={{
-                position: 'fixed', top: 16, right: 16, zIndex: 100, width: 40, height: 40,
-                borderRadius: '50%', border: '1px solid rgba(255,255,255,0.2)',
-                background: 'rgba(0,0,0,0.5)', color: '#94a3b8', fontSize: 16, cursor: 'pointer',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                backdropFilter: 'blur(10px)',
-            }}>
-                <i className="fa-solid fa-gear" />
-            </button>
-
-            {/* Loading overlay */}
-            {loading && (
-                <div style={{
-                    position: 'fixed', inset: 0, zIndex: 90, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)',
-                }}>
-                    <div style={{ color: '#4ade80', fontSize: 24, fontWeight: 800 }}>
-                        <i className="fas fa-spinner fa-spin" style={{ marginRight: 12 }} /> กำลังค้นหา...
+                {!campaign ? (
+                    <div style={{ textAlign: 'center', padding: 30, color: '#999', fontSize: 13 }}>
+                        ไม่พบกิจกรรมที่กดดาว — กรุณากดดาวเลือกกิจกรรมก่อน
                     </div>
-                </div>
-            )}
-
-            {/* NOT FOUND overlay */}
-            {found === false && !runner && (
-                <div key={`nf-${animKey}`} style={{
-                    position: 'fixed', inset: 0, zIndex: 80, display: 'flex', flexDirection: 'column',
-                    alignItems: 'center', justifyContent: 'center',
-                    background: '#020617', animation: 'fadeIn 0.5s ease-out',
-                    fontFamily: "'Prompt', sans-serif",
-                }}>
-                    <div style={{ fontSize: 80, marginBottom: 24 }}>❌</div>
-                    <div style={{ fontSize: 36, fontWeight: 900, color: '#ef4444', marginBottom: 8 }}>ไม่พบนักวิ่ง</div>
-                    <div style={{ fontSize: 18, color: '#94a3b8' }}>Runner Not Found — สแกนใหม่เพื่อลองอีกครั้ง</div>
-                </div>
-            )}
-
-            {/* WAITING STATE */}
-            {found === null && (
-                <div style={{
-                    position: 'fixed', inset: 0, zIndex: 70, display: 'flex', flexDirection: 'column',
-                    alignItems: 'center', justifyContent: 'center',
-                    background: '#020617', fontFamily: "'Prompt', sans-serif",
-                }}>
-                    <div style={{ fontSize: 80, marginBottom: 24, animation: 'pulse 2s ease-in-out infinite' }}>📡</div>
-                    <div style={{ fontSize: 36, fontWeight: 900, color: '#fff', marginBottom: 8 }}>รอการสแกน</div>
-                    <div style={{ fontSize: 18, color: '#94a3b8' }}>Waiting for RFID scan...</div>
-                    <div style={{ fontSize: 14, color: '#64748b', marginTop: 20 }}>Campaign: {campaignName}</div>
-                </div>
-            )}
-
-            {/* === TEMPLATE 1: CLASSIC (Top-Down) === */}
-            {found && runner && template === 'classic' && (
-                <div key={`c-${animKey}`} style={{
-                    position: 'fixed', inset: 0, zIndex: 60,
-                    background: 'radial-gradient(circle at center, #1e293b 0%, #020617 100%)',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    fontFamily: "'Prompt', sans-serif", animation: 'fadeIn 0.6s ease-out',
-                }}>
-                    <div style={{
-                        width: '95vw', height: '95vh', maxWidth: 1600,
-                        background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.1)',
-                        borderRadius: 40, display: 'flex', flexDirection: 'column',
-                        padding: '40px 60px', boxShadow: '0 30px 60px rgba(0,0,0,0.5)',
-                        backdropFilter: 'blur(20px)', position: 'relative', overflow: 'hidden',
-                    }}>
-                        {/* Header */}
-                        <div style={{ textAlign: 'center', borderBottom: '2px solid rgba(255,255,255,0.1)', paddingBottom: 20, marginBottom: 30 }}>
-                            <h1 style={{ fontSize: 'clamp(2rem,4vw,3rem)', fontWeight: 900, textTransform: 'uppercase', letterSpacing: 2, color: '#fff', margin: 0 }}>
-                                {campaignName}
-                            </h1>
-                            <h2 style={{ fontSize: 'clamp(1rem,2vw,1.5rem)', fontWeight: 700, color: '#4ade80', textTransform: 'uppercase', letterSpacing: 4, margin: '4px 0 0' }}>
-                                RFID Check-in • Action Timing
-                            </h2>
+                ) : (
+                    <>
+                        {/* Campaign Info */}
+                        <div style={{ marginBottom: 24, padding: '12px 16px', background: '#eff6ff', borderRadius: 10, border: '1px solid #bfdbfe', display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <span style={{ color: '#f59e0b' }}>⭐</span>
+                            <span style={{ fontSize: 14, fontWeight: 700, color: '#1e40af' }}>{campaign.name}</span>
                         </div>
 
-                        {/* Middle: Runner Info */}
-                        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 60, padding: '20px 0' }}>
-                            {/* Profile placeholder with QR */}
-                            <div style={{ position: 'relative', flexShrink: 0 }}>
-                                <div style={{
-                                    width: 300, height: 300, borderRadius: 30,
-                                    border: '6px solid #4ade80', overflow: 'hidden',
-                                    boxShadow: '0 20px 40px rgba(74,222,128,0.2)',
-                                    background: '#0f172a', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                }}>
-                                    <div style={{ textAlign: 'center', color: '#4ade80' }}>
-                                        <i className="fa-solid fa-running" style={{ fontSize: 80, marginBottom: 12 }} />
-                                        <div style={{ fontSize: 14, fontWeight: 700, color: '#94a3b8' }}>BIB {bibNum}</div>
-                                    </div>
-                                </div>
-                                {/* QR corner */}
-                                <div style={{
-                                    position: 'absolute', bottom: -15, right: -15,
-                                    background: '#fff', padding: 10, borderRadius: 16,
-                                    border: '4px solid #4ade80', boxShadow: '0 15px 30px rgba(0,0,0,0.5)',
-                                    display: 'flex', flexDirection: 'column', alignItems: 'center',
-                                }}>
-                                    <div style={{ width: 90, height: 90, background: '#f1f5f9', borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                        <i className="fa-solid fa-qrcode" style={{ fontSize: 50, color: '#0f172a' }} />
-                                    </div>
-                                    <p style={{ color: '#0f172a', fontSize: 10, fontWeight: 900, textTransform: 'uppercase', marginTop: 6 }}>Scan to Upload</p>
-                                </div>
-                            </div>
-
-                            {/* Name + BIB */}
-                            <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-                                <div style={{ color: '#4ade80', fontWeight: 800, fontSize: '1.5rem', textTransform: 'uppercase', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 10 }}>
-                                    <i className="fa-solid fa-circle-check" /> Verified Runner
-                                </div>
-                                <h2 style={{ fontSize: 'clamp(3rem,5vw,5rem)', fontWeight: 900, lineHeight: 1, marginBottom: 5, color: '#fff', margin: '0 0 5px' }}>
-                                    {nameTh || nameEn}
-                                </h2>
-                                {nameTh && (
-                                    <h3 style={{ fontSize: 'clamp(1.5rem,2.5vw,2rem)', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', margin: '0 0 30px' }}>
-                                        {nameEn}
-                                    </h3>
-                                )}
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 20, marginTop: nameTh ? 0 : 25 }}>
-                                    <div style={{
-                                        background: '#ef4444', color: '#fff', padding: '10px 30px', borderRadius: 15,
-                                        fontSize: '2.5rem', fontWeight: 900, boxShadow: '0 10px 20px rgba(239,68,68,0.3)',
-                                    }}>
-                                        {distance}
-                                    </div>
-                                    <div style={{
-                                        fontSize: 'clamp(5rem,9vw,8rem)', fontWeight: 900, color: '#fff',
-                                        fontStyle: 'italic', lineHeight: 0.85, textShadow: '0 5px 15px rgba(0,0,0,0.5)',
-                                        fontFamily: "'Exo 2', sans-serif",
-                                    }}>
-                                        BIB {bibNum}
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* Bottom: Info bar */}
-                        <div style={{ marginTop: 40 }}>
-                            <div style={{
-                                display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)',
-                                background: 'rgba(255,255,255,0.05)', borderRadius: 30,
-                                overflow: 'hidden', border: '1px solid rgba(255,255,255,0.1)',
-                            }}>
-                                <InfoItem label="Gender" value={genderLabel} />
-                                <InfoItem label="Age Group" value={ageGroupLabel} />
-                                <InfoItem label="Shirt Size" value={shirtSizeLabel} highlight />
-                            </div>
-                        </div>
-
-                        {/* Progress bar */}
-                        <div style={{
-                            position: 'absolute', bottom: 0, left: 0, height: 10,
-                            background: '#4ade80', borderRadius: '0 0 40px 40px',
-                            animation: 'timer 8s linear forwards',
-                        }} />
-                    </div>
-                </div>
-            )}
-
-            {/* === TEMPLATE 2: SPLIT (Left-Right) === */}
-            {found && runner && template === 'split' && (
-                <div key={`s-${animKey}`} style={{
-                    position: 'fixed', inset: 0, zIndex: 60,
-                    background: 'linear-gradient(135deg, #020617 0%, #0f172a 100%)',
-                    display: 'flex', flexDirection: 'row',
-                    fontFamily: "'Prompt', sans-serif", animation: 'fadeIn 0.8s ease-out',
-                }}>
-                    {/* Left: Runner visual */}
-                    <div style={{ width: '45%', height: '100%', position: 'relative', overflow: 'hidden', background: '#000' }}>
-                        <div style={{
-                            width: '100%', height: '100%',
-                            background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 50%, #020617 100%)',
-                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        }}>
-                            <div style={{ textAlign: 'center', color: '#4ade80' }}>
-                                <i className="fa-solid fa-person-running" style={{ fontSize: 160, marginBottom: 20 }} />
-                                <div style={{ fontSize: 28, fontWeight: 900, color: '#fff' }}>BIB {bibNum}</div>
-                                <div style={{ fontSize: 16, color: '#94a3b8', marginTop: 8 }}>{distance}</div>
-                            </div>
-                        </div>
-                        {/* Gradient overlay */}
-                        <div style={{
-                            position: 'absolute', inset: 0,
-                            background: 'linear-gradient(to right, rgba(2,6,23,0) 70%, rgba(2,6,23,1) 100%)',
-                        }} />
-                        {/* QR */}
-                        <div style={{
-                            position: 'absolute', bottom: 40, left: 40, zIndex: 10,
-                            background: '#fff', padding: 12, borderRadius: 16, width: 150,
-                            display: 'flex', flexDirection: 'column', alignItems: 'center',
-                            border: '4px solid #4ade80', boxShadow: '0 15px 30px rgba(0,0,0,0.5)',
-                        }}>
-                            <div style={{ width: 120, height: 120, background: '#f1f5f9', borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                <i className="fa-solid fa-qrcode" style={{ fontSize: 70, color: '#0f172a' }} />
-                            </div>
-                            <p style={{ color: '#0f172a', fontSize: 10, fontWeight: 900, textTransform: 'uppercase', marginTop: 8, textAlign: 'center' }}>
-                                Scan to upload<br />your photo
-                            </p>
-                        </div>
-                    </div>
-
-                    {/* Right: Data */}
-                    <div style={{ width: '55%', display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: '5vh 6vw', zIndex: 5 }}>
-                        {/* Event Header */}
-                        <div style={{ marginBottom: '4vh', borderLeft: '6px solid #4ade80', paddingLeft: 20 }}>
-                            <h2 style={{ fontSize: 'clamp(1.5rem,3vw,2.2rem)', fontWeight: 900, textTransform: 'uppercase', lineHeight: 1.1, color: '#fff', margin: 0 }}>
-                                {campaignName}
-                            </h2>
-                            <p style={{ fontSize: 'clamp(0.9rem,1.5vw,1.2rem)', fontWeight: 700, color: '#4ade80', textTransform: 'uppercase', letterSpacing: 2, marginTop: 4 }}>
-                                RFID Check-in • Action Timing
+                        {/* Instructions */}
+                        <div style={{ marginBottom: 20, padding: '10px 14px', background: '#fefce8', borderRadius: 8, border: '1px solid #fde68a' }}>
+                            <p style={{ fontSize: 12, color: '#92400e', margin: 0, fontWeight: 600 }}>
+                                ℹ️ เลือก Template แล้วกดบันทึก — จากนั้นไปที่หน้า <strong>Scanning</strong> เพื่อเริ่มสแกน RFID แสดงข้อมูลนักกีฬา
                             </p>
                         </div>
 
-                        {/* BIB + Distance skewed boxes */}
-                        <div style={{ display: 'flex', alignItems: 'flex-end', gap: 10, marginBottom: '5vh' }}>
-                            <div style={{
-                                background: 'rgba(255,255,255,0.04)', borderLeft: '10px solid #4ade80',
-                                padding: '15px 50px', transform: 'skewX(-15deg)', borderRadius: 6,
-                                boxShadow: '15px 15px 30px rgba(0,0,0,0.3)', zIndex: 2,
-                            }}>
-                                <div style={{ transform: 'skewX(15deg)' }}>
-                                    <p style={{ fontSize: '1.1rem', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 6, margin: '0 0 2px' }}>BIB Number</p>
-                                    <h1 style={{
-                                        fontSize: 'clamp(6rem,12vw,10rem)', fontWeight: 900, lineHeight: 0.85,
-                                        color: '#fff', fontStyle: 'italic', textShadow: '0 4px 10px rgba(0,0,0,0.5)',
-                                        fontFamily: "'Exo 2', sans-serif", margin: 0,
-                                    }}>
-                                        {bibNum}
-                                    </h1>
-                                </div>
-                            </div>
-                            <div style={{
-                                background: '#ef4444', padding: '8px 30px 8px 45px',
-                                transform: 'skewX(-15deg)', borderRadius: 6,
-                                marginBottom: 15, marginLeft: -35, zIndex: 1,
-                                boxShadow: 'inset 0 0 20px rgba(0,0,0,0.2)',
-                            }}>
-                                <div style={{ transform: 'skewX(15deg)' }}>
-                                    <span style={{
-                                        fontSize: 'clamp(1.5rem,3vw,2.2rem)', fontWeight: 900, color: '#fff',
-                                        whiteSpace: 'nowrap', fontStyle: 'italic', letterSpacing: 1,
-                                    }}>
-                                        {distance}
-                                    </span>
-                                </div>
-                            </div>
+                        {/* Template Cards with Mini Previews */}
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: 20, marginBottom: 32 }}>
+                            {SCANNING_TEMPLATES.map(tmpl => {
+                                const isSelected = selectedTemplate === tmpl.id;
+                                return (
+                                    <div
+                                        key={tmpl.id}
+                                        onClick={() => setSelectedTemplate(tmpl.id)}
+                                        style={{
+                                            borderRadius: 16, overflow: 'hidden', cursor: 'pointer',
+                                            border: isSelected ? '3px solid #22c55e' : '1px solid #e2e8f0',
+                                            boxShadow: isSelected ? '0 0 0 3px rgba(34,197,94,0.2)' : '0 1px 3px rgba(0,0,0,0.04)',
+                                            transition: 'all 0.2s',
+                                            transform: isSelected ? 'scale(1.02)' : 'scale(1)',
+                                            opacity: isSelected ? 1 : 0.75,
+                                        }}
+                                    >
+                                        {/* Mini Preview */}
+                                        <div style={{
+                                            height: 200, background: tmpl.previewBg,
+                                            position: 'relative', overflow: 'hidden', padding: 16,
+                                        }}>
+                                            {tmpl.id === 'classic' ? (
+                                                /* Classic mini: centered card */
+                                                <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                                    <div style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 12, padding: '12px 20px', display: 'flex', alignItems: 'center', gap: 14, maxWidth: '90%' }}>
+                                                        <div style={{ width: 50, height: 50, borderRadius: 8, border: '2px solid #4ade80', background: '#0f172a', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, flexShrink: 0 }}>🏃</div>
+                                                        <div>
+                                                            <div style={{ fontSize: 7, color: '#4ade80', fontWeight: 800, letterSpacing: 1 }}>✓ VERIFIED</div>
+                                                            <div style={{ fontSize: 13, fontWeight: 900, color: '#fff', lineHeight: 1.1 }}>สมชาย ใจดี</div>
+                                                            <div style={{ fontSize: 8, color: '#94a3b8', fontWeight: 700 }}>Somchai Jaidee</div>
+                                                            <div style={{ display: 'flex', gap: 6, marginTop: 4, alignItems: 'center' }}>
+                                                                <span style={{ background: '#ef4444', color: '#fff', padding: '1px 8px', borderRadius: 4, fontSize: 9, fontWeight: 900 }}>10K</span>
+                                                                <span style={{ fontSize: 18, fontWeight: 900, color: '#fff', fontStyle: 'italic', fontFamily: "'Exo 2', sans-serif" }}>001</span>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    <div style={{ position: 'absolute', bottom: 10, left: 16, right: 16, display: 'flex', justifyContent: 'center', gap: 8 }}>
+                                                        <div style={{ background: 'rgba(255,255,255,0.06)', borderRadius: 6, padding: '3px 12px', textAlign: 'center' }}>
+                                                            <div style={{ fontSize: 6, color: '#94a3b8', fontWeight: 800 }}>GENDER</div>
+                                                            <div style={{ fontSize: 10, color: '#fff', fontWeight: 900 }}>Male</div>
+                                                        </div>
+                                                        <div style={{ background: 'rgba(74,222,128,0.1)', borderRadius: 6, padding: '3px 12px', textAlign: 'center' }}>
+                                                            <div style={{ fontSize: 6, color: '#4ade80', fontWeight: 800 }}>AGE GROUP</div>
+                                                            <div style={{ fontSize: 10, color: '#4ade80', fontWeight: 900 }}>30-39</div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            ) : (
+                                                /* Split mini: left-right */
+                                                <div style={{ width: '100%', height: '100%', display: 'flex' }}>
+                                                    <div style={{ width: '40%', background: '#0f172a', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', overflow: 'hidden' }}>
+                                                        <span style={{ fontSize: 40 }}>🏃</span>
+                                                        <div style={{ position: 'absolute', bottom: 4, left: 4, background: '#fff', borderRadius: 4, padding: 3, border: '1px solid #4ade80' }}>
+                                                            <div style={{ width: 20, height: 20, background: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10 }}>📱</div>
+                                                        </div>
+                                                    </div>
+                                                    <div style={{ width: '60%', paddingLeft: 12, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                                                        <div style={{ fontSize: 6, color: '#4ade80', fontWeight: 800, borderLeft: '2px solid #4ade80', paddingLeft: 4, marginBottom: 4 }}>EVENT NAME</div>
+                                                        <div style={{ display: 'flex', alignItems: 'flex-end', gap: 4, marginBottom: 6 }}>
+                                                            <div style={{ background: 'rgba(255,255,255,0.05)', borderLeft: '3px solid #4ade80', padding: '2px 8px', transform: 'skewX(-10deg)' }}>
+                                                                <span style={{ transform: 'skewX(10deg)', display: 'block', fontSize: 5, color: '#64748b', fontWeight: 700 }}>BIB</span>
+                                                                <span style={{ transform: 'skewX(10deg)', display: 'block', fontSize: 20, fontWeight: 900, color: '#fff', fontStyle: 'italic', fontFamily: "'Exo 2', sans-serif", lineHeight: 0.9 }}>001</span>
+                                                            </div>
+                                                            <div style={{ background: '#ef4444', padding: '1px 6px', transform: 'skewX(-10deg)', borderRadius: 2 }}>
+                                                                <span style={{ transform: 'skewX(10deg)', display: 'block', fontSize: 8, fontWeight: 900, color: '#fff' }}>10K</span>
+                                                            </div>
+                                                        </div>
+                                                        <div style={{ fontSize: 7, color: '#4ade80', fontWeight: 800, marginBottom: 2 }}>✓ VERIFIED 🇹🇭</div>
+                                                        <div style={{ fontSize: 11, fontWeight: 900, color: '#fff', lineHeight: 1 }}>สมชาย ใจดี</div>
+                                                        <div style={{ fontSize: 7, color: '#94a3b8', fontWeight: 700 }}>SOMCHAI JAIDEE</div>
+                                                        <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+                                                            <div style={{ background: 'rgba(255,255,255,0.05)', borderRadius: 4, padding: '2px 8px', textAlign: 'center' }}>
+                                                                <div style={{ fontSize: 5, color: '#64748b', fontWeight: 800 }}>GENDER</div>
+                                                                <div style={{ fontSize: 8, color: '#fff', fontWeight: 900 }}>Male</div>
+                                                            </div>
+                                                            <div style={{ background: 'rgba(74,222,128,0.08)', borderRadius: 4, padding: '2px 8px', textAlign: 'center', border: '1px solid rgba(74,222,128,0.15)' }}>
+                                                                <div style={{ fontSize: 5, color: '#4ade80', fontWeight: 800 }}>AGE GROUP</div>
+                                                                <div style={{ fontSize: 8, color: '#4ade80', fontWeight: 900 }}>30-39</div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            )}
+                                            {isSelected && (
+                                                <div style={{ position: 'absolute', top: 8, right: 8, background: '#22c55e', color: '#fff', fontSize: 10, fontWeight: 800, padding: '3px 10px', borderRadius: 6 }}>
+                                                    ✓ เลือกใช้งาน
+                                                </div>
+                                            )}
+                                        </div>
+                                        <div style={{ padding: 16, background: '#fff' }}>
+                                            <h3 style={{ fontSize: 16, fontWeight: 700, color: '#0f172a', margin: '0 0 4px' }}>{tmpl.name}</h3>
+                                            <p style={{ fontSize: 12, color: '#64748b', margin: 0, lineHeight: 1.5 }}>{tmpl.description}</p>
+                                        </div>
+                                    </div>
+                                );
+                            })}
                         </div>
 
-                        {/* Runner name section */}
-                        <div style={{ marginBottom: '4vh' }}>
-                            <div style={{ color: '#4ade80', fontWeight: 800, fontSize: '1.2rem', textTransform: 'uppercase', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 10 }}>
-                                <i className="fa-solid fa-square-check" style={{ fontSize: 24 }} /> Verified Participant
-                            </div>
-                            <h2 style={{ fontSize: 'clamp(2.5rem,5vw,4rem)', fontWeight: 900, lineHeight: 1.1, color: '#fff', margin: '0 0 5px', textShadow: '0 4px 10px rgba(0,0,0,0.5)' }}>
-                                {nameTh || nameEn}
-                            </h2>
-                            {nameTh && (
-                                <h3 style={{ fontSize: 'clamp(1.2rem,2.5vw,1.8rem)', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', margin: 0 }}>
-                                    {nameEn}
-                                </h3>
+                        {/* Save Button */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 32 }}>
+                            <button
+                                onClick={handleSave}
+                                disabled={saving}
+                                style={{
+                                    padding: '12px 32px', borderRadius: 12, fontSize: 14, fontWeight: 700,
+                                    background: saving ? '#94a3b8' : '#3b82f6', color: '#fff', border: 'none',
+                                    cursor: saving ? 'wait' : 'pointer', transition: '0.2s',
+                                }}
+                            >
+                                {saving ? 'กำลังบันทึก...' : 'บันทึกการตั้งค่า'}
+                            </button>
+                            {saved && (
+                                <span style={{ fontSize: 14, fontWeight: 700, color: '#16a34a' }}>
+                                    ✓ บันทึกสำเร็จ
+                                </span>
                             )}
                         </div>
 
-                        {/* Info bar */}
-                        <div style={{
-                            display: 'flex', alignItems: 'center',
-                            background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)',
-                            borderRadius: 24, padding: '25px 0', backdropFilter: 'blur(10px)',
-                            boxShadow: '0 10px 30px rgba(0,0,0,0.2)',
-                        }}>
-                            <SplitInfoItem label="Gender" value={genderLabel} />
-                            <SplitInfoItem label="Age Group" value={ageGroupLabel} />
-                            <SplitInfoItem label="Shirt Size" value={shirtSizeLabel} highlight />
+                        {/* Share Scanning Link */}
+                        <div style={{ padding: 20, background: '#eff6ff', borderRadius: 12, border: '1px solid #bfdbfe' }}>
+                            <h4 style={{ fontSize: 14, fontWeight: 700, color: '#1e40af', margin: '0 0 8px' }}>
+                                🔗 ลิ้งค์แชร์หน้า Scanning
+                            </h4>
+                            <p style={{ fontSize: 12, color: '#64748b', margin: '0 0 12px' }}>
+                                คัดลอกลิ้งค์นี้เพื่อเปิดบนเครื่องที่เชื่อมต่อ RFID Scanner — หน้า Scanning เป็นหน้าสาธารณะ ไม่ต้อง Login
+                            </p>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <input
+                                    readOnly
+                                    value={typeof window !== 'undefined' ? `${window.location.origin}/scanning` : '/scanning'}
+                                    style={{
+                                        flex: 1, padding: '10px 14px', borderRadius: 8,
+                                        border: '1px solid #bfdbfe', background: '#fff', fontSize: 14,
+                                        fontFamily: 'monospace', color: '#1e40af', fontWeight: 600,
+                                    }}
+                                    onClick={(e) => (e.target as HTMLInputElement).select()}
+                                />
+                                <button
+                                    onClick={() => {
+                                        const url = `${window.location.origin}/scanning`;
+                                        navigator.clipboard.writeText(url);
+                                        alert('คัดลอกลิ้งค์แล้ว!');
+                                    }}
+                                    style={{
+                                        padding: '10px 18px', borderRadius: 8, border: 'none',
+                                        background: '#3b82f6', color: '#fff', fontWeight: 700, fontSize: 13,
+                                        cursor: 'pointer', whiteSpace: 'nowrap',
+                                    }}
+                                >
+                                    📋 คัดลอก
+                                </button>
+                                <a
+                                    href="/scanning"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    style={{
+                                        padding: '10px 18px', borderRadius: 8, border: 'none',
+                                        background: '#22c55e', color: '#fff', fontWeight: 700, fontSize: 13,
+                                        textDecoration: 'none', whiteSpace: 'nowrap',
+                                    }}
+                                >
+                                    🚀 เปิด
+                                </a>
+                            </div>
                         </div>
-                    </div>
-
-                    {/* Progress */}
-                    <div style={{
-                        position: 'absolute', bottom: 0, left: 0, height: 8,
-                        background: '#4ade80', width: '100%', animation: 'timer 8s linear forwards', zIndex: 100,
-                    }} />
-                    <div style={{
-                        position: 'absolute', bottom: 20, right: 40, fontSize: 11, fontWeight: 800,
-                        color: 'rgba(255,255,255,0.2)', textTransform: 'uppercase', letterSpacing: 4, zIndex: 100,
-                    }}>
-                        Action Timing System
-                    </div>
-                </div>
-            )}
-
-            <style>{`
-                @keyframes fadeIn { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
-                @keyframes timer { from { width: 100%; } to { width: 0%; } }
-                @keyframes pulse { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.1); opacity: 0.7; } }
-                * { font-family: 'Prompt', sans-serif !important; margin: 0; padding: 0; box-sizing: border-box; }
-            `}</style>
-        </>
-    );
-}
-
-function InfoItem({ label, value, highlight }: { label: string; value: string; highlight?: boolean }) {
-    return (
-        <div style={{
-            padding: '30px 20px', textAlign: 'center', position: 'relative',
-            ...(highlight ? { background: 'rgba(74,222,128,0.1)' } : {}),
-        }}>
-            <p style={{
-                fontSize: '1.2rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: 2,
-                marginBottom: 5, color: highlight ? '#4ade80' : '#94a3b8',
-            }}>{label}</p>
-            <p style={{
-                fontSize: highlight ? '4rem' : '3rem', fontWeight: 900, lineHeight: 1,
-                color: highlight ? '#4ade80' : '#fff',
-                textTransform: 'uppercase',
-                ...(highlight ? { textShadow: '0 0 20px rgba(74,222,128,0.3)' } : {}),
-            }}>{value}</p>
-        </div>
-    );
-}
-
-function SplitInfoItem({ label, value, highlight }: { label: string; value: string; highlight?: boolean }) {
-    return (
-        <div style={{
-            flex: 1, textAlign: 'center', position: 'relative',
-            ...(highlight ? {
-                background: 'rgba(74,222,128,0.06)', borderRadius: 16,
-                margin: '0 15px', padding: '15px 0',
-                border: '1px solid rgba(74,222,128,0.15)',
-            } : {}),
-        }}>
-            <p style={{
-                fontSize: 14, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 2,
-                marginBottom: 8, color: highlight ? '#4ade80' : '#64748b',
-            }}>{label}</p>
-            <p style={{
-                fontSize: highlight ? 'clamp(2.5rem,4.5vw,3.5rem)' : 'clamp(1.8rem,3.5vw,2.5rem)',
-                fontWeight: 900, lineHeight: 1, color: highlight ? '#4ade80' : '#fff',
-                ...(highlight ? { textShadow: '0 0 20px rgba(74,222,128,0.2)' } : {}),
-            }}>{value}</p>
-        </div>
+                    </>
+                )}
+            </div>
+        </AdminLayout>
     );
 }

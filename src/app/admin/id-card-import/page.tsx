@@ -44,6 +44,7 @@ interface ImportedEntry {
     category: string;
     gender: string;
     birthDate: string;
+    chipCode: string;
     savedAt: string;
 }
 
@@ -92,7 +93,9 @@ export default function IdCardImportPage() {
     // Form state
     const [selectedCategory, setSelectedCategory] = useState('');
     const [bibNumber, setBibNumber] = useState('');
+    const [chipCode, setChipCode] = useState('');
     const [saving, setSaving] = useState(false);
+    const [saveError, setSaveError] = useState('');
 
     // Imported entries (session history)
     const [importedEntries, setImportedEntries] = useState<ImportedEntry[]>([]);
@@ -204,6 +207,7 @@ export default function IdCardImportPage() {
                 gender: cardData.gender === 'M' || cardData.gender === 'F' ? cardData.gender : 'M',
                 category: selectedCategory,
                 idNo: cardData.cid,
+                chipCode: chipCode.trim() || undefined,
                 birthDate: cardData.birthDate || undefined,
                 nationality: 'THA',
                 address: cardData.address || undefined,
@@ -224,13 +228,21 @@ export default function IdCardImportPage() {
             });
 
             if (!res.ok) {
-                let errMsg = `HTTP ${res.status}`;
+                let errMsg = '';
                 try {
                     const errBody = await res.json();
                     if (errBody?.message) {
                         errMsg = Array.isArray(errBody.message) ? errBody.message.join(', ') : errBody.message;
                     }
+                    if (errBody?.error) {
+                        errMsg = errMsg ? `${errMsg} (${errBody.error})` : errBody.error;
+                    }
                 } catch { /* */ }
+                if (!errMsg) {
+                    if (res.status === 409) errMsg = language === 'th' ? 'BIB ซ้ำ — มีนักกีฬาหมายเลขนี้อยู่แล้ว' : 'Duplicate BIB number';
+                    else if (res.status === 400) errMsg = language === 'th' ? 'ข้อมูลไม่ครบถ้วน — กรุณาตรวจสอบ BIB และประเภท' : 'Invalid data — please check BIB and category';
+                    else errMsg = `HTTP ${res.status}`;
+                }
                 throw new Error(errMsg);
             }
 
@@ -245,9 +257,11 @@ export default function IdCardImportPage() {
                 category: selectedCategory,
                 gender: cardData.gender,
                 birthDate: cardData.birthDate,
+                chipCode: chipCode.trim(),
                 savedAt: new Date().toLocaleTimeString('th-TH'),
             };
             setImportedEntries(prev => [entry, ...prev]);
+            setSaveError('');
             showToast(
                 language === 'th'
                     ? `บันทึกสำเร็จ: BIB ${bibNumber.trim()} - ${cardData.firstNameTh} ${cardData.lastNameTh}`
@@ -256,10 +270,12 @@ export default function IdCardImportPage() {
             );
             setCardData(null);
             setBibNumber('');
+            setChipCode('');
         } catch (err: unknown) {
             const msg = err instanceof Error ? err.message : 'Unknown error';
+            setSaveError(msg);
             showToast(
-                language === 'th' ? `บันทึกไม่สำเร็จ: ${msg}` : `Save failed: ${msg}`,
+                language === 'th' ? `❌ บันทึกไม่สำเร็จ: ${msg}` : `❌ Save failed: ${msg}`,
                 'error'
             );
         } finally {
@@ -361,60 +377,68 @@ export default function IdCardImportPage() {
 
                     {/* Main Action Area */}
                     <div className="content-box" style={{ padding: '24px', marginBottom: 16 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 16, flexWrap: 'wrap' }}>
-                            <div style={{ flex: 1, minWidth: 200 }}>
-                                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#64748b', marginBottom: 4 }}>
-                                    {language === 'th' ? 'ประเภทการแข่งขัน' : 'Category'}
-                                </label>
-                                <select
-                                    value={selectedCategory}
-                                    onChange={(e) => setSelectedCategory(e.target.value)}
-                                    style={{
-                                        width: '100%', padding: '8px 12px', borderRadius: 6,
-                                        border: '1px solid #d1d5db', fontSize: 14, background: '#fff',
-                                    }}
-                                >
-                                    {(campaign.categories || []).map(cat => (
-                                        <option key={cat.name} value={cat.name}>{cat.name}{cat.distance ? ` (${cat.distance})` : ''}</option>
-                                    ))}
-                                </select>
-                            </div>
-
-                            <div style={{ paddingTop: 20 }}>
-                                <button
-                                    onClick={readCard}
-                                    disabled={!readerStatus || modalStep === 'reading'}
-                                    style={{
-                                        padding: '12px 28px', borderRadius: 8, border: 'none',
-                                        background: (readerStatus && modalStep !== 'reading') ? 'linear-gradient(135deg, #3b82f6, #2563eb)' : '#94a3b8',
-                                        color: '#fff', fontWeight: 700, fontSize: 15,
-                                        cursor: (readerStatus && modalStep !== 'reading') ? 'pointer' : 'not-allowed',
-                                        boxShadow: readerStatus ? '0 4px 14px rgba(59,130,246,0.35)' : 'none',
-                                        transition: 'all 0.2s',
-                                        display: 'flex', alignItems: 'center', gap: 8,
-                                    }}
-                                >
-                                    {modalStep === 'reading' ? (
-                                        <>
-                                            <div style={{
-                                                width: 18, height: 18,
-                                                border: '3px solid rgba(255,255,255,0.3)', borderTopColor: '#fff',
-                                                borderRadius: '50%', animation: 'spin 1s linear infinite',
-                                            }} />
-                                            {language === 'th' ? 'กำลังอ่าน...' : 'Reading...'}
-                                        </>
-                                    ) : (
-                                        <>
-                                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                                <rect x="2" y="5" width="20" height="14" rx="2" />
-                                                <line x1="2" y1="10" x2="22" y2="10" />
-                                            </svg>
-                                            {language === 'th' ? 'อ่านบัตรประชาชน' : 'Read ID Card'}
-                                        </>
-                                    )}
-                                </button>
+                        {/* Distance/Category Buttons */}
+                        <div style={{ marginBottom: 16 }}>
+                            <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#64748b', marginBottom: 8 }}>
+                                {language === 'th' ? 'ระยะแข่งขัน' : 'Distance'}
+                            </label>
+                            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                                {(campaign.categories || []).map(cat => {
+                                    const isActive = selectedCategory === cat.name;
+                                    return (
+                                        <button
+                                            key={cat.name}
+                                            onClick={() => setSelectedCategory(cat.name)}
+                                            style={{
+                                                padding: '10px 24px', borderRadius: 10, fontSize: 15, fontWeight: 700,
+                                                border: isActive ? '2px solid #3b82f6' : '2px solid #e2e8f0',
+                                                background: isActive ? '#3b82f6' : '#fff',
+                                                color: isActive ? '#fff' : '#475569',
+                                                cursor: 'pointer', transition: 'all 0.15s',
+                                                boxShadow: isActive ? '0 4px 12px rgba(59,130,246,0.3)' : 'none',
+                                            }}
+                                        >
+                                            {cat.name}{cat.distance ? ` (${cat.distance})` : ''}
+                                        </button>
+                                    );
+                                })}
                             </div>
                         </div>
+
+                        {/* Read Card Button — BIG */}
+                        <button
+                            onClick={readCard}
+                            disabled={!readerStatus || modalStep === 'reading'}
+                            style={{
+                                width: '100%', padding: '18px 28px', borderRadius: 12, border: 'none',
+                                background: (readerStatus && modalStep !== 'reading') ? 'linear-gradient(135deg, #3b82f6, #2563eb)' : '#94a3b8',
+                                color: '#fff', fontWeight: 800, fontSize: 20,
+                                cursor: (readerStatus && modalStep !== 'reading') ? 'pointer' : 'not-allowed',
+                                boxShadow: readerStatus ? '0 6px 20px rgba(59,130,246,0.35)' : 'none',
+                                transition: 'all 0.2s',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12,
+                                marginBottom: 16,
+                            }}
+                        >
+                            {modalStep === 'reading' ? (
+                                <>
+                                    <div style={{
+                                        width: 24, height: 24,
+                                        border: '3px solid rgba(255,255,255,0.3)', borderTopColor: '#fff',
+                                        borderRadius: '50%', animation: 'spin 1s linear infinite',
+                                    }} />
+                                    {language === 'th' ? 'กำลังอ่านบัตร...' : 'Reading Card...'}
+                                </>
+                            ) : (
+                                <>
+                                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                        <rect x="2" y="5" width="20" height="14" rx="2" />
+                                        <line x1="2" y1="10" x2="22" y2="10" />
+                                    </svg>
+                                    {language === 'th' ? '📇  อ่านบัตรประชาชน' : '📇  Read ID Card'}
+                                </>
+                            )}
+                        </button>
 
                         {!readerStatus && (
                             <div style={{
@@ -618,9 +642,9 @@ export default function IdCardImportPage() {
                                     </div>
                                 </div>
 
-                                {/* BIB & Category Input */}
+                                {/* BIB & ChipCode Input */}
                                 <div style={{
-                                    display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 20,
+                                    display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 20,
                                     background: '#fffbeb', borderRadius: 12, padding: 16, border: '1px solid #fde68a',
                                 }}>
                                     <div>
@@ -631,45 +655,45 @@ export default function IdCardImportPage() {
                                             type="text"
                                             value={bibNumber}
                                             onChange={(e) => setBibNumber(e.target.value)}
-                                            placeholder="e.g. 001"
+                                            placeholder="001"
                                             style={{
-                                                width: '100%', padding: '10px 14px', borderRadius: 8,
-                                                border: '2px solid #f59e0b', fontSize: 18, fontWeight: 700,
+                                                width: 140, padding: '8px 12px', borderRadius: 8,
+                                                border: '2px solid #f59e0b', fontSize: 22, fontWeight: 800,
                                                 outline: 'none', boxSizing: 'border-box',
-                                                background: '#fff',
+                                                background: '#fff', textAlign: 'center',
+                                                fontFamily: 'monospace',
                                             }}
                                             autoFocus
                                         />
                                     </div>
                                     <div>
                                         <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#92400e', marginBottom: 4 }}>
-                                            {language === 'th' ? 'ประเภทการแข่งขัน' : 'Category'}
+                                            Chip Code
                                         </label>
-                                        <select
-                                            value={selectedCategory}
-                                            onChange={(e) => setSelectedCategory(e.target.value)}
+                                        <input
+                                            type="text"
+                                            value={chipCode}
+                                            onChange={(e) => setChipCode(e.target.value)}
+                                            placeholder={language === 'th' ? 'สแกนหรือพิมพ์ ChipCode' : 'Scan or type ChipCode'}
                                             style={{
-                                                width: '100%', padding: '10px 14px', borderRadius: 8,
-                                                border: '1px solid #d1d5db', fontSize: 14, background: '#fff',
-                                                boxSizing: 'border-box',
+                                                width: '100%', padding: '8px 12px', borderRadius: 8,
+                                                border: '1px solid #d1d5db', fontSize: 14, fontWeight: 600,
+                                                outline: 'none', boxSizing: 'border-box',
+                                                background: '#fff', fontFamily: 'monospace',
                                             }}
-                                        >
-                                            {(campaign?.categories || []).map(cat => (
-                                                <option key={cat.name} value={cat.name}>{cat.name}{cat.distance ? ` (${cat.distance})` : ''}</option>
-                                            ))}
-                                        </select>
+                                        />
                                     </div>
                                 </div>
 
                                 {/* Action Buttons */}
-                                <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end' }}>
+                                <div style={{ display: 'flex', gap: 12 }}>
                                     <button
-                                        onClick={() => { setCardData(null); setModalStep('waiting'); setBibNumber(''); }}
+                                        onClick={() => { setCardData(null); setModalStep('waiting'); setBibNumber(''); setChipCode(''); }}
                                         style={{
-                                            padding: '10px 20px', borderRadius: 8,
+                                            padding: '14px 24px', borderRadius: 10,
                                             border: '1px solid #d1d5db', background: '#fff',
-                                            cursor: 'pointer', fontSize: 14, fontWeight: 600,
-                                            color: '#475569',
+                                            cursor: 'pointer', fontSize: 16, fontWeight: 700,
+                                            color: '#475569', flex: 1,
                                         }}
                                     >
                                         {language === 'th' ? '🔄 อ่านใหม่' : '🔄 Read Again'}
@@ -678,29 +702,51 @@ export default function IdCardImportPage() {
                                         onClick={handleSave}
                                         disabled={saving || !bibNumber.trim()}
                                         style={{
-                                            padding: '10px 28px', borderRadius: 8, border: 'none',
+                                            padding: '14px 28px', borderRadius: 10, border: 'none',
                                             background: (!saving && bibNumber.trim())
                                                 ? 'linear-gradient(135deg, #22c55e, #16a34a)' : '#94a3b8',
-                                            color: '#fff', fontWeight: 700, fontSize: 15,
+                                            color: '#fff', fontWeight: 800, fontSize: 20,
                                             cursor: (!saving && bibNumber.trim()) ? 'pointer' : 'not-allowed',
-                                            boxShadow: (!saving && bibNumber.trim()) ? '0 4px 14px rgba(34,197,94,0.35)' : 'none',
-                                            display: 'flex', alignItems: 'center', gap: 8,
+                                            boxShadow: (!saving && bibNumber.trim()) ? '0 6px 20px rgba(34,197,94,0.35)' : 'none',
+                                            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
+                                            flex: 2,
                                         }}
                                     >
                                         {saving ? (
                                             <>{language === 'th' ? 'กำลังบันทึก...' : 'Saving...'}</>
                                         ) : (
                                             <>
-                                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                                                     <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
                                                     <polyline points="17 21 17 13 7 13 7 21" />
                                                     <polyline points="7 3 7 8 15 8" />
                                                 </svg>
-                                                {language === 'th' ? 'บันทึก' : 'Save'}
+                                                {language === 'th' ? '💾  บันทึกข้อมูล' : '💾  Save'}
                                             </>
                                         )}
                                     </button>
                                 </div>
+
+                                {/* Save Error Display */}
+                                {saveError && (
+                                    <div style={{
+                                        marginTop: 12, padding: '14px 18px', borderRadius: 10,
+                                        background: '#fef2f2', border: '2px solid #fecaca',
+                                        display: 'flex', alignItems: 'center', gap: 12,
+                                    }}>
+                                        <span style={{ fontSize: 28 }}>❌</span>
+                                        <div style={{ flex: 1 }}>
+                                            <div style={{ fontSize: 14, fontWeight: 700, color: '#dc2626', marginBottom: 2 }}>
+                                                {language === 'th' ? 'บันทึกไม่สำเร็จ' : 'Save Failed'}
+                                            </div>
+                                            <div style={{ fontSize: 13, color: '#991b1b' }}>{saveError}</div>
+                                        </div>
+                                        <button onClick={() => setSaveError('')} style={{
+                                            border: 'none', background: 'none', cursor: 'pointer',
+                                            color: '#dc2626', fontSize: 18, fontWeight: 700,
+                                        }}>✕</button>
+                                    </div>
+                                )}
                             </>
                         )}
                     </div>

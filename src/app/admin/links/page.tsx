@@ -28,6 +28,12 @@ const LINK_ROWS: LinkRow[] = [
         labelEn: 'Age Group Rankings',
         buildUrl: (origin) => `${origin}/Result-Winners`,
     },
+    {
+        id: 'scanning',
+        label: '📡 หน้าสแกน RFID (Scanning)',
+        labelEn: '📡 RFID Scanning Display',
+        buildUrl: (origin) => `${origin}/scanning`,
+    },
 ];
 
 export default function LinksPage() {
