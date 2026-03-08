@@ -148,6 +148,24 @@ const COL_DEFS: ColDef[] = [
     { key: 'netPace', label: 'Net Pace', w: '5%', mw: '8%', align: 'center' },
     { key: 'finish', label: 'Finish', w: '4%', mw: '5%', align: 'center' },
     { key: 'genFin', label: 'Gen Fin', w: '4%', mw: '5%', align: 'center' },
+    // RaceTiger Pass Time columns
+    { key: 'chipCode', label: 'Chip Code', w: '6%', mw: '8%', align: 'center' },
+    { key: 'printingCode', label: 'Print Code', w: '5%', mw: '7%', align: 'center' },
+    { key: 'splitNo', label: 'Split No', w: '4%', mw: '5%', align: 'center' },
+    { key: 'splitName', label: 'Split Name', w: '6%', mw: '8%', align: 'center' },
+    { key: 'splitTime', label: 'Split Time', w: '5%', mw: '7%', align: 'center' },
+    { key: 'splitPace', label: 'Split Pace', w: '5%', mw: '7%', align: 'center' },
+    { key: 'distFromStart', label: 'Distance', w: '5%', mw: '6%', align: 'center' },
+    { key: 'gunTimeMs', label: 'Gun(ms)', w: '5%', mw: '7%', align: 'center' },
+    { key: 'netTimeMs', label: 'Net(ms)', w: '5%', mw: '7%', align: 'center' },
+    { key: 'totalGunTime', label: 'Total Gun', w: '5%', mw: '7%', align: 'center' },
+    { key: 'totalNetTime', label: 'Total Net', w: '5%', mw: '7%', align: 'center' },
+    { key: 'supplement', label: 'Supplement', w: '5%', mw: '6%', align: 'center' },
+    { key: 'cutOff', label: 'Cut-off', w: '4%', mw: '5%', align: 'center' },
+    { key: 'legTime', label: 'Leg Time', w: '5%', mw: '7%', align: 'center' },
+    { key: 'legPace', label: 'Leg Pace', w: '5%', mw: '7%', align: 'center' },
+    { key: 'legDistance', label: 'Leg Dist', w: '5%', mw: '6%', align: 'center' },
+    { key: 'lagMs', label: 'Lag MS', w: '4%', mw: '5%', align: 'center' },
     { key: 'progress', label: 'Progress', w: '8%', mw: '8%', align: 'right', fixed: true, desktopOnly: true },
 ];
 const TOGGLEABLE_KEYS = COL_DEFS.filter(c => !c.fixed).map(c => c.key);
@@ -1112,6 +1130,109 @@ export default function EventLivePage() {
                                                 return (
                                                     <td key={key} style={{ padding: '6px 4px', textAlign: 'center', fontSize: 11, fontWeight: 600, color: themeStyles.textMuted }}>
                                                         {runner.genderFinishers || '-'}
+                                                    </td>
+                                                );
+                                            // ===== RaceTiger Pass Time columns =====
+                                            case 'chipCode':
+                                                return (
+                                                    <td key={key} style={{ padding: '6px 4px', textAlign: 'center', fontSize: 10, fontFamily: 'monospace', color: themeStyles.textSecondary }}>
+                                                        {runner.chipCode || '-'}
+                                                    </td>
+                                                );
+                                            case 'printingCode':
+                                                return (
+                                                    <td key={key} style={{ padding: '6px 4px', textAlign: 'center', fontSize: 10, fontFamily: 'monospace', color: themeStyles.textSecondary }}>
+                                                        {runner.printingCode || '-'}
+                                                    </td>
+                                                );
+                                            case 'splitNo':
+                                                return (
+                                                    <td key={key} style={{ padding: '6px 4px', textAlign: 'center', fontSize: 11, fontWeight: 600, color: themeStyles.textMuted }}>
+                                                        {runner.splitNo ?? '-'}
+                                                    </td>
+                                                );
+                                            case 'splitName':
+                                                return (
+                                                    <td key={key} style={{ padding: '6px 4px', textAlign: 'center', fontSize: 10, color: themeStyles.textSecondary }}>
+                                                        {runner.splitDesc || '-'}
+                                                    </td>
+                                                );
+                                            case 'splitTime':
+                                                return (
+                                                    <td key={key} style={{ padding: '6px 4px', textAlign: 'center', fontSize: 11, fontWeight: 600, fontFamily: 'monospace', color: runner.splitTime ? themeStyles.text : themeStyles.textSecondary }}>
+                                                        {runner.splitTime ? formatTime(runner.splitTime) : '-'}
+                                                    </td>
+                                                );
+                                            case 'splitPace':
+                                                return (
+                                                    <td key={key} style={{ padding: '6px 4px', textAlign: 'center', fontSize: 11, fontWeight: 600, fontFamily: 'monospace', color: runner.splitPace ? '#22c55e' : themeStyles.textSecondary }}>
+                                                        {runner.splitPace || '-'}
+                                                    </td>
+                                                );
+                                            case 'distFromStart':
+                                                return (
+                                                    <td key={key} style={{ padding: '6px 4px', textAlign: 'center', fontSize: 11, fontWeight: 600, color: themeStyles.textMuted }}>
+                                                        {runner.distanceFromStart ? `${runner.distanceFromStart.toFixed(1)}km` : '-'}
+                                                    </td>
+                                                );
+                                            case 'gunTimeMs':
+                                                return (
+                                                    <td key={key} style={{ padding: '6px 4px', textAlign: 'center', fontSize: 11, fontWeight: 600, fontFamily: 'monospace', color: runner.gunTimeMs ? themeStyles.text : themeStyles.textSecondary }}>
+                                                        {runner.gunTimeMs ? formatTime(runner.gunTimeMs) : '-'}
+                                                    </td>
+                                                );
+                                            case 'netTimeMs':
+                                                return (
+                                                    <td key={key} style={{ padding: '6px 4px', textAlign: 'center', fontSize: 11, fontWeight: 600, fontFamily: 'monospace', color: runner.netTimeMs ? themeStyles.text : themeStyles.textSecondary }}>
+                                                        {runner.netTimeMs ? formatTime(runner.netTimeMs) : '-'}
+                                                    </td>
+                                                );
+                                            case 'totalGunTime':
+                                                return (
+                                                    <td key={key} style={{ padding: '6px 4px', textAlign: 'center', fontSize: 11, fontWeight: 600, fontFamily: 'monospace', color: runner.totalGunTime ? themeStyles.text : themeStyles.textSecondary }}>
+                                                        {runner.totalGunTime ? formatTime(runner.totalGunTime) : '-'}
+                                                    </td>
+                                                );
+                                            case 'totalNetTime':
+                                                return (
+                                                    <td key={key} style={{ padding: '6px 4px', textAlign: 'center', fontSize: 11, fontWeight: 600, fontFamily: 'monospace', color: runner.totalNetTime ? themeStyles.text : themeStyles.textSecondary }}>
+                                                        {runner.totalNetTime ? formatTime(runner.totalNetTime) : '-'}
+                                                    </td>
+                                                );
+                                            case 'supplement':
+                                                return (
+                                                    <td key={key} style={{ padding: '6px 4px', textAlign: 'center', fontSize: 10, color: themeStyles.textSecondary }}>
+                                                        {runner.supplement || '-'}
+                                                    </td>
+                                                );
+                                            case 'cutOff':
+                                                return (
+                                                    <td key={key} style={{ padding: '6px 4px', textAlign: 'center', fontSize: 10, fontWeight: 600, color: runner.cutOff ? '#dc2626' : themeStyles.textSecondary }}>
+                                                        {runner.cutOff || '-'}
+                                                    </td>
+                                                );
+                                            case 'legTime':
+                                                return (
+                                                    <td key={key} style={{ padding: '6px 4px', textAlign: 'center', fontSize: 11, fontWeight: 600, fontFamily: 'monospace', color: runner.legTime ? themeStyles.text : themeStyles.textSecondary }}>
+                                                        {runner.legTime ? formatTime(runner.legTime) : '-'}
+                                                    </td>
+                                                );
+                                            case 'legPace':
+                                                return (
+                                                    <td key={key} style={{ padding: '6px 4px', textAlign: 'center', fontSize: 11, fontWeight: 600, fontFamily: 'monospace', color: runner.legPace ? '#22c55e' : themeStyles.textSecondary }}>
+                                                        {runner.legPace || '-'}
+                                                    </td>
+                                                );
+                                            case 'legDistance':
+                                                return (
+                                                    <td key={key} style={{ padding: '6px 4px', textAlign: 'center', fontSize: 11, fontWeight: 600, color: themeStyles.textMuted }}>
+                                                        {runner.legDistance ? `${runner.legDistance.toFixed(1)}km` : '-'}
+                                                    </td>
+                                                );
+                                            case 'lagMs':
+                                                return (
+                                                    <td key={key} style={{ padding: '6px 4px', textAlign: 'center', fontSize: 11, fontWeight: 600, fontFamily: 'monospace', color: runner.lagMs ? themeStyles.text : themeStyles.textSecondary }}>
+                                                        {runner.lagMs ? formatTime(runner.lagMs) : '-'}
                                                     </td>
                                                 );
                                             case 'progress':

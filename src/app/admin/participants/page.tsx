@@ -170,6 +170,7 @@ export default function ParticipantsPage() {
     const [runnersTotal, setRunnersTotal] = useState(0);
     const [runnersLoading, setRunnersLoading] = useState(false);
     const [listSearch, setListSearch] = useState('');
+    const [debouncedSearch, setDebouncedSearch] = useState('');
     const [listPage, setListPage] = useState(1);
     const listLimit = 50;
     const [categoryCounts, setCategoryCounts] = useState<Record<string, number>>({});
@@ -177,6 +178,7 @@ export default function ParticipantsPage() {
     const [dupBibs, setDupBibs] = useState<string[]>([]);
     const [dupChips, setDupChips] = useState<string[]>([]);
     const [statusCounts, setStatusCounts] = useState<Record<string, number>>({});
+    const statusCountsLoadedRef = useRef(false);
     const [sortBy, setSortBy] = useState('');
     const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -250,28 +252,15 @@ export default function ParticipantsPage() {
                 const data = await res.json();
                 if (data && data._id) {
                     setCampaign(data);
-                    // Fetch counts per category, then auto-select first with data
-                    const cats: RaceCategory[] = data.categories || [];
-                    const counts: Record<string, number> = {};
-                    // Fetch total count (all runners in campaign)
+                    // Fetch all category counts in a single request
                     try {
-                        const pAll = new URLSearchParams({ campaignId: data._id, page: '1', limit: '1' });
-                        const rAll = await fetch(`/api/runners/paged?${pAll.toString()}`);
-                        if (rAll.ok) { const dAll = await rAll.json(); counts['__all__'] = dAll.total || 0; }
+                        const countsRes = await fetch(`/api/runners/counts?campaignId=${data._id}`);
+                        if (countsRes.ok) {
+                            const counts = await countsRes.json();
+                            setCategoryCounts(counts);
+                            if ((counts['__all__'] || 0) > 0) setActiveTab('all');
+                        }
                     } catch { /* */ }
-                    await Promise.all(cats.map(async (cat) => {
-                        try {
-                            const p = new URLSearchParams({ campaignId: data._id, category: cat.name, page: '1', limit: '1' });
-                            const r = await fetch(`/api/runners/paged?${p.toString()}`);
-                            if (r.ok) {
-                                const d = await r.json();
-                                counts[cat.name] = d.total || 0;
-                            }
-                        } catch { /* ignore */ }
-                    }));
-                    setCategoryCounts(counts);
-                    // Auto-select 'all' if there are runners, otherwise stay on import
-                    if ((counts['__all__'] || 0) > 0) setActiveTab('all');
                 }
             } catch {
                 setCampaign(null);
@@ -282,8 +271,14 @@ export default function ParticipantsPage() {
         loadFeatured();
     }, []);
 
+    // Debounce search input by 300ms
+    useEffect(() => {
+        const timer = setTimeout(() => setDebouncedSearch(listSearch), 300);
+        return () => clearTimeout(timer);
+    }, [listSearch]);
+
     // Fetch runners for participants list tab (activeTab is the category name)
-    const fetchRunners = useCallback(async () => {
+    const fetchRunners = useCallback(async (forceStatusCounts = false) => {
         if (!campaign?._id || activeTab === 'import') return;
         setRunnersLoading(true);
         try {
@@ -293,9 +288,12 @@ export default function ParticipantsPage() {
                 limit: String(listLimit),
             });
             if (activeTab !== 'all') params.append('category', activeTab);
-            if (listSearch) params.append('search', listSearch);
+            if (debouncedSearch) params.append('search', debouncedSearch);
             if (listRunnerStatus.length > 0) params.append('runnerStatus', listRunnerStatus.join(','));
             if (sortBy) { params.append('sortBy', sortBy); params.append('sortOrder', sortOrder); }
+            // Skip heavy status count queries when not needed (pagination, sort, search)
+            const needStatusCounts = forceStatusCounts || !statusCountsLoadedRef.current || listRunnerStatus.length > 0;
+            if (!needStatusCounts) params.append('skipStatusCounts', 'true');
             const res = await fetch(`/api/runners/paged?${params.toString()}`, { cache: 'no-store' });
             if (!res.ok) throw new Error('Failed');
             const data = await res.json();
@@ -303,18 +301,37 @@ export default function ParticipantsPage() {
             setRunnersTotal(data.total || 0);
             setDupBibs(data.dupBibs || []);
             setDupChips(data.dupChips || []);
-            if (data.statusCounts) setStatusCounts(data.statusCounts);
+            if (data.statusCounts) {
+                setStatusCounts(data.statusCounts);
+                statusCountsLoadedRef.current = true;
+            }
         } catch {
             setRunners([]);
             setRunnersTotal(0);
         } finally {
             setRunnersLoading(false);
         }
-    }, [campaign, activeTab, listSearch, listPage, listRunnerStatus, sortBy, sortOrder]);
+    }, [campaign, activeTab, debouncedSearch, listPage, listRunnerStatus, sortBy, sortOrder]);
 
+    // Load runners when tab changes — always fetch fresh status counts
     useEffect(() => {
-        if (activeTab !== 'import') { fetchRunners(); setSelectedIds(new Set()); }
-    }, [activeTab, fetchRunners]);
+        if (activeTab !== 'import') {
+            statusCountsLoadedRef.current = false;
+            fetchRunners(true);
+            setSelectedIds(new Set());
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [activeTab, campaign]);
+
+    // Re-fetch when search/page/sort/filter changes (skip status counts)
+    const isFirstRender = useRef(true);
+    useEffect(() => {
+        if (isFirstRender.current) { isFirstRender.current = false; return; }
+        if (activeTab !== 'import') {
+            fetchRunners();
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [debouncedSearch, listPage, listRunnerStatus, sortBy, sortOrder]);
 
     // Toggle runner status filter (push/pop, 'ready' clears all others)
     const toggleListRunnerStatus = useCallback((status: string) => {

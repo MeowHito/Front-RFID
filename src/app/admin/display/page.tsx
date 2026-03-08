@@ -447,7 +447,7 @@ export default function DisplaySettingsPage() {
                         </table>
                     )}
                     <p style={{ fontSize: 10, color: '#aaa', margin: '8px 0 0', fontStyle: 'italic' }}>
-                        {language === 'th' ? '* ลากหัวคอลัมน์สีฟ้าเพื่อสลับตำแหน่ง' : '* Drag blue column headers to reorder'}
+                        {language === 'th' ? '* ติ๊กถูกใน Dropdown = เปิดการมองเห็นในหน้า Events + เพิ่มในตาราง  |  ลากหัวคอลัมน์สีฟ้าเพื่อสลับตำแหน่ง' : '* Check in Dropdown = visible on Events page + added to table  |  Drag blue headers to reorder'}
                     </p>
                 </div>
             </div>
