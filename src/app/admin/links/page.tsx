@@ -18,7 +18,7 @@ interface LinkRow {
     id: string;
     label: string;
     labelEn: string;
-    buildUrl: (origin: string) => string;
+    buildUrl: (origin: string, campaign?: Campaign | null) => string;
 }
 
 const LINK_ROWS: LinkRow[] = [
@@ -32,7 +32,7 @@ const LINK_ROWS: LinkRow[] = [
         id: 'scanning',
         label: '📡 หน้าสแกน RFID (Scanning)',
         labelEn: '📡 RFID Scanning Display',
-        buildUrl: (origin) => `${origin}/scanning`,
+        buildUrl: (origin, campaign) => `${origin}/scanning/${campaign?.slug || campaign?._id || ''}`,
     },
 ];
 
@@ -128,7 +128,7 @@ export default function LinksPage() {
                                 </thead>
                                 <tbody>
                                     {LINK_ROWS.map((row, idx) => {
-                                        const url = row.buildUrl(origin);
+                                        const url = row.buildUrl(origin, campaign);
                                         const isCopied = copiedId === row.id;
                                         return (
                                             <tr key={row.id} className={idx < LINK_ROWS.length - 1 ? 'border-b border-slate-100' : ''}>
@@ -165,7 +165,7 @@ export default function LinksPage() {
                             {/* Mobile card layout */}
                             <div className="sm:hidden divide-y divide-slate-100">
                                 {LINK_ROWS.map((row) => {
-                                    const url = row.buildUrl(origin);
+                                    const url = row.buildUrl(origin, campaign);
                                     const isCopied = copiedId === row.id;
                                     return (
                                         <div key={row.id} className="p-4 space-y-2">

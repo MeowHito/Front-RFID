@@ -6,6 +6,7 @@ import AdminLayout from '../AdminLayout';
 interface Campaign {
     _id: string;
     name: string;
+    slug?: string;
     scanningTemplate?: string;
 }
 
@@ -248,7 +249,7 @@ export default function BibCheckPage() {
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                                 <input
                                     readOnly
-                                    value={typeof window !== 'undefined' ? `${window.location.origin}/scanning` : '/scanning'}
+                                    value={typeof window !== 'undefined' ? `${window.location.origin}/scanning/${campaign.slug || campaign._id}` : `/scanning/${campaign.slug || campaign._id}`}
                                     style={{
                                         flex: 1, padding: '10px 14px', borderRadius: 8,
                                         border: '1px solid #bfdbfe', background: '#fff', fontSize: 14,
@@ -258,7 +259,7 @@ export default function BibCheckPage() {
                                 />
                                 <button
                                     onClick={() => {
-                                        const url = `${window.location.origin}/scanning`;
+                                        const url = `${window.location.origin}/scanning/${campaign.slug || campaign._id}`;
                                         navigator.clipboard.writeText(url);
                                         alert('คัดลอกลิ้งค์แล้ว!');
                                     }}
@@ -271,7 +272,7 @@ export default function BibCheckPage() {
                                     📋 คัดลอก
                                 </button>
                                 <a
-                                    href="/scanning"
+                                    href={`/scanning/${campaign.slug || campaign._id}`}
                                     target="_blank"
                                     rel="noopener noreferrer"
                                     style={{
