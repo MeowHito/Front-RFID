@@ -26,7 +26,7 @@ const LINK_ROWS: LinkRow[] = [
         id: 'result-winners',
         label: 'อันดับกลุ่มอายุ (Age Group Rankings)',
         labelEn: 'Age Group Rankings',
-        buildUrl: (origin) => `${origin}/Result-Winners`,
+        buildUrl: (origin, campaign) => `${origin}/Result-Winners/${campaign?.slug || campaign?._id || ''}`,
     },
     {
         id: 'scanning',
