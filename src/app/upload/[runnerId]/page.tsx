@@ -151,7 +151,6 @@ export default function UploadPhotoPage() {
                             ref={fileInputRef}
                             type="file"
                             accept="image/*"
-                            capture="environment"
                             style={{ display: 'none' }}
                             onChange={handleFileSelect}
                         />

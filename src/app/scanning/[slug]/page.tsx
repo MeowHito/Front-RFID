@@ -260,7 +260,6 @@ export default function ScanningBySlugPage() {
                                     ) : (
                                         <div style={{ textAlign: 'center', color: '#4ade80' }}>
                                             <i className="fa-solid fa-person-running" style={{ fontSize: 100, marginBottom: 12 }} />
-                                            <div style={{ fontSize: 14, fontWeight: 700, color: '#94a3b8' }}>BIB {bibNum}</div>
                                         </div>
                                     )}
                                 </div>
@@ -294,15 +293,15 @@ export default function ScanningBySlugPage() {
                                     </div>
                                 ) : (
                                     <div style={{
-                                        position: 'absolute', bottom: -15, right: -15,
-                                        background: '#fff', padding: 10, borderRadius: 16,
-                                        border: '4px solid #4ade80', boxShadow: '0 15px 30px rgba(0,0,0,0.5)',
+                                        position: 'absolute', bottom: -10, right: -10,
+                                        background: '#fff', padding: 6, borderRadius: 12,
+                                        border: '3px solid #4ade80', boxShadow: '0 10px 20px rgba(0,0,0,0.4)',
                                         display: 'flex', flexDirection: 'column', alignItems: 'center',
                                     }}>
-                                        <div style={{ width: 90, height: 90, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                            <span style={{ fontSize: 42, fontWeight: 900, color: '#0f172a', fontFamily: "'Exo 2', sans-serif", fontStyle: 'italic' }}>{bibNum}</span>
+                                        <div style={{ width: 55, height: 45, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                            <span style={{ fontSize: 28, fontWeight: 900, color: '#0f172a', fontFamily: "'Exo 2', sans-serif", fontStyle: 'italic' }}>{bibNum}</span>
                                         </div>
-                                        <p style={{ color: '#0f172a', fontSize: 10, fontWeight: 900, textTransform: 'uppercase', marginTop: 4 }}>BIB</p>
+                                        <p style={{ color: '#64748b', fontSize: 8, fontWeight: 800, textTransform: 'uppercase', marginTop: 2 }}>BIB</p>
                                     </div>
                                 )}
                             </div>
@@ -378,8 +377,6 @@ export default function ScanningBySlugPage() {
                             ) : (
                                 <div style={{ textAlign: 'center', color: '#4ade80' }}>
                                     <i className="fa-solid fa-person-running" style={{ fontSize: 180, marginBottom: 20 }} />
-                                    <div style={{ fontSize: 28, fontWeight: 900, color: '#fff' }}>BIB {bibNum}</div>
-                                    <div style={{ fontSize: 16, color: '#94a3b8', marginTop: 8 }}>{distance}</div>
                                 </div>
                             )}
                         </div>
@@ -422,14 +419,14 @@ export default function ScanningBySlugPage() {
                         ) : (
                             <div style={{
                                 position: 'absolute', bottom: 40, left: 40, zIndex: 10,
-                                background: '#fff', padding: 12, borderRadius: 16, width: 150,
+                                background: '#fff', padding: 8, borderRadius: 12, width: 90,
                                 display: 'flex', flexDirection: 'column', alignItems: 'center',
-                                border: '4px solid #4ade80', boxShadow: '0 15px 30px rgba(0,0,0,0.5)',
+                                border: '3px solid #4ade80', boxShadow: '0 10px 20px rgba(0,0,0,0.4)',
                             }}>
-                                <div style={{ width: 120, height: 120, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                    <span style={{ fontSize: 56, fontWeight: 900, color: '#0f172a', fontFamily: "'Exo 2', sans-serif", fontStyle: 'italic' }}>{bibNum}</span>
+                                <div style={{ width: 70, height: 55, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                    <span style={{ fontSize: 36, fontWeight: 900, color: '#0f172a', fontFamily: "'Exo 2', sans-serif", fontStyle: 'italic' }}>{bibNum}</span>
                                 </div>
-                                <p style={{ color: '#0f172a', fontSize: 11, fontWeight: 900, textTransform: 'uppercase', marginTop: 6, textAlign: 'center' }}>BIB</p>
+                                <p style={{ color: '#64748b', fontSize: 9, fontWeight: 800, textTransform: 'uppercase', marginTop: 4, textAlign: 'center' }}>BIB</p>
                             </div>
                         )}
                     </div>
