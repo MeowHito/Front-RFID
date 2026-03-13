@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { useParams } from 'next/navigation';
+import { QRCodeSVG } from 'qrcode.react';
 
 // Alpha-3 → Alpha-2 map for flag emoji
 const A3: Record<string, string> = {
@@ -44,6 +45,7 @@ export default function ScanningBySlugPage() {
     const [found, setFound] = useState<boolean | null>(null);
     const [animKey, setAnimKey] = useState(0);
     const [photoUploaded, setPhotoUploaded] = useState(false);
+    const [origin, setOrigin] = useState('');
     const hiddenInputRef = useRef<HTMLInputElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -66,6 +68,11 @@ export default function ScanningBySlugPage() {
         })();
     }, [slug]);
 
+    // Get origin for QR code URL
+    useEffect(() => {
+        setOrigin(window.location.origin);
+    }, []);
+
     useEffect(() => {
         const keepFocus = () => hiddenInputRef.current?.focus();
         keepFocus();
@@ -73,6 +80,26 @@ export default function ScanningBySlugPage() {
         document.addEventListener('click', keepFocus);
         return () => { clearInterval(interval); document.removeEventListener('click', keepFocus); };
     }, []);
+
+    // Poll for photo updates when runner exists but has no photo
+    useEffect(() => {
+        if (!runner || runner.photoUrl || photoUploaded) return;
+        const runnerId = (runner as any)._id;
+        if (!runnerId) return;
+        const interval = setInterval(async () => {
+            try {
+                const res = await fetch(`/api/runners/${runnerId}`);
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.photoUrl) {
+                        setRunner((prev: any) => prev ? { ...prev, photoUrl: data.photoUrl } : prev);
+                        setPhotoUploaded(true);
+                    }
+                }
+            } catch { /* ignore polling errors */ }
+        }, 2000);
+        return () => clearInterval(interval);
+    }, [runner, photoUploaded]);
 
     const handleScan = useCallback(async () => {
         const code = scanCode.trim();
@@ -237,33 +264,47 @@ export default function ScanningBySlugPage() {
                                         </div>
                                     )}
                                 </div>
-                                {/* QR / Flag overlay */}
-                                <div
-                                    onClick={!photoUploaded ? handlePhotoUpload : undefined}
-                                    style={{
+                                {/* QR Code / Flag overlay */}
+                                {!photoUploaded && !runner.photoUrl ? (
+                                    <div style={{
                                         position: 'absolute', bottom: -15, right: -15,
                                         background: '#fff', padding: 10, borderRadius: 16,
                                         border: '4px solid #4ade80', boxShadow: '0 15px 30px rgba(0,0,0,0.5)',
                                         display: 'flex', flexDirection: 'column', alignItems: 'center',
-                                        cursor: !photoUploaded ? 'pointer' : 'default',
-                                    }}
-                                >
-                                    {photoUploaded && flag ? (
-                                        <>
-                                            <div style={{ width: 90, height: 90, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 64 }}>
-                                                {flag}
-                                            </div>
-                                            <p style={{ color: '#0f172a', fontSize: 9, fontWeight: 900, textTransform: 'uppercase', marginTop: 4 }}>{r?.nationality}</p>
-                                        </>
-                                    ) : (
-                                        <>
-                                            <div style={{ width: 90, height: 90, background: '#f1f5f9', borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                                <i className="fa-solid fa-qrcode" style={{ fontSize: 50, color: '#0f172a' }} />
-                                            </div>
-                                            <p style={{ color: '#0f172a', fontSize: 10, fontWeight: 900, textTransform: 'uppercase', marginTop: 6 }}>Scan to Upload</p>
-                                        </>
-                                    )}
-                                </div>
+                                    }}>
+                                        {origin && (runner as any)._id ? (
+                                            <>
+                                                <QRCodeSVG
+                                                    value={`${origin}/upload/${(runner as any)._id}`}
+                                                    size={90}
+                                                    bgColor="#ffffff"
+                                                    fgColor="#0f172a"
+                                                    level="M"
+                                                />
+                                                <p style={{ color: '#0f172a', fontSize: 10, fontWeight: 900, textTransform: 'uppercase', marginTop: 6 }}>Scan to Upload</p>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <div style={{ width: 90, height: 90, background: '#f1f5f9', borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                                    <i className="fa-solid fa-qrcode" style={{ fontSize: 50, color: '#0f172a' }} />
+                                                </div>
+                                                <p style={{ color: '#0f172a', fontSize: 10, fontWeight: 900, textTransform: 'uppercase', marginTop: 6 }}>Scan to Upload</p>
+                                            </>
+                                        )}
+                                    </div>
+                                ) : (
+                                    <div style={{
+                                        position: 'absolute', bottom: -15, right: -15,
+                                        background: '#fff', padding: 10, borderRadius: 16,
+                                        border: '4px solid #4ade80', boxShadow: '0 15px 30px rgba(0,0,0,0.5)',
+                                        display: 'flex', flexDirection: 'column', alignItems: 'center',
+                                    }}>
+                                        <div style={{ width: 90, height: 90, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                            <span style={{ fontSize: 42, fontWeight: 900, color: '#0f172a', fontFamily: "'Exo 2', sans-serif", fontStyle: 'italic' }}>{bibNum}</span>
+                                        </div>
+                                        <p style={{ color: '#0f172a', fontSize: 10, fontWeight: 900, textTransform: 'uppercase', marginTop: 4 }}>BIB</p>
+                                    </div>
+                                )}
                             </div>
 
                             <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
@@ -346,37 +387,51 @@ export default function ScanningBySlugPage() {
                             position: 'absolute', inset: 0,
                             background: 'linear-gradient(to right, rgba(2,6,23,0) 70%, rgba(2,6,23,1) 100%)',
                         }} />
-                        {/* QR / Flag overlay */}
-                        <div
-                            onClick={!photoUploaded ? handlePhotoUpload : undefined}
-                            style={{
+                        {/* QR Code / Flag overlay */}
+                        {!photoUploaded && !runner.photoUrl ? (
+                            <div style={{
                                 position: 'absolute', bottom: 40, left: 40, zIndex: 10,
                                 background: '#fff', padding: 12, borderRadius: 16, width: 150,
                                 display: 'flex', flexDirection: 'column', alignItems: 'center',
                                 border: '4px solid #4ade80', boxShadow: '0 15px 30px rgba(0,0,0,0.5)',
-                                cursor: !photoUploaded ? 'pointer' : 'default',
-                            }}
-                        >
-                            {photoUploaded && flag ? (
-                                <>
-                                    <div style={{ width: 120, height: 120, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 80 }}>
-                                        {flag}
-                                    </div>
-                                    <p style={{ color: '#0f172a', fontSize: 10, fontWeight: 900, textTransform: 'uppercase', marginTop: 6, textAlign: 'center' }}>
-                                        {r?.nationality}
-                                    </p>
-                                </>
-                            ) : (
-                                <>
-                                    <div style={{ width: 120, height: 120, background: '#f1f5f9', borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                        <i className="fa-solid fa-qrcode" style={{ fontSize: 70, color: '#0f172a' }} />
-                                    </div>
-                                    <p style={{ color: '#0f172a', fontSize: 10, fontWeight: 900, textTransform: 'uppercase', marginTop: 8, textAlign: 'center' }}>
-                                        Scan to upload<br />your photo
-                                    </p>
-                                </>
-                            )}
-                        </div>
+                            }}>
+                                {origin && (runner as any)._id ? (
+                                    <>
+                                        <QRCodeSVG
+                                            value={`${origin}/upload/${(runner as any)._id}`}
+                                            size={120}
+                                            bgColor="#ffffff"
+                                            fgColor="#0f172a"
+                                            level="M"
+                                        />
+                                        <p style={{ color: '#0f172a', fontSize: 10, fontWeight: 900, textTransform: 'uppercase', marginTop: 8, textAlign: 'center' }}>
+                                            Scan to upload<br />your photo
+                                        </p>
+                                    </>
+                                ) : (
+                                    <>
+                                        <div style={{ width: 120, height: 120, background: '#f1f5f9', borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                            <i className="fa-solid fa-qrcode" style={{ fontSize: 70, color: '#0f172a' }} />
+                                        </div>
+                                        <p style={{ color: '#0f172a', fontSize: 10, fontWeight: 900, textTransform: 'uppercase', marginTop: 8, textAlign: 'center' }}>
+                                            Scan to upload<br />your photo
+                                        </p>
+                                    </>
+                                )}
+                            </div>
+                        ) : (
+                            <div style={{
+                                position: 'absolute', bottom: 40, left: 40, zIndex: 10,
+                                background: '#fff', padding: 12, borderRadius: 16, width: 150,
+                                display: 'flex', flexDirection: 'column', alignItems: 'center',
+                                border: '4px solid #4ade80', boxShadow: '0 15px 30px rgba(0,0,0,0.5)',
+                            }}>
+                                <div style={{ width: 120, height: 120, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                    <span style={{ fontSize: 56, fontWeight: 900, color: '#0f172a', fontFamily: "'Exo 2', sans-serif", fontStyle: 'italic' }}>{bibNum}</span>
+                                </div>
+                                <p style={{ color: '#0f172a', fontSize: 11, fontWeight: 900, textTransform: 'uppercase', marginTop: 6, textAlign: 'center' }}>BIB</p>
+                            </div>
+                        )}
                     </div>
 
                     {/* Right */}
