@@ -110,7 +110,18 @@ export default function ScanningBySlugPage() {
             const params = new URLSearchParams({ campaignId: campaign?._id || '', code });
             const res = await fetch(`/api/runners/lookup?${params.toString()}`);
             const data = await res.json();
-            setRunner(data.runner || null);
+            const foundRunner = data.runner || null;
+            // Reset photoUrl so QR code shows fresh every scan
+            if (foundRunner && foundRunner.photoUrl) {
+                foundRunner.photoUrl = '';
+                // Clear in DB too
+                fetch(`/api/runners/${foundRunner._id}/photo`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ photo: '' }),
+                }).catch(() => {});
+            }
+            setRunner(foundRunner);
             setFound(!!data.found);
             setAnimKey(k => k + 1);
         } catch {
