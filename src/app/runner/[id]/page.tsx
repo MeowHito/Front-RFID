@@ -60,6 +60,7 @@ interface CampaignData {
     pictureUrl?: string;
     categories?: Array<{ name: string; distance: string; badgeColor: string }>;
     eslipTemplate?: string;
+    displayMode?: string;
 }
 
 interface CheckpointMappingData {
@@ -316,8 +317,8 @@ export default function RunnerProfilePage() {
                     </div>
                 </div>
 
-                {/* DISTANCE PROGRESS BAR */}
-                {checkpointRows.length > 0 && (() => {
+                {/* DISTANCE PROGRESS BAR — Marathon mode only */}
+                {campaign?.displayMode !== 'lab' && checkpointRows.length > 0 && (() => {
                     const maxDist = checkpointRows.reduce((max, cp) => Math.max(max, cp.distanceFromStart || 0), 0);
                     const totalDist = maxDist || (parseDistanceValue(runner.category) || 0);
                     const currentDist = passedUpToIdx >= 0 && checkpointRows[passedUpToIdx]?.distanceFromStart != null
@@ -352,8 +353,8 @@ export default function RunnerProfilePage() {
                     );
                 })()}
 
-                {/* CHECKPOINT HISTORY TABLE */}
-                <div style={{ background: '#fff', borderRadius: 16, border: '1px solid #e2e8f0', overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+                {/* CHECKPOINT HISTORY TABLE — Marathon mode only */}
+                {campaign?.displayMode !== 'lab' && <div style={{ background: '#fff', borderRadius: 16, border: '1px solid #e2e8f0', overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
                     <div style={{ padding: '16px 24px', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <h3 style={{ fontWeight: 900, textTransform: 'uppercase', fontSize: 13, letterSpacing: 2, color: '#64748b', margin: 0 }}>Checkpoint History</h3>
                         <span style={{ fontSize: 10, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', fontStyle: 'italic' }}>
@@ -448,10 +449,10 @@ export default function RunnerProfilePage() {
                             </tbody>
                         </table>
                     </div>
-                </div>
+                </div>}
 
-                {/* LAP RESULTS TABLE (Lab mode — shown when timing records have sequential laps) */}
-                {sortedTimings.length > 1 && (() => {
+                {/* LAP RESULTS TABLE — Lab mode only */}
+                {campaign?.displayMode === 'lab' && sortedTimings.length > 1 && (() => {
                     // Calculate lap-level stats
                     const laps = sortedTimings.map((rec, i) => {
                         const lapNum = i;

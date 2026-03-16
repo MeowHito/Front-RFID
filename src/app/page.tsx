@@ -50,12 +50,30 @@ export default function Home() {
   const { language, setLanguage, t } = useLanguage();
   const { user, isAuthenticated, isAdmin, logout } = useAuth();
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+  const [campaignImages, setCampaignImages] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   // showUserMenu is now handled by ProfileDropdown component
 
   useEffect(() => {
     loadCampaigns();
   }, []);
+
+  // Lazy-load campaign images after campaigns are loaded
+  useEffect(() => {
+    if (campaigns.length === 0) return;
+    campaigns.forEach(async (campaign) => {
+      try {
+        const res = await fetch(`/api/campaigns/${campaign._id}/image`);
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data.pictureUrl) {
+          setCampaignImages(prev => ({ ...prev, [campaign._id]: data.pictureUrl }));
+        }
+      } catch {
+        // ignore - fallback image will be used
+      }
+    });
+  }, [campaigns]);
 
   const loadCampaigns = async () => {
     try {
@@ -375,7 +393,7 @@ export default function Home() {
                   locationTh={campaign.locationTh}
                   locationEn={campaign.locationEn}
                   date={formatDate(campaign.eventDate, campaign.eventEndDate)}
-                  imageUrl={campaign.pictureUrl || 'https://images.unsplash.com/photo-1516214104703-d870798883c5?auto=format&fit=crop&w=600&q=80'}
+                  imageUrl={campaignImages[campaign._id] || campaign.pictureUrl || 'https://images.unsplash.com/photo-1516214104703-d870798883c5?auto=format&fit=crop&w=600&q=80'}
                   color={campaign.cardColor || campaign.categories[0]?.badgeColor || 'var(--accent)'}
                   link={`/event/${campaign.slug || campaign._id}`}
                   status={getStatusInfo(campaign.status)}

@@ -85,6 +85,22 @@ interface Runner {
     scanTime?: string;
     distanceFromStart?: number;
     splitTime?: number;
+    // RaceTiger pass-time fields
+    chipCode?: string;
+    printingCode?: string;
+    splitNo?: number;
+    splitDesc?: string;
+    splitPace?: string;
+    gunTimeMs?: number;
+    netTimeMs?: number;
+    totalGunTime?: number;
+    totalNetTime?: number;
+    supplement?: string;
+    cutOff?: string;
+    legTime?: number;
+    legPace?: string;
+    legDistance?: number;
+    lagMs?: number;
 }
 
 interface TimingRecord {
