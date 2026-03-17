@@ -916,7 +916,7 @@ export default function EventLivePage() {
 
             {/* ===== TABLE ===== */}
             <main style={{ padding: '0 16px' }}>
-                <div className="table-scroll" style={{ background: themeStyles.cardBg, borderRadius: '0 0 12px 12px', boxShadow: isDark ? '0 1px 3px rgba(0,0,0,0.2)' : '0 1px 3px rgba(0,0,0,0.04)', border: `1px solid ${themeStyles.border}`, borderTop: 'none', height: 'calc(100vh - 140px)', overflowY: 'auto', overflowX: isMobile && showAllColumns ? 'auto' : 'hidden' }}>
+                <div className="table-scroll" style={{ background: themeStyles.cardBg, borderRadius: '0 0 12px 12px', boxShadow: isDark ? '0 1px 3px rgba(0,0,0,0.2)' : '0 1px 3px rgba(0,0,0,0.04)', border: `1px solid ${themeStyles.border}`, borderTop: 'none', height: 'calc(100vh - 180px)', overflowY: 'auto', overflowX: isMobile && showAllColumns ? 'auto' : 'hidden' }}>
                     <table style={{ width: isMobile && showAllColumns ? 800 : '100%', textAlign: 'left', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
                         <thead>
                             <tr style={{ fontSize: 10, fontWeight: 700, color: themeStyles.textSecondary, textTransform: 'uppercase', letterSpacing: '-0.02em', position: 'sticky', top: 0, background: themeStyles.cardBg, zIndex: 20, borderBottom: `2px solid ${themeStyles.border}` }}>

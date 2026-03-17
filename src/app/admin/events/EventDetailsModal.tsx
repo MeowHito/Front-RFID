@@ -73,7 +73,29 @@ export default function EventDetailsModal({ isOpen, onClose, event, onSave }: Ev
     const [categoryAddedNotification, setCategoryAddedNotification] = useState<string | null>(null);
     const [cropModalOpen, setCropModalOpen] = useState(false);
     const [rawImage, setRawImage] = useState<string>('');
+    const [thumbnailData, setThumbnailData] = useState<string>('');
     const pictureInputRef = useRef<HTMLInputElement>(null);
+
+    // Generate a tiny blurry thumbnail (~1KB) from a base64 image using Canvas
+    const generateThumbnail = (base64: string): Promise<string> => {
+        return new Promise((resolve) => {
+            const img = new window.Image();
+            img.onload = () => {
+                const canvas = document.createElement('canvas');
+                canvas.width = 32;
+                canvas.height = 16;
+                const ctx = canvas.getContext('2d');
+                if (ctx) {
+                    ctx.drawImage(img, 0, 0, 32, 16);
+                    resolve(canvas.toDataURL('image/jpeg', 0.3));
+                } else {
+                    resolve('');
+                }
+            };
+            img.onerror = () => resolve('');
+            img.src = base64;
+        });
+    };
 
     // Sync campaign data when modal opens
     useEffect(() => {
@@ -184,8 +206,12 @@ export default function EventDetailsModal({ isOpen, onClose, event, onSave }: Ev
         setSaving(true);
         setSaveMessage(null);
         try {
-            // Pass data to parent for save
-            await onSave(formData);
+            // Include thumbnail in save data
+            const saveData = { ...formData };
+            if (thumbnailData) {
+                (saveData as any).thumbnail = thumbnailData;
+            }
+            await onSave(saveData);
 
             setSaveMessage({
                 type: 'success',
@@ -639,8 +665,10 @@ export default function EventDetailsModal({ isOpen, onClose, event, onSave }: Ev
             <ImageCropModal
                 isOpen={cropModalOpen}
                 imageSrc={rawImage}
-                onCrop={(croppedDataUrl) => {
+                onCrop={async (croppedDataUrl) => {
                     setFormData(prev => ({ ...prev, pictureUrl: croppedDataUrl }));
+                    const thumb = await generateThumbnail(croppedDataUrl);
+                    setThumbnailData(thumb);
                     setCropModalOpen(false);
                 }}
                 onCancel={() => setCropModalOpen(false)}

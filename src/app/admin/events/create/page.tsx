@@ -61,6 +61,28 @@ function CreateEventForm() {
     const [toastMessage, setToastMessage] = useState<string | null>(null);
     const [cropModalOpen, setCropModalOpen] = useState(false);
     const [rawImage, setRawImage] = useState<string>('');
+    const [thumbnail, setThumbnail] = useState<string>('');
+
+    // Generate a tiny blurry thumbnail (~1KB) from a base64 image using Canvas
+    const generateThumbnail = (base64: string): Promise<string> => {
+        return new Promise((resolve) => {
+            const img = new window.Image();
+            img.onload = () => {
+                const canvas = document.createElement('canvas');
+                canvas.width = 32;
+                canvas.height = 16;
+                const ctx = canvas.getContext('2d');
+                if (ctx) {
+                    ctx.drawImage(img, 0, 0, 32, 16);
+                    resolve(canvas.toDataURL('image/jpeg', 0.3));
+                } else {
+                    resolve('');
+                }
+            };
+            img.onerror = () => resolve('');
+            img.src = base64;
+        });
+    };
     const [loadingEdit, setLoadingEdit] = useState(false);
     const [raceTigerUrl, setRaceTigerUrl] = useState('');
 
@@ -283,6 +305,7 @@ function CreateEventForm() {
             if (form.description) payload.description = form.description;
             if (form.location) payload.location = form.location;
             if (pictureUrl) payload.pictureUrl = pictureUrl;
+            if (thumbnail) payload.thumbnail = thumbnail;
             if (form.organizerName) payload.organizerName = form.organizerName;
             if (form.status) payload.status = form.status;
             payload.allowRFIDSync = form.allowRFIDSync;
@@ -872,8 +895,10 @@ function CreateEventForm() {
                 <ImageCropModal
                     isOpen={cropModalOpen}
                     imageSrc={rawImage}
-                    onCrop={(croppedDataUrl) => {
+                    onCrop={async (croppedDataUrl) => {
                         setForm(prev => ({ ...prev, pictureUrl: croppedDataUrl }));
+                        const thumb = await generateThumbnail(croppedDataUrl);
+                        setThumbnail(thumb);
                         setCropModalOpen(false);
                     }}
                     onCancel={() => setCropModalOpen(false)}
