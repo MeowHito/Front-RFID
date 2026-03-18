@@ -1,5 +1,5 @@
 'use client';
-import React from 'react';
+import React, { useState } from 'react';
 import { useLanguage } from '@/lib/language-context';
 
 interface EventCategory {
@@ -24,7 +24,8 @@ interface ActivityCardProps {
     locationTh?: string;
     locationEn?: string;
     date: string;
-    imageUrl: string;
+    imageUrl?: string;
+    thumbnailUrl?: string;
     color: string;
     categories: EventCategory[];
     link: string;
@@ -50,6 +51,7 @@ export default function ActivityCard({
     locationEn,
     date,
     imageUrl,
+    thumbnailUrl,
     color,
     categories,
     link,
@@ -61,6 +63,12 @@ export default function ActivityCard({
     const displayTitle = language === 'th'
         ? (titleTh || title)
         : (titleEn || title);
+
+    const [imageLoaded, setImageLoaded] = useState(false);
+
+    // The source to display: full image if available, otherwise thumbnail
+    const displaySrc = imageUrl || thumbnailUrl;
+    const showBlur = thumbnailUrl && (!imageUrl || !imageLoaded);
 
     const displayLocation = language === 'th'
         ? (locationTh || location)
@@ -75,8 +83,21 @@ export default function ActivityCard({
             {/* ===== MOBILE LAYOUT ===== */}
             <div className="block md:hidden">
                 {/* Cover Image: fixed 16:8, image fills entire area */}
-                <div className="relative w-full overflow-hidden rounded-t-lg" style={{ aspectRatio: '16/8', minHeight: 0 }}>
-                    <img src={imageUrl} alt={displayTitle} className="absolute inset-0 w-full h-full object-cover" />
+                <div className="relative w-full overflow-hidden rounded-t-lg" style={{ aspectRatio: '16/8', minHeight: 0, background: '#e5e7eb' }}>
+                    {/* Blurry thumbnail placeholder */}
+                    {thumbnailUrl && (
+                        <img src={thumbnailUrl} alt="" className="absolute inset-0 w-full h-full object-cover" style={{ filter: 'blur(20px)', transform: 'scale(1.1)' }} />
+                    )}
+                    {/* Full image — fades in on load */}
+                    {imageUrl && (
+                        <img
+                            src={imageUrl}
+                            alt={displayTitle}
+                            className="absolute inset-0 w-full h-full object-cover"
+                            style={{ opacity: imageLoaded ? 1 : 0, transition: 'opacity 0.5s ease-in-out' }}
+                            onLoad={() => setImageLoaded(true)}
+                        />
+                    )}
                     {countdown && (
                         <div className="absolute top-3 left-3 bg-black/75 text-white px-2 py-1.5 rounded-md flex items-center gap-0.5 backdrop-blur-sm">
                             <div className="text-center px-1.5 border-r border-white/30">
@@ -167,8 +188,21 @@ export default function ActivityCard({
             {/* ===== DESKTOP LAYOUT ===== */}
             <div className="hidden md:flex md:flex-row" style={{ borderLeft: `5px solid ${color}`, height: 160 }}>
                 {/* Left: Cover Image fixed 16:8 — image fills card height (160px → width 320px) */}
-                <div className="relative shrink-0 overflow-hidden" style={{ width: 300, height: 160 }}>
-                    <img src={imageUrl} alt={displayTitle} className="absolute inset-0 w-full h-full object-cover" style={{ pointerEvents: 'none' }} />
+                <div className="relative shrink-0 overflow-hidden" style={{ width: 300, height: 160, background: '#e5e7eb' }}>
+                    {/* Blurry thumbnail placeholder */}
+                    {thumbnailUrl && (
+                        <img src={thumbnailUrl} alt="" className="absolute inset-0 w-full h-full object-cover" style={{ filter: 'blur(20px)', transform: 'scale(1.1)', pointerEvents: 'none' }} />
+                    )}
+                    {/* Full image — fades in on load */}
+                    {imageUrl && (
+                        <img
+                            src={imageUrl}
+                            alt={displayTitle}
+                            className="absolute inset-0 w-full h-full object-cover"
+                            style={{ opacity: imageLoaded ? 1 : 0, transition: 'opacity 0.5s ease-in-out', pointerEvents: 'none' }}
+                            onLoad={() => setImageLoaded(true)}
+                        />
+                    )}
                     {countdown && (
                         <div className="absolute top-2 left-2 bg-black/70 text-white p-1 rounded flex items-center gap-0.5 backdrop-blur-sm z-10">
                             <div className="text-center px-1.5 border-r border-white/30 min-w-[28px]">

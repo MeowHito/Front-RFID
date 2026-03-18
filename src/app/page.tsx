@@ -394,7 +394,8 @@ export default function Home() {
                   locationTh={campaign.locationTh}
                   locationEn={campaign.locationEn}
                   date={formatDate(campaign.eventDate, campaign.eventEndDate)}
-                  imageUrl={campaignImages[campaign._id] || campaign.pictureUrl || campaign.thumbnail || 'https://images.unsplash.com/photo-1516214104703-d870798883c5?auto=format&fit=crop&w=600&q=80'}
+                  thumbnailUrl={campaign.thumbnail}
+                  imageUrl={campaignImages[campaign._id]}
                   color={campaign.cardColor || campaign.categories[0]?.badgeColor || 'var(--accent)'}
                   link={`/event/${campaign.slug || campaign._id}`}
                   status={getStatusInfo(campaign.status)}

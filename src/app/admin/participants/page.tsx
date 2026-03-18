@@ -1303,7 +1303,9 @@ export default function ParticipantsPage() {
                                                             </td>
                                                             <td className="text-center">
                                                                 {r.sourceFile === 'id-card-reader' ? (
-                                                                    <span className="text-[9px] font-bold text-orange-700 bg-orange-100 px-1.5 py-0.5 rounded-full">NEW</span>
+                                                                    <span className="text-[9px] font-bold text-orange-700 bg-orange-100 px-1.5 py-0.5 rounded-full">New</span>
+                                                                ) : r.sourceFile === 'manual-entry' ? (
+                                                                    <span className="text-[9px] font-bold text-purple-700 bg-purple-100 px-1.5 py-0.5 rounded-full">New(manual)</span>
                                                                 ) : r.sourceFile?.includes('RaceTiger') ? (
                                                                     <span className="text-[9px] font-bold text-blue-700 bg-blue-100 px-1.5 py-0.5 rounded-full">RaceTiger</span>
                                                                 ) : r.sourceFile ? (

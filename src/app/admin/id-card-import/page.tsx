@@ -97,6 +97,19 @@ export default function IdCardImportPage() {
     const [saving, setSaving] = useState(false);
     const [saveError, setSaveError] = useState('');
 
+    // Tab state: 'card' or 'manual'
+    const [activeTab, setActiveTab] = useState<'card' | 'manual'>('card');
+
+    // Manual entry form state
+    const [manualForm, setManualForm] = useState({
+        firstNameTh: '', lastNameTh: '',
+        firstNameEn: '', lastNameEn: '',
+        gender: 'M', birthDate: '', cid: '',
+        address: '', bibNumber: '', chipCode: '',
+    });
+    const [manualSaving, setManualSaving] = useState(false);
+    const [manualCategory, setManualCategory] = useState('');
+
     // Imported entries (session history)
     const [importedEntries, setImportedEntries] = useState<ImportedEntry[]>([]);
 
@@ -119,6 +132,7 @@ export default function IdCardImportPage() {
                     setCampaign(data);
                     if (data.categories?.length > 0) {
                         setSelectedCategory(data.categories[0].name);
+                        setManualCategory(data.categories[0].name);
                     }
                 }
             } catch {
@@ -182,6 +196,117 @@ export default function IdCardImportPage() {
     }, [language]);
 
 
+
+    // Save manual entry to database
+    const handleManualSave = useCallback(async () => {
+        if (!campaign?._id || !manualCategory || !manualForm.bibNumber.trim()) {
+            showToast(
+                language === 'th'
+                    ? 'กรุณากรอก BIB และเลือกประเภทการแข่งขัน'
+                    : 'Please enter BIB and select a category',
+                'error'
+            );
+            return;
+        }
+        if (!manualForm.firstNameTh.trim() && !manualForm.firstNameEn.trim()) {
+            showToast(
+                language === 'th'
+                    ? 'กรุณากรอกชื่ออย่างน้อย 1 ภาษา'
+                    : 'Please enter at least one name',
+                'error'
+            );
+            return;
+        }
+
+        setManualSaving(true);
+        try {
+            const genderVal = manualForm.gender === 'F' ? 'F' : 'M';
+            const payload = {
+                eventId: campaign._id,
+                bib: manualForm.bibNumber.trim(),
+                firstName: manualForm.firstNameEn.trim() || manualForm.firstNameTh.trim(),
+                lastName: manualForm.lastNameEn.trim() || manualForm.lastNameTh.trim() || '-',
+                firstNameTh: manualForm.firstNameTh.trim() || undefined,
+                lastNameTh: manualForm.lastNameTh.trim() || undefined,
+                gender: genderVal,
+                category: manualCategory,
+                idNo: manualForm.cid.trim() || undefined,
+                chipCode: manualForm.chipCode.trim() || undefined,
+                birthDate: manualForm.birthDate || undefined,
+                nationality: 'THA',
+                address: manualForm.address.trim() || undefined,
+                age: manualForm.birthDate ? calculateAge(manualForm.birthDate) : undefined,
+                ageGroup: manualForm.birthDate ? calculateAgeGroup(manualForm.birthDate, genderVal) : undefined,
+                status: 'not_started',
+                sourceFile: 'manual-entry',
+            };
+
+            const authToken = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
+            const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+            if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
+
+            const res = await fetch('/api/runners', {
+                method: 'POST',
+                headers,
+                body: JSON.stringify(payload),
+            });
+
+            if (!res.ok) {
+                let errMsg = '';
+                try {
+                    const errBody = await res.json();
+                    if (errBody?.message) {
+                        errMsg = Array.isArray(errBody.message) ? errBody.message.join(', ') : errBody.message;
+                    }
+                    if (errBody?.error) {
+                        errMsg = errMsg ? `${errMsg} (${errBody.error})` : errBody.error;
+                    }
+                } catch { /* */ }
+                if (!errMsg) {
+                    if (res.status === 409) errMsg = language === 'th' ? 'BIB ซ้ำ — มีนักกีฬาหมายเลขนี้อยู่แล้ว' : 'Duplicate BIB number';
+                    else if (res.status === 400) errMsg = language === 'th' ? 'ข้อมูลไม่ครบถ้วน — กรุณาตรวจสอบ BIB และประเภท' : 'Invalid data';
+                    else errMsg = `HTTP ${res.status}`;
+                }
+                throw new Error(errMsg);
+            }
+
+            const entry: ImportedEntry = {
+                bib: manualForm.bibNumber.trim(),
+                firstNameTh: manualForm.firstNameTh.trim(),
+                lastNameTh: manualForm.lastNameTh.trim(),
+                firstNameEn: manualForm.firstNameEn.trim(),
+                lastNameEn: manualForm.lastNameEn.trim(),
+                cid: manualForm.cid.trim(),
+                category: manualCategory,
+                gender: manualForm.gender,
+                birthDate: manualForm.birthDate,
+                chipCode: manualForm.chipCode.trim(),
+                savedAt: new Date().toLocaleTimeString('th-TH'),
+            };
+            setImportedEntries(prev => [entry, ...prev]);
+            showToast(
+                language === 'th'
+                    ? `บันทึกสำเร็จ: BIB ${manualForm.bibNumber.trim()} - ${manualForm.firstNameTh || manualForm.firstNameEn}`
+                    : `Saved: BIB ${manualForm.bibNumber.trim()} - ${manualForm.firstNameEn || manualForm.firstNameTh}`,
+                'success'
+            );
+            // Reset form
+            setManualForm({
+                firstNameTh: '', lastNameTh: '',
+                firstNameEn: '', lastNameEn: '',
+                gender: 'M', birthDate: '', cid: '',
+                address: '', bibNumber: '', chipCode: '',
+            });
+        } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : 'Unknown error';
+            showToast(
+                language === 'th' ? `❌ บันทึกไม่สำเร็จ: ${msg}` : `❌ Save failed: ${msg}`,
+                'error'
+            );
+        } finally {
+            setManualSaving(false);
+        }
+    }, [campaign, manualCategory, manualForm, language]);
 
     // Save card data to database
     const handleSave = useCallback(async () => {
@@ -324,6 +449,50 @@ export default function IdCardImportPage() {
                 </div>
             ) : (
                 <>
+                    {/* Tab Switcher */}
+                    <div style={{ display: 'flex', gap: 0, marginBottom: 16 }}>
+                        <button
+                            onClick={() => setActiveTab('card')}
+                            style={{
+                                flex: 1, padding: '14px 20px', fontSize: 15, fontWeight: 700,
+                                borderTop: activeTab === 'card' ? '2px solid #3b82f6' : '1px solid #e2e8f0',
+                                borderBottom: activeTab === 'card' ? '2px solid #3b82f6' : '1px solid #e2e8f0',
+                                borderLeft: activeTab === 'card' ? '2px solid #3b82f6' : '1px solid #e2e8f0',
+                                borderRight: 'none',
+                                borderRadius: '12px 0 0 12px',
+                                background: activeTab === 'card' ? '#eff6ff' : '#fff',
+                                color: activeTab === 'card' ? '#2563eb' : '#64748b',
+                                cursor: 'pointer', transition: 'all 0.15s',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
+                            }}
+                        >
+                            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <rect x="2" y="5" width="20" height="14" rx="2" />
+                                <line x1="2" y1="10" x2="22" y2="10" />
+                            </svg>
+                            {language === 'th' ? 'นำเข้าด้วยบัตรประชาชน' : 'Import with ID Card'}
+                        </button>
+                        <button
+                            onClick={() => setActiveTab('manual')}
+                            style={{
+                                flex: 1, padding: '14px 20px', fontSize: 15, fontWeight: 700,
+                                border: activeTab === 'manual' ? '2px solid #8b5cf6' : '1px solid #e2e8f0',
+                                borderRadius: '0 12px 12px 0',
+                                background: activeTab === 'manual' ? '#f5f3ff' : '#fff',
+                                color: activeTab === 'manual' ? '#7c3aed' : '#64748b',
+                                cursor: 'pointer', transition: 'all 0.15s',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
+                            }}
+                        >
+                            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                            </svg>
+                            {language === 'th' ? 'กรอกข้อมูลด้วยตนเอง' : 'Manual Entry'}
+                        </button>
+                    </div>
+
+                    {activeTab === 'card' && (<>
                     {/* Reader Status Banner */}
                     <div className="content-box" style={{ padding: '16px 20px', marginBottom: 16 }}>
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
@@ -800,6 +969,293 @@ export default function IdCardImportPage() {
                                 </table>
                             </div>
                         </div>
+                    )}
+                    </>)}
+
+                    {/* ===== MANUAL ENTRY TAB ===== */}
+                    {activeTab === 'manual' && (
+                        <>
+                            <div className="content-box" style={{ padding: '24px', marginBottom: 16 }}>
+                                <h3 style={{ margin: '0 0 20px', fontSize: 18, fontWeight: 700, color: '#1e293b', display: 'flex', alignItems: 'center', gap: 10 }}>
+                                    ✏️ {language === 'th' ? 'กรอกข้อมูลนักกีฬาด้วยตนเอง' : 'Manual Athlete Entry'}
+                                </h3>
+                                <p style={{ fontSize: 13, color: '#64748b', marginBottom: 20, lineHeight: 1.6 }}>
+                                    {language === 'th'
+                                        ? 'สำหรับกรณีที่นักกีฬาไม่ได้นำบัตรประชาชนมา — กรอกข้อมูลแล้วกดบันทึก'
+                                        : 'For athletes without their ID card — fill in details and save'}
+                                </p>
+
+                                {/* Distance/Category Buttons */}
+                                <div style={{ marginBottom: 20 }}>
+                                    <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#64748b', marginBottom: 8 }}>
+                                        {language === 'th' ? 'ระยะแข่งขัน *' : 'Distance *'}
+                                    </label>
+                                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                                        {(campaign.categories || []).map(cat => {
+                                            const isActive = manualCategory === cat.name;
+                                            return (
+                                                <button
+                                                    key={cat.name}
+                                                    onClick={() => setManualCategory(cat.name)}
+                                                    style={{
+                                                        padding: '10px 24px', borderRadius: 10, fontSize: 15, fontWeight: 700,
+                                                        border: isActive ? '2px solid #8b5cf6' : '2px solid #e2e8f0',
+                                                        background: isActive ? '#8b5cf6' : '#fff',
+                                                        color: isActive ? '#fff' : '#475569',
+                                                        cursor: 'pointer', transition: 'all 0.15s',
+                                                        boxShadow: isActive ? '0 4px 12px rgba(139,92,246,0.3)' : 'none',
+                                                    }}
+                                                >
+                                                    {cat.name}{cat.distance ? ` (${cat.distance})` : ''}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+
+                                {/* Manual Form Grid */}
+                                <div style={{
+                                    background: '#f8fafc', borderRadius: 12, padding: 20,
+                                    border: '1px solid #e2e8f0', marginBottom: 20,
+                                }}>
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px 24px' }}>
+                                        {/* First Name TH */}
+                                        <div>
+                                            <label style={{ fontSize: 12, fontWeight: 600, color: '#64748b', marginBottom: 4, display: 'block' }}>
+                                                {language === 'th' ? 'ชื่อ (ไทย) *' : 'First Name (TH) *'}
+                                            </label>
+                                            <input
+                                                type="text" value={manualForm.firstNameTh}
+                                                onChange={e => setManualForm(prev => ({ ...prev, firstNameTh: e.target.value }))}
+                                                placeholder={language === 'th' ? 'สมชาย' : 'Somchai'}
+                                                style={{ width: '100%', padding: '10px 14px', borderRadius: 8, border: '1px solid #d1d5db', fontSize: 15, fontWeight: 600, outline: 'none', boxSizing: 'border-box' }}
+                                            />
+                                        </div>
+                                        {/* Last Name TH */}
+                                        <div>
+                                            <label style={{ fontSize: 12, fontWeight: 600, color: '#64748b', marginBottom: 4, display: 'block' }}>
+                                                {language === 'th' ? 'นามสกุล (ไทย)' : 'Last Name (TH)'}
+                                            </label>
+                                            <input
+                                                type="text" value={manualForm.lastNameTh}
+                                                onChange={e => setManualForm(prev => ({ ...prev, lastNameTh: e.target.value }))}
+                                                placeholder={language === 'th' ? 'ใจดี' : 'Jaidee'}
+                                                style={{ width: '100%', padding: '10px 14px', borderRadius: 8, border: '1px solid #d1d5db', fontSize: 15, fontWeight: 600, outline: 'none', boxSizing: 'border-box' }}
+                                            />
+                                        </div>
+                                        {/* First Name EN */}
+                                        <div>
+                                            <label style={{ fontSize: 12, fontWeight: 600, color: '#64748b', marginBottom: 4, display: 'block' }}>
+                                                {language === 'th' ? 'ชื่อ (อังกฤษ)' : 'First Name (EN)'}
+                                            </label>
+                                            <input
+                                                type="text" value={manualForm.firstNameEn}
+                                                onChange={e => setManualForm(prev => ({ ...prev, firstNameEn: e.target.value }))}
+                                                placeholder="Somchai"
+                                                style={{ width: '100%', padding: '10px 14px', borderRadius: 8, border: '1px solid #d1d5db', fontSize: 15, outline: 'none', boxSizing: 'border-box' }}
+                                            />
+                                        </div>
+                                        {/* Last Name EN */}
+                                        <div>
+                                            <label style={{ fontSize: 12, fontWeight: 600, color: '#64748b', marginBottom: 4, display: 'block' }}>
+                                                {language === 'th' ? 'นามสกุล (อังกฤษ)' : 'Last Name (EN)'}
+                                            </label>
+                                            <input
+                                                type="text" value={manualForm.lastNameEn}
+                                                onChange={e => setManualForm(prev => ({ ...prev, lastNameEn: e.target.value }))}
+                                                placeholder="Jaidee"
+                                                style={{ width: '100%', padding: '10px 14px', borderRadius: 8, border: '1px solid #d1d5db', fontSize: 15, outline: 'none', boxSizing: 'border-box' }}
+                                            />
+                                        </div>
+                                        {/* Gender */}
+                                        <div>
+                                            <label style={{ fontSize: 12, fontWeight: 600, color: '#64748b', marginBottom: 4, display: 'block' }}>
+                                                {language === 'th' ? 'เพศ *' : 'Gender *'}
+                                            </label>
+                                            <div style={{ display: 'flex', gap: 8 }}>
+                                                {(['M', 'F'] as const).map(g => (
+                                                    <button
+                                                        key={g}
+                                                        onClick={() => setManualForm(prev => ({ ...prev, gender: g }))}
+                                                        style={{
+                                                            flex: 1, padding: '10px 16px', borderRadius: 8, fontSize: 14, fontWeight: 700,
+                                                            border: manualForm.gender === g ? `2px solid ${g === 'M' ? '#3b82f6' : '#ec4899'}` : '1px solid #d1d5db',
+                                                            background: manualForm.gender === g ? (g === 'M' ? '#dbeafe' : '#fce7f3') : '#fff',
+                                                            color: manualForm.gender === g ? (g === 'M' ? '#1d4ed8' : '#be185d') : '#64748b',
+                                                            cursor: 'pointer', transition: 'all 0.15s',
+                                                        }}
+                                                    >
+                                                        {g === 'M' ? (language === 'th' ? '♂ ชาย' : '♂ Male') : (language === 'th' ? '♀ หญิง' : '♀ Female')}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
+                                        {/* Birth Date */}
+                                        <div>
+                                            <label style={{ fontSize: 12, fontWeight: 600, color: '#64748b', marginBottom: 4, display: 'block' }}>
+                                                {language === 'th' ? 'วันเกิด' : 'Birth Date'}
+                                            </label>
+                                            <input
+                                                type="date" value={manualForm.birthDate}
+                                                onChange={e => setManualForm(prev => ({ ...prev, birthDate: e.target.value }))}
+                                                style={{ width: '100%', padding: '10px 14px', borderRadius: 8, border: '1px solid #d1d5db', fontSize: 14, outline: 'none', boxSizing: 'border-box' }}
+                                            />
+                                            {manualForm.birthDate && (
+                                                <div style={{ marginTop: 4 }}>
+                                                    <span style={{
+                                                        fontSize: 12, color: '#3b82f6', background: '#eff6ff',
+                                                        padding: '2px 8px', borderRadius: 10, fontWeight: 600,
+                                                    }}>
+                                                        {language === 'th' ? 'อายุ' : 'Age'} {calculateAge(manualForm.birthDate)} {language === 'th' ? 'ปี' : 'yrs'}
+                                                        {' • '}{calculateAgeGroup(manualForm.birthDate, manualForm.gender)}
+                                                    </span>
+                                                </div>
+                                            )}
+                                        </div>
+                                        {/* Citizen ID */}
+                                        <div>
+                                            <label style={{ fontSize: 12, fontWeight: 600, color: '#64748b', marginBottom: 4, display: 'block' }}>
+                                                {language === 'th' ? 'เลขบัตรประชาชน' : 'Citizen ID'}
+                                            </label>
+                                            <input
+                                                type="text" value={manualForm.cid}
+                                                onChange={e => setManualForm(prev => ({ ...prev, cid: e.target.value }))}
+                                                placeholder="1234567890123"
+                                                style={{ width: '100%', padding: '10px 14px', borderRadius: 8, border: '1px solid #d1d5db', fontSize: 14, fontFamily: 'monospace', outline: 'none', boxSizing: 'border-box' }}
+                                                maxLength={13}
+                                            />
+                                        </div>
+                                        {/* Address - full width */}
+                                        <div style={{ gridColumn: '1 / -1' }}>
+                                            <label style={{ fontSize: 12, fontWeight: 600, color: '#64748b', marginBottom: 4, display: 'block' }}>
+                                                {language === 'th' ? 'ที่อยู่' : 'Address'}
+                                            </label>
+                                            <input
+                                                type="text" value={manualForm.address}
+                                                onChange={e => setManualForm(prev => ({ ...prev, address: e.target.value }))}
+                                                placeholder={language === 'th' ? 'ที่อยู่ (ไม่บังคับ)' : 'Address (optional)'}
+                                                style={{ width: '100%', padding: '10px 14px', borderRadius: 8, border: '1px solid #d1d5db', fontSize: 14, outline: 'none', boxSizing: 'border-box' }}
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* BIB & ChipCode */}
+                                <div style={{
+                                    display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 20,
+                                    background: '#faf5ff', borderRadius: 12, padding: 16, border: '1px solid #e9d5ff',
+                                }}>
+                                    <div>
+                                        <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#6b21a8', marginBottom: 4 }}>
+                                            {language === 'th' ? 'หมายเลข BIB *' : 'BIB Number *'}
+                                        </label>
+                                        <input
+                                            type="text" value={manualForm.bibNumber}
+                                            onChange={e => setManualForm(prev => ({ ...prev, bibNumber: e.target.value }))}
+                                            placeholder="001"
+                                            style={{
+                                                width: 140, padding: '8px 12px', borderRadius: 8,
+                                                border: '2px solid #8b5cf6', fontSize: 22, fontWeight: 800,
+                                                outline: 'none', boxSizing: 'border-box',
+                                                background: '#fff', textAlign: 'center', fontFamily: 'monospace',
+                                            }}
+                                        />
+                                    </div>
+                                    <div>
+                                        <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#6b21a8', marginBottom: 4 }}>
+                                            Chip Code
+                                        </label>
+                                        <input
+                                            type="text" value={manualForm.chipCode}
+                                            onChange={e => setManualForm(prev => ({ ...prev, chipCode: e.target.value }))}
+                                            placeholder={language === 'th' ? 'สแกนหรือพิมพ์ ChipCode' : 'Scan or type ChipCode'}
+                                            style={{
+                                                width: '100%', padding: '8px 12px', borderRadius: 8,
+                                                border: '1px solid #d1d5db', fontSize: 14, fontWeight: 600,
+                                                outline: 'none', boxSizing: 'border-box',
+                                                background: '#fff', fontFamily: 'monospace',
+                                            }}
+                                        />
+                                    </div>
+                                </div>
+
+                                {/* Save Button */}
+                                <button
+                                    onClick={handleManualSave}
+                                    disabled={manualSaving || !manualForm.bibNumber.trim()}
+                                    style={{
+                                        width: '100%', padding: '16px 28px', borderRadius: 12, border: 'none',
+                                        background: (!manualSaving && manualForm.bibNumber.trim())
+                                            ? 'linear-gradient(135deg, #8b5cf6, #7c3aed)' : '#94a3b8',
+                                        color: '#fff', fontWeight: 800, fontSize: 18,
+                                        cursor: (!manualSaving && manualForm.bibNumber.trim()) ? 'pointer' : 'not-allowed',
+                                        boxShadow: (!manualSaving && manualForm.bibNumber.trim()) ? '0 6px 20px rgba(139,92,246,0.35)' : 'none',
+                                        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
+                                        transition: 'all 0.2s',
+                                    }}
+                                >
+                                    {manualSaving ? (
+                                        <>{language === 'th' ? 'กำลังบันทึก...' : 'Saving...'}</>
+                                    ) : (
+                                        <>
+                                            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                                <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+                                                <polyline points="17 21 17 13 7 13 7 21" />
+                                                <polyline points="7 3 7 8 15 8" />
+                                            </svg>
+                                            {language === 'th' ? '💾  บันทึกข้อมูล' : '💾  Save'}
+                                        </>
+                                    )}
+                                </button>
+                            </div>
+
+                            {/* Imported Entries from Manual (shared table) */}
+                            {importedEntries.length > 0 && (
+                                <div className="content-box" style={{ padding: '20px' }}>
+                                    <h3 style={{ margin: '0 0 12px', fontSize: 15, fontWeight: 700, color: '#1e293b' }}>
+                                        {language === 'th'
+                                            ? `📋 บันทึกแล้ว ${importedEntries.length} รายการ (เซสชันนี้)`
+                                            : `📋 Saved ${importedEntries.length} entries (this session)`}
+                                    </h3>
+                                    <div style={{ overflowX: 'auto' }}>
+                                        <table className="data-table" style={{ width: '100%', fontSize: 13 }}>
+                                            <thead>
+                                                <tr>
+                                                    <th>#</th>
+                                                    <th>BIB</th>
+                                                    <th>{language === 'th' ? 'ชื่อ (TH)' : 'Name (TH)'}</th>
+                                                    <th>{language === 'th' ? 'ชื่อ (EN)' : 'Name (EN)'}</th>
+                                                    <th>{language === 'th' ? 'ประเภท' : 'Category'}</th>
+                                                    <th>{language === 'th' ? 'เพศ' : 'Gender'}</th>
+                                                    <th>{language === 'th' ? 'เวลา' : 'Time'}</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {importedEntries.map((entry, idx) => (
+                                                    <tr key={idx}>
+                                                        <td>{importedEntries.length - idx}</td>
+                                                        <td style={{ fontWeight: 700, color: '#7c3aed' }}>{entry.bib}</td>
+                                                        <td>{entry.firstNameTh} {entry.lastNameTh}</td>
+                                                        <td>{entry.firstNameEn} {entry.lastNameEn}</td>
+                                                        <td>{entry.category}</td>
+                                                        <td>
+                                                            <span style={{
+                                                                padding: '2px 8px', borderRadius: 10, fontSize: 11, fontWeight: 600,
+                                                                background: entry.gender === 'M' ? '#dbeafe' : '#fce7f3',
+                                                                color: entry.gender === 'M' ? '#1d4ed8' : '#be185d',
+                                                            }}>
+                                                                {entry.gender === 'M' ? (language === 'th' ? 'ชาย' : 'Male') : (language === 'th' ? 'หญิง' : 'Female')}
+                                                            </span>
+                                                        </td>
+                                                        <td style={{ fontSize: 12, color: '#64748b' }}>{entry.savedAt}</td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            )}
+                        </>
                     )}
                 </>
             )}
