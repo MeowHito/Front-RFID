@@ -39,6 +39,7 @@ const MARATHON_COLUMNS: ColDef[] = [
     { key: 'legPace', thLabel: 'Leg Pace', thLabelTh: 'Leg Pace', width: '5%', align: 'center' },
     { key: 'legDistance', thLabel: 'Leg Dist', thLabelTh: 'Leg Dist', width: '5%', align: 'center' },
     { key: 'lagMs', thLabel: 'Lag MS', thLabelTh: 'Lag MS', width: '4%', align: 'center' },
+    { key: 'nextStation', thLabel: 'Next / ETA', thLabelTh: 'จุดถัดไป / ETA', width: '8%', align: 'center' },
     { key: 'progress', thLabel: 'Progress', thLabelTh: 'ความคืบหน้า', width: '8%', align: 'right', fixed: true },
 ];
 
@@ -108,12 +109,16 @@ export default function DisplaySettingsPage() {
             if (res.ok) {
                 const data = await res.json();
                 setCampaign(data);
-                // Marathon
-                const saved: string[] = data.displayColumns?.length > 0 ? data.displayColumns : MARATHON_TOGGLEABLE;
+                // Marathon — auto-include any NEW toggleable columns not yet in saved list
+                const savedRaw: string[] = data.displayColumns?.length > 0 ? data.displayColumns : MARATHON_TOGGLEABLE;
+                const newMarathonCols = MARATHON_TOGGLEABLE.filter(k => !savedRaw.includes(k));
+                const saved = [...savedRaw, ...newMarathonCols];
                 setSelectedCols(saved);
                 rebuildOrder(saved, MARATHON_COLUMNS, MARATHON_TOGGLEABLE, setColOrder);
-                // Lab
-                const savedLab: string[] = data.displayColumnsLab?.length > 0 ? data.displayColumnsLab : LAB_TOGGLEABLE;
+                // Lab — same treatment
+                const savedLabRaw: string[] = data.displayColumnsLab?.length > 0 ? data.displayColumnsLab : LAB_TOGGLEABLE;
+                const newLabCols = LAB_TOGGLEABLE.filter(k => !savedLabRaw.includes(k));
+                const savedLab = [...savedLabRaw, ...newLabCols];
                 setSelectedColsLab(savedLab);
                 rebuildOrder(savedLab, LAB_COLUMNS, LAB_TOGGLEABLE, setColOrderLab);
                 // Mode
@@ -221,6 +226,7 @@ export default function DisplaySettingsPage() {
         totalGunTime: '1:23:45', totalNetTime: '1:22:30',
         supplement: 'S1', cutOff: 'OK',
         legTime: '0:25:10', legPace: '5:20', legDistance: '5.0', lagMs: '1200',
+        nextStation: '→ CP2 (≈33m)',
     };
     const labSample: Record<string, string> = {
         rank: '1', runner: 'John Doe', sex: 'M', laps: '12',

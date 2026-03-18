@@ -182,6 +182,7 @@ const COL_DEFS: ColDef[] = [
     { key: 'legPace', label: 'Leg Pace', w: '5%', mw: '7%', align: 'center' },
     { key: 'legDistance', label: 'Leg Dist', w: '5%', mw: '6%', align: 'center' },
     { key: 'lagMs', label: 'Lag MS', w: '4%', mw: '5%', align: 'center' },
+    { key: 'nextStation', label: 'Next / ETA', w: '9%', mw: '12%', align: 'center' },
     { key: 'progress', label: 'Progress', w: '8%', mw: '8%', align: 'right', fixed: true, desktopOnly: true },
 ];
 const TOGGLEABLE_KEYS = COL_DEFS.filter(c => !c.fixed).map(c => c.key);
@@ -1251,6 +1252,197 @@ export default function EventLivePage() {
                                                         {runner.lagMs ? formatTime(runner.lagMs) : '-'}
                                                     </td>
                                                 );
+                                            case 'nextStation': {
+                                                // --- Live ETA Countdown with order-based fallback ---
+                                                if (runner.status === 'finished') {
+                                                    return (
+                                                        <td key={key} className="px-1 py-1.5 text-center">
+                                                            <span className="text-[11px] font-bold text-green-500">🏁 FINISH</span>
+                                                        </td>
+                                                    );
+                                                }
+                                                if (['dnf', 'dns', 'dq', 'not_started'].includes(runner.status || '')) {
+                                                    return (
+                                                        <td key={key} className="px-1 py-1.5 text-center text-[10px]" style={{ color: themeStyles.textSecondary }}>-</td>
+                                                    );
+                                                }
+
+                                                // For finished events — ETA is meaningless, show static info only
+                                                if (isRaceFinished) {
+                                                    const evLookupFin = runner.eventId ? cpDistanceLookup[runner.eventId] : null;
+                                                    let nextLabel = '';
+                                                    if (evLookupFin) {
+                                                        const cpKeyFin = runner.latestCheckpoint?.trim().toLowerCase() || '';
+                                                        const cpKeyNormFin = normalizeComparableText(runner.latestCheckpoint);
+                                                        let matchedKeyFin = '';
+                                                        if (cpKeyFin && evLookupFin.checkpoints[cpKeyFin] !== undefined) matchedKeyFin = cpKeyFin;
+                                                        else if (cpKeyNormFin) {
+                                                            for (const k of Object.keys(evLookupFin.checkpoints)) {
+                                                                if (normalizeComparableText(k) === cpKeyNormFin) { matchedKeyFin = k; break; }
+                                                            }
+                                                        }
+                                                        if (matchedKeyFin) {
+                                                            const curOrd = evLookupFin.cpOrders[matchedKeyFin] ?? 0;
+                                                            let bestKey = '';
+                                                            let bestOrd = Infinity;
+                                                            for (const [k, ord] of Object.entries(evLookupFin.cpOrders)) {
+                                                                if (ord > curOrd && ord < bestOrd) { bestOrd = ord; bestKey = k; }
+                                                            }
+                                                            nextLabel = bestKey ? bestKey.toUpperCase() : 'FINISH';
+                                                        }
+                                                    }
+                                                    return (
+                                                        <td key={key} className="px-1 py-1.5 text-center">
+                                                            {nextLabel ? (
+                                                                <div>
+                                                                    <div className="text-[10px] font-bold text-blue-500">→ {nextLabel}</div>
+                                                                    <div className="mt-px text-[8px]" style={{ color: themeStyles.textSecondary }}>
+                                                                        {language === 'th' ? 'จบแล้ว' : 'ended'}
+                                                                    </div>
+                                                                </div>
+                                                            ) : (
+                                                                <span className="text-[10px]" style={{ color: themeStyles.textSecondary }}>-</span>
+                                                            )}
+                                                        </td>
+                                                    );
+                                                }
+
+                                                const evLookupEta = runner.eventId ? cpDistanceLookup[runner.eventId] : null;
+                                                let nextCpName = '';
+                                                let etaRemainingSec = -1;
+                                                let isPastDue = false;
+
+                                                if (evLookupEta) {
+                                                    const cpKeyEta = runner.latestCheckpoint?.trim().toLowerCase() || '';
+                                                    const cpKeyNormEta = normalizeComparableText(runner.latestCheckpoint);
+                                                    let matchedKey = '';
+                                                    if (cpKeyEta && evLookupEta.checkpoints[cpKeyEta] !== undefined) {
+                                                        matchedKey = cpKeyEta;
+                                                    } else if (cpKeyNormEta) {
+                                                        for (const k of Object.keys(evLookupEta.checkpoints)) {
+                                                            if (normalizeComparableText(k) === cpKeyNormEta) { matchedKey = k; break; }
+                                                        }
+                                                    }
+
+                                                    if (matchedKey) {
+                                                        const currentCpDist = evLookupEta.checkpoints[matchedKey] ?? 0;
+                                                        const currentOrder = evLookupEta.cpOrders[matchedKey] ?? 0;
+                                                        const totalCps = evLookupEta.totalCheckpoints || 1;
+
+                                                        // Find next checkpoint by order
+                                                        let bestNextKey = '';
+                                                        let bestNextOrder = Infinity;
+                                                        for (const [k, ord] of Object.entries(evLookupEta.cpOrders)) {
+                                                            if (ord > currentOrder && ord < bestNextOrder) {
+                                                                bestNextOrder = ord;
+                                                                bestNextKey = k;
+                                                            }
+                                                        }
+                                                        let nextCpDist = 0;
+                                                        if (bestNextKey) {
+                                                            nextCpName = bestNextKey.toUpperCase();
+                                                            nextCpDist = evLookupEta.checkpoints[bestNextKey] ?? 0;
+                                                        } else {
+                                                            nextCpName = 'FINISH';
+                                                            nextCpDist = evLookupEta.totalDistance || 0;
+                                                        }
+
+                                                        // Parse elapsed time from all possible fields
+                                                        let elapsedMs = runner.gunTime || runner.elapsedTime || runner.netTime || runner.gunTimeMs || runner.totalGunTime || runner.netTimeMs || runner.totalNetTime || 0;
+                                                        // Fallback: parse gunTimeStr like "01:32:17" → ms
+                                                        if (!elapsedMs && runner.gunTimeStr) {
+                                                            const parts = runner.gunTimeStr.split(':').map(Number);
+                                                            if (parts.length === 3) elapsedMs = (parts[0] * 3600 + parts[1] * 60 + parts[2]) * 1000;
+                                                            else if (parts.length === 2) elapsedMs = (parts[0] * 60 + parts[1]) * 1000;
+                                                        }
+                                                        const scanDate = runner.scanTime ? new Date(runner.scanTime) : null;
+
+                                                        // Strategy 1: Distance-based ETA (when checkpoint km data exists)
+                                                        if (currentCpDist > 0 && elapsedMs > 0 && nextCpDist > currentCpDist) {
+                                                            const elapsedMin = elapsedMs / 60000;
+                                                            const paceMinPerKm = elapsedMin / currentCpDist;
+                                                            const remainingKm = nextCpDist - currentCpDist;
+                                                            const rawEtaMs = paceMinPerKm * remainingKm * 60000;
+                                                            const adjustedEtaMs = rawEtaMs * 1.10;
+
+                                                            if (scanDate && !isNaN(scanDate.getTime())) {
+                                                                const arrivalTime = scanDate.getTime() + adjustedEtaMs;
+                                                                const remainMs = arrivalTime - currentTime.getTime();
+                                                                if (remainMs > 0) {
+                                                                    etaRemainingSec = Math.floor(remainMs / 1000);
+                                                                } else {
+                                                                    etaRemainingSec = 0;
+                                                                    isPastDue = true;
+                                                                }
+                                                            } else {
+                                                                etaRemainingSec = Math.round(rawEtaMs * 1.10 / 1000);
+                                                            }
+                                                        }
+                                                        // Strategy 2: Order-based fallback (when no km data)
+                                                        else if (elapsedMs > 0 && currentOrder > 0) {
+                                                            const orderSteps = (bestNextKey ? bestNextOrder : totalCps + 1) - currentOrder;
+                                                            const timePerOrder = elapsedMs / currentOrder;
+                                                            const rawEtaMs = timePerOrder * orderSteps;
+                                                            const adjustedEtaMs = rawEtaMs * 1.10;
+
+                                                            if (scanDate && !isNaN(scanDate.getTime())) {
+                                                                const arrivalTime = scanDate.getTime() + adjustedEtaMs;
+                                                                const remainMs = arrivalTime - currentTime.getTime();
+                                                                if (remainMs > 0) {
+                                                                    etaRemainingSec = Math.floor(remainMs / 1000);
+                                                                } else {
+                                                                    etaRemainingSec = 0;
+                                                                    isPastDue = true;
+                                                                }
+                                                            } else {
+                                                                etaRemainingSec = Math.round(adjustedEtaMs / 1000);
+                                                            }
+                                                        }
+                                                    } else if (!runner.latestCheckpoint || runner.latestCheckpoint.toLowerCase() === 'start') {
+                                                        let firstCpKey = '';
+                                                        let firstOrder = Infinity;
+                                                        for (const [k, ord] of Object.entries(evLookupEta.cpOrders)) {
+                                                            if (ord > 1 && ord < firstOrder) { firstOrder = ord; firstCpKey = k; }
+                                                        }
+                                                        if (firstCpKey) nextCpName = firstCpKey.toUpperCase();
+                                                    }
+                                                }
+
+                                                // Format remaining time as mm:ss or h:mm:ss
+                                                let etaDisplay = '';
+                                                if (etaRemainingSec > 0) {
+                                                    const hrs = Math.floor(etaRemainingSec / 3600);
+                                                    const mins = Math.floor((etaRemainingSec % 3600) / 60);
+                                                    const secs = etaRemainingSec % 60;
+                                                    etaDisplay = hrs > 0
+                                                        ? `${hrs}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`
+                                                        : `${mins}:${String(secs).padStart(2, '0')}`;
+                                                } else if (isPastDue) {
+                                                    etaDisplay = language === 'th' ? 'ใกล้ถึงแล้ว!' : 'arriving!';
+                                                }
+
+                                                return (
+                                                    <td key={key} className="px-1 py-1.5 text-center">
+                                                        {nextCpName ? (
+                                                            <div>
+                                                                <div className="text-[10px] font-bold text-blue-500">
+                                                                    → {nextCpName}
+                                                                </div>
+                                                                {etaDisplay ? (
+                                                                    <div className={`mt-px font-bold ${isPastDue ? 'text-[9px] text-orange-500' : 'text-[11px] font-mono'}`}
+                                                                        style={{ color: isPastDue ? undefined : themeStyles.text }}>
+                                                                        {isPastDue ? etaDisplay : `≈${etaDisplay}`}
+                                                                    </div>
+                                                                ) : runner.latestCheckpoint ? (
+                                                                    <div className="mt-px text-[8px]" style={{ color: themeStyles.textSecondary }}>...</div>
+                                                                ) : null}
+                                                            </div>
+                                                        ) : (
+                                                            <span className="text-[10px]" style={{ color: themeStyles.textSecondary }}>-</span>
+                                                        )}
+                                                    </td>
+                                                );
+                                            }
                                             case 'progress':
                                                 return (
                                                     <td key={key} style={{ padding: '6px 8px', textAlign: 'right' }}>

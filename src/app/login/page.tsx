@@ -153,13 +153,7 @@ export default function LoginPage() {
                     </form>
 
 
-                    <div className="mt-6 text-center space-y-3">
-                        <p className="text-sm" style={{ color: 'var(--muted-foreground)' }}>
-                            ยังไม่มีบัญชี?{' '}
-                            <Link href="/register" className="font-semibold link-underline" style={{ color: 'var(--accent)' }}>
-                                สมัครสมาชิก
-                            </Link>
-                        </p>
+                    <div className="mt-6 text-center">
                         <Link
                             href="/"
                             className="text-sm inline-flex items-center gap-2 link-underline"
