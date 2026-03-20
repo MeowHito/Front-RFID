@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { useLanguage } from '@/lib/language-context';
 import { useAuth } from '@/lib/auth-context';
 import AdminLayout from '../AdminLayout';
@@ -30,6 +31,7 @@ const ROLE_LABELS: Record<string, { th: string; en: string; color: string; bg: s
 export default function UsersPage() {
     const { language } = useLanguage();
     const { user: currentUser } = useAuth();
+    const router = useRouter();
 
     const [users, setUsers] = useState<User[]>([]);
     const [loading, setLoading] = useState(true);
@@ -182,6 +184,16 @@ export default function UsersPage() {
                                 outline: 'none',
                             }}
                         />
+                        <button
+                            onClick={() => router.push('/admin/users/create')}
+                            style={{
+                                padding: '8px 18px', borderRadius: 10, border: 'none',
+                                background: '#22c55e', color: '#fff', fontWeight: 700, fontSize: 13,
+                                cursor: 'pointer', whiteSpace: 'nowrap', boxShadow: '0 2px 8px rgba(34,197,94,0.3)',
+                            }}
+                        >
+                            + {language === 'th' ? 'สร้างผู้ใช้' : 'Create User'}
+                        </button>
                     </div>
                 </div>
 
@@ -195,6 +207,7 @@ export default function UsersPage() {
                                 <th>{language === 'th' ? 'อีเมล' : 'Email'}</th>
                                 <th style={{ width: 180 }}>{language === 'th' ? 'บทบาท' : 'Role'}</th>
                                 <th style={{ width: 100 }}>{language === 'th' ? 'สถานะ' : 'Status'}</th>
+                                <th style={{ width: 80 }}></th>
                             </tr>
                         </thead>
                         <tbody>
@@ -307,6 +320,18 @@ export default function UsersPage() {
                                                         : (language === 'th' ? 'ปิดใช้งาน' : 'Inactive')
                                                     }
                                                 </span>
+                                            </td>
+                                            <td>
+                                                <button
+                                                    onClick={() => router.push(`/admin/users/create?edit=${u._id}`)}
+                                                    style={{
+                                                        padding: '5px 12px', borderRadius: 8, border: '1px solid #e2e8f0',
+                                                        background: '#f8fafc', color: '#475569', fontSize: 11, fontWeight: 600,
+                                                        cursor: 'pointer', whiteSpace: 'nowrap',
+                                                    }}
+                                                >
+                                                    {language === 'th' ? '✏️ แก้ไข' : '✏️ Edit'}
+                                                </button>
                                             </td>
                                         </tr>
                                     );

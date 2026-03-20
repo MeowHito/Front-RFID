@@ -59,6 +59,7 @@ const menuSections: MenuSection[] = [
         headerEn: 'RFID & TIMING',
         items: [
             { href: '/admin/live-monitor', label: 'Live Monitor', labelEn: 'Live Monitor', icon: 'desktop', iconColor: '#00c0ef', badge: 'LIVE' },
+            { href: '/admin/checkpoint-monitor', label: 'Checkpoint Monitor', labelEn: 'Checkpoint Monitor', icon: 'map-location-dot', iconColor: '#f97316', badge: 'LIVE' },
             { href: '/admin/rfid-config', label: 'ตั้งค่าจุดรับสัญญาณ', labelEn: 'Reader Config', icon: 'server' },
             { href: '/admin/chip-mapping', label: 'จับคู่บิบ/ชิป', labelEn: 'BIB/Chip Mapping', icon: 'id-card' },
             { href: '/admin/raw-data', label: 'ข้อมูลดิบ', labelEn: 'Raw Data', icon: 'database' },
