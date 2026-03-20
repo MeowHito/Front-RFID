@@ -228,10 +228,31 @@ export default function EventsPage() {
             });
             if (!res.ok) throw new Error('Failed to update');
         } catch (error) {
+            console.error('Failed to update race finished:', error);
             setCampaigns(prev => prev.map(c =>
-                c._id === campaignId ? { ...c, raceFinished: campaign.raceFinished } : c
+                c._id === campaignId ? { ...c, raceFinished: !newValue } : c
             ));
-            setToastMessage(language === 'th' ? 'เกิดข้อผิดพลาดในการอัปเดต' : 'Failed to update');
+        }
+    };
+
+    const handleToggleAutoSync = async (campaignId: string) => {
+        const campaign = campaigns.find(c => c._id === campaignId);
+        if (!campaign) return;
+        const newValue = !((campaign as any).autoSync ?? false);
+        setCampaigns(prev => prev.map(c =>
+            c._id === campaignId ? { ...c, autoSync: newValue } : c
+        ));
+        try {
+            const res = await fetch(`/api/sync/auto-sync?id=${campaignId}&enabled=${newValue}`, {
+                method: 'POST',
+            });
+            if (!res.ok) throw new Error('Failed to update auto sync');
+        } catch (error) {
+            console.error('Failed to update auto sync:', error);
+            setCampaigns(prev => prev.map(c =>
+                c._id === campaignId ? { ...c, autoSync: !newValue } : c
+            ));
+            setToastMessage(language === 'th' ? 'เกิดข้อผิดพลาดในการอัปเดต Auto Sync' : 'Failed to update Auto Sync');
         }
     };
 
@@ -467,6 +488,7 @@ export default function EventsPage() {
                                     <th className="col-mode">{language === 'th' ? 'โหมด' : 'Mode'}</th>
                                     <th className="col-cert">{language === 'th' ? 'ใบเซอร์' : 'Certificate'}</th>
                                     <th className="col-rfid">RFID Sync</th>
+                                    <th className="col-autosync">Auto Sync</th>
                                     <th className="col-finished">{language === 'th' ? 'จบแข่ง' : 'Finished'}</th>
                                     <th className="col-status">{language === 'th' ? 'สถานะ' : 'Status'}</th>
                                 </tr>
@@ -557,6 +579,17 @@ export default function EventsPage() {
                                                     checked={campaign.allowRFIDSync ?? false}
                                                     onChange={() => handleToggleSync(campaign._id, 'allowRFIDSync')}
                                                     disabled={!isAdmin}
+                                                />
+                                                <span className="toggle-slider"></span>
+                                            </label>
+                                        </td>
+                                        <td className="col-autosync">
+                                            <label className="toggle-switch small">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={(campaign as any).autoSync ?? false}
+                                                    onChange={() => handleToggleAutoSync(campaign._id)}
+                                                    disabled={!isAdmin || !campaign.allowRFIDSync}
                                                 />
                                                 <span className="toggle-slider"></span>
                                             </label>
