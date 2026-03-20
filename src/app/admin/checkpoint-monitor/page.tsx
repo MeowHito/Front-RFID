@@ -38,7 +38,7 @@ const STATUS_OPTIONS = [
 ];
 
 const FILTER_TABS = [
-    { key: 'all', label_th: 'ทั้งหมด', label_en: 'All', icon: '', activeCls: 'bg-slate-800 text-white', badgeActiveCls: 'bg-white/20 text-white' },
+    { key: 'all', label_th: 'ทั้งหมด', label_en: 'All', icon: '', activeCls: 'bg-green-300 text-black', badgeActiveCls: 'text-black' },
     { key: 'passed', label_th: 'ผ่านแล้ว', label_en: 'Passed', icon: '✓', activeCls: 'bg-green-600 text-white', badgeActiveCls: 'bg-white/20 text-white' },
     { key: 'pending', label_th: 'รอ', label_en: 'Pending', icon: '⏳', activeCls: 'bg-amber-600 text-white', badgeActiveCls: 'bg-white/20 text-white' },
     { key: 'dnf_dq', label_th: 'DNF/DQ', label_en: 'DNF/DQ', icon: '⚠', activeCls: 'bg-red-600 text-white', badgeActiveCls: 'bg-white/20 text-white' },
@@ -219,7 +219,7 @@ export default function CheckpointMonitorPage() {
                     <div className="flex items-center gap-2">
                         <span className="text-[13px] font-bold text-slate-600">{th ? 'เลือกจุด:' : 'Checkpoint:'}</span>
                         <select value={selectedCp} onChange={e => setSelectedCp(e.target.value)}
-                            className="px-3.5 py-2 rounded-[10px] border-[1.5px] border-slate-800 bg-slate-800 text-white text-[13px] font-bold cursor-pointer min-w-[200px]">
+                            className="px-3.5 py-2 rounded-[10px] border-[1.5px] border-blue-800 bg-yellow-100 text-white text-[13px] font-bold cursor-pointer min-w-[200px]">
                             {checkpoints.length === 0 && <option value="">{th ? 'ไม่มีจุดเช็คอิน' : 'No checkpoints'}</option>}
                             {checkpoints.map(cp => (
                                 <option key={cp._id} value={cp.name}>
