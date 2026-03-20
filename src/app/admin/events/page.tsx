@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useLanguage } from '@/lib/language-context';
+import { useAuth } from '@/lib/auth-context';
 import AdminLayout from '../AdminLayout';
 import RFIDDashboardModal from './RFIDDashboardModal';
 import CertificateFormModal from './CertificateFormModal';
@@ -48,7 +49,9 @@ interface Campaign {
 
 export default function EventsPage() {
     const { language } = useLanguage();
+    const { user } = useAuth();
     const router = useRouter();
+    const isAdmin = user?.role === 'admin' || user?.role === 'admin_master';
     const [campaigns, setCampaigns] = useState<Campaign[]>([]);
     const [rfidErrorCampaignIds, setRfidErrorCampaignIds] = useState<Set<string>>(new Set());
     const [loading, setLoading] = useState(true);
@@ -86,7 +89,15 @@ export default function EventsPage() {
             if (!res.ok) throw new Error('Failed to fetch');
             const json = await res.json();
             const campaignData = json?.data || json || [];
-            setCampaigns(Array.isArray(campaignData) ? campaignData : []);
+            let list = Array.isArray(campaignData) ? campaignData : [];
+            // Filter campaigns for organizer/station based on allowedCampaigns
+            if (!isAdmin && !user?.allEventsAccess && user?.allowedCampaigns && user.allowedCampaigns.length > 0) {
+                const allowed = new Set(user.allowedCampaigns);
+                list = list.filter((c: Campaign) => allowed.has(c._id));
+            } else if (!isAdmin && !user?.allEventsAccess) {
+                list = []; // No campaigns allowed
+            }
+            setCampaigns(list);
 
             const nextErrorIds = new Set<string>();
             if (syncErrorsResult.status === 'fulfilled' && syncErrorsResult.value.ok) {
@@ -137,7 +148,7 @@ export default function EventsPage() {
             loadCampaigns();
         }, 300);
         return () => clearTimeout(t);
-    }, [searchQuery]);
+    }, [searchQuery, user?.role, user?.allowedCampaigns, user?.allEventsAccess]);
 
     const formatDate = (dateString: string) => {
         const date = new Date(dateString);
@@ -424,13 +435,15 @@ export default function EventsPage() {
                     <button type="button" className="btn-query" onClick={() => loadCampaigns()}>
                         Q {language === 'th' ? 'ค้นหา' : 'Search'}
                     </button>
-                    <button
-                        className="btn-add-event"
-                        onClick={() => router.push('/admin/events/create')}
-                        title={language === 'th' ? 'สร้างกิจกรรมใหม่' : 'New event'}
-                    >
-                        <span>+</span>
-                    </button>
+                    {!!isAdmin && (
+                        <button
+                            className="btn-add-event"
+                            onClick={() => router.push('/admin/events/create')}
+                            title={language === 'th' ? 'สร้างกิจกรรมใหม่' : 'New event'}
+                        >
+                            <span>+</span>
+                        </button>
+                    )}
                 </div>
 
                 {/* Events Table */}
@@ -447,7 +460,7 @@ export default function EventsPage() {
                         <table className="data-table events-data-table">
                             <thead>
                                 <tr>
-                                    <th className="col-tools">{language === 'th' ? 'Tools' : 'Tools'}</th>
+                                    {!!isAdmin && <th className="col-tools">{language === 'th' ? 'Tools' : 'Tools'}</th>}
                                     <th className="col-id">ID</th>
                                     <th className="col-name">{language === 'th' ? 'ชื่อกิจกรรม' : 'Event Name'}</th>
                                     <th className="col-date">{language === 'th' ? 'วันที่' : 'Date'}</th>
@@ -462,9 +475,10 @@ export default function EventsPage() {
                                 {campaigns.map((campaign) => (
                                     <tr
                                         key={campaign._id}
-                                        onDoubleClick={() => router.push(`/admin/events/create?edit=${campaign._id}`)}
-                                        style={{ cursor: 'pointer' }}
+                                        onDoubleClick={!isAdmin ? undefined : () => router.push(`/admin/events/create?edit=${campaign._id}`)}
+                                        style={{ cursor: !isAdmin ? 'default' : 'pointer' }}
                                     >
+                                        {!!isAdmin && (
                                         <td className="col-tools">
                                             <div className="event-row-tools">
                                                 <button
@@ -516,6 +530,7 @@ export default function EventsPage() {
                                                 </button>
                                             </div>
                                         </td>
+                                        )}
                                         <td className="col-id">{campaign.raceId || String(campaign._id).slice(-6)}</td>
                                         <td className="col-name">{campaign.name}</td>
                                         <td className="col-date">{formatDate(campaign.eventDate)}</td>
@@ -530,6 +545,7 @@ export default function EventsPage() {
                                                     type="checkbox"
                                                     checked={campaign.isApproveCertificate ?? false}
                                                     onChange={() => handleToggleCertificate(campaign._id)}
+                                                    disabled={!isAdmin}
                                                 />
                                                 <span className="toggle-slider"></span>
                                             </label>
@@ -540,6 +556,7 @@ export default function EventsPage() {
                                                     type="checkbox"
                                                     checked={campaign.allowRFIDSync ?? false}
                                                     onChange={() => handleToggleSync(campaign._id, 'allowRFIDSync')}
+                                                    disabled={!isAdmin}
                                                 />
                                                 <span className="toggle-slider"></span>
                                             </label>
@@ -550,6 +567,7 @@ export default function EventsPage() {
                                                     type="checkbox"
                                                     checked={campaign.raceFinished ?? false}
                                                     onChange={() => handleToggleRaceFinished(campaign._id)}
+                                                    disabled={!isAdmin}
                                                 />
                                                 <span className="toggle-slider"></span>
                                             </label>
@@ -560,6 +578,7 @@ export default function EventsPage() {
                                                     type="checkbox"
                                                     checked={!campaign.isDraft}
                                                     onChange={() => handleToggleSync(campaign._id, 'isDraft')}
+                                                    disabled={!isAdmin}
                                                 />
                                                 <span className="toggle-slider"></span>
                                             </label>

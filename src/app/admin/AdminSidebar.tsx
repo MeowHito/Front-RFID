@@ -110,14 +110,56 @@ function SidebarIcon({ name, color }: { name: string; color?: string }) {
         'file-excel': <svg style={style} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="10" y1="12" x2="14" y2="18" /><line x1="14" y1="12" x2="10" y2="18" /></svg>,
         'gear': <svg style={style} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" /></svg>,
         'credit-card': <svg style={style} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="1" y="4" width="22" height="16" rx="2" /><line x1="1" y1="10" x2="23" y2="10" /><line x1="5" y1="15" x2="9" y2="15" /><line x1="13" y1="15" x2="15" y2="15" /></svg>,
+        'ranking-star': <svg style={style} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2l2.09 6.26L20 9.27l-4.91 3.82L16.18 20 12 16.77 7.82 20l1.09-6.91L4 9.27l5.91-1.01L12 2z" /></svg>,
     };
     return icons[name] || <span>•</span>;
 }
+
+// Map sidebar items to module permission keys
+const HREF_TO_MODULE: Record<string, string> = {
+    '/admin/events': '_always',
+    '/admin/events/create': '_always',
+    '/admin/checkpoints': 'checkpoints',
+    '/admin/checkpoints/create': 'checkpoints',
+    '/admin/participants': 'participants',
+    '/admin/categories': 'participants',
+    '/admin/bib-check': 'participants',
+    '/admin/id-card-import': 'participants',
+    '/admin/live-monitor': 'rfidCheckin',
+    '/admin/checkpoint-monitor': 'checkpoints',
+    '/admin/rfid-config': 'rfidCheckin',
+    '/admin/chip-mapping': 'rfidCheckin',
+    '/admin/raw-data': 'rfidCheckin',
+    '/admin/results': 'results',
+    '/admin/display': 'results',
+    '/admin/age-group-ranking': 'results',
+    '/admin/certificates': 'certificates',
+    '/admin/eslip': 'certificates',
+    '/admin/links': 'results',
+    '/admin/export': 'reports',
+    '/admin/users': 'userManagement',
+    '/admin/settings': 'settings',
+    '/admin/profile': '_always',
+};
 
 export default function AdminSidebar() {
     const pathname = usePathname();
     const { user } = useAuth();
     const { language } = useLanguage();
+
+    const isAdmin = user?.role === 'admin' || user?.role === 'admin_master';
+    const perms = user?.modulePermissions || {};
+
+    // Filter sections based on permissions
+    const sections = isAdmin ? menuSections : menuSections.map(section => {
+        const filteredItems = section.items.filter(item => {
+            const modKey = HREF_TO_MODULE[item.href];
+            if (!modKey) return false;
+            if (modKey === '_always') return true;
+            return perms[modKey]?.view === true;
+        });
+        return { ...section, items: filteredItems };
+    }).filter(section => section.items.length > 0);
 
     const isActive = (href: string) => {
         if (href.includes('?')) {
@@ -129,7 +171,7 @@ export default function AdminSidebar() {
     return (
         <aside className="main-sidebar">
             <ul className="sidebar-menu">
-                {menuSections.map((section, sIdx) => (
+                {sections.map((section, sIdx) => (
                     <div key={sIdx} className="sidebar-section">
                         <span className="sidebar-header">
                             {language === 'th' ? section.header : section.headerEn}

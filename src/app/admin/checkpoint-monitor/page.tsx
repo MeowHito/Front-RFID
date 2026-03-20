@@ -18,13 +18,14 @@ interface RunnerAtCheckpoint {
     overallRank: number;
     genderRank: number;
     categoryRank: number;
-    latestCheckpoint?: string;
+    checkpoint?: string;
+    scanTime?: string;
+    elapsedTime?: number;
+    splitTime?: number;
     netTime?: number;
     gunTime?: number;
     netPace?: string;
     gunPace?: string;
-    lastPassTime?: string;
-    passedCount?: number;
     statusNote?: string;
     statusCheckpoint?: string;
 }
@@ -37,12 +38,6 @@ const STATUS_OPTIONS = [
     { value: 'dq', label_th: 'DQ', label_en: 'DQ', tw: 'bg-pink-50 border-pink-400 text-pink-900' },
 ];
 
-const FILTER_TABS = [
-    { key: 'all', label_th: 'ทั้งหมด', label_en: 'All', icon: '', activeCls: 'bg-green-300 text-black', badgeActiveCls: 'text-black' },
-    { key: 'passed', label_th: 'ผ่านแล้ว', label_en: 'Passed', icon: '✓', activeCls: 'bg-green-600 text-white', badgeActiveCls: 'bg-white/20 text-white' },
-    { key: 'pending', label_th: 'รอ', label_en: 'Pending', icon: '⏳', activeCls: 'bg-amber-600 text-white', badgeActiveCls: 'bg-white/20 text-white' },
-    { key: 'dnf_dq', label_th: 'DNF/DQ', label_en: 'DNF/DQ', icon: '⚠', activeCls: 'bg-red-600 text-white', badgeActiveCls: 'bg-white/20 text-white' },
-];
 
 function formatMs(ms?: number): string {
     if (!ms || ms <= 0) return '-';
@@ -51,6 +46,74 @@ function formatMs(ms?: number): string {
     const m = Math.floor((totalSec % 3600) / 60);
     const s = totalSec % 60;
     return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+}
+
+function normalizeRunnerText(value?: string): string {
+    return (value || '').trim().toLowerCase();
+}
+
+function getRunnerScanTimeValue(scanTime?: string): number {
+    if (!scanTime) return Number.POSITIVE_INFINITY;
+    const value = new Date(scanTime).getTime();
+    return Number.isFinite(value) ? value : Number.POSITIVE_INFINITY;
+}
+
+function getRunnerDedupKey(runner: RunnerAtCheckpoint): string {
+    const bib = normalizeRunnerText(runner.bib);
+    if (bib) return bib;
+    return runner._id || 'unknown-runner';
+}
+
+function hasRunnerName(runner: RunnerAtCheckpoint): boolean {
+    return !!(runner.firstName || runner.lastName);
+}
+
+function dedupeCheckpointRunners(items: RunnerAtCheckpoint[]): RunnerAtCheckpoint[] {
+    const deduped = new Map<string, RunnerAtCheckpoint>();
+
+    items.forEach((runner) => {
+        const key = getRunnerDedupKey(runner);
+        const existing = deduped.get(key);
+
+        if (!existing) {
+            deduped.set(key, runner);
+            return;
+        }
+
+        const existingHasName = hasRunnerName(existing);
+        const nextHasName = hasRunnerName(runner);
+
+        if (!existingHasName && nextHasName) {
+            // Replace orphan (no name) with named record, but keep earliest scanTime
+            const existingScanTime = getRunnerScanTimeValue(existing.scanTime);
+            const nextScanTime = getRunnerScanTimeValue(runner.scanTime);
+            deduped.set(key, {
+                ...runner,
+                scanTime: existingScanTime < nextScanTime ? existing.scanTime : runner.scanTime,
+                elapsedTime: existing.elapsedTime || runner.elapsedTime,
+            });
+            return;
+        }
+
+        if (existingHasName && !nextHasName) {
+            // Keep existing (has name), use earlier scanTime if this orphan is earlier
+            const existingScanTime = getRunnerScanTimeValue(existing.scanTime);
+            const nextScanTime = getRunnerScanTimeValue(runner.scanTime);
+            if (nextScanTime < existingScanTime) {
+                deduped.set(key, { ...existing, scanTime: runner.scanTime });
+            }
+            return;
+        }
+
+        // Both have name or both orphans — keep earliest scanTime
+        const existingScanTime = getRunnerScanTimeValue(existing.scanTime);
+        const nextScanTime = getRunnerScanTimeValue(runner.scanTime);
+        if (nextScanTime < existingScanTime) {
+            deduped.set(key, { ...existing, ...runner, _id: runner._id || existing._id });
+        }
+    });
+
+    return Array.from(deduped.values());
 }
 
 export default function CheckpointMonitorPage() {
@@ -63,9 +126,8 @@ export default function CheckpointMonitorPage() {
     const [runners, setRunners] = useState<RunnerAtCheckpoint[]>([]);
     const [loading, setLoading] = useState(true);
     const [dataLoading, setDataLoading] = useState(false);
-    const [filter, setFilter] = useState('all');
     const [search, setSearch] = useState('');
-    const [sortBy, setSortBy] = useState<'scanTime' | 'bib' | 'name'>('scanTime');
+    const [sortBy, setSortBy] = useState<'arrival' | 'bib' | 'name'>('arrival');
     const [autoRefresh, setAutoRefresh] = useState(true);
     const [lastRefresh, setLastRefresh] = useState(new Date());
     const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
@@ -98,21 +160,15 @@ export default function CheckpointMonitorPage() {
             .catch(() => setCheckpoints([]));
     }, [campaign?._id]);
 
-    // Fetch runners for selected checkpoint
+    // Fetch runners who arrived at selected checkpoint (via timing records)
     const fetchRunners = useCallback(async () => {
         if (!campaign?._id || !selectedCp) return;
         setDataLoading(true);
         try {
-            const params = new URLSearchParams({
-                campaignId: campaign._id,
-                page: '1',
-                limit: '500',
-                skipStatusCounts: 'true',
-            });
-            const res = await fetch(`/api/runners/paged?${params.toString()}`, { cache: 'no-store' });
+            const res = await fetch(`/api/timing/checkpoint-by-campaign/${campaign._id}?cp=${encodeURIComponent(selectedCp)}`, { cache: 'no-store' });
             if (!res.ok) throw new Error();
             const data = await res.json();
-            setRunners(data.data || []);
+            setRunners(Array.isArray(data) ? dedupeCheckpointRunners(data) : []);
         } catch { setRunners([]); }
         finally {
             setDataLoading(false);
@@ -122,10 +178,10 @@ export default function CheckpointMonitorPage() {
 
     useEffect(() => { if (campaign?._id && selectedCp) fetchRunners(); }, [campaign?._id, selectedCp, fetchRunners]);
 
-    // Auto-refresh
+    // Auto-refresh every 10s
     useEffect(() => {
         if (autoRefresh && campaign?._id && selectedCp) {
-            intervalRef.current = setInterval(fetchRunners, 15000);
+            intervalRef.current = setInterval(fetchRunners, 10000);
         }
         return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
     }, [autoRefresh, campaign?._id, selectedCp, fetchRunners]);
@@ -161,36 +217,21 @@ export default function CheckpointMonitorPage() {
         });
     };
 
-    // Filter & search runners
+    // Search filter
     const filteredRunners = runners.filter(r => {
-        if (filter === 'passed') {
-            if (!['finished', 'in_progress'].includes(r.status) && !r.latestCheckpoint) return false;
-        } else if (filter === 'pending') {
-            if (r.status !== 'not_started' && r.latestCheckpoint) return false;
-        } else if (filter === 'dnf_dq') {
-            if (!['dnf', 'dns', 'dq'].includes(r.status)) return false;
-        }
-        if (search) {
-            const term = search.toLowerCase();
-            const name = `${r.firstName} ${r.lastName}`.toLowerCase();
-            return r.bib?.toLowerCase().includes(term) || name.includes(term);
-        }
-        return true;
+        if (!search) return true;
+        const term = search.toLowerCase();
+        const name = `${r.firstName} ${r.lastName}`.toLowerCase();
+        return r.bib?.toLowerCase().includes(term) || name.includes(term);
     });
 
-    // Sort
+    // Sort — default by arrival time (scanTime ascending)
     const sortedRunners = [...filteredRunners].sort((a, b) => {
         if (sortBy === 'bib') return (a.bib || '').localeCompare(b.bib || '', undefined, { numeric: true });
         if (sortBy === 'name') return `${a.firstName} ${a.lastName}`.localeCompare(`${b.firstName} ${b.lastName}`);
-        return (a.overallRank || 9999) - (b.overallRank || 9999);
+        // Default: arrival order (scanTime ascending)
+        return new Date(a.scanTime || 0).getTime() - new Date(b.scanTime || 0).getTime();
     });
-
-    // Count per filter
-    const countAll = runners.length;
-    const countPassed = runners.filter(r => ['finished', 'in_progress'].includes(r.status) || r.latestCheckpoint).length;
-    const countPending = runners.filter(r => r.status === 'not_started' && !r.latestCheckpoint).length;
-    const countDnf = runners.filter(r => ['dnf', 'dns', 'dq'].includes(r.status)).length;
-    const filterCounts: Record<string, number> = { all: countAll, passed: countPassed, pending: countPending, dnf_dq: countDnf };
 
     const getStatusOpt = (status: string) => STATUS_OPTIONS.find(s => s.value === status) || STATUS_OPTIONS[0];
 
@@ -230,24 +271,12 @@ export default function CheckpointMonitorPage() {
                     </div>
                 </div>
 
-                {/* Filter tabs + search */}
+                {/* Search + info bar */}
                 <div className="flex justify-between items-center mt-3.5 border-t border-slate-100 pt-3.5 gap-3 flex-wrap">
-                    <div className="flex gap-2 flex-wrap">
-                        {FILTER_TABS.map(tab => {
-                            const active = filter === tab.key;
-                            return (
-                                <button key={tab.key} onClick={() => setFilter(tab.key)}
-                                    className={`px-4 py-2 rounded-[10px] text-[13px] font-bold cursor-pointer flex items-center gap-1.5 transition-all ${
-                                        active ? tab.activeCls : 'border border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
-                                    }`}>
-                                    {tab.icon && <span>{tab.icon}</span>}
-                                    <span>{th ? tab.label_th : tab.label_en}</span>
-                                    <span className={`px-2 py-0.5 rounded text-[11px] font-extrabold ${
-                                        active ? tab.badgeActiveCls : 'bg-slate-100 text-slate-600'
-                                    }`}>{filterCounts[tab.key] || 0}</span>
-                                </button>
-                            );
-                        })}
+                    <div className="flex items-center gap-3">
+                        <span className="px-4 py-2 rounded-lg bg-green-100 text-green-800 text-[13px] font-bold">
+                            {th ? `มาถึงแล้ว` : 'Arrived'}: {runners.length} {th ? 'คน' : 'runners'}
+                        </span>
                     </div>
                     <div className="flex items-center gap-2">
                         <div className="relative">
@@ -277,9 +306,9 @@ export default function CheckpointMonitorPage() {
                         <thead className="bg-slate-50 sticky top-0 z-10">
                             <tr>
                                 <th className="px-2.5 py-3 text-center font-bold text-slate-600 w-[50px]">
-                                    <button onClick={() => setSortBy('scanTime')}
-                                        className={`bg-transparent border-none cursor-pointer font-bold text-xs ${sortBy === 'scanTime' ? 'text-green-600' : 'text-slate-600'}`}>
-                                        No.
+                                    <button onClick={() => setSortBy('arrival')}
+                                        className={`bg-transparent border-none cursor-pointer font-bold text-xs ${sortBy === 'arrival' ? 'text-green-600' : 'text-slate-600'}`}>
+                                        {th ? 'อันดับ' : 'Rank'}
                                     </button>
                                 </th>
                                 <th className="px-2.5 py-3 text-center font-bold text-slate-600 w-[70px]">
@@ -296,7 +325,10 @@ export default function CheckpointMonitorPage() {
                                 </th>
                                 <th className="px-2.5 py-3 text-center font-bold text-slate-600 w-[60px]">Cat.</th>
                                 <th className="px-2.5 py-3 text-center font-bold text-slate-600 w-[100px]">
-                                    {th ? 'เวลา' : 'Time'}
+                                    {th ? 'เวลาที่ถึงจุด' : 'Arrival Time'}
+                                </th>
+                                <th className="px-2.5 py-3 text-center font-bold text-slate-600 w-[100px]">
+                                    {th ? 'เวลาสะสม' : 'Elapsed'}
                                 </th>
                                 <th className="px-2.5 py-3 text-center font-bold text-slate-600 w-[70px]">Pace</th>
                                 <th className="px-2.5 py-3 text-center font-bold text-slate-600 w-[140px]">
@@ -306,16 +338,16 @@ export default function CheckpointMonitorPage() {
                         </thead>
                         <tbody>
                             {dataLoading && sortedRunners.length === 0 ? (
-                                <tr><td colSpan={7} className="p-10 text-center text-slate-400">{th ? 'กำลังโหลด...' : 'Loading...'}</td></tr>
+                                <tr><td colSpan={8} className="p-10 text-center text-slate-400">{th ? 'กำลังโหลด...' : 'Loading...'}</td></tr>
                             ) : sortedRunners.length === 0 ? (
-                                <tr><td colSpan={7} className="p-10 text-center text-slate-400">{th ? 'ไม่พบข้อมูลนักกีฬา' : 'No runners found'}</td></tr>
-                            ) : sortedRunners.map((r, idx) => {
+                                <tr><td colSpan={8} className="p-10 text-center text-slate-400">{th ? 'ยังไม่มีนักกีฬาถึงจุดนี้' : 'No runners arrived at this checkpoint yet'}</td></tr>
+                            ) : sortedRunners.map((r, idx) => { const rowKey = r._id ? `${r._id}-${idx}` : `row-${idx}`;
                                 const isDnf = ['dnf', 'dns', 'dq'].includes(r.status);
                                 const isFinished = r.status === 'finished';
                                 const statusOpt = getStatusOpt(r.status);
                                 const rowCls = isDnf ? 'bg-red-50' : isFinished ? 'bg-green-50' : idx === 0 ? 'bg-amber-50' : 'bg-white';
                                 return (
-                                    <tr key={r._id} className={`border-b border-slate-100 transition-colors ${rowCls}`}>
+                                    <tr key={rowKey} className={`border-b border-slate-100 transition-colors ${rowCls}`}>
                                         <td className="p-2.5 text-center">
                                             <span className={`font-bold text-sm ${isDnf ? 'text-red-600' : 'text-slate-400'}`}>
                                                 {isDnf ? '-' : idx + 1}
@@ -339,22 +371,14 @@ export default function CheckpointMonitorPage() {
                                         <td className="p-2.5 text-center text-[11px] font-medium text-slate-500">
                                             {r.category || '-'}
                                         </td>
+                                        <td className="p-2.5 text-center text-[12px] font-mono text-slate-600">
+                                            {r.scanTime ? new Date(r.scanTime).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '-'}
+                                        </td>
                                         <td className={`p-2.5 text-center font-bold text-[13px] ${isDnf ? 'text-red-600' : 'text-slate-900'}`}>
-                                            {isDnf ? (r.statusCheckpoint ? `Out at ${r.statusCheckpoint}` : '-') : formatMs(r.netTime || r.gunTime)}
+                                            {isDnf ? (r.statusCheckpoint ? `Out at ${r.statusCheckpoint}` : '-') : formatMs(r.elapsedTime || r.netTime || r.gunTime)}
                                         </td>
                                         <td className="p-2.5 text-center text-[11px] text-slate-500">
                                             {isDnf ? '-' : (r.netPace || r.gunPace || '-')}
-                                        </td>
-                                        <td className="p-2.5 text-center">
-                                            <select
-                                                value={r.status}
-                                                onChange={e => handleStatusChange(r._id, e.target.value)}
-                                                className={`w-full px-2 py-1.5 rounded-md border-[1.5px] text-[11px] font-bold cursor-pointer outline-none ${statusOpt.tw}`}>
-                                                <option value="not_started">{th ? 'ยังไม่เริ่ม' : 'Not Started'}</option>
-                                                {STATUS_OPTIONS.map(opt => (
-                                                    <option key={opt.value} value={opt.value}>{th ? opt.label_th : opt.label_en}</option>
-                                                ))}
-                                            </select>
                                         </td>
                                     </tr>
                                 );

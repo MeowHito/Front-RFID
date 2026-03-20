@@ -88,7 +88,7 @@ export default function AgeGroupRankingPage() {
                         {/* Header */}
                         <div className="mb-6">
                             <h1 className="text-xl font-bold text-gray-800 flex items-center gap-2">
-                                <i className="fas fa-ranking-star text-amber-500" />
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2"><path d="M12 2l2.09 6.26L20 9.27l-4.91 3.82L16.18 20 12 16.77 7.82 20l1.09-6.91L4 9.27l5.91-1.01L12 2z" /></svg>
                                 {language === 'th' ? 'ตั้งค่าอันดับกลุ่มอายุ' : 'Age Group Ranking Settings'}
                             </h1>
                             <p className="text-sm text-gray-500 mt-1">

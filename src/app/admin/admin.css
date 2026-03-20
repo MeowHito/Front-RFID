@@ -1,4 +1,4 @@
-/* Admin Panel Styles - AdminLTE Flat UI */
+﻿/* Admin Panel Styles - AdminLTE Flat UI */
 
 /* Force light mode for ALL admin pages — override dark mode */
 .admin-container,
@@ -52,12 +52,12 @@
 
 /* CSS Variables for AdminLTE Theme */
 :root {
-    --header-bg: #00a65a;
+    --header-bg: #2563eb;
     --header-text: #ffffff;
-    --sidebar-bg: #1e293b;
-    --sidebar-text: #e2e8f0;
-    --sidebar-active-bg: #334155;
-    --sidebar-active-border: #22c55e;
+    --sidebar-bg: #ffffff;
+    --sidebar-text: #374151;
+    --sidebar-active-bg: #f0fdf4;
+    --sidebar-active-border: #166534;
     --content-bg: #ecf0f5;
     --table-header-bg: #f5f7fa;
     --border-color: #d2d6de;
@@ -385,7 +385,7 @@
 }
 
 /* ==================== */
-/* Sidebar - AdminLTE Dark */
+/* Sidebar - White with green active */
 /* ==================== */
 
 .main-sidebar {
@@ -398,6 +398,7 @@
     padding-top: 0;
     flex-shrink: 0;
     min-height: calc(100vh - 50px);
+    border-right: 1px solid #e5e7eb;
 }
 
 /* Legacy sidebar compat */
@@ -465,14 +466,14 @@
 }
 
 .sidebar-link:hover {
-    background-color: var(--sidebar-active-bg);
-    color: #fff;
+    background-color: #f3f4f6;
+    color: var(--sidebar-active-border);
     border-left-color: var(--sidebar-active-border);
 }
 
 .sidebar-link.active {
     background-color: var(--sidebar-active-bg);
-    color: #fff;
+    color: var(--sidebar-active-border);
     border-left-color: var(--sidebar-active-border);
 }
 
@@ -490,13 +491,13 @@
 .sidebar-header {
     padding: 10px 15px;
     font-size: 10px;
-    color: #94a3b8;
-    background: #0f172a;
+    color: #9ca3af;
+    background: #f9fafb;
     text-transform: uppercase;
-    font-weight: 700;
+    font-weight: 600;
     letter-spacing: 0.6px;
     list-style: none;
-    border-top: 1px solid rgba(255, 255, 255, 0.06);
+    border-top: 1px solid #e5e7eb;
 }
 
 .sidebar-menu li a {
@@ -508,20 +509,20 @@
     border-left: 3px solid transparent;
     transition: all 0.15s ease;
     font-size: 12.5px;
-    font-weight: 500;
+    font-weight: 400;
 }
 
 .sidebar-menu li a:hover {
-    background-color: var(--sidebar-active-bg);
-    color: #fff;
+    background-color: #f3f4f6;
+    color: var(--sidebar-active-border);
     border-left-color: var(--sidebar-active-border);
 }
 
 .sidebar-menu li.active a {
     background-color: var(--sidebar-active-bg);
-    color: #fff;
+    color: var(--sidebar-active-border);
     border-left-color: var(--sidebar-active-border);
-    font-weight: 600;
+    font-weight: 500;
 }
 
 .sidebar-icon {

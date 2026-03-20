@@ -18,7 +18,7 @@ interface User {
     createdAt?: string;
 }
 
-const ROLE_OPTIONS = ['user', 'organizer', 'station', 'admin'];
+const ROLE_OPTIONS = ['organizer', 'station', 'admin'];
 
 const ROLE_LABELS: Record<string, { th: string; en: string; color: string; bg: string }> = {
     admin_master: { th: 'Admin Master', en: 'Admin Master', color: '#9333ea', bg: '#f3e8ff' },
@@ -49,6 +49,15 @@ export default function UsersPage() {
         oldRole: string;
         emailInput: string;
     } | null>(null);
+
+    // Delete confirmation popup state
+    const [deletePopup, setDeletePopup] = useState<{
+        userId: string;
+        userName: string;
+        userEmail: string;
+        emailInput: string;
+    } | null>(null);
+    const [deleting, setDeleting] = useState(false);
 
     // Toast notification
     const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
@@ -137,8 +146,30 @@ export default function UsersPage() {
         setConfirmPopup(null);
     };
 
-    // Filter users by search
+    const handleDeleteUser = async () => {
+        if (!deletePopup || deletePopup.emailInput !== deletePopup.userEmail) return;
+        setDeleting(true);
+        try {
+            const res = await fetch(`/api/users/${deletePopup.userId}`, { method: 'DELETE' });
+            if (!res.ok) {
+                const err = await res.json();
+                throw new Error(err.message || 'Failed to delete user');
+            }
+            setUsers(prev => prev.filter(u => u._id !== deletePopup.userId));
+            setToast({ message: language === 'th' ? 'ลบผู้ใช้สำเร็จ' : 'User deleted successfully', type: 'success' });
+        } catch (error: any) {
+            setToast({ message: error.message || (language === 'th' ? 'เกิดข้อผิดพลาด' : 'An error occurred'), type: 'error' });
+        } finally {
+            setDeleting(false);
+            setDeletePopup(null);
+        }
+    };
+
+    const isCurrentUserAdmin = currentUser?.role === 'admin' || currentUser?.role === 'admin_master';
+
+    // Filter users by search + hide admin from non-admin
     const filteredUsers = users.filter(u => {
+        if (!isCurrentUserAdmin && (u.role === 'admin' || u.role === 'admin_master')) return false;
         if (!searchTerm) return true;
         const term = searchTerm.toLowerCase();
         return (
@@ -288,7 +319,7 @@ export default function UsersPage() {
                                                             minWidth: 120,
                                                         }}
                                                     >
-                                                        {ROLE_OPTIONS.map(r => (
+                                                        {ROLE_OPTIONS.filter(r => isCurrentUserAdmin || r !== 'admin').map(r => (
                                                             <option key={r} value={r}>
                                                                 {ROLE_LABELS[r]?.[language === 'th' ? 'th' : 'en'] || r}
                                                             </option>
@@ -322,16 +353,30 @@ export default function UsersPage() {
                                                 </span>
                                             </td>
                                             <td>
-                                                <button
-                                                    onClick={() => router.push(`/admin/users/create?edit=${u._id}`)}
-                                                    style={{
-                                                        padding: '5px 12px', borderRadius: 8, border: '1px solid #e2e8f0',
-                                                        background: '#f8fafc', color: '#475569', fontSize: 11, fontWeight: 600,
-                                                        cursor: 'pointer', whiteSpace: 'nowrap',
-                                                    }}
-                                                >
-                                                    {language === 'th' ? '✏️ แก้ไข' : '✏️ Edit'}
-                                                </button>
+                                                <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                                                    <button
+                                                        onClick={() => router.push(`/admin/users/create?edit=${u._id}`)}
+                                                        style={{
+                                                            padding: '5px 12px', borderRadius: 8, border: '1px solid #e2e8f0',
+                                                            background: '#f8fafc', color: '#475569', fontSize: 11, fontWeight: 600,
+                                                            cursor: 'pointer', whiteSpace: 'nowrap',
+                                                        }}
+                                                    >
+                                                        {language === 'th' ? '✏️ แก้ไข' : '✏️ Edit'}
+                                                    </button>
+                                                    {canEdit && u.role !== 'admin' && u.role !== 'admin_master' && isCurrentUserAdmin && (
+                                                        <button
+                                                            onClick={() => setDeletePopup({ userId: u._id, userName: `${u.firstName} ${u.lastName}`.trim(), userEmail: u.email, emailInput: '' })}
+                                                            style={{
+                                                                padding: '5px 10px', borderRadius: 8, border: '1px solid #fecaca',
+                                                                background: '#fef2f2', color: '#dc2626', fontSize: 11, fontWeight: 600,
+                                                                cursor: 'pointer', whiteSpace: 'nowrap',
+                                                            }}
+                                                        >
+                                                            {language === 'th' ? 'ลบ' : 'Delete'}
+                                                        </button>
+                                                    )}
+                                                </div>
                                             </td>
                                         </tr>
                                     );
@@ -444,6 +489,95 @@ export default function UsersPage() {
                                 }}
                             >
                                 {language === 'th' ? '✅ ยืนยันให้เป็น Admin' : '✅ Confirm Admin'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Delete Confirmation Popup */}
+            {deletePopup && (
+                <div style={{
+                    position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999,
+                }} onClick={() => setDeletePopup(null)}>
+                    <div style={{
+                        background: '#fff', borderRadius: 20, padding: '32px 28px', maxWidth: 440, width: '90%',
+                        boxShadow: '0 25px 50px rgba(0,0,0,0.25)',
+                    }} onClick={(e) => e.stopPropagation()}>
+                        <div style={{ textAlign: 'center', marginBottom: 20 }}>
+                            <div style={{ fontSize: 40, marginBottom: 8 }}>
+                                <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#dc2626" strokeWidth="2" style={{ display: 'inline' }}>
+                                    <polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                                    <line x1="10" y1="11" x2="10" y2="17" /><line x1="14" y1="11" x2="14" y2="17" />
+                                </svg>
+                            </div>
+                            <h3 style={{ fontSize: 18, fontWeight: 800, color: '#0f172a', margin: '0 0 6px' }}>
+                                {language === 'th' ? 'ยืนยันการลบผู้ใช้' : 'Confirm Delete User'}
+                            </h3>
+                            <p style={{ fontSize: 13, color: '#64748b', margin: 0 }}>
+                                {language === 'th'
+                                    ? `กรุณาพิมพ์อีเมลของ "${deletePopup.userName}" เพื่อยืนยันการลบ`
+                                    : `Please type the email of "${deletePopup.userName}" to confirm deletion`
+                                }
+                            </p>
+                        </div>
+                        <div style={{
+                            background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 12, padding: '12px 16px',
+                            marginBottom: 16, fontSize: 12, color: '#dc2626', fontWeight: 600,
+                        }}>
+                            {language === 'th'
+                                ? 'การลบผู้ใช้จะไม่สามารถกู้คืนได้ โปรดตรวจสอบให้แน่ใจ'
+                                : 'This action cannot be undone. Please verify carefully.'}
+                        </div>
+                        <div style={{ marginBottom: 8, fontSize: 12, fontWeight: 700, color: '#64748b' }}>
+                            {language === 'th' ? 'พิมพ์อีเมล:' : 'Type email:'}
+                            <span style={{ color: '#94a3b8', fontWeight: 400, marginLeft: 6 }}>{deletePopup.userEmail}</span>
+                        </div>
+                        <input
+                            type="email"
+                            placeholder={deletePopup.userEmail}
+                            value={deletePopup.emailInput}
+                            onChange={(e) => setDeletePopup(prev => prev ? { ...prev, emailInput: e.target.value } : null)}
+                            autoFocus
+                            style={{
+                                width: '100%', padding: '12px 14px', borderRadius: 10,
+                                border: deletePopup.emailInput === deletePopup.userEmail
+                                    ? '2px solid #dc2626' : '1.5px solid #e2e8f0',
+                                fontSize: 14, outline: 'none', boxSizing: 'border-box',
+                            }}
+                        />
+                        {deletePopup.emailInput.length > 0 && deletePopup.emailInput !== deletePopup.userEmail && (
+                            <p style={{ fontSize: 11, color: '#ef4444', marginTop: 6, fontWeight: 600 }}>
+                                {language === 'th' ? 'อีเมลไม่ตรงกัน' : 'Email does not match'}
+                            </p>
+                        )}
+                        <div style={{ display: 'flex', gap: 10, marginTop: 20 }}>
+                            <button
+                                onClick={() => setDeletePopup(null)}
+                                style={{
+                                    flex: 1, padding: '12px 0', borderRadius: 12,
+                                    border: '1.5px solid #e2e8f0', background: '#fff',
+                                    color: '#64748b', fontWeight: 700, fontSize: 14, cursor: 'pointer',
+                                }}
+                            >
+                                {language === 'th' ? 'ยกเลิก' : 'Cancel'}
+                            </button>
+                            <button
+                                onClick={handleDeleteUser}
+                                disabled={deletePopup.emailInput !== deletePopup.userEmail || deleting}
+                                style={{
+                                    flex: 1, padding: '12px 0', borderRadius: 12, border: 'none',
+                                    background: deletePopup.emailInput === deletePopup.userEmail
+                                        ? 'linear-gradient(135deg, #dc2626, #b91c1c)' : '#e2e8f0',
+                                    color: deletePopup.emailInput === deletePopup.userEmail ? '#fff' : '#94a3b8',
+                                    fontWeight: 700, fontSize: 14,
+                                    cursor: deletePopup.emailInput === deletePopup.userEmail ? 'pointer' : 'not-allowed',
+                                }}
+                            >
+                                {deleting
+                                    ? (language === 'th' ? 'กำลังลบ...' : 'Deleting...')
+                                    : (language === 'th' ? 'ยืนยันลบผู้ใช้' : 'Delete User')}
                             </button>
                         </div>
                     </div>

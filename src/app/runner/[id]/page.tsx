@@ -61,6 +61,8 @@ interface CampaignData {
     categories?: Array<{ name: string; distance: string; badgeColor: string }>;
     eslipTemplate?: string;
     displayMode?: string;
+    isApproveCertificate?: boolean;
+    certLayout?: any;
 }
 
 interface CheckpointMappingData {
@@ -286,9 +288,17 @@ export default function RunnerProfilePage() {
                             ติดตามนักวิ่ง
                         </button>
                         {isFinished ? (
-                            <Link href={`/runner/${runnerId}/eslip`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, background: '#16a34a', color: '#fff', padding: '10px 24px', borderRadius: 12, fontWeight: 700, fontSize: 14, textDecoration: 'none', border: 'none', cursor: 'pointer' }}>
-                                ✅ Finished — ดู E-Slip
-                            </Link>
+                            <>
+                                <Link href={`/runner/${runnerId}/eslip`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, background: '#16a34a', color: '#fff', padding: '10px 24px', borderRadius: 12, fontWeight: 700, fontSize: 14, textDecoration: 'none', border: 'none', cursor: 'pointer' }}>
+                                    ✅ Finished — ดู E-Slip
+                                </Link>
+                                {campaign?.isApproveCertificate && (
+                                    <Link href={`/runner/${runnerId}/certificate`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, background: '#2563eb', color: '#fff', padding: '10px 24px', borderRadius: 12, fontWeight: 700, fontSize: 14, textDecoration: 'none', border: 'none', cursor: 'pointer' }}>
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="12" y1="18" x2="12" y2="12" /><polyline points="9 15 12 18 15 15" /></svg>
+                                        ดาวน์โหลดใบประกาศ
+                                    </Link>
+                                )}
+                            </>
                         ) : (
                             <div style={{ background: '#f1f5f9', color: '#94a3b8', padding: '10px 24px', borderRadius: 12, fontWeight: 700, fontSize: 13, textAlign: 'center', border: '1px solid #e2e8f0' }}>
                                 ⏳ ยังวิ่งไม่จบ

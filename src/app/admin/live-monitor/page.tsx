@@ -242,11 +242,275 @@ export default function LiveMonitorPage() {
                         )}
                     </div>
 
+                    {/* Live Announcer (Auto TTS for checkpoint arrivals) */}
+                    <LiveAnnouncerPanel campaign={campaign} recentScans={recentScans} runnerMap={runnerMap} language={language} />
+
                     {/* AI MC Panel */}
                     <AiMcPanel campaign={campaign} runnerMap={runnerMap} language={language} />
                 </>
             )}
         </AdminLayout>
+    );
+}
+
+/* ==================== Live Announcer Panel ==================== */
+
+function LiveAnnouncerPanel({ campaign, recentScans, runnerMap, language }: {
+    campaign: Campaign; recentScans: TimingRecord[]; runnerMap: Record<string, any>; language: string;
+}) {
+    const [collapsed, setCollapsed] = useState(false);
+    const [enabled, setEnabled] = useState(false);
+    const [cpFilter, setCpFilter] = useState('FINISH');
+    const [announcedIds, setAnnouncedIds] = useState<Set<string>>(new Set());
+    const [announceLog, setAnnounceLog] = useState<Array<{ id: string; bib: string; name: string; cp: string; time: string }>>([]);
+    const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
+    const [selectedVoiceIdx, setSelectedVoiceIdx] = useState(0);
+    const [rate, setRate] = useState(1.0);
+    const [volume, setVolume] = useState(1.0);
+    const [speaking, setSpeaking] = useState(false);
+    const queueRef = useRef<string[]>([]);
+    const speakingRef = useRef(false);
+    const th = language === 'th';
+
+    useEffect(() => {
+        function loadVoices() {
+            const v = window.speechSynthesis.getVoices();
+            if (v.length > 0) {
+                setVoices(v);
+                const thaiIdx = v.findIndex(voice => voice.lang.startsWith('th'));
+                if (thaiIdx >= 0) setSelectedVoiceIdx(thaiIdx);
+            }
+        }
+        loadVoices();
+        window.speechSynthesis.onvoiceschanged = loadVoices;
+        return () => { window.speechSynthesis.onvoiceschanged = null; };
+    }, []);
+
+    const speakText = useCallback((text: string) => {
+        return new Promise<void>((resolve) => {
+            const utterance = new SpeechSynthesisUtterance(text);
+            if (voices[selectedVoiceIdx]) utterance.voice = voices[selectedVoiceIdx];
+            utterance.rate = rate;
+            utterance.volume = volume;
+            utterance.lang = voices[selectedVoiceIdx]?.lang || 'th-TH';
+            utterance.onstart = () => { setSpeaking(true); speakingRef.current = true; };
+            utterance.onend = () => { setSpeaking(false); speakingRef.current = false; resolve(); };
+            utterance.onerror = (e) => {
+                if (e.error !== 'interrupted' && e.error !== 'canceled') console.warn('TTS error:', e.error);
+                setSpeaking(false); speakingRef.current = false; resolve();
+            };
+            window.speechSynthesis.speak(utterance);
+        });
+    }, [voices, selectedVoiceIdx, rate, volume]);
+
+    const processQueue = useCallback(async () => {
+        if (speakingRef.current || queueRef.current.length === 0) return;
+        const text = queueRef.current.shift()!;
+        await speakText(text);
+        if (queueRef.current.length > 0) {
+            setTimeout(() => processQueue(), 300);
+        }
+    }, [speakText]);
+
+    // Watch for new scans matching filter and auto-announce
+    useEffect(() => {
+        if (!enabled) return;
+        const matchingScans = recentScans.filter(sc => {
+            if (cpFilter !== 'ALL' && sc.checkpoint?.toUpperCase() !== cpFilter.toUpperCase()) return false;
+            return !announcedIds.has(sc._id);
+        });
+
+        if (matchingScans.length === 0) return;
+
+        const newIds = new Set(announcedIds);
+        const newLogs: typeof announceLog = [];
+
+        for (const scan of matchingScans) {
+            newIds.add(scan._id);
+            const runner = runnerMap[scan.runnerId];
+            const name = runner ? `${runner.firstName || ''} ${runner.lastName || ''}`.trim() : `BIB ${scan.bib}`;
+            const isFinish = scan.checkpoint?.toUpperCase() === 'FINISH';
+
+            let announcement: string;
+            if (isFinish) {
+                announcement = th
+                    ? `หมายเลข ${scan.bib} ${name} เข้าเส้นชัยแล้วครับ`
+                    : `Number ${scan.bib}, ${name}, has finished!`;
+            } else {
+                announcement = th
+                    ? `หมายเลข ${scan.bib} ${name} ผ่านจุด ${scan.checkpoint} แล้วครับ`
+                    : `Number ${scan.bib}, ${name}, passed checkpoint ${scan.checkpoint}`;
+            }
+
+            queueRef.current.push(announcement);
+            newLogs.push({
+                id: scan._id,
+                bib: scan.bib,
+                name,
+                cp: scan.checkpoint,
+                time: new Date(scan.scanTime).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+            });
+        }
+
+        setAnnouncedIds(newIds);
+        setAnnounceLog(prev => [...newLogs, ...prev].slice(0, 100));
+        processQueue();
+    }, [recentScans, enabled, cpFilter, announcedIds, runnerMap, th, processQueue]);
+
+    const stopSpeaking = () => {
+        window.speechSynthesis.cancel();
+        queueRef.current = [];
+        setSpeaking(false);
+        speakingRef.current = false;
+    };
+
+    const clearLog = () => {
+        setAnnounceLog([]);
+        setAnnouncedIds(new Set());
+    };
+
+    const voiceLabel = (v: SpeechSynthesisVoice) => {
+        const flag = v.lang.startsWith('th') ? '🇹🇭' : v.lang.startsWith('en') ? '🇬🇧' : '🌐';
+        return `${flag} ${v.name} (${v.lang})`;
+    };
+
+    return (
+        <div className="content-box mt-4 overflow-hidden">
+            <div onClick={() => setCollapsed(c => !c)}
+                className="px-4 py-3.5 cursor-pointer flex items-center justify-between bg-gradient-to-r from-green-500/5 to-emerald-500/5 select-none border-b border-gray-100">
+                <div className="flex items-center gap-2.5">
+                    <span className="text-[22px]">📢</span>
+                    <span className="font-extrabold text-[15px] text-slate-800">
+                        {th ? 'ประกาศอัตโนมัติ (Auto Announcer)' : 'Live Auto Announcer'}
+                    </span>
+                    {enabled && (
+                        <span className="text-[11px] font-bold text-green-600 bg-green-50 px-2.5 py-0.5 rounded-full animate-pulse">
+                            🟢 {th ? 'กำลังทำงาน' : 'Active'}
+                        </span>
+                    )}
+                    {speaking && (
+                        <span className="text-[11px] font-bold text-violet-600 bg-violet-50 px-2.5 py-0.5 rounded-full animate-pulse">
+                            🔊 {th ? 'กำลังพูด...' : 'Speaking...'}
+                        </span>
+                    )}
+                </div>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#999" strokeWidth="2.5"
+                    className={`transition-transform duration-200 ${collapsed ? '-rotate-90' : 'rotate-0'}`}>
+                    <polyline points="6 9 12 15 18 9" />
+                </svg>
+            </div>
+
+            {!collapsed && (
+                <div className="p-4 space-y-4">
+                    {/* Controls */}
+                    <div className="flex items-center gap-3 flex-wrap p-3.5 rounded-xl bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200">
+                        <label className="flex items-center gap-2 cursor-pointer">
+                            <div
+                                onClick={() => setEnabled(e => !e)}
+                                className={`relative w-12 h-6 rounded-full transition-colors cursor-pointer ${enabled ? 'bg-green-500' : 'bg-gray-300'}`}
+                            >
+                                <div className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${enabled ? 'translate-x-6' : 'translate-x-0.5'}`} />
+                            </div>
+                            <span className="text-[13px] font-bold text-slate-700">
+                                {th ? 'เปิดประกาศอัตโนมัติ' : 'Auto-announce'}
+                            </span>
+                        </label>
+
+                        <div className="flex items-center gap-1.5">
+                            <span className="text-[11px] font-bold text-slate-500">{th ? 'จุด:' : 'CP:'}</span>
+                            <select value={cpFilter} onChange={e => setCpFilter(e.target.value)}
+                                className="px-2.5 py-1.5 rounded-lg border border-gray-300 text-xs font-bold outline-none">
+                                <option value="ALL">{th ? 'ทุกจุด' : 'All CPs'}</option>
+                                <option value="FINISH">{th ? 'เส้นชัย' : 'Finish'}</option>
+                                <option value="START">Start</option>
+                                {(campaign.categories || []).map((cat, i) => (
+                                    <option key={i} value={`CP${i + 1}`}>CP{i + 1}</option>
+                                ))}
+                            </select>
+                        </div>
+
+                        {speaking && (
+                            <button onClick={stopSpeaking}
+                                className="px-3.5 py-1.5 rounded-lg border-2 border-red-400 bg-red-50 text-red-600 font-bold text-[12px] cursor-pointer">
+                                ⏹️ {th ? 'หยุดพูด' : 'Stop'}
+                            </button>
+                        )}
+
+                        <button onClick={clearLog}
+                            className="px-3 py-1.5 rounded-lg border border-gray-200 bg-white text-slate-500 text-[11px] font-bold cursor-pointer hover:bg-gray-50">
+                            🗑️ {th ? 'ล้างประวัติ' : 'Clear log'}
+                        </button>
+
+                        <span className="text-[11px] text-gray-400 ml-auto">
+                            {th ? `ประกาศแล้ว ${announceLog.length} คน` : `${announceLog.length} announced`}
+                        </span>
+                    </div>
+
+                    {/* Voice settings */}
+                    <div className="grid grid-cols-3 gap-3">
+                        <div>
+                            <label className="text-[11px] font-bold text-slate-500 mb-1 block">
+                                🗣️ {th ? 'เสียง' : 'Voice'}
+                            </label>
+                            <select value={selectedVoiceIdx} onChange={e => setSelectedVoiceIdx(Number(e.target.value))}
+                                className="w-full px-2.5 py-2 rounded-lg border border-gray-300 text-xs outline-none">
+                                {voices.map((v, i) => (
+                                    <option key={i} value={i}>{voiceLabel(v)}</option>
+                                ))}
+                            </select>
+                        </div>
+                        <div>
+                            <label className="text-[11px] font-bold text-slate-500 mb-1 block">
+                                ⏩ {th ? 'ความเร็ว' : 'Speed'} ({rate.toFixed(1)})
+                            </label>
+                            <input type="range" min="0.5" max="2" step="0.1" value={rate}
+                                onChange={e => setRate(Number(e.target.value))}
+                                className="w-full accent-green-600" />
+                        </div>
+                        <div>
+                            <label className="text-[11px] font-bold text-slate-500 mb-1 block">
+                                🔊 {th ? 'ความดัง' : 'Volume'} ({Math.round(volume * 100)}%)
+                            </label>
+                            <input type="range" min="0" max="1" step="0.1" value={volume}
+                                onChange={e => setVolume(Number(e.target.value))}
+                                className="w-full accent-green-600" />
+                        </div>
+                    </div>
+
+                    {/* Announce Log */}
+                    <div className="rounded-xl border border-gray-200 overflow-hidden">
+                        <div className="px-3.5 py-2 bg-gray-50 border-b border-gray-200 flex items-center gap-2">
+                            <span className="text-[12px] font-bold text-slate-600">
+                                📋 {th ? 'ประวัติการประกาศ' : 'Announcement Log'}
+                            </span>
+                        </div>
+                        {announceLog.length === 0 ? (
+                            <div className="p-6 text-center text-gray-400 text-sm">
+                                {enabled
+                                    ? (th ? 'รอนักกีฬาผ่านจุดเช็คอิน...' : 'Waiting for runners to pass checkpoint...')
+                                    : (th ? 'เปิดสวิตช์ด้านบนเพื่อเริ่มประกาศอัตโนมัติ' : 'Turn on the switch above to start auto-announcing')
+                                }
+                            </div>
+                        ) : (
+                            <div className="max-h-[300px] overflow-y-auto">
+                                {announceLog.map((log, i) => (
+                                    <div key={log.id} className={`flex items-center gap-3 px-3.5 py-2 border-b border-gray-100 text-[13px] ${i === 0 ? 'bg-green-50' : ''}`}>
+                                        <span className={`px-2 py-0.5 rounded text-[11px] font-bold min-w-[60px] text-center ${
+                                            log.cp.toUpperCase() === 'FINISH' ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-500'
+                                        }`}>
+                                            {log.cp}
+                                        </span>
+                                        <span className="font-extrabold text-sky-600 min-w-[50px]">{log.bib}</span>
+                                        <span className="flex-1 font-semibold text-slate-700">{log.name}</span>
+                                        <span className="text-[11px] text-gray-400 font-mono">{log.time}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
+        </div>
     );
 }
 

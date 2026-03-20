@@ -13,6 +13,9 @@ interface User {
     role: string;
     phone?: string;
     avatarUrl?: string;
+    allEventsAccess?: boolean;
+    allowedCampaigns?: string[];
+    modulePermissions?: Record<string, { view: boolean; create: boolean; delete: boolean; export: boolean }>;
 }
 
 interface RegisterData {
@@ -124,6 +127,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                     avatarUrl: freshData.avatarUrl || user.avatarUrl,
                     email: freshData.email || user.email,
                     role: freshData.role || user.role,
+                    allEventsAccess: freshData.allEventsAccess ?? user.allEventsAccess,
+                    allowedCampaigns: freshData.allowedCampaigns || user.allowedCampaigns,
+                    modulePermissions: freshData.modulePermissions || user.modulePermissions,
                 };
                 localStorage.setItem('auth_user', JSON.stringify(updatedUser));
                 setUser(updatedUser);

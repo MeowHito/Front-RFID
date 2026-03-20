@@ -16,7 +16,6 @@ interface ModulePerm {
     view: boolean;
     create: boolean;
     delete: boolean;
-    export: boolean;
 }
 
 const MODULE_DEFS = [
@@ -36,31 +35,31 @@ const ROLE_TEMPLATES: Record<string, { label_th: string; label_en: string; perms
     checkin_staff: {
         label_th: 'เจ้าหน้าที่จุด Check-in (RFID)', label_en: 'Check-in Staff (RFID)',
         perms: {
-            participants: { view: true, create: false, delete: false, export: false },
-            checkpoints: { view: true, create: false, delete: false, export: false },
-            rfidCheckin: { view: true, create: true, delete: false, export: false },
+            participants: { view: true, create: false, delete: false },
+            checkpoints: { view: true, create: false, delete: false },
+            rfidCheckin: { view: true, create: true, delete: false },
         },
     },
     photo_admin: {
         label_th: 'เจ้าหน้าที่ตรวจรูปถ่าย (Photo Admin)', label_en: 'Photo Admin',
         perms: {
-            participants: { view: true, create: false, delete: false, export: false },
-            photos: { view: true, create: true, delete: true, export: true },
+            participants: { view: true, create: false, delete: false },
+            photos: { view: true, create: true, delete: true },
         },
     },
     organizer_readonly: {
         label_th: 'ผู้จัดงาน (Organizer - Read Only)', label_en: 'Organizer (Read Only)',
         perms: {
-            participants: { view: true, create: false, delete: false, export: true },
-            checkpoints: { view: true, create: false, delete: false, export: false },
-            reports: { view: true, create: false, delete: false, export: true },
-            results: { view: true, create: false, delete: false, export: true },
-            certificates: { view: true, create: false, delete: false, export: true },
+            participants: { view: true, create: false, delete: false },
+            checkpoints: { view: true, create: false, delete: false },
+            reports: { view: true, create: false, delete: false },
+            results: { view: true, create: false, delete: false },
+            certificates: { view: true, create: false, delete: false },
         },
     },
 };
 
-const DEFAULT_PERM: ModulePerm = { view: false, create: false, delete: false, export: false };
+const DEFAULT_PERM: ModulePerm = { view: false, create: false, delete: false };
 
 function CreateUserContent() {
     const { language } = useLanguage();
@@ -419,11 +418,8 @@ function CreateUserContent() {
                                     <th style={{ padding: '14px 8px', textAlign: 'center', fontWeight: 700, color: '#475569', width: 90 }}>
                                         {th ? 'เพิ่ม/แก้ไข' : 'Create/Edit'}<br /><span style={{ fontSize: 10, fontWeight: 400, color: '#94a3b8' }}>Create / Edit</span>
                                     </th>
-                                    <th style={{ padding: '14px 8px', textAlign: 'center', fontWeight: 700, color: '#dc2626', width: 90 }}>
+                                    <th style={{ padding: '14px 8px', textAlign: 'center', fontWeight: 700, color: '#dc2626', width: 90, borderRadius: '0 10px 10px 0' }}>
                                         {th ? 'ลบข้อมูล' : 'Delete'}<br /><span style={{ fontSize: 10, fontWeight: 400, color: '#fca5a5' }}>Delete</span>
-                                    </th>
-                                    <th style={{ padding: '14px 8px', textAlign: 'center', fontWeight: 700, color: '#475569', width: 90, borderRadius: '0 10px 10px 0' }}>
-                                        {th ? 'ส่งออก' : 'Export'}<br /><span style={{ fontSize: 10, fontWeight: 400, color: '#94a3b8' }}>Export CSV</span>
                                     </th>
                                 </tr>
                             </thead>
@@ -441,7 +437,7 @@ function CreateUserContent() {
                                                     </div>
                                                 </div>
                                             </td>
-                                            {(['view', 'create', 'delete', 'export'] as const).map(field => (
+                                            {(['view', 'create', 'delete'] as const).map(field => (
                                                 <td key={field} style={{ padding: '14px 8px', textAlign: 'center' }}>
                                                     <input type="checkbox" checked={p[field]} onChange={e => setPerm(mod.key, field, e.target.checked)}
                                                         style={{ width: 20, height: 20, accentColor: field === 'delete' ? '#dc2626' : '#22c55e', cursor: 'pointer', borderRadius: 4 }} />
