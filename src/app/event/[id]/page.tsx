@@ -479,9 +479,10 @@ export default function EventLivePage() {
     // Build ordered list of visible columns based on admin displayColumns + mobile
     const visibleColumns = useMemo(() => {
         const adminCols = isLabMode ? campaign?.displayColumnsLab : campaign?.displayColumns;
+        const hasSavedAdminCols = Array.isArray(adminCols);
         // Rebuild full column order from admin settings
         let fullOrder: string[];
-        if (adminCols && adminCols.length > 0) {
+        if (hasSavedAdminCols) {
             const toggleOrdered = [
                 ...adminCols.filter((k: string) => activeToggleableKeys.includes(k)),
                 ...activeToggleableKeys.filter(k => !adminCols.includes(k)),
@@ -499,11 +500,6 @@ export default function EventLivePage() {
             fullOrder = activeColDefs.map(c => c.key);
         }
 
-        // New columns added after admin last saved → default to visible (same as admin/display auto-include)
-        const newCols = adminCols && adminCols.length > 0
-            ? activeToggleableKeys.filter(k => !adminCols.includes(k))
-            : [];
-
         // Filter to only visible columns
         return fullOrder.filter(key => {
             const def = activeColDefs.find(c => c.key === key)!;
@@ -514,7 +510,7 @@ export default function EventLivePage() {
                 if (key === 'genRank' && !showGenRank) return false;
                 if (key === 'catRank' && !showCatRank) return false;
             }
-            if (adminCols && adminCols.length > 0 && !adminCols.includes(key) && !newCols.includes(key)) return false;
+            if (hasSavedAdminCols && !adminCols.includes(key)) return false;
             if (isMobile && !showAllColumns) {
                 return isLabMode ? ['laps'].includes(key) : ['gunTime'].includes(key);
             }

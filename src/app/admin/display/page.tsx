@@ -109,16 +109,12 @@ export default function DisplaySettingsPage() {
             if (res.ok) {
                 const data = await res.json();
                 setCampaign(data);
-                // Marathon — auto-include any NEW toggleable columns not yet in saved list
-                const savedRaw: string[] = data.displayColumns?.length > 0 ? data.displayColumns : MARATHON_TOGGLEABLE;
-                const newMarathonCols = MARATHON_TOGGLEABLE.filter(k => !savedRaw.includes(k));
-                const saved = [...savedRaw, ...newMarathonCols];
+                // Use saved columns exactly as stored; only default to all when field is truly absent
+                const saved: string[] = Array.isArray(data.displayColumns) ? data.displayColumns : MARATHON_TOGGLEABLE;
                 setSelectedCols(saved);
                 rebuildOrder(saved, MARATHON_COLUMNS, MARATHON_TOGGLEABLE, setColOrder);
                 // Lab — same treatment
-                const savedLabRaw: string[] = data.displayColumnsLab?.length > 0 ? data.displayColumnsLab : LAB_TOGGLEABLE;
-                const newLabCols = LAB_TOGGLEABLE.filter(k => !savedLabRaw.includes(k));
-                const savedLab = [...savedLabRaw, ...newLabCols];
+                const savedLab: string[] = Array.isArray(data.displayColumnsLab) ? data.displayColumnsLab : LAB_TOGGLEABLE;
                 setSelectedColsLab(savedLab);
                 rebuildOrder(savedLab, LAB_COLUMNS, LAB_TOGGLEABLE, setColOrderLab);
                 // Mode
