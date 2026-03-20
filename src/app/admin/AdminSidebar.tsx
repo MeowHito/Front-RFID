@@ -58,8 +58,8 @@ const menuSections: MenuSection[] = [
         header: 'RFID & TIMING (ระบบจับเวลา)',
         headerEn: 'RFID & TIMING',
         items: [
-            { href: '/admin/live-monitor', label: 'Live Monitor', labelEn: 'Live Monitor', icon: 'desktop', iconColor: '#00c0ef', badge: 'LIVE' },
-            { href: '/admin/checkpoint-monitor', label: 'Checkpoint Monitor', labelEn: 'Checkpoint Monitor', icon: 'map-location-dot', iconColor: '#f97316', badge: 'LIVE' },
+            { href: '/admin/live-monitor', label: 'MC Ai', labelEn: 'MC Ai', icon: 'desktop', iconColor: '#00c0ef' },
+            { href: '/admin/checkpoint-monitor', label: 'Checkpoint Monitor', labelEn: 'Checkpoint Monitor', icon: 'map-location-dot', iconColor: '#f97316' },
             { href: '/admin/rfid-config', label: 'ตั้งค่าจุดรับสัญญาณ', labelEn: 'Reader Config', icon: 'server' },
             { href: '/admin/chip-mapping', label: 'จับคู่บิบ/ชิป', labelEn: 'BIB/Chip Mapping', icon: 'id-card' },
             { href: '/admin/raw-data', label: 'ข้อมูลดิบ', labelEn: 'Raw Data', icon: 'database' },
@@ -161,12 +161,14 @@ export default function AdminSidebar() {
         return { ...section, items: filteredItems };
     }).filter(section => section.items.length > 0);
 
-    const isActive = (href: string) => {
-        if (href.includes('?')) {
-            return pathname === href.split('?')[0];
-        }
-        return pathname === href || pathname.startsWith(href + '/');
-    };
+    const normalizedPathname = pathname.split('?')[0];
+    const allItemHrefs = sections.flatMap(section => section.items.map(item => item.href.split('?')[0]));
+    const exactMatchHref = allItemHrefs.find(href => href === normalizedPathname);
+    const bestPartialMatchHref = exactMatchHref || allItemHrefs
+        .filter(href => normalizedPathname.startsWith(href + '/'))
+        .sort((a, b) => b.length - a.length)[0];
+
+    const isActive = (href: string) => href.split('?')[0] === bestPartialMatchHref;
 
     return (
         <aside className="main-sidebar">
@@ -182,7 +184,7 @@ export default function AdminSidebar() {
                                     <span className="sidebar-icon">
                                         <SidebarIcon name={item.icon} color={item.iconColor} />
                                     </span>
-                                    <span>{language === 'th' ? item.label : item.labelEn}</span>
+                                    <span className="sidebar-label">{language === 'th' ? item.label : item.labelEn}</span>
                                     {item.badge && (
                                         <span className="menu-badge">{item.badge}</span>
                                     )}

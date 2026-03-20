@@ -42,7 +42,7 @@ const menuSections: MenuSection[] = [
         items: [
             { href: '/admin/rfid-config', label: 'RFID Config', icon: 'fa-broadcast-tower' },
             { href: '/admin/chip-mapping', label: 'ผูก Chip กับ BIB', icon: 'fa-link' },
-            { href: '/admin/live-monitor', label: 'Live Monitor', icon: 'fa-tv' },
+            { href: '/admin/live-monitor', label: 'MC Ai', icon: 'fa-tv' },
         ]
     },
     {

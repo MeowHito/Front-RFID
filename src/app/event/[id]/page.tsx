@@ -259,6 +259,30 @@ export default function EventLivePage() {
 
     const toApiData = (payload: any) => payload?.data ?? payload;
 
+    // Derive effective status from actual RaceTiger timing data
+    function deriveEffectiveStatus(runner: Runner): Runner {
+        // If already explicitly finished/dnf/dq, keep as-is
+        if (['finished', 'dnf', 'dq'].includes(runner.status)) return runner;
+
+        const hasGunTime = (runner.gunTime && runner.gunTime > 0) || !!runner.gunTimeStr;
+        const hasNetTime = (runner.netTime && runner.netTime > 0) || !!runner.netTimeStr;
+        const hasCheckpoint = !!runner.latestCheckpoint && runner.latestCheckpoint.toLowerCase() !== 'start';
+        const hasPassedCount = (runner.passedCount ?? 0) > 0;
+        const hasElapsed = (runner.elapsedTime && runner.elapsedTime > 0);
+
+        if (hasGunTime || hasNetTime || hasCheckpoint || hasPassedCount || hasElapsed) {
+            // Runner has evidence of starting — not DNS
+            // If has overallRank, treat as finished
+            if (runner.overallRank && runner.overallRank > 0 && (hasGunTime || hasNetTime)) {
+                return { ...runner, status: 'finished' };
+            }
+            return { ...runner, status: 'in_progress' };
+        }
+
+        // No timing data at all → keep original (not_started = DNS)
+        return runner;
+    }
+
     useEffect(() => {
         const timer = setInterval(() => setCurrentTime(new Date()), 1000);
         return () => clearInterval(timer);
@@ -294,7 +318,7 @@ export default function EventLivePage() {
                     const runnersData = await runnersRes.json().catch(() => ({}));
                     const list = (runnersData?.data?.data as Runner[]) || (runnersData?.data as Runner[]) || (Array.isArray(runnersData) ? runnersData : []);
                     if (Array.isArray(list) && list.length > 0) {
-                        setRunners(list);
+                        setRunners(list.map(deriveEffectiveStatus));
                         setLastUpdated(new Date());
                     }
                 }
@@ -323,7 +347,7 @@ export default function EventLivePage() {
             if (runnersRes.ok) {
                 const runnersData = await runnersRes.json().catch(() => ({}));
                 const list = (runnersData?.data?.data as Runner[]) || (runnersData?.data as Runner[]) || (Array.isArray(runnersData) ? runnersData : []);
-                const runnerList = Array.isArray(list) ? list : [];
+                const runnerList = (Array.isArray(list) ? list : []).map(deriveEffectiveStatus);
                 setRunners(runnerList);
 
                 // Fetch checkpoint mappings per event for distance-based progress
@@ -392,7 +416,7 @@ export default function EventLivePage() {
             case 'dnf': return 'DNF';
             case 'dns': return 'DNS';
             case 'dq': return 'DQ';
-            case 'not_started': return language === 'th' ? 'ยังไม่เริ่ม' : 'NOT STARTED';
+            case 'not_started': return 'DNS';
             default: return status?.toUpperCase() || '-';
         }
     }
@@ -539,12 +563,14 @@ export default function EventLivePage() {
     // Status counts for filter badges
     const statusCounts = useMemo(() => {
         const counts: Record<string, number> = { ALL: 0, finished: 0, in_progress: 0, not_started: 0, dnf: 0, dns: 0 };
-        runners.forEach(r => {
-            counts.ALL++;
-            counts[r.status] = (counts[r.status] || 0) + 1;
-        });
+        runners
+            .filter(r => !filterCategory || resolveRunnerCategoryKey(r) === filterCategory)
+            .forEach(r => {
+                counts.ALL++;
+                counts[r.status] = (counts[r.status] || 0) + 1;
+            });
         return counts;
-    }, [runners]);
+    }, [runners, filterCategory, resolveRunnerCategoryKey]);
 
     const filteredRunners = useMemo(() => {
         return runners
@@ -674,6 +700,8 @@ export default function EventLivePage() {
                 @keyframes pulseLive { 0% { transform: scale(0.9); opacity: 0.7; } 50% { transform: scale(1.2); opacity: 1; } 100% { transform: scale(0.9); opacity: 0.7; } }
                 .live-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; animation: pulseLive 1.5s infinite; border: 1.5px solid white; }
                 .runner-row:hover { background-color: ${themeStyles.hoverBg} !important; border-left-color: #22c55e !important; }
+                .runner-row.runner-row-danger,
+                .runner-row.runner-row-danger:hover { background-color: ${isDark ? 'rgba(254,226,226,0.12)' : '#fee2e2'} !important; border-left-color: #dc2626 !important; }
                 .table-scroll::-webkit-scrollbar { display: none; }
                 .table-scroll { scrollbar-width: none; }
             `}</style>
@@ -710,60 +738,40 @@ export default function EventLivePage() {
                     </div>
 
                     {!isMobile && (
-                        <div style={{ display: 'flex', gap: 16, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', alignItems: 'center', padding: '6px 12px' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', color: themeStyles.textMuted }}>
-                                Started: <span style={{ color: themeStyles.text, marginLeft: 4 }}>{stats.started}</span>
-                            </div>
-                            <div style={{ display: 'flex', alignItems: 'center', color: '#22c55e' }}>
-                                <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#22c55e', marginRight: 6 }} />
-                                Racing: <span style={{ color: themeStyles.text, marginLeft: 4 }}>{stats.racing}</span>
-                            </div>
-                            <div style={{ display: 'flex', alignItems: 'center', color: '#3b82f6' }}>
-                                <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#3b82f6', marginRight: 6 }} />
-                                Fin: <span style={{ color: themeStyles.text, marginLeft: 4 }}>{stats.finished}</span>
-                            </div>
-                            <div style={{ display: 'flex', alignItems: 'center', color: '#ef4444' }}>
-                                <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#ef4444', marginRight: 6 }} />
-                                DNF: <span style={{ color: themeStyles.text, marginLeft: 4 }}>{stats.dnf}</span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <span style={{ fontSize: 9, fontWeight: 700, color: themeStyles.textSecondary, textTransform: 'uppercase', letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>
+                                STATUS:
+                            </span>
+                            <div style={{ display: 'flex', background: themeStyles.inputBg, padding: 3, borderRadius: 8 }}>
+                                {([
+                                    { key: 'ALL', label: language === 'th' ? 'ทั้งหมด' : 'All', color: '#22c55e' },
+                                    { key: 'finished', label: 'Finish', color: '#22c55e' },
+                                    { key: 'in_progress', label: 'Racing', color: '#f97316' },
+                                    { key: 'dnf', label: 'DNF', color: '#ef4444' },
+                                    { key: 'dns', label: 'DNS', color: '#ef4444' },
+                                    { key: 'not_started', label: 'Wait', color: '#94a3b8' },
+                                ] as const).map(s => (
+                                    <button
+                                        key={s.key}
+                                        onClick={() => setFilterStatus(s.key)}
+                                        style={{
+                                            padding: '4px 10px', fontSize: 10, fontWeight: 700, borderRadius: 6, border: 'none', cursor: 'pointer', transition: 'all 0.2s', whiteSpace: 'nowrap',
+                                            ...(filterStatus === s.key
+                                                ? { background: s.color, color: '#fff' }
+                                                : { background: 'transparent', color: themeStyles.textMuted })
+                                        }}
+                                    >
+                                        {s.label}
+                                        {statusCounts[s.key] > 0 && (
+                                            <span style={{ fontSize: 8, opacity: filterStatus === s.key ? 1 : 0.7 }}>{statusCounts[s.key]}</span>
+                                        )}
+                                    </button>
+                                ))}
                             </div>
                         </div>
                     )}
                 </div>
-                {/* Status Filter — admin only, inside header */}
-                {isAdmin && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6, flexWrap: 'wrap' }}>
-                        <span style={{ fontSize: 9, fontWeight: 700, color: themeStyles.textSecondary, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                            Status:
-                        </span>
-                        <div style={{ display: 'flex', background: themeStyles.inputBg, padding: 3, borderRadius: 8, flexWrap: 'wrap' }}>
-                            {([
-                                { key: 'ALL', label: language === 'th' ? 'ทั้งหมด' : 'All', color: '#22c55e' },
-                                { key: 'finished', label: 'Finish', color: '#22c55e' },
-                                { key: 'in_progress', label: 'Racing', color: '#f97316' },
-                                { key: 'dnf', label: 'DNF', color: '#ef4444' },
-                                { key: 'dns', label: 'DNS', color: '#ef4444' },
-                                { key: 'not_started', label: language === 'th' ? 'รอ' : 'SD', color: '#94a3b8' },
-                            ] as const).map(s => (
-                                <button
-                                    key={s.key}
-                                    onClick={() => setFilterStatus(s.key)}
-                                    style={{
-                                        padding: isMobile ? '4px 6px' : '4px 10px', fontSize: isMobile ? 9 : 10, fontWeight: 700, borderRadius: 6, border: 'none', cursor: 'pointer', transition: 'all 0.2s', whiteSpace: 'nowrap',
-                                        display: 'flex', alignItems: 'center', gap: 4,
-                                        ...(filterStatus === s.key
-                                            ? { background: s.color, color: '#fff' }
-                                            : { background: 'transparent', color: themeStyles.textMuted })
-                                    }}
-                                >
-                                    {s.label}
-                                    {statusCounts[s.key] > 0 && (
-                                        <span style={{ fontSize: 8, opacity: filterStatus === s.key ? 1 : 0.7 }}>{statusCounts[s.key]}</span>
-                                    )}
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-                )}
+                {/* Status filter moved to header right side */}
             </header>
 
             {/* ===== FILTER BAR ===== */}
@@ -918,7 +926,7 @@ export default function EventLivePage() {
 
             {/* ===== TABLE ===== */}
             <main style={{ padding: '0 16px' }}>
-                <div className="table-scroll" style={{ background: themeStyles.cardBg, borderRadius: '0 0 12px 12px', boxShadow: isDark ? '0 1px 3px rgba(0,0,0,0.2)' : '0 1px 3px rgba(0,0,0,0.04)', border: `1px solid ${themeStyles.border}`, borderTop: 'none', height: 'calc(100vh - 180px)', overflowY: 'auto', overflowX: isMobile && showAllColumns ? 'auto' : 'hidden' }}>
+                <div className="table-scroll" style={{ background: themeStyles.cardBg, borderRadius: 0, boxShadow: 'none', border: `1px solid ${themeStyles.border}`, borderTop: 'none', borderBottom: 'none', height: 'calc(100vh - 100px)', overflowY: 'auto', overflowX: isMobile && showAllColumns ? 'auto' : 'hidden', paddingBottom: 40 }}>
                     <table style={{ width: isMobile && showAllColumns ? 800 : '100%', textAlign: 'left', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
                         <thead>
                             <tr style={{ fontSize: 10, fontWeight: 700, color: themeStyles.textSecondary, textTransform: 'uppercase', letterSpacing: '-0.02em', position: 'sticky', top: 0, background: themeStyles.cardBg, zIndex: 20, borderBottom: `2px solid ${themeStyles.border}` }}>
@@ -1071,7 +1079,7 @@ export default function EventLivePage() {
                                             case 'status':
                                                 return (
                                                     <td key={key} style={{ padding: isMobile ? '4px 2px' : '6px 6px' }}>
-                                                        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                                        <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
                                                             <span style={{ display: 'inline-block', padding: isMobile ? '1px 4px' : '2px 8px', borderRadius: 3, fontWeight: 700, fontSize: isMobile ? 8 : 10, color: '#fff', background: getStatusBgColor(runner.status), lineHeight: 1.3 }}>
                                                                 {getStatusLabel(runner.status)}
                                                             </span>
@@ -1079,7 +1087,7 @@ export default function EventLivePage() {
                                                                 <button
                                                                     onClick={(e) => openStatusEdit(runner, e)}
                                                                     title="Edit status"
-                                                                    style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2, fontSize: 11, color: themeStyles.textSecondary, opacity: 0.5, lineHeight: 1 }}
+                                                                    style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2, fontSize: 15, color: themeStyles.textSecondary, opacity: 0.5, lineHeight: 0.8 }}
                                                                     onMouseEnter={e => (e.currentTarget.style.opacity = '1')}
                                                                     onMouseLeave={e => (e.currentTarget.style.opacity = '0.5')}
                                                                 >
@@ -1296,7 +1304,9 @@ export default function EventLivePage() {
                                                         <td key={key} className="px-1 py-1.5 text-center">
                                                             {nextLabel ? (
                                                                 <div>
-                                                                    <div className="text-[10px] font-bold text-blue-500">→ {nextLabel}</div>
+                                                                    <div className="text-[10px] font-bold text-blue-500">
+                                                                        → {nextLabel}
+                                                                    </div>
                                                                     <div className="mt-px text-[8px]" style={{ color: themeStyles.textSecondary }}>
                                                                         {language === 'th' ? 'จบแล้ว' : 'ended'}
                                                                     </div>
@@ -1424,6 +1434,11 @@ export default function EventLivePage() {
 
                                                 return (
                                                     <td key={key} className="px-1 py-1.5 text-center">
+                                                        {runner.latestCheckpoint && (
+                                                            <div className="text-[8px] font-semibold mb-0.5" style={{ color: themeStyles.textSecondary }}>
+                                                                @ {runner.latestCheckpoint.toUpperCase()}
+                                                            </div>
+                                                        )}
                                                         {nextCpName ? (
                                                             <div>
                                                                 <div className="text-[10px] font-bold text-blue-500">
@@ -1555,14 +1570,14 @@ export default function EventLivePage() {
                                         }
                                     };
 
-                                    const isDisqualified = runner.status === 'dnf' || runner.status === 'dns' || runner.status === 'dq';
-                                    const rowBorderColor = isDisqualified ? '#dc2626' : 'transparent';
-                                    const rowBg = isDisqualified ? (isDark ? 'rgba(220,38,38,0.08)' : 'rgba(220,38,38,0.04)') : undefined;
+                                    const isDangerStatus = runner.status === 'dnf' || runner.status === 'dns' || runner.status === 'not_started';
+                                    const rowBorderColor = isDangerStatus ? '#dc2626' : 'transparent';
+                                    const rowBg = isDangerStatus ? (isDark ? 'rgba(254,226,226,0.12)' : '#fee2e2') : undefined;
 
                                     return (
                                         <tr
                                             key={runner._id}
-                                            className="runner-row"
+                                            className={`runner-row${isDangerStatus ? ' runner-row-danger' : ''}`}
                                             onClick={() => handleViewRunner(runner)}
                                             style={{ cursor: 'pointer', transition: 'all 0.15s', borderBottom: `1px solid ${themeStyles.border}`, borderLeft: `4px solid ${rowBorderColor}`, background: rowBg }}
                                         >

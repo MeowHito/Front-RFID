@@ -207,9 +207,11 @@ export default function CheckpointMonitorPage() {
         }
     };
 
-    // Share link
+    // Share link — uses public share-live page (no admin auth required)
     const handleShareLink = () => {
-        const url = `${window.location.origin}/admin/checkpoint-monitor?cp=${encodeURIComponent(selectedCp)}`;
+        const url = campaign?._id
+            ? `${window.location.origin}/share-live/${campaign._id}?cp=${encodeURIComponent(selectedCp)}`
+            : `${window.location.origin}/admin/checkpoint-monitor?cp=${encodeURIComponent(selectedCp)}`;
         navigator.clipboard.writeText(url).then(() => {
             setToast({ msg: th ? 'คัดลอกลิงก์แล้ว' : 'Link copied!', type: 'success' });
         }).catch(() => {

@@ -22,7 +22,6 @@ interface RaceCategory {
 
 interface CreateEventForm {
     name: string;
-    shortName: string;
     description: string;
     eventDate: string;
     location: string;
@@ -45,10 +44,61 @@ interface CreateEventForm {
 }
 
 const THEME_OPTIONS = [
-    { value: 'utmb', label: 'UTMB Series (แดง)', labelEn: 'UTMB Series (Red)' },
-    { value: 'trail', label: 'Trail Master (เขียว)', labelEn: 'Trail Master (Green)' },
-    { value: 'road', label: 'Road Marathon (น้ำเงิน)', labelEn: 'Road Marathon (Blue)' },
+    { value: 'road_race', label: 'Road Race (ถนน)', labelEn: 'Road Race' },
+    { value: 'trail_run', label: 'Trail Run (เทรล)', labelEn: 'Trail Run' },
+    { value: 'mountain_run', label: 'Mountain Run (ภูเขา)', labelEn: 'Mountain Run' },
+    { value: 'lap_race', label: 'นับรอบ labs', labelEn: 'Lap Race' },
+    { value: 'virtual_run', label: 'Virtual Run', labelEn: 'Virtual Run' },
+    { value: 'marathon', label: 'Marathon', labelEn: 'Marathon' },
+    { value: 'super_marathon', label: 'SuperMarathon', labelEn: 'SuperMarathon' },
+    { value: 'half_marathon', label: 'Half Marathon', labelEn: 'Half Marathon' },
+    { value: 'mini_marathon', label: 'Mini Marathon', labelEn: 'Mini Marathon' },
+    { value: 'fun_run', label: 'Funrun', labelEn: 'Funrun' },
 ];
+
+const normalizeThemeType = (value?: string): string => {
+    switch ((value || '').trim().toLowerCase()) {
+        case 'road':
+        case 'road race':
+        case 'road_race':
+            return 'road_race';
+        case 'trail':
+        case 'trail run':
+        case 'utmb':
+        case 'trail_run':
+            return 'trail_run';
+        case 'mountain run':
+        case 'mountain_run':
+            return 'mountain_run';
+        case 'lab':
+        case 'lap':
+        case 'laps':
+        case 'lap race':
+        case 'lap_race':
+            return 'lap_race';
+        case 'virtual run':
+        case 'virtual_run':
+            return 'virtual_run';
+        case 'marathon':
+            return 'marathon';
+        case 'super marathon':
+        case 'super_marathon':
+        case 'supermarathon':
+            return 'super_marathon';
+        case 'half marathon':
+        case 'half_marathon':
+            return 'half_marathon';
+        case 'mini marathon':
+        case 'mini_marathon':
+            return 'mini_marathon';
+        case 'fun run':
+        case 'fun_run':
+        case 'funrun':
+            return 'fun_run';
+        default:
+            return 'road_race';
+    }
+};
 
 function CreateEventForm() {
     const { language } = useLanguage();
@@ -115,7 +165,6 @@ function CreateEventForm() {
 
     const [form, setForm] = useState<CreateEventForm>({
         name: '',
-        shortName: '',
         description: '',
         eventDate: '',
         location: '',
@@ -126,7 +175,7 @@ function CreateEventForm() {
         organizerEmail: '',
         organizerWebsite: '',
         eventManager: '',
-        themeType: 'utmb',
+        themeType: 'road_race',
         status: 'upcoming',
         allowRFIDSync: false,
         rfidToken: '',
@@ -147,7 +196,6 @@ function CreateEventForm() {
                 const campaign = data;
                 setForm({
                     name: campaign.name || '',
-                    shortName: campaign.shortName || '',
                     description: campaign.description || '',
                     eventDate: campaign.eventDate ? campaign.eventDate.slice(0, 10) : '',
                     location: campaign.location || '',
@@ -158,7 +206,7 @@ function CreateEventForm() {
                     organizerEmail: campaign.organizerEmail || '',
                     organizerWebsite: campaign.organizerWebsite || '',
                     eventManager: campaign.eventManager || '',
-                    themeType: campaign.themeType || 'utmb',
+                    themeType: normalizeThemeType(campaign.themeType),
                     status: campaign.status || 'upcoming',
                     allowRFIDSync: campaign.allowRFIDSync ?? false,
                     rfidToken: campaign.rfidToken || '',
@@ -301,7 +349,6 @@ function CreateEventForm() {
                 name: form.name,
                 eventDate: form.eventDate,
             };
-            if (form.shortName) payload.shortName = form.shortName;
             if (form.description) payload.description = form.description;
             if (form.location) payload.location = form.location;
             if (pictureUrl) payload.pictureUrl = pictureUrl;
@@ -314,6 +361,7 @@ function CreateEventForm() {
             if (form.partnerCode.trim()) payload.partnerCode = form.partnerCode.trim();
             if (form.raceTigerBaseUrl.trim()) payload.raceTigerBaseUrl = form.raceTigerBaseUrl.trim();
             if (form.cardColor.trim()) payload.cardColor = form.cardColor.trim();
+            if (form.themeType) payload.themeType = form.themeType;
             if (cleanCategories.length > 0) payload.categories = cleanCategories;
             // Use API proxy route to work on both localhost and Vercel
             const url = isEdit ? `/api/campaigns/${editId}` : '/api/campaigns';
@@ -451,16 +499,6 @@ function CreateEventForm() {
                                 placeholder={language === 'th' ? 'ระบุชื่อกิจกรรม' : 'Enter event name'}
                                 value={form.name}
                                 onChange={(e) => updateField('name', e.target.value)}
-                            />
-                        </div>
-                        <div className="ce-form-group">
-                            <label className="ce-label">{language === 'th' ? 'ชื่อย่อ' : 'Short Name'}</label>
-                            <input
-                                type="text"
-                                className="ce-input"
-                                placeholder={language === 'th' ? 'เช่น DOI2025' : 'e.g. DOI2025'}
-                                value={form.shortName}
-                                onChange={(e) => updateField('shortName', e.target.value)}
                             />
                         </div>
                         <div className="ce-form-group">

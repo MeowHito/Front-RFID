@@ -34,6 +34,12 @@ const LINK_ROWS: LinkRow[] = [
         labelEn: '📡 RFID Scanning Display',
         buildUrl: (origin, campaign) => `${origin}/scanning/${campaign?.slug || campaign?._id || ''}`,
     },
+    {
+        id: 'share-live',
+        label: '📍 Share Live Monitor (จุดเช็คอิน)',
+        labelEn: '📍 Share Live Checkpoint Monitor',
+        buildUrl: (origin, campaign) => `${origin}/share-live/${campaign?._id || ''}`,
+    },
 ];
 
 export default function LinksPage() {

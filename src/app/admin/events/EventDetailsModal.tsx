@@ -25,7 +25,6 @@ interface CampaignData {
     name: string;
     nameTh?: string;
     nameEn?: string;
-    shortName?: string;
     description?: string;
     eventDate: string;
     eventEndDate?: string;
@@ -56,7 +55,6 @@ export default function EventDetailsModal({ isOpen, onClose, event, onSave }: Ev
         name: '',
         nameTh: '',
         nameEn: '',
-        shortName: '',
         description: '',
         eventDate: '',
         eventEndDate: '',
@@ -106,7 +104,6 @@ export default function EventDetailsModal({ isOpen, onClose, event, onSave }: Ev
                     name: event.name || '',
                     nameTh: event.nameTh || '',
                     nameEn: event.nameEn || '',
-                    shortName: event.shortName || '',
                     description: event.description || '',
                     eventDate: event.eventDate ? event.eventDate.split('T')[0] : '',
                     eventEndDate: event.eventEndDate ? event.eventEndDate.split('T')[0] : '',
@@ -124,7 +121,6 @@ export default function EventDetailsModal({ isOpen, onClose, event, onSave }: Ev
                     name: '',
                     nameTh: '',
                     nameEn: '',
-                    shortName: '',
                     description: '',
                     eventDate: '',
                     eventEndDate: '',

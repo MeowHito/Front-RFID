@@ -28,7 +28,6 @@ interface Campaign {
     _id: string;
     uuid: string;
     name: string;
-    shortName?: string;
     description?: string;
     eventDate: string;
     eventEndDate?: string;
@@ -660,7 +659,7 @@ export default function EventsPage() {
             {/* Featured Event Confirmation Modal */}
             {featuredConfirmOpen && (
                 <div className="modal-overlay" onClick={closeFeaturedConfirm}>
-                    <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '420px' }}>
+                    <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '560px' }}>
                         <div className="modal-header">
                             <h2 className="modal-title">
                                 {language === 'th' ? 'ยืนยันการเปลี่ยน Event หลัก' : 'Confirm featured event'}
@@ -669,7 +668,7 @@ export default function EventsPage() {
                         </div>
                         <div className="modal-body" style={{ textAlign: 'center', padding: '1.75rem' }}>
                             <div style={{ fontSize: '2.5rem', marginBottom: '1rem' }}>⭐</div>
-                            <p style={{ marginBottom: '0.5rem', fontWeight: 'bold' }}>
+                            <p style={{ marginBottom: '0.5rem', fontWeight: 'bold', whiteSpace: 'nowrap', fontSize: '0.95rem' }}>
                                 {featuredIsCurrentlyOn
                                     ? (language === 'th'
                                         ? 'ต้องการยกเลิกการตั้งกิจกรรมนี้เป็น Event หลักหรือไม่?'
