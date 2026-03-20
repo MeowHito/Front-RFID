@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useLanguage } from '@/lib/language-context';
 import AdminLayout from '../../AdminLayout';
@@ -62,7 +62,7 @@ const ROLE_TEMPLATES: Record<string, { label_th: string; label_en: string; perms
 
 const DEFAULT_PERM: ModulePerm = { view: false, create: false, delete: false, export: false };
 
-export default function CreateUserPage() {
+function CreateUserContent() {
     const { language } = useLanguage();
     const router = useRouter();
     const searchParams = useSearchParams();
@@ -473,5 +473,13 @@ export default function CreateUserPage() {
             )}
             <style>{`@keyframes slideUp { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }`}</style>
         </AdminLayout>
+    );
+}
+
+export default function CreateUserPage() {
+    return (
+        <Suspense fallback={null}>
+            <CreateUserContent />
+        </Suspense>
     );
 }
