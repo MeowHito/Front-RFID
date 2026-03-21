@@ -183,7 +183,17 @@ export default function ScanningBySlugPage() {
                 onChange={onFileSelected} />
 
             {/* Template toggle */}
-            <button onClick={() => setTemplate(t => t === 'classic' ? 'split' : 'classic')} style={{
+            <button onClick={() => {
+                const next = template === 'classic' ? 'split' : 'classic';
+                setTemplate(next);
+                if (campaign?._id) {
+                    fetch(`/api/campaigns/${campaign._id}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ scanningTemplate: next }),
+                    }).catch(() => {});
+                }
+            }} style={{
                 position: 'fixed', top: 16, right: 16, zIndex: 100, height: 36,
                 padding: '0 14px', borderRadius: 18, border: '1px solid rgba(255,255,255,0.2)',
                 background: 'rgba(0,0,0,0.5)', color: '#94a3b8', fontSize: 11, cursor: 'pointer',
@@ -285,7 +295,7 @@ export default function ScanningBySlugPage() {
                                         {origin && (runner as any)._id ? (
                                             <>
                                                 <QRCodeSVG
-                                                    value={`${origin}/upload/${(runner as any)._id}`}
+                                                    value={`${origin}/upload/${(runner as any)._id}?slug=${campaign?.slug || ''}`}
                                                     size={90}
                                                     bgColor="#ffffff"
                                                     fgColor="#0f172a"
@@ -406,7 +416,7 @@ export default function ScanningBySlugPage() {
                                 {origin && (runner as any)._id ? (
                                     <>
                                         <QRCodeSVG
-                                            value={`${origin}/upload/${(runner as any)._id}`}
+                                            value={`${origin}/upload/${(runner as any)._id}?slug=${campaign?.slug || ''}`}
                                             size={120}
                                             bgColor="#ffffff"
                                             fgColor="#0f172a"

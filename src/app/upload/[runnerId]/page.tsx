@@ -1,11 +1,14 @@
 'use client';
 
 import { useEffect, useState, useRef } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useSearchParams } from 'next/navigation';
 
 export default function UploadPhotoPage() {
     const params = useParams();
     const runnerId = params.runnerId as string;
+
+    const searchParams = useSearchParams();
+    const campaignSlug = searchParams.get('slug');
 
     const [runner, setRunner] = useState<any>(null);
     const [loading, setLoading] = useState(true);
@@ -13,6 +16,8 @@ export default function UploadPhotoPage() {
     const [success, setSuccess] = useState(false);
     const [error, setError] = useState('');
     const [uploadedPhoto, setUploadedPhoto] = useState<string>('');
+    const [template, setTemplate] = useState<'classic' | 'split'>('classic');
+    const [campaignName, setCampaignName] = useState('');
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     const handleDownload = async () => {
@@ -20,107 +25,141 @@ export default function UploadPhotoPage() {
         const filename = `BIB${runner?.bib || 'photo'}_${runner?.firstNameTh || runner?.firstName || ''}.jpg`;
 
         await document.fonts.ready;
-
-        // Load uploaded photo into Image
         const img = new Image();
         img.src = uploadedPhoto;
         await new Promise<void>((res) => { img.onload = () => res(); });
 
-        // Compose landscape card: 1080 × 540 (matching scanning page style)
         const CW = 1080, CH = 540;
         const canvas = document.createElement('canvas');
         canvas.width = CW; canvas.height = CH;
         const ctx = canvas.getContext('2d')!;
 
-        // ── Dark background ──
-        ctx.fillStyle = '#0a1628';
-        ctx.fillRect(0, 0, CW, CH);
-
-        // ── Photo left half (cover crop) ──
-        const photoW = Math.floor(CW * 0.47);
-        {
-            const scale = Math.max(photoW / img.width, CH / img.height);
-            const dw = img.width * scale, dh = img.height * scale;
-            ctx.save();
-            ctx.beginPath(); ctx.rect(0, 0, photoW, CH); ctx.clip();
-            ctx.drawImage(img, (photoW - dw) / 2, (CH - dh) / 2, dw, dh);
-            ctx.restore();
-        }
-
-        // ── Fade photo's right edge into dark background ──
-        const fadeGrad = ctx.createLinearGradient(photoW - 90, 0, photoW + 10, 0);
-        fadeGrad.addColorStop(0, 'rgba(10,22,40,0)');
-        fadeGrad.addColorStop(1, 'rgba(10,22,40,1)');
-        ctx.fillStyle = fadeGrad;
-        ctx.fillRect(photoW - 90, 0, 100, CH);
-
-        // ── Right panel ──
-        const rx = photoW + 32;
-
-        // Green accent bar
-        ctx.fillStyle = '#4ade80';
-        ctx.fillRect(rx - 14, CH * 0.14, 4, CH * 0.72);
-
-        // "BIB" label
-        ctx.font = '700 15px "Prompt", Arial, sans-serif';
-        ctx.fillStyle = '#64748b';
-        ctx.textAlign = 'left';
-        ctx.fillText('BIB', rx, CH * 0.28);
-
-        // BIB number (large)
         const bibStr = String(runner?.bib || '-');
-        const bibFontSize = bibStr.length <= 2 ? 180 : bibStr.length <= 3 ? 150 : 120;
-        ctx.font = `900 ${bibFontSize}px "Prompt", Arial, sans-serif`;
-        ctx.fillStyle = '#ffffff';
-        const bibW = ctx.measureText(bibStr).width;
-        ctx.fillText(bibStr, rx, CH * 0.68);
-
-        // Category badge (right of BIB number)
         const catStr = runner?.category || '';
-        if (catStr) {
-            ctx.font = '800 21px "Prompt", Arial, sans-serif';
-            const cw = ctx.measureText(catStr).width + 30;
-            const ch2 = 36;
-            const cx = rx + bibW + 18;
-            const cy = CH * 0.5;
-            const r2 = 9;
-            ctx.fillStyle = '#ef4444';
-            ctx.beginPath();
-            ctx.moveTo(cx + r2, cy); ctx.lineTo(cx + cw - r2, cy);
-            ctx.arcTo(cx + cw, cy, cx + cw, cy + r2, r2);
-            ctx.lineTo(cx + cw, cy + ch2 - r2);
-            ctx.arcTo(cx + cw, cy + ch2, cx + cw - r2, cy + ch2, r2);
-            ctx.lineTo(cx + r2, cy + ch2);
-            ctx.arcTo(cx, cy + ch2, cx, cy + ch2 - r2, r2);
-            ctx.lineTo(cx, cy + r2);
-            ctx.arcTo(cx, cy, cx + r2, cy, r2);
-            ctx.closePath();
-            ctx.fill();
-            ctx.fillStyle = '#fff';
-            ctx.textAlign = 'center';
-            ctx.fillText(catStr, cx + cw / 2, cy + ch2 - 8);
-        }
-
-        // Names
         const nameTh = [runner?.firstNameTh || runner?.firstName, runner?.lastNameTh || runner?.lastName].filter(Boolean).join(' ');
         const nameEn = runner?.firstNameTh ? [runner?.firstName, runner?.lastName].filter(Boolean).join(' ') : '';
-        ctx.textAlign = 'left';
-        ctx.font = '800 48px "Prompt", Arial, sans-serif';
-        ctx.fillStyle = '#ffffff';
-        ctx.fillText(nameTh, rx, CH * 0.84);
-        if (nameEn) {
-            ctx.font = '600 26px "Prompt", Arial, sans-serif';
-            ctx.fillStyle = '#94a3b8';
-            ctx.fillText(nameEn.toUpperCase(), rx, CH * 0.93);
+        const genderLabel = runner?.gender === 'M' ? 'Male' : runner?.gender === 'F' ? 'Female' : runner?.gender || '-';
+        const ageGroupLabel = runner?.ageGroup || '-';
+
+        const rr = (x: number, y: number, w: number, h: number, r: number) => {
+            ctx.beginPath();
+            ctx.moveTo(x + r, y); ctx.lineTo(x + w - r, y); ctx.arcTo(x + w, y, x + w, y + r, r);
+            ctx.lineTo(x + w, y + h - r); ctx.arcTo(x + w, y + h, x + w - r, y + h, r);
+            ctx.lineTo(x + r, y + h); ctx.arcTo(x, y + h, x, y + h - r, r);
+            ctx.lineTo(x, y + r); ctx.arcTo(x, y, x + r, y, r);
+            ctx.closePath();
+        };
+
+        if (template === 'split') {
+            ctx.fillStyle = '#0a1628'; ctx.fillRect(0, 0, CW, CH);
+            const photoW = Math.floor(CW * 0.47);
+            {
+                const scale = Math.max(photoW / img.width, CH / img.height);
+                const dw = img.width * scale, dh = img.height * scale;
+                ctx.save(); ctx.beginPath(); ctx.rect(0, 0, photoW, CH); ctx.clip();
+                ctx.drawImage(img, (photoW - dw) / 2, (CH - dh) / 2, dw, dh);
+                ctx.restore();
+            }
+            const fadeGrad = ctx.createLinearGradient(photoW - 90, 0, photoW + 10, 0);
+            fadeGrad.addColorStop(0, 'rgba(10,22,40,0)'); fadeGrad.addColorStop(1, 'rgba(10,22,40,1)');
+            ctx.fillStyle = fadeGrad; ctx.fillRect(photoW - 90, 0, 100, CH);
+            const rx = photoW + 32;
+            ctx.fillStyle = '#4ade80'; ctx.fillRect(rx - 14, CH * 0.14, 4, CH * 0.72);
+            ctx.font = '700 15px "Prompt", Arial, sans-serif';
+            ctx.fillStyle = '#64748b'; ctx.textAlign = 'left';
+            ctx.fillText('BIB', rx, CH * 0.28);
+            const bibFontSize = bibStr.length <= 2 ? 180 : bibStr.length <= 3 ? 150 : 120;
+            ctx.font = `900 ${bibFontSize}px "Prompt", Arial, sans-serif`;
+            ctx.fillStyle = '#ffffff';
+            const bibW = ctx.measureText(bibStr).width;
+            ctx.fillText(bibStr, rx, CH * 0.68);
+            if (catStr) {
+                ctx.font = '800 21px "Prompt", Arial, sans-serif';
+                const cw2 = ctx.measureText(catStr).width + 30, ch2 = 36;
+                const cx = rx + bibW + 18, cy = CH * 0.5;
+                ctx.fillStyle = '#ef4444'; rr(cx, cy, cw2, ch2, 9); ctx.fill();
+                ctx.fillStyle = '#fff'; ctx.textAlign = 'center';
+                ctx.fillText(catStr, cx + cw2 / 2, cy + ch2 - 8);
+            }
+            ctx.textAlign = 'left';
+            ctx.font = '800 48px "Prompt", Arial, sans-serif'; ctx.fillStyle = '#ffffff';
+            ctx.fillText(nameTh, rx, CH * 0.84);
+            if (nameEn) {
+                ctx.font = '600 26px "Prompt", Arial, sans-serif'; ctx.fillStyle = '#94a3b8';
+                ctx.fillText(nameEn.toUpperCase(), rx, CH * 0.93);
+            }
+            if (campaignName) {
+                ctx.font = '700 14px "Prompt", Arial, sans-serif';
+                ctx.fillStyle = '#4ade80'; ctx.textAlign = 'right';
+                ctx.fillText(campaignName.toUpperCase(), CW - 18, 30);
+            }
+        } else {
+            ctx.fillStyle = '#0f172a'; ctx.fillRect(0, 0, CW, CH);
+            const radGrad = ctx.createRadialGradient(CW / 2, CH / 2, 0, CW / 2, CH / 2, CW * 0.65);
+            radGrad.addColorStop(0, 'rgba(30,41,59,0.6)'); radGrad.addColorStop(1, 'rgba(2,6,23,0)');
+            ctx.fillStyle = radGrad; ctx.fillRect(0, 0, CW, CH);
+            const headerH = campaignName ? 84 : 0;
+            if (campaignName) {
+                ctx.font = '900 26px "Prompt", Arial, sans-serif';
+                ctx.fillStyle = '#ffffff'; ctx.textAlign = 'center';
+                ctx.fillText(campaignName.toUpperCase(), CW / 2, 44);
+                ctx.font = '700 13px "Prompt", Arial, sans-serif'; ctx.fillStyle = '#4ade80';
+                ctx.fillText('RFID CHECK-IN · ACTION TIMING', CW / 2, 65);
+                ctx.fillStyle = 'rgba(255,255,255,0.08)';
+                ctx.fillRect(CW * 0.15, 76, CW * 0.7, 1);
+            }
+            const photoSize = 230, photoX = 65;
+            const photoY = headerH + Math.floor((CH - headerH - photoSize) / 2);
+            ctx.strokeStyle = '#4ade80'; ctx.lineWidth = 5;
+            rr(photoX - 4, photoY - 4, photoSize + 8, photoSize + 8, 20); ctx.stroke();
+            ctx.save(); rr(photoX, photoY, photoSize, photoSize, 16); ctx.clip();
+            const pScale = Math.max(photoSize / img.width, photoSize / img.height);
+            const pdw = img.width * pScale, pdh = img.height * pScale;
+            ctx.drawImage(img, photoX + (photoSize - pdw) / 2, photoY + (photoSize - pdh) / 2, pdw, pdh);
+            ctx.restore();
+            const rx = photoX + photoSize + 50;
+            ctx.textAlign = 'left';
+            ctx.font = '800 15px "Prompt", Arial, sans-serif'; ctx.fillStyle = '#4ade80';
+            ctx.fillText('✅  VERIFIED RUNNER', rx, photoY + 22);
+            const nameFsz = nameTh.length > 18 ? 38 : nameTh.length > 12 ? 46 : 52;
+            ctx.font = `900 ${nameFsz}px "Prompt", Arial, sans-serif`; ctx.fillStyle = '#ffffff';
+            ctx.fillText(nameTh, rx, photoY + 82);
+            if (nameEn) {
+                ctx.font = '600 24px "Prompt", Arial, sans-serif'; ctx.fillStyle = '#94a3b8';
+                ctx.fillText(nameEn.toUpperCase(), rx, photoY + 116);
+            }
+            const catRowY = photoY + (nameEn ? 132 : 112);
+            if (catStr) {
+                ctx.font = '800 20px "Prompt", Arial, sans-serif';
+                const catBW = ctx.measureText(catStr).width + 28, catBH = 34;
+                ctx.fillStyle = '#ef4444'; rr(rx, catRowY, catBW, catBH, 9); ctx.fill();
+                ctx.fillStyle = '#fff'; ctx.textAlign = 'center';
+                ctx.fillText(catStr, rx + catBW / 2, catRowY + catBH - 8); ctx.textAlign = 'left';
+            }
+            ctx.font = '700 13px "Prompt", Arial, sans-serif'; ctx.fillStyle = '#64748b';
+            ctx.fillText('BIB', rx, catRowY + 60);
+            const bibFs = bibStr.length <= 2 ? 120 : bibStr.length <= 3 ? 100 : 82;
+            ctx.font = `900 ${bibFs}px "Prompt", Arial, sans-serif`; ctx.fillStyle = '#ffffff';
+            ctx.fillText(bibStr, rx, catRowY + 160);
+            const barTop = CH - 115;
+            ctx.fillStyle = 'rgba(255,255,255,0.04)'; ctx.fillRect(60, barTop, CW - 120, 100);
+            ctx.fillStyle = 'rgba(255,255,255,0.06)'; ctx.fillRect(CW / 2, barTop + 8, 1, 84);
+            ctx.font = '800 12px "Prompt", Arial, sans-serif';
+            ctx.fillStyle = '#94a3b8'; ctx.textAlign = 'center';
+            ctx.fillText('GENDER', CW / 4, barTop + 25);
+            ctx.font = '900 30px "Prompt", Arial, sans-serif'; ctx.fillStyle = '#ffffff';
+            ctx.fillText(genderLabel, CW / 4, barTop + 68);
+            ctx.fillStyle = 'rgba(74,222,128,0.06)'; ctx.fillRect(CW / 2, barTop, CW / 2 - 60, 100);
+            ctx.font = '800 12px "Prompt", Arial, sans-serif'; ctx.fillStyle = '#4ade80'; ctx.textAlign = 'center';
+            ctx.fillText('AGE GROUP', CW * 3 / 4, barTop + 25);
+            ctx.font = '900 38px "Prompt", Arial, sans-serif'; ctx.fillStyle = '#4ade80';
+            ctx.fillText(ageGroupLabel, CW * 3 / 4, barTop + 72);
         }
 
-        // Watermark
         ctx.font = '700 12px "Prompt", Arial, sans-serif';
-        ctx.fillStyle = 'rgba(255,255,255,0.12)';
-        ctx.textAlign = 'right';
+        ctx.fillStyle = 'rgba(255,255,255,0.12)'; ctx.textAlign = 'right';
         ctx.fillText('ACTION TIMING SYSTEM', CW - 18, CH - 10);
 
-        // ── Export & share/download ──
         canvas.toBlob(async (blob) => {
             if (!blob) return;
             const file = new File([blob], filename, { type: 'image/jpeg' });
@@ -155,6 +194,20 @@ export default function UploadPhotoPage() {
             }
         })();
     }, [runnerId]);
+
+    useEffect(() => {
+        if (!campaignSlug) return;
+        (async () => {
+            try {
+                const res = await fetch(`/api/campaigns/${encodeURIComponent(campaignSlug)}`);
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.scanningTemplate === 'split') setTemplate('split');
+                    if (data.name) setCampaignName(data.name);
+                }
+            } catch { /* ignore */ }
+        })();
+    }, [campaignSlug]);
 
     const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
@@ -214,93 +267,89 @@ export default function UploadPhotoPage() {
                         <p style={{ color: '#ef4444', fontSize: 20, fontWeight: 800 }}>{error}</p>
                     </div>
                 ) : success ? (
-                    <div style={{ width: '100%', maxWidth: 420, animation: 'fadeIn 0.5s ease-out' }}>
-                        {/* Success badge */}
-                        <div style={{ textAlign: 'center', marginBottom: 16 }}>
-                            <span style={{
-                                display: 'inline-flex', alignItems: 'center', gap: 8,
-                                background: 'rgba(74,222,128,0.15)', border: '1px solid #4ade80',
-                                borderRadius: 100, padding: '6px 20px',
-                                color: '#4ade80', fontSize: 15, fontWeight: 800,
-                            }}>✅ อัปโหลดสำเร็จ!</span>
-                        </div>
-
-                        {/* Photo card */}
-                        <div style={{
-                            position: 'relative', borderRadius: 24, overflow: 'hidden',
-                            boxShadow: '0 20px 60px rgba(0,0,0,0.6)',
-                            border: '2px solid rgba(74,222,128,0.3)',
-                        }}>
-                            {uploadedPhoto && (
-                                <img
-                                    src={uploadedPhoto}
-                                    alt="uploaded"
-                                    style={{ width: '100%', display: 'block', maxHeight: '55vh', objectFit: 'cover' }}
-                                />
-                            )}
-                            {/* Runner info overlay */}
-                            <div style={{
-                                position: 'absolute', bottom: 0, left: 0, right: 0,
-                                background: 'linear-gradient(to top, rgba(2,6,23,0.95) 0%, rgba(2,6,23,0.6) 70%, transparent 100%)',
-                                padding: '32px 20px 20px',
-                            }}>
-                                <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between' }}>
-                                    <div>
-                                        <div style={{
-                                            fontSize: 11, fontWeight: 700, color: '#64748b',
-                                            textTransform: 'uppercase', letterSpacing: 3, marginBottom: 2,
-                                        }}>BIB</div>
-                                        <div style={{ fontSize: 52, fontWeight: 900, color: '#fff', lineHeight: 1 }}>
-                                            {runner?.bib || '-'}
+                    template === 'split' ? (
+                        <div style={{ width: '100%', maxWidth: 420, animation: 'fadeIn 0.5s ease-out' }}>
+                            <div style={{ borderRadius: '24px 24px 0 0', overflow: 'hidden', position: 'relative' }}>
+                                <img src={uploadedPhoto} alt="uploaded"
+                                    style={{ width: '100%', display: 'block', maxHeight: '48vh', objectFit: 'cover' }} />
+                                <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 80, background: 'linear-gradient(to top, rgba(2,6,23,1), transparent)' }} />
+                            </div>
+                            <div style={{ background: '#0f172a', borderRadius: '0 0 24px 24px', border: '2px solid rgba(74,222,128,0.25)', borderTop: 'none', padding: '20px 20px 16px' }}>
+                                <div style={{ display: 'flex', alignItems: 'flex-end', gap: 12, marginBottom: 14 }}>
+                                    <div style={{ background: 'rgba(255,255,255,0.05)', borderLeft: '6px solid #4ade80', padding: '8px 24px', borderRadius: 6, transform: 'skewX(-8deg)' }}>
+                                        <div style={{ transform: 'skewX(8deg)' }}>
+                                            <div style={{ fontSize: 10, color: '#64748b', textTransform: 'uppercase', letterSpacing: 4 }}>BIB</div>
+                                            <div style={{ fontSize: 52, fontWeight: 900, color: '#fff', lineHeight: 0.9, fontStyle: 'italic' }}>{runner?.bib || '-'}</div>
                                         </div>
                                     </div>
-                                    <div style={{ textAlign: 'right' }}>
-                                        <div style={{
-                                            display: 'inline-block', background: '#ef4444',
-                                            padding: '4px 14px', borderRadius: 8,
-                                            fontSize: 12, fontWeight: 800, color: '#fff', marginBottom: 6,
-                                        }}>{runner?.category || '-'}</div>
-                                        <p style={{ fontSize: 15, fontWeight: 700, color: '#fff', margin: 0 }}>
-                                            {runner?.firstNameTh || runner?.firstName}
-                                        </p>
-                                        <p style={{ fontSize: 13, fontWeight: 600, color: '#94a3b8', margin: 0 }}>
-                                            {runner?.lastNameTh || runner?.lastName}
-                                        </p>
+                                    {runner?.category && (
+                                        <div style={{ background: '#ef4444', padding: '6px 18px', borderRadius: 6, transform: 'skewX(-8deg)', marginBottom: 8 }}>
+                                            <span style={{ display: 'block', transform: 'skewX(8deg)', color: '#fff', fontWeight: 900, fontSize: 18, fontStyle: 'italic' }}>{runner.category}</span>
+                                        </div>
+                                    )}
+                                </div>
+                                <div style={{ color: '#4ade80', fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 }}>✅ Verified Participant</div>
+                                <p style={{ color: '#fff', fontSize: 22, fontWeight: 900, margin: '0 0 4px' }}>{runner?.firstNameTh || runner?.firstName} {runner?.lastNameTh || runner?.lastName}</p>
+                                {runner?.firstNameTh && <p style={{ color: '#94a3b8', fontSize: 13, fontWeight: 600, textTransform: 'uppercase', margin: '0 0 12px' }}>{runner.firstName} {runner.lastName}</p>}
+                                {(runner?.gender || runner?.ageGroup) && (
+                                    <div style={{ display: 'flex', background: 'rgba(255,255,255,0.03)', borderRadius: 14, border: '1px solid rgba(255,255,255,0.08)', marginBottom: 14 }}>
+                                        <div style={{ flex: 1, padding: '10px 16px', textAlign: 'center' }}>
+                                            <p style={{ color: '#64748b', fontSize: 10, fontWeight: 800, letterSpacing: 2, textTransform: 'uppercase', margin: '0 0 2px' }}>GENDER</p>
+                                            <p style={{ color: '#fff', fontSize: 18, fontWeight: 900, margin: 0 }}>{runner?.gender === 'M' ? 'Male' : runner?.gender === 'F' ? 'Female' : runner?.gender || '-'}</p>
+                                        </div>
+                                        <div style={{ flex: 1, padding: '10px 16px', textAlign: 'center', background: 'rgba(74,222,128,0.06)', borderRadius: '0 14px 14px 0', borderLeft: '1px solid rgba(74,222,128,0.1)' }}>
+                                            <p style={{ color: '#4ade80', fontSize: 10, fontWeight: 800, letterSpacing: 2, textTransform: 'uppercase', margin: '0 0 2px' }}>AGE GROUP</p>
+                                            <p style={{ color: '#4ade80', fontSize: 20, fontWeight: 900, margin: 0 }}>{runner?.ageGroup || '-'}</p>
+                                        </div>
+                                    </div>
+                                )}
+                                <button onClick={handleDownload} style={{ width: '100%', padding: '14px 20px', borderRadius: 14, background: 'linear-gradient(135deg, #3b82f6, #2563eb)', color: '#fff', fontSize: 17, fontWeight: 800, border: 'none', cursor: 'pointer', boxShadow: '0 8px 24px rgba(59,130,246,0.35)', marginBottom: 10 }}>💾 ดาวน์โหลดรูป</button>
+                                <button onClick={() => { setSuccess(false); setUploadedPhoto(''); if (fileInputRef.current) fileInputRef.current.value = ''; }} style={{ width: '100%', padding: '12px 20px', borderRadius: 14, background: 'rgba(255,255,255,0.08)', color: '#94a3b8', fontSize: 14, fontWeight: 700, border: '1px solid rgba(255,255,255,0.12)', cursor: 'pointer' }}>📸 อัปโหลดรูปใหม่</button>
+                            </div>
+                        </div>
+                    ) : (
+                        <div style={{ width: '100%', maxWidth: 420, animation: 'fadeIn 0.5s ease-out' }}>
+                            {campaignName && (
+                                <div style={{ textAlign: 'center', marginBottom: 14, borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: 14 }}>
+                                    <p style={{ color: '#fff', fontSize: 15, fontWeight: 900, textTransform: 'uppercase', margin: 0 }}>{campaignName}</p>
+                                    <p style={{ color: '#4ade80', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 2, margin: '4px 0 0' }}>RFID Check-in · Action Timing</p>
+                                </div>
+                            )}
+                            <div style={{ display: 'flex', gap: 16, alignItems: 'center', background: 'rgba(255,255,255,0.03)', borderRadius: 20, padding: '16px', marginBottom: 12, border: '1px solid rgba(255,255,255,0.08)' }}>
+                                <div style={{ width: 130, height: 130, borderRadius: 16, border: '4px solid #4ade80', overflow: 'hidden', flexShrink: 0, background: '#0f172a', boxShadow: '0 8px 20px rgba(74,222,128,0.2)' }}>
+                                    <img src={uploadedPhoto} alt="uploaded" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                </div>
+                                <div style={{ flex: 1 }}>
+                                    <div style={{ color: '#4ade80', fontSize: 11, fontWeight: 800, textTransform: 'uppercase', marginBottom: 6 }}>✅ Verified Runner</div>
+                                    <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+                                        <div>
+                                            <div style={{ fontSize: 10, color: '#64748b', textTransform: 'uppercase', letterSpacing: 2 }}>BIB</div>
+                                            <div style={{ fontSize: 44, fontWeight: 900, color: '#fff', lineHeight: 1 }}>{runner?.bib || '-'}</div>
+                                        </div>
+                                        {runner?.category && <div style={{ background: '#ef4444', color: '#fff', padding: '4px 12px', borderRadius: 8, fontSize: 14, fontWeight: 900, alignSelf: 'flex-end', marginBottom: 4 }}>{runner.category}</div>}
                                     </div>
                                 </div>
                             </div>
+                            <div style={{ background: 'rgba(255,255,255,0.04)', borderRadius: 16, padding: '14px 18px', marginBottom: 12 }}>
+                                <p style={{ color: '#fff', fontSize: 22, fontWeight: 900, margin: 0 }}>{runner?.firstNameTh || runner?.firstName} {runner?.lastNameTh || runner?.lastName}</p>
+                                {runner?.firstNameTh && <p style={{ color: '#94a3b8', fontSize: 13, fontWeight: 600, textTransform: 'uppercase', margin: '4px 0 0' }}>{runner.firstName} {runner.lastName}</p>}
+                            </div>
+                            {(runner?.gender || runner?.ageGroup) && (
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', borderRadius: 14, overflow: 'hidden', border: '1px solid rgba(255,255,255,0.08)', marginBottom: 16 }}>
+                                    <div style={{ padding: '10px 16px', textAlign: 'center' }}>
+                                        <p style={{ color: '#94a3b8', fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 2, margin: '0 0 4px' }}>Gender</p>
+                                        <p style={{ color: '#fff', fontSize: 18, fontWeight: 900, margin: 0 }}>{runner?.gender === 'M' ? 'Male' : runner?.gender === 'F' ? 'Female' : runner?.gender || '-'}</p>
+                                    </div>
+                                    <div style={{ padding: '10px 16px', textAlign: 'center', background: 'rgba(74,222,128,0.08)', borderLeft: '1px solid rgba(74,222,128,0.15)' }}>
+                                        <p style={{ color: '#4ade80', fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 2, margin: '0 0 4px' }}>Age Group</p>
+                                        <p style={{ color: '#4ade80', fontSize: 20, fontWeight: 900, margin: 0 }}>{runner?.ageGroup || '-'}</p>
+                                    </div>
+                                </div>
+                            )}
+                            <button onClick={handleDownload} style={{ width: '100%', padding: '14px 20px', borderRadius: 14, background: 'linear-gradient(135deg, #3b82f6, #2563eb)', color: '#fff', fontSize: 17, fontWeight: 800, border: 'none', cursor: 'pointer', boxShadow: '0 8px 24px rgba(59,130,246,0.35)', marginBottom: 10 }}>💾 ดาวน์โหลดรูป</button>
+                            <button onClick={() => { setSuccess(false); setUploadedPhoto(''); if (fileInputRef.current) fileInputRef.current.value = ''; }} style={{ width: '100%', padding: '12px 20px', borderRadius: 14, background: 'rgba(255,255,255,0.08)', color: '#94a3b8', fontSize: 14, fontWeight: 700, border: '1px solid rgba(255,255,255,0.12)', cursor: 'pointer' }}>📸 อัปโหลดรูปใหม่</button>
                         </div>
-
-                        <p style={{ color: '#64748b', fontSize: 12, textAlign: 'center', margin: '12px 0 16px' }}>
-                            รูปจะแสดงบนหน้าจอสแกนอัตโนมัติ
-                        </p>
-
-                        {/* Buttons */}
-                        <button
-                            onClick={handleDownload}
-                            style={{
-                                width: '100%', padding: '14px 20px', borderRadius: 14,
-                                background: 'linear-gradient(135deg, #3b82f6, #2563eb)',
-                                color: '#fff', fontSize: 17, fontWeight: 800,
-                                border: 'none', cursor: 'pointer',
-                                boxShadow: '0 8px 24px rgba(59,130,246,0.35)',
-                                marginBottom: 12,
-                            }}
-                        >
-                            💾 ดาวน์โหลดรูป
-                        </button>
-                        <button
-                            onClick={() => { setSuccess(false); setUploadedPhoto(''); if (fileInputRef.current) fileInputRef.current.value = ''; }}
-                            style={{
-                                width: '100%', padding: '14px 20px', borderRadius: 14,
-                                background: 'rgba(255,255,255,0.08)', color: '#94a3b8',
-                                fontSize: 15, fontWeight: 700,
-                                border: '1px solid rgba(255,255,255,0.12)', cursor: 'pointer',
-                            }}
-                        >
-                            📸 อัปโหลดรูปใหม่
-                        </button>
-                    </div>
+                    )
                 ) : (
                     <div style={{
                         width: '100%', maxWidth: 400, textAlign: 'center',
