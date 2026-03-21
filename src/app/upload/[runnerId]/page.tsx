@@ -254,13 +254,23 @@ export default function UploadPhotoPage() {
                                                     <p style={{ fontSize: 19, fontWeight: 700, color: '#4ade80', textTransform: 'uppercase', letterSpacing: 2, marginTop: 4 }}>RFID Check-in • Action Timing</p>
                                                 </div>
                                                 <div style={{ display: 'flex', alignItems: 'flex-end', gap: 10, marginBottom: 54 }}>
-                                                    <div style={{ background: 'rgba(255,255,255,0.04)', borderLeft: '10px solid #4ade80', padding: '15px 50px', transform: 'skewX(-15deg)', borderRadius: 6, boxShadow: '15px 15px 30px rgba(0,0,0,0.3)', zIndex: 2 }}>
-                                                        <div style={{ transform: 'skewX(15deg)' }}>
+                                                    {/* BIB block: skewed bg div + normal text on top */}
+                                                    <div style={{ position: 'relative', zIndex: 2 }}>
+                                                        <div style={{ position: 'absolute', inset: 0, background: 'rgba(255,255,255,0.04)', borderLeft: '10px solid #4ade80', transform: 'skewX(-15deg)', borderRadius: 6, boxShadow: '15px 15px 30px rgba(0,0,0,0.3)' }} />
+                                                        <div style={{ position: 'relative', padding: '15px 50px' }}>
                                                             <p style={{ fontSize: 14, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: 6, margin: '0 0 2px' }}>BIB</p>
                                                             <div style={{ fontSize: 160, fontWeight: 900, lineHeight: 0.85, color: '#fff', fontStyle: 'italic', textShadow: '0 4px 10px rgba(0,0,0,0.5)', fontFamily: "'Exo 2', sans-serif", margin: 0 }}>{_bib}</div>
                                                         </div>
                                                     </div>
-                                                    {_dist && <div style={{ background: '#ef4444', padding: '10px 34px 10px 48px', transform: 'skewX(-15deg)', borderRadius: 6, marginBottom: 15, marginLeft: -35, zIndex: 1, boxShadow: 'inset 0 0 20px rgba(0,0,0,0.2)', border: '3px solid rgba(255,255,255,0.15)' }}><div style={{ transform: 'skewX(15deg)' }}><span style={{ fontSize: 40, fontWeight: 900, color: '#fff', whiteSpace: 'nowrap', fontStyle: 'italic', letterSpacing: 1 }}>{_dist}</span></div></div>}
+                                                    {/* Category badge: skewed bg div + normal text on top */}
+                                                    {_dist && (
+                                                        <div style={{ position: 'relative', marginBottom: 15, marginLeft: -35, zIndex: 1 }}>
+                                                            <div style={{ position: 'absolute', inset: 0, background: '#ef4444', transform: 'skewX(-15deg)', borderRadius: 6, boxShadow: 'inset 0 0 20px rgba(0,0,0,0.2)', border: '3px solid rgba(255,255,255,0.15)' }} />
+                                                            <div style={{ position: 'relative', padding: '10px 34px 10px 48px' }}>
+                                                                <span style={{ fontSize: 40, fontWeight: 900, color: '#fff', whiteSpace: 'nowrap', fontStyle: 'italic', letterSpacing: 1 }}>{_dist}</span>
+                                                            </div>
+                                                        </div>
+                                                    )}
                                                 </div>
                                                 <div style={{ marginBottom: 43 }}>
                                                     <div style={{ color: '#4ade80', fontWeight: 800, fontSize: 19, textTransform: 'uppercase', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 10 }}>
