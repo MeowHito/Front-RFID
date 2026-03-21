@@ -145,7 +145,7 @@ export default function CheckpointMonitorPage() {
     const [lastRefresh, setLastRefresh] = useState(new Date());
     const [currentTime, setCurrentTime] = useState(new Date());
     const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
-    const [statusFilter, setStatusFilter] = useState<string | null>(null);
+    const [statusFilter, setStatusFilter] = useState<string | null>('passed');
     const [rankDeltas, setRankDeltas] = useState<Map<string, number>>(new Map());
     const [confirmModal, setConfirmModal] = useState<{ runnerId: string; bib: string; name: string; newStatus: string; label: string } | null>(null);
     const intervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -253,7 +253,7 @@ export default function CheckpointMonitorPage() {
                 body: JSON.stringify({ status: newStatus, statusCheckpoint: selectedCp, changedBy: 'staff' }),
             });
             if (!res.ok) throw new Error('Failed');
-            setRunners(prev => prev.map(r => r._id === runnerId ? { ...r, status: newStatus } : r));
+            setRunners(prev => prev.map(r => r._id === runnerId ? { ...r, status: newStatus, statusCheckpoint: selectedCp } : r));
             const bibLabel = bib ? `BIB ${bib}` : '';
             setToast({ msg: th ? `${bibLabel} อัปเดตเป็น ${label} สำเร็จ` : `${bibLabel} updated to ${label}`, type: 'success' });
         } catch {
@@ -419,7 +419,7 @@ export default function CheckpointMonitorPage() {
                                 <th className="px-1 py-3 text-center font-bold text-slate-600 w-[85px]">
                                     <button onClick={() => toggleSort('arrival')}
                                         className={`bg-transparent border-none cursor-pointer font-bold text-xs inline-flex items-center ${sortBy === 'arrival' ? 'text-green-600' : 'text-slate-600'}`}>
-                                        {th ? 'ถึงจุด' : 'Arrival'}{sortArrow('arrival')}
+                                        {th ? 'เวลาที่มาถึง' : 'Arrival'}{sortArrow('arrival')}
                                     </button>
                                 </th>
                                 <th className="px-1 py-3 text-center font-bold text-slate-600 w-[85px]">

@@ -113,7 +113,7 @@ export default function ShareLiveMonitorPage() {
     const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
     const [lastRefresh, setLastRefresh] = useState(new Date());
     const [currentTime, setCurrentTime] = useState(new Date());
-    const [statusFilter, setStatusFilter] = useState<string | null>(null);
+    const [statusFilter, setStatusFilter] = useState<string | null>('passed');
     const [rankDeltas, setRankDeltas] = useState<Map<string, number>>(new Map());
     const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
