@@ -32,7 +32,8 @@ interface RunnerAtCheckpoint {
 }
 
 function formatMs(ms?: number): string {
-    if (!ms || ms <= 0) return '-';
+    if (ms === undefined || ms === null) return '-';
+    if (ms < 0) return '-';
     const totalSec = Math.floor(ms / 1000);
     const h = Math.floor(totalSec / 3600);
     const m = Math.floor((totalSec % 3600) / 60);
@@ -320,7 +321,7 @@ export default function ShareLiveMonitorPage() {
             {/* Table */}
             <div className="max-w-6xl mx-auto px-4 mt-3 pb-10">
                 <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
-                    <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
+                    <div className="overflow-x-auto">
                         <table className="w-full border-collapse text-[13px] min-w-[700px]">
                             <thead className="bg-slate-50 sticky top-0 z-10">
                                 <tr>
@@ -340,13 +341,13 @@ export default function ShareLiveMonitorPage() {
                                     <th className="px-1 py-3 text-center font-bold text-slate-600 w-[85px]">
                                         <button onClick={() => toggleSort('arrival')}
                                             className={`bg-transparent border-none cursor-pointer font-bold text-xs inline-flex items-center ${sortBy === 'arrival' ? 'text-green-600' : 'text-slate-600'}`}>
-                                            ถึงจุด{sortArrow('arrival')}
+                                            เวลาที่มาถึง{sortArrow('arrival')}
                                         </button>
                                     </th>
                                     <th className="px-1 py-3 text-center font-bold text-slate-600 w-[85px]">
                                         <button onClick={() => toggleSort('elapsed')}
                                             className={`bg-transparent border-none cursor-pointer font-bold text-xs inline-flex items-center ${sortBy === 'elapsed' ? 'text-green-600' : 'text-slate-600'}`}>
-                                            สะสม{sortArrow('elapsed')}
+                                            Net time{sortArrow('elapsed')}
                                         </button>
                                     </th>
                                     <th className="px-1 py-3 text-center font-bold text-slate-600 w-[65px]">
@@ -385,11 +386,11 @@ export default function ShareLiveMonitorPage() {
                                             <td className="p-2.5 text-center text-[11px] font-medium text-slate-500">
                                                 {r.category || '-'}
                                             </td>
-                                            <td className="p-2.5 text-center text-[12px] font-mono text-slate-600">
+                                            <td className="p-2.5 text-center text-[13px] font-bold text-black"> 
                                                 {r.scanTime ? new Date(r.scanTime).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '-'}
                                             </td>
-                                            <td className={`p-2.5 text-center font-bold text-sm ${isStopped ? 'text-red-600' : 'text-slate-900'}`}>
-                                                {isStopped ? getStoppedStatusText(runnerStatus, r.statusCheckpoint) : formatMs(r.elapsedTime || r.netTime || r.gunTime)}
+                                            <td className={`p-2.5 text-center text-md ${isStopped ? 'text-red-600' : 'text-slate-900'}`}>
+                                                {isStopped ? getStoppedStatusText(runnerStatus, r.statusCheckpoint) : formatMs(r.netTime ?? r.elapsedTime ?? (r.scanTime ? 0 : undefined))}
                                             </td>
                                             <td className="p-2.5 text-center text-[11px] text-slate-500">
                                                 {isStopped ? '-' : (r.netPace || r.gunPace || '-')}

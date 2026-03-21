@@ -31,16 +31,15 @@ interface RunnerAtCheckpoint {
 }
 
 const STATUS_OPTIONS = [
-    { value: 'finished', label_th: 'Finished', label_en: 'Finished', tw: 'bg-green-50 border-green-400 text-green-900' },
-    { value: 'in_progress', label_th: 'In Progress', label_en: 'In Progress', tw: 'bg-blue-50 border-blue-400 text-blue-900' },
-    { value: 'not_started', label_th: 'Not Started', label_en: 'Not Started', tw: 'bg-slate-50 border-slate-300 text-slate-700' },
+    { value: 'finished', label_th: 'ผ่านแล้ว', label_en: 'Passed', tw: 'bg-green-50 border-green-400 text-green-900' },
     { value: 'dns', label_th: 'DNS', label_en: 'DNS', tw: 'bg-red-50 border-red-400 text-red-900' },
     { value: 'dnf', label_th: 'DNF', label_en: 'DNF', tw: 'bg-red-50 border-red-400 text-red-900' },
     { value: 'dq', label_th: 'DQ', label_en: 'DQ', tw: 'bg-pink-50 border-pink-400 text-pink-900' },
 ];
 
 function formatMs(ms?: number): string {
-    if (!ms || ms <= 0) return '-';
+    if (ms === undefined || ms === null) return '-';
+    if (ms < 0) return '-';
     const totalSec = Math.floor(ms / 1000);
     const h = Math.floor(totalSec / 3600);
     const m = Math.floor((totalSec % 3600) / 60);
@@ -425,7 +424,7 @@ export default function CheckpointMonitorPage() {
                                 <th className="px-1 py-3 text-center font-bold text-slate-600 w-[85px]">
                                     <button onClick={() => toggleSort('elapsed')}
                                         className={`bg-transparent border-none cursor-pointer font-bold text-xs inline-flex items-center ${sortBy === 'elapsed' ? 'text-green-600' : 'text-slate-600'}`}>
-                                        {th ? 'สะสม' : 'Elapsed'}{sortArrow('elapsed')}
+                                        {th ? 'Net time' : 'Elapsed'}{sortArrow('elapsed')}
                                     </button>
                                 </th>
                                 <th className="px-1 py-3 text-center font-bold text-slate-600 w-[65px]">
@@ -467,18 +466,18 @@ export default function CheckpointMonitorPage() {
                                         <td className="p-2.5 text-center text-[11px] font-medium text-slate-500">
                                             {r.category || '-'}
                                         </td>
-                                        <td className="p-2.5 text-center text-[12px] font-mono text-slate-600">
+                                        <td className="p-2.5 text-center text-[13px] font-bold text-slate-600">
                                             {r.scanTime ? new Date(r.scanTime).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '-'}
                                         </td>
-                                        <td className={`p-2.5 text-center font-bold text-[13px] ${isStopped ? 'text-red-600' : 'text-slate-900'}`}>
-                                            {isStopped ? getStoppedStatusText(runnerStatus, r.statusCheckpoint) : formatMs(r.elapsedTime || r.netTime || r.gunTime)}
+                                        <td className={`p-2.5 text-center text-[13px] ${isStopped ? 'text-red-600' : 'text-slate-900'}`}>
+                                            {isStopped ? getStoppedStatusText(runnerStatus, r.statusCheckpoint) : formatMs(r.netTime ?? r.elapsedTime ?? (r.scanTime ? 0 : undefined))}
                                         </td>
                                         <td className="p-2.5 text-center text-[11px] text-slate-500">
                                             {isStopped ? '-' : (r.netPace || r.gunPace || '-')}
                                         </td>
                                         <td className="p-2.5 text-center">
                                             <select
-                                                value={STATUS_OPTIONS.some(opt => opt.value === runnerStatus) ? runnerStatus : 'in_progress'}
+                                                value={STATUS_OPTIONS.some(opt => opt.value === runnerStatus) ? runnerStatus : 'finished'}
                                                 onChange={e => handleStatusChange(r._id, e.target.value)}
                                                 className={`px-2 py-1 rounded-md border text-[11px] font-bold cursor-pointer outline-none ${statusOpt.tw}`}
                                             >
