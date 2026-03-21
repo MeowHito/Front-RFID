@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useRef } from 'react';
-import html2canvas from 'html2canvas';
+import { toJpeg } from 'html-to-image';
 import { useParams, useSearchParams } from 'next/navigation';
 
 export default function UploadPhotoPage() {
@@ -28,42 +28,35 @@ export default function UploadPhotoPage() {
         if (!cardRef.current) return;
         const filename = `BIB${runner?.bib || 'photo'}_${runner?.firstNameTh || runner?.firstName || ''}.jpg`;
 
-        // Clone card off-screen at full 1920×1080 (no CSS scale) so html2canvas captures at full resolution
-        const offscreen = document.createElement('div');
-        offscreen.style.cssText = 'position:fixed;left:-99999px;top:0;width:1920px;height:1080px;overflow:visible;z-index:-1';
-        const clone = cardRef.current.cloneNode(true) as HTMLElement;
-        clone.style.transform = 'none';
-        clone.style.position = 'relative';
-        clone.style.width = '1920px';
-        clone.style.height = '1080px';
-        offscreen.appendChild(clone);
-        document.body.appendChild(offscreen);
-
         try {
             await document.fonts.ready;
-            const canvas = await html2canvas(clone, {
-                width: 1920, height: 1080, scale: 1,
-                useCORS: true, allowTaint: true,
-                backgroundColor: '#020617',
-            });
 
-            canvas.toBlob(async (blob) => {
-                if (!blob) return;
-                const file = new File([blob], filename, { type: 'image/jpeg' });
-                if (typeof navigator !== 'undefined' && navigator.share && navigator.canShare?.({ files: [file] })) {
-                    try { await navigator.share({ files: [file] }); return; } catch { /* fall through */ }
-                }
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url; a.download = filename;
-                document.body.appendChild(a); a.click();
-                document.body.removeChild(a);
-                setTimeout(() => URL.revokeObjectURL(url), 1000);
-            }, 'image/jpeg', 0.92);
+            const opts = {
+                quality: 0.92,
+                width: 1920,
+                height: 1080,
+                pixelRatio: 1,
+                cacheBust: true,
+                style: { transform: 'none', position: 'relative' as const },
+            };
+
+            // First call warms the image cache (fixes base64 images not rendering)
+            await toJpeg(cardRef.current, opts).catch(() => {});
+            // Second call produces the correct output
+            const dataUrl = await toJpeg(cardRef.current, opts);
+
+            const res = await fetch(dataUrl);
+            const blob = await res.blob();
+            const file = new File([blob], filename, { type: 'image/jpeg' });
+            if (typeof navigator !== 'undefined' && navigator.share && navigator.canShare?.({ files: [file] })) {
+                try { await navigator.share({ files: [file] }); return; } catch { /* fall through */ }
+            }
+            const a = document.createElement('a');
+            a.href = dataUrl; a.download = filename;
+            document.body.appendChild(a); a.click();
+            document.body.removeChild(a);
         } catch (err) {
             console.error('Download error', err);
-        } finally {
-            document.body.removeChild(offscreen);
         }
     };
 
@@ -254,23 +247,13 @@ export default function UploadPhotoPage() {
                                                     <p style={{ fontSize: 19, fontWeight: 700, color: '#4ade80', textTransform: 'uppercase', letterSpacing: 2, marginTop: 4 }}>RFID Check-in • Action Timing</p>
                                                 </div>
                                                 <div style={{ display: 'flex', alignItems: 'flex-end', gap: 10, marginBottom: 54 }}>
-                                                    {/* BIB block: skewed bg div + normal text on top */}
-                                                    <div style={{ position: 'relative', zIndex: 2 }}>
-                                                        <div style={{ position: 'absolute', inset: 0, background: 'rgba(255,255,255,0.04)', borderLeft: '10px solid #4ade80', transform: 'skewX(-15deg)', borderRadius: 6, boxShadow: '15px 15px 30px rgba(0,0,0,0.3)' }} />
-                                                        <div style={{ position: 'relative', padding: '15px 50px' }}>
+                                                    <div style={{ background: 'rgba(255,255,255,0.04)', borderLeft: '10px solid #4ade80', padding: '15px 50px', transform: 'skewX(-15deg)', borderRadius: 6, boxShadow: '15px 15px 30px rgba(0,0,0,0.3)', zIndex: 2 }}>
+                                                        <div style={{ transform: 'skewX(15deg)' }}>
                                                             <p style={{ fontSize: 14, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: 6, margin: '0 0 2px' }}>BIB</p>
                                                             <div style={{ fontSize: 160, fontWeight: 900, lineHeight: 0.85, color: '#fff', fontStyle: 'italic', textShadow: '0 4px 10px rgba(0,0,0,0.5)', fontFamily: "'Exo 2', sans-serif", margin: 0 }}>{_bib}</div>
                                                         </div>
                                                     </div>
-                                                    {/* Category badge: skewed bg div + normal text on top */}
-                                                    {_dist && (
-                                                        <div style={{ position: 'relative', marginBottom: 15, marginLeft: -35, zIndex: 1 }}>
-                                                            <div style={{ position: 'absolute', inset: 0, background: '#ef4444', transform: 'skewX(-15deg)', borderRadius: 6, boxShadow: 'inset 0 0 20px rgba(0,0,0,0.2)', border: '3px solid rgba(255,255,255,0.15)' }} />
-                                                            <div style={{ position: 'relative', padding: '10px 34px 10px 48px' }}>
-                                                                <span style={{ fontSize: 40, fontWeight: 900, color: '#fff', whiteSpace: 'nowrap', fontStyle: 'italic', letterSpacing: 1 }}>{_dist}</span>
-                                                            </div>
-                                                        </div>
-                                                    )}
+                                                    {_dist && <div style={{ background: '#ef4444', padding: '10px 34px 10px 48px', transform: 'skewX(-15deg)', borderRadius: 6, marginBottom: 15, marginLeft: -35, zIndex: 1, boxShadow: 'inset 0 0 20px rgba(0,0,0,0.2)', border: '3px solid rgba(255,255,255,0.15)' }}><div style={{ transform: 'skewX(15deg)' }}><span style={{ fontSize: 40, fontWeight: 900, color: '#fff', whiteSpace: 'nowrap', fontStyle: 'italic', letterSpacing: 1 }}>{_dist}</span></div></div>}
                                                 </div>
                                                 <div style={{ marginBottom: 43 }}>
                                                     <div style={{ color: '#4ade80', fontWeight: 800, fontSize: 19, textTransform: 'uppercase', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 10 }}>
