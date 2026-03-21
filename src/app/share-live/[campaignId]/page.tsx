@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useSearchParams } from 'next/navigation';
 
-interface Campaign { _id: string; name: string; nameTh?: string; nameEn?: string; categories?: { name: string; distance?: string }[]; }
+interface Campaign { _id: string; name: string; slug?: string; nameTh?: string; nameEn?: string; categories?: { name: string; distance?: string }[]; }
 interface Checkpoint { _id: string; name: string; kmCumulative?: number; }
 
 interface RunnerAtCheckpoint {
@@ -99,7 +99,10 @@ export default function ShareLiveMonitorPage() {
     const [sortBy, setSortBy] = useState<'arrival' | 'bib' | 'name'>('arrival');
     const [autoRefresh, setAutoRefresh] = useState(true);
     const [lastRefresh, setLastRefresh] = useState(new Date());
+    const [statusFilter, setStatusFilter] = useState<string | null>(null);
+    const [rankDeltas, setRankDeltas] = useState<Map<string, number>>(new Map());
     const intervalRef = useRef<NodeJS.Timeout | null>(null);
+    const prevRanksRef = useRef<Map<string, number>>(new Map());
 
     // Load campaign info
     useEffect(() => {
@@ -137,7 +140,20 @@ export default function ShareLiveMonitorPage() {
             const res = await fetch(`/api/timing/checkpoint-by-campaign/${campaignId}?cp=${encodeURIComponent(selectedCp)}`, { cache: 'no-store' });
             if (!res.ok) throw new Error();
             const data = await res.json();
-            setRunners(Array.isArray(data) ? dedupeRunners(data) : []);
+            const newRunners = Array.isArray(data) ? dedupeRunners(data) : [];
+            // Compute rank deltas
+            const prev = prevRanksRef.current;
+            const newDeltas = new Map<string, number>();
+            newRunners.forEach(r => {
+                if (r.bib && r.overallRank && prev.has(r.bib)) {
+                    newDeltas.set(r.bib, prev.get(r.bib)! - r.overallRank);
+                }
+            });
+            const nextPrev = new Map<string, number>();
+            newRunners.forEach(r => { if (r.bib && r.overallRank) nextPrev.set(r.bib, r.overallRank); });
+            prevRanksRef.current = nextPrev;
+            setRankDeltas(newDeltas);
+            setRunners(newRunners);
         } catch { setRunners([]); }
         finally { setDataLoading(false); setLastRefresh(new Date()); }
     }, [campaignId, selectedCp]);
@@ -153,6 +169,14 @@ export default function ShareLiveMonitorPage() {
     }, [autoRefresh, campaignId, selectedCp, fetchRunners]);
 
     const filteredRunners = runners.filter(r => {
+        // Status filter
+        if (statusFilter) {
+            if (statusFilter === 'in_progress') {
+                if (r.status && r.status !== 'in_progress') return false;
+            } else {
+                if (r.status !== statusFilter) return false;
+            }
+        }
         if (!search) return true;
         const term = search.toLowerCase();
         const name = `${r.firstName} ${r.lastName}`.toLowerCase();
@@ -192,7 +216,7 @@ export default function ShareLiveMonitorPage() {
                 <div className="max-w-6xl mx-auto flex items-center justify-between gap-4 flex-wrap">
                     <div>
                         <h1 className="text-xl font-extrabold m-0 flex items-center gap-2">
-                            📍 Live Checkpoint Monitor
+                            Live Checkpoint Monitor
                         </h1>
                         <p className="text-green-100 text-sm mt-0.5 font-medium">
                             {campaign.nameTh || campaign.nameEn || campaign.name}
@@ -216,10 +240,33 @@ export default function ShareLiveMonitorPage() {
             {/* Controls */}
             <div className="max-w-6xl mx-auto px-4 mt-4">
                 <div className="bg-white border border-slate-200 rounded-xl px-4 py-3 shadow-sm flex justify-between items-center gap-3 flex-wrap">
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-3 flex-wrap">
                         <span className="px-4 py-2 rounded-lg bg-green-100 text-green-800 text-sm font-bold">
                             Arrived: {runners.length} runners
                         </span>
+                        {runners.length > 0 && (
+                            <>
+                                <span className="text-slate-300">|</span>
+                                <span className="text-[12px] font-bold text-slate-500">Summary:</span>
+                                {[
+                                    { key: null, label: 'Total', count: runners.length, bg: 'bg-slate-100 text-slate-700', bgActive: 'bg-slate-700 text-white' },
+                                    { key: 'finished', label: 'Finished', count: runners.filter(r => r.status === 'finished').length, bg: 'bg-green-100 text-green-800', bgActive: 'bg-green-600 text-white' },
+                                    { key: 'in_progress', label: 'Running', count: runners.filter(r => !r.status || r.status === 'in_progress').length, bg: 'bg-amber-100 text-amber-800', bgActive: 'bg-amber-500 text-white' },
+                                    { key: 'dnf', label: 'DNF', count: runners.filter(r => r.status === 'dnf').length, bg: 'bg-red-100 text-red-800', bgActive: 'bg-red-600 text-white' },
+                                    { key: 'dns', label: 'DNS', count: runners.filter(r => r.status === 'dns').length, bg: 'bg-slate-200 text-slate-600', bgActive: 'bg-slate-600 text-white' },
+                                    { key: 'dq', label: 'DQ', count: runners.filter(r => r.status === 'dq').length, bg: 'bg-pink-100 text-pink-800', bgActive: 'bg-pink-600 text-white' },
+                                ].map(item => (
+                                    <button key={item.key ?? 'all'}
+                                        onClick={() => setStatusFilter(prev => prev === item.key ? null : item.key)}
+                                        className={`px-2.5 py-1 rounded-md text-[11px] font-bold cursor-pointer border-none transition-all ${
+                                            statusFilter === item.key ? item.bgActive : item.bg
+                                        } hover:opacity-80`}
+                                    >
+                                        {item.label}: {item.count}
+                                    </button>
+                                ))}
+                            </>
+                        )}
                     </div>
                     <div className="flex items-center gap-2">
                         <div className="relative">
@@ -252,7 +299,7 @@ export default function ShareLiveMonitorPage() {
                                     <th className="px-2.5 py-3 text-center font-bold text-slate-600 w-[50px]">
                                         <button onClick={() => setSortBy('arrival')}
                                             className={`bg-transparent border-none cursor-pointer font-bold text-xs ${sortBy === 'arrival' ? 'text-green-600' : 'text-slate-600'}`}>
-                                            #
+                                            No.
                                         </button>
                                     </th>
                                     <th className="px-2.5 py-3 text-center font-bold text-slate-600 w-[70px]">
@@ -264,7 +311,7 @@ export default function ShareLiveMonitorPage() {
                                     <th className="px-2.5 py-3 text-left font-bold text-slate-600">
                                         <button onClick={() => setSortBy('name')}
                                             className={`bg-transparent border-none cursor-pointer font-bold text-xs ${sortBy === 'name' ? 'text-green-600' : 'text-slate-600'}`}>
-                                            Athlete &amp; Rankings
+                                            นักกีฬา (Athlete) &amp; Rankings
                                         </button>
                                     </th>
                                     <th className="px-2.5 py-3 text-center font-bold text-slate-600 w-[60px]">Cat.</th>
@@ -281,8 +328,7 @@ export default function ShareLiveMonitorPage() {
                                 ) : sortedRunners.map((r, idx) => {
                                     const rowKey = r._id ? `${r._id}-${idx}` : `row-${idx}`;
                                     const isDnf = ['dnf', 'dns', 'dq'].includes(r.status);
-                                    const isFinished = r.status === 'finished';
-                                    const rowCls = isDnf ? 'bg-red-50' : isFinished ? 'bg-green-50' : idx === 0 ? 'bg-amber-50' : 'bg-white';
+                                    const rowCls = isDnf ? 'bg-red-50' : 'bg-white';
                                     return (
                                         <tr key={rowKey} className={`border-b border-slate-100 ${rowCls}`}>
                                             <td className="p-2.5 text-center">
@@ -298,7 +344,7 @@ export default function ShareLiveMonitorPage() {
                                                     {r.firstName} {r.lastName}
                                                 </div>
                                                 <div className={`text-[11px] mt-0.5 flex gap-2 ${isDnf ? 'text-red-300' : 'text-slate-400'}`}>
-                                                    <span>Ovr: <b className={isDnf ? 'text-red-300' : 'text-slate-700'}>{r.overallRank || '-'}</b></span>
+                                                    <span>Ovr: <b className={isDnf ? 'text-red-300' : 'text-slate-700'}>{r.overallRank || '-'}</b>{(() => { const d = rankDeltas.get(r.bib); if (d === undefined || d === 0) return r.bib && rankDeltas.size > 0 ? <span className="text-slate-400 ml-0.5">(—)</span> : null; return d > 0 ? <span className="text-green-600 font-bold ml-0.5">(↑{d})</span> : <span className="text-red-500 font-bold ml-0.5">(↓{Math.abs(d)})</span>; })()}</span>
                                                     <span>|</span>
                                                     <span>Gen: <b className={isDnf ? 'text-red-300' : 'text-slate-700'}>{r.genderRank || '-'}</b></span>
                                                     <span>|</span>
