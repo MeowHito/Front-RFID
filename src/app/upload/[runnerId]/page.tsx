@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useRef } from 'react';
-import { toJpeg } from 'html-to-image';
+import html2canvas from 'html2canvas';
 import { useParams, useSearchParams } from 'next/navigation';
 
 export default function UploadPhotoPage() {
@@ -27,20 +27,43 @@ export default function UploadPhotoPage() {
     const handleDownload = async () => {
         if (!cardRef.current) return;
         const filename = `BIB${runner?.bib || 'photo'}_${runner?.firstNameTh || runner?.firstName || ''}.jpg`;
+
+        // Clone card off-screen at full 1080×540 (no CSS scale) so html2canvas captures at full resolution
+        const offscreen = document.createElement('div');
+        offscreen.style.cssText = 'position:fixed;left:-99999px;top:0;width:1080px;height:540px;overflow:visible;z-index:-1';
+        const clone = cardRef.current.cloneNode(true) as HTMLElement;
+        clone.style.transform = 'none';
+        clone.style.position = 'relative';
+        clone.style.width = '1080px';
+        clone.style.height = '540px';
+        offscreen.appendChild(clone);
+        document.body.appendChild(offscreen);
+
         try {
-            const dataUrl = await toJpeg(cardRef.current, { quality: 0.92, pixelRatio: 1 });
-            const res = await fetch(dataUrl);
-            const blob = await res.blob();
-            const file = new File([blob], filename, { type: 'image/jpeg' });
-            if (typeof navigator !== 'undefined' && navigator.share && navigator.canShare?.({ files: [file] })) {
-                try { await navigator.share({ files: [file] }); return; } catch { /* fall through */ }
-            }
-            const a = document.createElement('a');
-            a.href = dataUrl; a.download = filename;
-            document.body.appendChild(a); a.click();
-            document.body.removeChild(a);
+            await document.fonts.ready;
+            const canvas = await html2canvas(clone, {
+                width: 1080, height: 540, scale: 1,
+                useCORS: true, allowTaint: true,
+                backgroundColor: '#020617',
+            });
+
+            canvas.toBlob(async (blob) => {
+                if (!blob) return;
+                const file = new File([blob], filename, { type: 'image/jpeg' });
+                if (typeof navigator !== 'undefined' && navigator.share && navigator.canShare?.({ files: [file] })) {
+                    try { await navigator.share({ files: [file] }); return; } catch { /* fall through */ }
+                }
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url; a.download = filename;
+                document.body.appendChild(a); a.click();
+                document.body.removeChild(a);
+                setTimeout(() => URL.revokeObjectURL(url), 1000);
+            }, 'image/jpeg', 0.92);
         } catch (err) {
             console.error('Download error', err);
+        } finally {
+            document.body.removeChild(offscreen);
         }
     };
 
