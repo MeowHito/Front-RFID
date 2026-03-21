@@ -22,27 +22,27 @@ export default function UploadPhotoPage() {
     const fileInputRef = useRef<HTMLInputElement>(null);
     const cardRef = useRef<HTMLDivElement>(null);
     const wrapperRef = useRef<HTMLDivElement>(null);
-    const [cardScale, setCardScale] = useState(0.37);
+    const [cardScale, setCardScale] = useState(0.22);
 
     const handleDownload = async () => {
         if (!cardRef.current) return;
         const filename = `BIB${runner?.bib || 'photo'}_${runner?.firstNameTh || runner?.firstName || ''}.jpg`;
 
-        // Clone card off-screen at full 1080×540 (no CSS scale) so html2canvas captures at full resolution
+        // Clone card off-screen at full 1920×1080 (no CSS scale) so html2canvas captures at full resolution
         const offscreen = document.createElement('div');
-        offscreen.style.cssText = 'position:fixed;left:-99999px;top:0;width:1080px;height:540px;overflow:visible;z-index:-1';
+        offscreen.style.cssText = 'position:fixed;left:-99999px;top:0;width:1920px;height:1080px;overflow:visible;z-index:-1';
         const clone = cardRef.current.cloneNode(true) as HTMLElement;
         clone.style.transform = 'none';
         clone.style.position = 'relative';
-        clone.style.width = '1080px';
-        clone.style.height = '540px';
+        clone.style.width = '1920px';
+        clone.style.height = '1080px';
         offscreen.appendChild(clone);
         document.body.appendChild(offscreen);
 
         try {
             await document.fonts.ready;
             const canvas = await html2canvas(clone, {
-                width: 1080, height: 540, scale: 1,
+                width: 1920, height: 1080, scale: 1,
                 useCORS: true, allowTaint: true,
                 backgroundColor: '#020617',
             });
@@ -103,7 +103,7 @@ export default function UploadPhotoPage() {
 
     useEffect(() => {
         if (!success) return;
-        const compute = () => { if (wrapperRef.current) setCardScale(wrapperRef.current.offsetWidth / 1080); };
+        const compute = () => { if (wrapperRef.current) setCardScale(wrapperRef.current.offsetWidth / 1920); };
         compute();
         window.addEventListener('resize', compute);
         return () => window.removeEventListener('resize', compute);
@@ -142,7 +142,7 @@ export default function UploadPhotoPage() {
 
     return (
         <>
-            <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@400;600;700;800;900&display=swap" rel="stylesheet" />
+            <link href="https://fonts.googleapis.com/css2?family=Exo+2:ital,wght@0,700;0,900;1,700;1,900&family=Prompt:wght@400;600;700;800;900&display=swap" rel="stylesheet" />
             <meta name="viewport" content="width=device-width, initial-scale=1" />
 
             <div style={{
@@ -175,83 +175,113 @@ export default function UploadPhotoPage() {
                     const _bib = String(runner?.bib || '-');
                     return (
                         <div ref={wrapperRef} style={{ width: '100%', maxWidth: 420, animation: 'fadeIn 0.5s ease-out' }}>
-                            {/* Scaled 1080×540 card — same JSX as scanning page */}
-                            <div style={{ position: 'relative', width: '100%', height: Math.round(540 * cardScale), overflow: 'hidden', borderRadius: 14, marginBottom: 14, boxShadow: '0 15px 40px rgba(0,0,0,0.5)', border: '1px solid rgba(74,222,128,0.2)' }}>
-                                <div ref={cardRef} style={{ position: 'absolute', top: 0, left: 0, width: 1080, height: 540, transformOrigin: '0 0', transform: `scale(${cardScale})` }}>
+                            {/* Scaled 1920×1080 card — exact same layout as scanning page */}
+                            <div style={{ position: 'relative', width: '100%', height: Math.round(1080 * cardScale), overflow: 'hidden', borderRadius: 14, marginBottom: 14, boxShadow: '0 15px 40px rgba(0,0,0,0.5)', border: '1px solid rgba(74,222,128,0.2)' }}>
+                                <div ref={cardRef} style={{ position: 'absolute', top: 0, left: 0, width: 1920, height: 1080, transformOrigin: '0 0', transform: `scale(${cardScale})` }}>
                                     {template === 'classic' ? (
-                                        <div style={{ width: 1080, height: 540, background: 'radial-gradient(circle at center, #1e293b 0%, #020617 100%)', display: 'flex', flexDirection: 'column', padding: '26px 50px 0 50px', fontFamily: "'Prompt', Arial, sans-serif", position: 'relative', overflow: 'hidden' }}>
-                                            <div style={{ textAlign: 'center', borderBottom: '2px solid rgba(255,255,255,0.1)', paddingBottom: 14, marginBottom: 20 }}>
-                                                <div style={{ fontSize: 36, fontWeight: 900, textTransform: 'uppercase', letterSpacing: 2, color: '#fff', lineHeight: 1.1 }}>{campaignName}</div>
-                                                <div style={{ fontSize: 17, fontWeight: 700, color: '#4ade80', textTransform: 'uppercase', letterSpacing: 4, marginTop: 4 }}>RFID Check-in • Action Timing</div>
-                                            </div>
-                                            <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 44 }}>
-                                                <div style={{ flexShrink: 0 }}>
-                                                    <div style={{ width: 220, height: 220, borderRadius: 22, border: '5px solid #4ade80', overflow: 'hidden', background: '#0f172a', boxShadow: '0 15px 35px rgba(74,222,128,0.2)' }}>
-                                                        <img src={uploadedPhoto} alt="runner" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                                                    </div>
+                                        /* ===== CLASSIC 1920×1080 ===== */
+                                        <div style={{ width: 1920, height: 1080, background: 'radial-gradient(circle at center, #1e293b 0%, #020617 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'Prompt', sans-serif", position: 'relative' }}>
+                                            <div style={{ width: 1824, height: 1026, background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 40, display: 'flex', flexDirection: 'column', padding: '40px 60px', boxShadow: '0 30px 60px rgba(0,0,0,0.5)', backdropFilter: 'blur(20px)', position: 'relative', overflow: 'hidden' }}>
+                                                {/* Header */}
+                                                <div style={{ textAlign: 'center', borderBottom: '2px solid rgba(255,255,255,0.1)', paddingBottom: 20, marginBottom: 30 }}>
+                                                    <div style={{ fontSize: 48, fontWeight: 900, textTransform: 'uppercase', letterSpacing: 2, color: '#fff', margin: 0 }}>{campaignName}</div>
+                                                    <div style={{ fontSize: 24, fontWeight: 700, color: '#4ade80', textTransform: 'uppercase', letterSpacing: 4, marginTop: 4 }}>RFID Check-in • Action Timing</div>
                                                 </div>
-                                                <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-                                                    <div style={{ color: '#4ade80', fontWeight: 800, fontSize: 20, textTransform: 'uppercase', marginBottom: 8 }}>✅ Verified Runner</div>
-                                                    <div style={{ fontSize: 60, fontWeight: 900, lineHeight: 1, marginBottom: 4, color: '#fff' }}>{_nth}</div>
-                                                    {_nen && <div style={{ fontSize: 24, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', marginBottom: 16 }}>{_nen}</div>}
-                                                    <div style={{ display: 'flex', alignItems: 'center', gap: 18, marginTop: _nen ? 0 : 16 }}>
-                                                        {_dist && <div style={{ background: '#ef4444', color: '#fff', padding: '12px 28px', borderRadius: 14, fontSize: 38, fontWeight: 900, boxShadow: '0 8px 20px rgba(239,68,68,0.4)', border: '3px solid rgba(255,255,255,0.2)' }}>{_dist}</div>}
-                                                        <div>
-                                                            <div style={{ fontSize: 14, fontWeight: 700, color: '#64748b', letterSpacing: 3, textTransform: 'uppercase' }}>BIB</div>
-                                                            <div style={{ fontSize: 90, fontWeight: 900, color: '#fff', fontStyle: 'italic', lineHeight: 0.85, textShadow: '0 4px 12px rgba(0,0,0,0.4)' }}>{_bib}</div>
+                                                {/* Middle */}
+                                                <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 50, padding: '20px 0' }}>
+                                                    <div style={{ position: 'relative', flexShrink: 0, marginRight: 10 }}>
+                                                        <div style={{ width: 340, height: 340, borderRadius: 30, border: '6px solid #4ade80', overflow: 'hidden', boxShadow: '0 20px 40px rgba(74,222,128,0.2)', background: '#0f172a', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                                            <img src={uploadedPhoto} alt="runner" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                                        </div>
+                                                        <div style={{ position: 'absolute', bottom: -10, right: -10, background: '#fff', padding: 6, borderRadius: 12, border: '3px solid #4ade80', boxShadow: '0 10px 20px rgba(0,0,0,0.4)', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                                                            <div style={{ width: 55, height: 45, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                                                <span style={{ fontSize: 28, fontWeight: 900, color: '#0f172a', fontFamily: "'Exo 2', sans-serif", fontStyle: 'italic' }}>{_bib}</span>
+                                                            </div>
+                                                            <p style={{ color: '#64748b', fontSize: 8, fontWeight: 800, textTransform: 'uppercase', marginTop: 2 }}>BIB</p>
+                                                        </div>
+                                                    </div>
+                                                    <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                                                        <div style={{ color: '#4ade80', fontWeight: 800, fontSize: 24, textTransform: 'uppercase', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 10 }}>
+                                                            <span>✅</span> Verified Runner
+                                                        </div>
+                                                        <div style={{ fontSize: 80, fontWeight: 900, lineHeight: 1, margin: '0 0 5px', color: '#fff' }}>{_nth}</div>
+                                                        {_nen && <div style={{ fontSize: 32, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', margin: '0 0 30px' }}>{_nen}</div>}
+                                                        <div style={{ display: 'flex', alignItems: 'center', gap: 20, marginTop: _nen ? 0 : 25 }}>
+                                                            {_dist && <div style={{ background: '#ef4444', color: '#fff', padding: '14px 36px', borderRadius: 18, fontSize: 45, fontWeight: 900, boxShadow: '0 10px 25px rgba(239,68,68,0.4)', border: '3px solid rgba(255,255,255,0.2)' }}>{_dist}</div>}
+                                                            <div>
+                                                                <div style={{ fontSize: 16, fontWeight: 700, color: '#64748b', letterSpacing: 3, textTransform: 'uppercase' }}>BIB</div>
+                                                                <div style={{ fontSize: 128, fontWeight: 900, color: '#fff', fontStyle: 'italic', lineHeight: 0.85, textShadow: '0 5px 15px rgba(0,0,0,0.5)', fontFamily: "'Exo 2', sans-serif" }}>{_bib}</div>
+                                                            </div>
                                                         </div>
                                                     </div>
                                                 </div>
-                                            </div>
-                                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', background: 'rgba(255,255,255,0.05)', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.1)' }}>
-                                                <div style={{ padding: '18px 20px', textAlign: 'center' }}>
-                                                    <div style={{ fontSize: 14, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 2, marginBottom: 4, color: '#94a3b8' }}>Gender</div>
-                                                    <div style={{ fontSize: 28, fontWeight: 900, color: '#fff' }}>{_gl}</div>
+                                                {/* Bottom bar */}
+                                                <div style={{ marginTop: 40 }}>
+                                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', background: 'rgba(255,255,255,0.05)', borderRadius: 30, overflow: 'hidden', border: '1px solid rgba(255,255,255,0.1)' }}>
+                                                        <div style={{ padding: '30px 20px', textAlign: 'center' }}>
+                                                            <p style={{ fontSize: 19, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 2, marginBottom: 5, color: '#94a3b8' }}>Gender</p>
+                                                            <p style={{ fontSize: 48, fontWeight: 900, lineHeight: 1, color: '#fff', textTransform: 'uppercase' }}>{_gl}</p>
+                                                        </div>
+                                                        <div style={{ padding: '30px 20px', textAlign: 'center', background: 'rgba(74,222,128,0.1)' }}>
+                                                            <p style={{ fontSize: 19, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 2, marginBottom: 5, color: '#4ade80' }}>Age Group</p>
+                                                            <p style={{ fontSize: 64, fontWeight: 900, lineHeight: 1, color: '#4ade80', textShadow: '0 0 20px rgba(74,222,128,0.3)' }}>{_ag}</p>
+                                                        </div>
+                                                    </div>
                                                 </div>
-                                                <div style={{ padding: '18px 20px', textAlign: 'center', background: 'rgba(74,222,128,0.1)' }}>
-                                                    <div style={{ fontSize: 14, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 2, marginBottom: 4, color: '#4ade80' }}>Age Group</div>
-                                                    <div style={{ fontSize: 28, fontWeight: 900, color: '#4ade80' }}>{_ag}</div>
-                                                </div>
+                                                <div style={{ position: 'absolute', bottom: 0, left: 0, height: 10, background: '#4ade80', borderRadius: '0 0 40px 40px', width: '100%' }} />
                                             </div>
-                                            <div style={{ position: 'absolute', bottom: 8, right: 18, fontSize: 10, fontWeight: 800, color: 'rgba(255,255,255,0.12)', textTransform: 'uppercase', letterSpacing: 4 }}>Action Timing System</div>
                                         </div>
                                     ) : (
-                                        <div style={{ width: 1080, height: 540, background: 'linear-gradient(135deg, #020617 0%, #0f172a 100%)', display: 'flex', flexDirection: 'row', fontFamily: "'Prompt', Arial, sans-serif", position: 'relative', overflow: 'hidden' }}>
-                                            <div style={{ width: '45%', height: '100%', position: 'relative', overflow: 'hidden' }}>
-                                                <img src={uploadedPhoto} alt="runner" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
-                                                <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to right, rgba(2,6,23,0) 70%, rgba(2,6,23,1) 100%)' }} />
-                                            </div>
-                                            <div style={{ width: '55%', display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: '30px 44px' }}>
-                                                <div style={{ marginBottom: 22, borderLeft: '6px solid #4ade80', paddingLeft: 18 }}>
-                                                    <div style={{ fontSize: 28, fontWeight: 900, textTransform: 'uppercase', color: '#fff', lineHeight: 1.1 }}>{campaignName}</div>
-                                                    <div style={{ fontSize: 14, fontWeight: 700, color: '#4ade80', textTransform: 'uppercase', letterSpacing: 2, marginTop: 4 }}>RFID Check-in • Action Timing</div>
+                                        /* ===== SPLIT 1920×1080 ===== */
+                                        <div style={{ width: 1920, height: 1080, background: 'linear-gradient(135deg, #020617 0%, #0f172a 100%)', display: 'flex', flexDirection: 'row', fontFamily: "'Prompt', sans-serif", position: 'relative', overflow: 'hidden' }}>
+                                            {/* Left — photo */}
+                                            <div style={{ width: '45%', height: '100%', position: 'relative', overflow: 'hidden', background: '#000' }}>
+                                                <div style={{ width: '100%', height: '100%', background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 50%, #020617 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                                    <img src={uploadedPhoto} alt="runner" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                                                 </div>
-                                                <div style={{ display: 'flex', alignItems: 'flex-end', marginBottom: 22 }}>
-                                                    <div style={{ background: 'rgba(255,255,255,0.04)', borderLeft: '10px solid #4ade80', padding: '10px 36px', transform: 'skewX(-15deg)', borderRadius: 6, zIndex: 2 }}>
+                                                <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to right, rgba(2,6,23,0) 70%, rgba(2,6,23,1) 100%)' }} />
+                                                <div style={{ position: 'absolute', bottom: 40, left: 40, zIndex: 10, background: '#fff', padding: 8, borderRadius: 12, width: 90, display: 'flex', flexDirection: 'column', alignItems: 'center', border: '3px solid #4ade80', boxShadow: '0 10px 20px rgba(0,0,0,0.4)' }}>
+                                                    <div style={{ width: 70, height: 55, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                                        <span style={{ fontSize: 36, fontWeight: 900, color: '#0f172a', fontFamily: "'Exo 2', sans-serif", fontStyle: 'italic' }}>{_bib}</span>
+                                                    </div>
+                                                    <p style={{ color: '#64748b', fontSize: 9, fontWeight: 800, textTransform: 'uppercase', marginTop: 4, textAlign: 'center' }}>BIB</p>
+                                                </div>
+                                            </div>
+                                            {/* Right */}
+                                            <div style={{ width: '55%', display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: '54px 115px', zIndex: 5 }}>
+                                                <div style={{ marginBottom: 43, borderLeft: '6px solid #4ade80', paddingLeft: 20 }}>
+                                                    <div style={{ fontSize: 35, fontWeight: 900, textTransform: 'uppercase', lineHeight: 1.1, color: '#fff', margin: 0 }}>{campaignName}</div>
+                                                    <p style={{ fontSize: 19, fontWeight: 700, color: '#4ade80', textTransform: 'uppercase', letterSpacing: 2, marginTop: 4 }}>RFID Check-in • Action Timing</p>
+                                                </div>
+                                                <div style={{ display: 'flex', alignItems: 'flex-end', gap: 10, marginBottom: 54 }}>
+                                                    <div style={{ background: 'rgba(255,255,255,0.04)', borderLeft: '10px solid #4ade80', padding: '15px 50px', transform: 'skewX(-15deg)', borderRadius: 6, boxShadow: '15px 15px 30px rgba(0,0,0,0.3)', zIndex: 2 }}>
                                                         <div style={{ transform: 'skewX(15deg)' }}>
-                                                            <div style={{ fontSize: 12, fontWeight: 700, color: '#64748b', letterSpacing: 6, textTransform: 'uppercase' }}>BIB</div>
-                                                            <div style={{ fontSize: 108, fontWeight: 900, lineHeight: 0.85, color: '#fff', fontStyle: 'italic' }}>{_bib}</div>
+                                                            <p style={{ fontSize: 14, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: 6, margin: '0 0 2px' }}>BIB</p>
+                                                            <div style={{ fontSize: 160, fontWeight: 900, lineHeight: 0.85, color: '#fff', fontStyle: 'italic', textShadow: '0 4px 10px rgba(0,0,0,0.5)', fontFamily: "'Exo 2', sans-serif", margin: 0 }}>{_bib}</div>
                                                         </div>
                                                     </div>
-                                                    {_dist && <div style={{ background: '#ef4444', padding: '8px 26px 8px 38px', transform: 'skewX(-15deg)', borderRadius: 6, marginBottom: 12, marginLeft: -28, zIndex: 1, border: '3px solid rgba(255,255,255,0.15)' }}><div style={{ transform: 'skewX(15deg)' }}><div style={{ fontSize: 32, fontWeight: 900, color: '#fff', fontStyle: 'italic' }}>{_dist}</div></div></div>}
+                                                    {_dist && <div style={{ background: '#ef4444', padding: '10px 34px 10px 48px', transform: 'skewX(-15deg)', borderRadius: 6, marginBottom: 15, marginLeft: -35, zIndex: 1, boxShadow: 'inset 0 0 20px rgba(0,0,0,0.2)', border: '3px solid rgba(255,255,255,0.15)' }}><div style={{ transform: 'skewX(15deg)' }}><span style={{ fontSize: 40, fontWeight: 900, color: '#fff', whiteSpace: 'nowrap', fontStyle: 'italic', letterSpacing: 1 }}>{_dist}</span></div></div>}
                                                 </div>
-                                                <div style={{ marginBottom: 22 }}>
-                                                    <div style={{ color: '#4ade80', fontWeight: 800, fontSize: 16, textTransform: 'uppercase', marginBottom: 10 }}>✅ Verified Participant</div>
-                                                    <div style={{ fontSize: 48, fontWeight: 900, lineHeight: 1.1, color: '#fff', marginBottom: 4 }}>{_nth}</div>
-                                                    {_nen && <div style={{ fontSize: 22, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase' }}>{_nen}</div>}
-                                                </div>
-                                                <div style={{ display: 'flex', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 20, overflow: 'hidden' }}>
-                                                    <div style={{ flex: 1, padding: '16px 20px', textAlign: 'center' }}>
-                                                        <div style={{ fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 2, color: '#94a3b8', marginBottom: 4 }}>Gender</div>
-                                                        <div style={{ fontSize: 26, fontWeight: 900, color: '#fff' }}>{_gl}</div>
+                                                <div style={{ marginBottom: 43 }}>
+                                                    <div style={{ color: '#4ade80', fontWeight: 800, fontSize: 19, textTransform: 'uppercase', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 10 }}>
+                                                        <span>✅</span> Verified Participant
                                                     </div>
-                                                    <div style={{ flex: 1, padding: '16px 20px', textAlign: 'center', background: 'rgba(74,222,128,0.08)', borderLeft: '1px solid rgba(74,222,128,0.15)' }}>
-                                                        <div style={{ fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 2, color: '#4ade80', marginBottom: 4 }}>Age Group</div>
-                                                        <div style={{ fontSize: 28, fontWeight: 900, color: '#4ade80' }}>{_ag}</div>
+                                                    <div style={{ fontSize: 64, fontWeight: 900, lineHeight: 1.1, color: '#fff', margin: '0 0 5px', textShadow: '0 4px 10px rgba(0,0,0,0.5)' }}>{_nth}</div>
+                                                    {_nen && <div style={{ fontSize: 29, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', margin: 0 }}>{_nen}</div>}
+                                                </div>
+                                                <div style={{ display: 'flex', alignItems: 'center', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 24, padding: '25px 0', backdropFilter: 'blur(10px)', boxShadow: '0 10px 30px rgba(0,0,0,0.2)' }}>
+                                                    <div style={{ flex: 1, textAlign: 'center' }}>
+                                                        <p style={{ fontSize: 14, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 2, marginBottom: 8, color: '#64748b' }}>Gender</p>
+                                                        <p style={{ fontSize: 40, fontWeight: 900, lineHeight: 1, color: '#fff' }}>{_gl}</p>
+                                                    </div>
+                                                    <div style={{ flex: 1, textAlign: 'center', background: 'rgba(74,222,128,0.06)', borderRadius: 16, margin: '0 15px', padding: '15px 0', border: '1px solid rgba(74,222,128,0.15)' }}>
+                                                        <p style={{ fontSize: 14, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 2, marginBottom: 8, color: '#4ade80' }}>Age Group</p>
+                                                        <p style={{ fontSize: 56, fontWeight: 900, lineHeight: 1, color: '#4ade80', textShadow: '0 0 20px rgba(74,222,128,0.2)' }}>{_ag}</p>
                                                     </div>
                                                 </div>
                                             </div>
-                                            <div style={{ position: 'absolute', bottom: 14, right: 22, fontSize: 10, fontWeight: 800, color: 'rgba(255,255,255,0.15)', textTransform: 'uppercase', letterSpacing: 4 }}>Action Timing System</div>
+                                            <div style={{ position: 'absolute', bottom: 0, left: 0, height: 8, background: '#4ade80', width: '100%', zIndex: 100 }} />
+                                            <div style={{ position: 'absolute', bottom: 20, right: 40, fontSize: 11, fontWeight: 800, color: 'rgba(255,255,255,0.2)', textTransform: 'uppercase', letterSpacing: 4, zIndex: 100 }}>Action Timing System</div>
                                         </div>
                                     )}
                                 </div>
