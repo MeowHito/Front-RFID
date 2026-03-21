@@ -8,6 +8,7 @@ interface Campaign {
     name: string;
     slug?: string;
     scanningTemplate?: string;
+    scanningBgImage?: string;
 }
 
 const SCANNING_TEMPLATES = [
@@ -30,6 +31,7 @@ const SCANNING_TEMPLATES = [
 export default function BibCheckPage() {
     const [campaign, setCampaign] = useState<Campaign | null>(null);
     const [selectedTemplate, setSelectedTemplate] = useState('classic');
+    const [bgImage, setBgImage] = useState<string | null>(null);
     const [saving, setSaving] = useState(false);
     const [saved, setSaved] = useState(false);
     const [loading, setLoading] = useState(true);
@@ -43,6 +45,7 @@ export default function BibCheckPage() {
                     setCampaign(data);
                     const savedTmpl = data.scanningTemplate;
                     if (savedTmpl) setSelectedTemplate(savedTmpl);
+                    if (data.scanningBgImage) setBgImage(data.scanningBgImage);
                 }
             } catch (err) {
                 console.error('Failed to load campaign:', err);
@@ -60,7 +63,10 @@ export default function BibCheckPage() {
             const res = await fetch(`/api/campaigns/${campaign._id}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ scanningTemplate: selectedTemplate }),
+                body: JSON.stringify({
+                    scanningTemplate: selectedTemplate,
+                    scanningBgImage: bgImage || '',
+                }),
             });
             if (res.ok) {
                 setSaved(true);
@@ -204,6 +210,63 @@ export default function BibCheckPage() {
                                     </div>
                                 );
                             })}
+                        </div>
+
+                        {/* Background Image Upload */}
+                        <div style={{ marginBottom: 32, padding: 20, background: '#f8fafc', borderRadius: 14, border: '1px solid #e2e8f0' }}>
+                            <h3 style={{ fontSize: 15, fontWeight: 700, color: '#0f172a', margin: '0 0 4px' }}>
+                                🖼️ ภาพพื้นหลัง Scanning
+                            </h3>
+                            <p style={{ fontSize: 12, color: '#64748b', margin: '0 0 14px' }}>
+                                อัพโหลดภาพพื้นหลังสำหรับหน้า Scanning — แนะนำขนาด 1920×1080 px
+                            </p>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+                                {bgImage ? (
+                                    <div style={{ position: 'relative' }}>
+                                        <img
+                                            src={bgImage}
+                                            alt="bg-preview"
+                                            style={{ width: 200, height: 112, objectFit: 'cover', borderRadius: 10, border: '2px solid #cbd5e1' }}
+                                        />
+                                        <button
+                                            onClick={() => setBgImage(null)}
+                                            style={{
+                                                position: 'absolute', top: -8, right: -8,
+                                                width: 24, height: 24, borderRadius: '50%',
+                                                background: '#ef4444', color: '#fff', border: 'none',
+                                                fontSize: 12, fontWeight: 900, cursor: 'pointer',
+                                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                            }}
+                                        >✕</button>
+                                    </div>
+                                ) : (
+                                    <label style={{
+                                        width: 200, height: 112, borderRadius: 10,
+                                        border: '2px dashed #cbd5e1', display: 'flex',
+                                        flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                                        cursor: 'pointer', background: '#fff', transition: '0.2s',
+                                    }}>
+                                        <span style={{ fontSize: 28, marginBottom: 4 }}>📁</span>
+                                        <span style={{ fontSize: 11, color: '#64748b', fontWeight: 600 }}>คลิกเพื่ออัพโหลด</span>
+                                        <input
+                                            type="file"
+                                            accept="image/*"
+                                            style={{ display: 'none' }}
+                                            onChange={(e) => {
+                                                const file = e.target.files?.[0];
+                                                if (!file) return;
+                                                const reader = new FileReader();
+                                                reader.onload = () => setBgImage(reader.result as string);
+                                                reader.readAsDataURL(file);
+                                            }}
+                                        />
+                                    </label>
+                                )}
+                                <div style={{ fontSize: 11, color: '#94a3b8', lineHeight: 1.6 }}>
+                                    รองรับไฟล์ JPG, PNG, WebP<br />
+                                    ภาพจะแสดงเป็นพื้นหลังพร้อม overlay มืด
+                                </div>
+                            </div>
                         </div>
 
                         {/* Save Button */}

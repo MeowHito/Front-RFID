@@ -30,7 +30,7 @@ interface Runner {
     team?: string; teamName?: string; shirtSize?: string; age?: number;
     gunPace?: string; netPace?: string; photoUrl?: string;
 }
-interface Campaign { _id: string; name: string; slug?: string; scanningTemplate?: string; }
+interface Campaign { _id: string; name: string; slug?: string; scanningTemplate?: string; scanningBgImage?: string; }
 
 export default function ScanningBySlugPage() {
     const params = useParams();
@@ -245,10 +245,16 @@ export default function ScanningBySlugPage() {
             {found && runner && template === 'classic' && (
                 <div key={`c-${animKey}`} style={{
                     position: 'fixed', inset: 0, zIndex: 60,
-                    background: 'radial-gradient(circle at center, #1e293b 0%, #020617 100%)',
+                    background: campaign?.scanningBgImage
+                        ? `url(${campaign.scanningBgImage}) center/cover no-repeat`
+                        : 'radial-gradient(circle at center, #1e293b 0%, #020617 100%)',
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                     fontFamily: "'Prompt', sans-serif", animation: 'fadeIn 0.6s ease-out',
                 }}>
+                    {/* Dark overlay when BG image is set */}
+                    {campaign?.scanningBgImage && (
+                        <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 0 }} />
+                    )}
                     <div style={{
                         width: '95vw', height: '95vh', maxWidth: 1600,
                         background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.1)',
@@ -382,12 +388,18 @@ export default function ScanningBySlugPage() {
             {found && runner && template === 'split' && (
                 <div key={`s-${animKey}`} style={{
                     position: 'fixed', inset: 0, zIndex: 60,
-                    background: 'linear-gradient(135deg, #020617 0%, #0f172a 100%)',
+                    background: campaign?.scanningBgImage
+                        ? `url(${campaign.scanningBgImage}) center/cover no-repeat`
+                        : 'linear-gradient(135deg, #020617 0%, #0f172a 100%)',
                     display: 'flex', flexDirection: 'row',
                     fontFamily: "'Prompt', sans-serif", animation: 'fadeIn 0.8s ease-out',
                 }}>
+                    {/* Dark overlay when BG image is set */}
+                    {campaign?.scanningBgImage && (
+                        <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 0 }} />
+                    )}
                     {/* Left — runner image area, bigger */}
-                    <div style={{ width: '45%', height: '100%', position: 'relative', overflow: 'hidden', background: '#000' }}>
+                    <div style={{ width: '42%', height: '100%', position: 'relative', overflow: 'hidden', background: '#000', zIndex: 1 }}>
                         <div style={{
                             width: '100%', height: '100%',
                             background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 50%, #020617 100%)',
@@ -397,7 +409,7 @@ export default function ScanningBySlugPage() {
                                 <img src={runner.photoUrl} alt="runner" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                             ) : (
                                 <div style={{ textAlign: 'center', color: '#4ade80' }}>
-                                    <i className="fa-solid fa-person-running" style={{ fontSize: 180, marginBottom: 20 }} />
+                                    <i className="fa-solid fa-person-running" style={{ fontSize: 260, marginBottom: 20 }} />
                                 </div>
                             )}
                         </div>
@@ -453,7 +465,7 @@ export default function ScanningBySlugPage() {
                     </div>
 
                     {/* Right */}
-                    <div style={{ width: '55%', display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: '5vh 6vw', zIndex: 5 }}>
+                    <div style={{ width: '58%', display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: '5vh 6vw', zIndex: 5 }}>
                         <div style={{ marginBottom: '4vh', borderLeft: '6px solid #4ade80', paddingLeft: 20 }}>
                             <h2 style={{ fontSize: 'clamp(1.5rem,3vw,2.2rem)', fontWeight: 900, textTransform: 'uppercase', lineHeight: 1.1, color: '#fff', margin: 0 }}>{campaignName}</h2>
                             <p style={{ fontSize: 'clamp(0.9rem,1.5vw,1.2rem)', fontWeight: 700, color: '#4ade80', textTransform: 'uppercase', letterSpacing: 2, marginTop: 4 }}>RFID Check-in • Action Timing</p>
@@ -516,10 +528,6 @@ export default function ScanningBySlugPage() {
                         </div>
                     </div>
 
-                    <div style={{
-                        position: 'absolute', bottom: 0, left: 0, height: 8,
-                        background: '#4ade80', width: '100%', animation: 'timer 8s linear forwards', zIndex: 100,
-                    }} />
                     <div style={{
                         position: 'absolute', bottom: 20, right: 40, fontSize: 11, fontWeight: 800,
                         color: 'rgba(255,255,255,0.2)', textTransform: 'uppercase', letterSpacing: 4, zIndex: 100,

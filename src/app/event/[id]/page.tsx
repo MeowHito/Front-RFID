@@ -261,8 +261,9 @@ export default function EventLivePage() {
 
     // Derive effective status from actual RaceTiger timing data
     function deriveEffectiveStatus(runner: Runner): Runner {
-        // If already explicitly finished/dnf/dq, keep as-is
-        if (['finished', 'dnf', 'dq'].includes(runner.status)) return runner;
+        // If already explicitly finished/dq, keep as-is
+        // DNF is NOT preserved — we check if timing evidence proves the runner is actually racing
+        if (['finished', 'dq'].includes(runner.status)) return runner;
 
         const hasGunTime = (runner.gunTime && runner.gunTime > 0) || !!runner.gunTimeStr;
         const hasNetTime = (runner.netTime && runner.netTime > 0) || !!runner.netTimeStr;
