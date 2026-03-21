@@ -12,7 +12,18 @@ export default function UploadPhotoPage() {
     const [uploading, setUploading] = useState(false);
     const [success, setSuccess] = useState(false);
     const [error, setError] = useState('');
+    const [uploadedPhoto, setUploadedPhoto] = useState<string>('');
     const fileInputRef = useRef<HTMLInputElement>(null);
+
+    const handleDownload = () => {
+        if (!uploadedPhoto) return;
+        const link = document.createElement('a');
+        link.href = uploadedPhoto;
+        link.download = `BIB${runner?.bib || 'photo'}_${runner?.firstNameTh || runner?.firstName || ''}.jpg`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    };
 
     // Fetch runner info
     useEffect(() => {
@@ -53,6 +64,7 @@ export default function UploadPhotoPage() {
             });
 
             if (res.ok) {
+                setUploadedPhoto(base64);
                 setSuccess(true);
             } else {
                 setError('อัปโหลดไม่สำเร็จ — Upload failed');
@@ -91,23 +103,91 @@ export default function UploadPhotoPage() {
                         <p style={{ color: '#ef4444', fontSize: 20, fontWeight: 800 }}>{error}</p>
                     </div>
                 ) : success ? (
-                    <div style={{ textAlign: 'center', animation: 'fadeIn 0.5s ease-out' }}>
-                        <div style={{ fontSize: 80, marginBottom: 16 }}>✅</div>
-                        <p style={{ color: '#4ade80', fontSize: 24, fontWeight: 900, marginBottom: 8 }}>
-                            อัปโหลดสำเร็จ!
+                    <div style={{ width: '100%', maxWidth: 420, animation: 'fadeIn 0.5s ease-out' }}>
+                        {/* Success badge */}
+                        <div style={{ textAlign: 'center', marginBottom: 16 }}>
+                            <span style={{
+                                display: 'inline-flex', alignItems: 'center', gap: 8,
+                                background: 'rgba(74,222,128,0.15)', border: '1px solid #4ade80',
+                                borderRadius: 100, padding: '6px 20px',
+                                color: '#4ade80', fontSize: 15, fontWeight: 800,
+                            }}>✅ อัปโหลดสำเร็จ!</span>
+                        </div>
+
+                        {/* Photo card */}
+                        <div style={{
+                            position: 'relative', borderRadius: 24, overflow: 'hidden',
+                            boxShadow: '0 20px 60px rgba(0,0,0,0.6)',
+                            border: '2px solid rgba(74,222,128,0.3)',
+                        }}>
+                            {uploadedPhoto && (
+                                <img
+                                    src={uploadedPhoto}
+                                    alt="uploaded"
+                                    style={{ width: '100%', display: 'block', maxHeight: '55vh', objectFit: 'cover' }}
+                                />
+                            )}
+                            {/* Runner info overlay */}
+                            <div style={{
+                                position: 'absolute', bottom: 0, left: 0, right: 0,
+                                background: 'linear-gradient(to top, rgba(2,6,23,0.95) 0%, rgba(2,6,23,0.6) 70%, transparent 100%)',
+                                padding: '32px 20px 20px',
+                            }}>
+                                <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between' }}>
+                                    <div>
+                                        <div style={{
+                                            fontSize: 11, fontWeight: 700, color: '#64748b',
+                                            textTransform: 'uppercase', letterSpacing: 3, marginBottom: 2,
+                                        }}>BIB</div>
+                                        <div style={{ fontSize: 52, fontWeight: 900, color: '#fff', lineHeight: 1 }}>
+                                            {runner?.bib || '-'}
+                                        </div>
+                                    </div>
+                                    <div style={{ textAlign: 'right' }}>
+                                        <div style={{
+                                            display: 'inline-block', background: '#ef4444',
+                                            padding: '4px 14px', borderRadius: 8,
+                                            fontSize: 12, fontWeight: 800, color: '#fff', marginBottom: 6,
+                                        }}>{runner?.category || '-'}</div>
+                                        <p style={{ fontSize: 15, fontWeight: 700, color: '#fff', margin: 0 }}>
+                                            {runner?.firstNameTh || runner?.firstName}
+                                        </p>
+                                        <p style={{ fontSize: 13, fontWeight: 600, color: '#94a3b8', margin: 0 }}>
+                                            {runner?.lastNameTh || runner?.lastName}
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <p style={{ color: '#64748b', fontSize: 12, textAlign: 'center', margin: '12px 0 16px' }}>
+                            รูปจะแสดงบนหน้าจอสแกนอัตโนมัติ
                         </p>
-                        <p style={{ color: '#94a3b8', fontSize: 14 }}>
-                            Upload Complete — รูปจะแสดงบนหน้าจอสแกนอัตโนมัติ
-                        </p>
+
+                        {/* Buttons */}
                         <button
-                            onClick={() => { setSuccess(false); if (fileInputRef.current) fileInputRef.current.value = ''; }}
+                            onClick={handleDownload}
                             style={{
-                                marginTop: 24, padding: '12px 32px', borderRadius: 12,
-                                background: '#4ade80', color: '#020617', fontSize: 16,
-                                fontWeight: 800, border: 'none', cursor: 'pointer',
+                                width: '100%', padding: '14px 20px', borderRadius: 14,
+                                background: 'linear-gradient(135deg, #3b82f6, #2563eb)',
+                                color: '#fff', fontSize: 17, fontWeight: 800,
+                                border: 'none', cursor: 'pointer',
+                                boxShadow: '0 8px 24px rgba(59,130,246,0.35)',
+                                marginBottom: 12,
                             }}
                         >
-                            อัปโหลดรูปใหม่
+                            💾 ดาวน์โหลดรูป
+                        </button>
+                        <button
+                            onClick={() => { setSuccess(false); setUploadedPhoto(''); if (fileInputRef.current) fileInputRef.current.value = ''; }}
+                            style={{
+                                width: '100%', padding: '14px 20px', borderRadius: 14,
+                                background: 'rgba(255,255,255,0.08)', color: '#94a3b8',
+                                fontSize: 15, fontWeight: 700,
+                                border: '1px solid rgba(255,255,255,0.12)', cursor: 'pointer',
+                            }}
+                        >
+                            📸 อัปโหลดรูปใหม่
                         </button>
                     </div>
                 ) : (
