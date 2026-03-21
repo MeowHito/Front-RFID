@@ -106,18 +106,6 @@ export default function BibCheckPage() {
                     </div>
                 ) : (
                     <>
-                        {/* Campaign Info */}
-                        <div style={{ marginBottom: 24, padding: '12px 16px', background: '#eff6ff', borderRadius: 10, border: '1px solid #bfdbfe', display: 'flex', alignItems: 'center', gap: 8 }}>
-                            <span style={{ color: '#f59e0b' }}>⭐</span>
-                            <span style={{ fontSize: 14, fontWeight: 700, color: '#1e40af' }}>{campaign.name}</span>
-                        </div>
-
-                        {/* Instructions */}
-                        <div style={{ marginBottom: 20, padding: '10px 14px', background: '#fefce8', borderRadius: 8, border: '1px solid #fde68a' }}>
-                            <p style={{ fontSize: 12, color: '#92400e', margin: 0, fontWeight: 600 }}>
-                                ℹ️ เลือก Template แล้วกดบันทึก — จากนั้นไปที่หน้า <strong>Scanning</strong> เพื่อเริ่มสแกน RFID แสดงข้อมูลนักกีฬา
-                            </p>
-                        </div>
 
                         {/* Template Cards with Mini Previews */}
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: 20, marginBottom: 32 }}>

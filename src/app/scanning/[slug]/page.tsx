@@ -517,12 +517,7 @@ export default function ScanningBySlugPage() {
                 </div>
             )}
 
-            <style>{`
-                @keyframes fadeIn { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
-                @keyframes timer { from { width: 100%; } to { width: 0%; } }
-                @keyframes pulse { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.1); opacity: 0.7; } }
-                * { font-family: 'Prompt', sans-serif !important; margin: 0; padding: 0; box-sizing: border-box; }
-            `}</style>
+            
         </>
     );
 }
