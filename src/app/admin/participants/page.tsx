@@ -844,28 +844,25 @@ export default function ParticipantsPage() {
                                 </button>
                             );
                         })}
-                        {/* Full Sync from RaceTiger */}
+                        {/* Import From Race Tiger */}
                         <button
                             onClick={async () => {
                                 if (!campaign?._id) return;
-                                if (!confirm(language === 'th'
-                                    ? 'ต้องการ Sync นักวิ่งทั้งหมดจาก RaceTiger หรือไม่?\n\n⚠️ อาจใช้เวลาสักครู่ สำหรับข้อมูลจำนวนมาก'
-                                    : 'Sync all runners from RaceTiger?\n\n⚠️ This may take a moment for large datasets')) return;
                                 setSyncing(true);
                                 setSyncResult(null);
                                 try {
                                     const res = await fetch(`/api/sync/full-sync?id=${campaign._id}`, { method: 'POST' });
                                     const data = await res.json();
                                     if (!res.ok) {
-                                        showToast(data?.error || 'Sync failed', 'error');
+                                        showToast(data?.error || 'Import failed', 'error');
                                         return;
                                     }
                                     const s = data?.data?.summary || data?.summary || {};
                                     setSyncResult(s);
                                     showToast(
                                         language === 'th'
-                                            ? `Sync สำเร็จ! ดึง ${s.rowsFetched || 0} rows → เพิ่ม ${s.inserted || 0} / อัพเดท ${s.updated || 0} / ข้าม ${s.rowsSkipped || 0}`
-                                            : `Sync OK! Fetched ${s.rowsFetched || 0} rows → Inserted ${s.inserted || 0} / Updated ${s.updated || 0} / Skipped ${s.rowsSkipped || 0}`,
+                                            ? `Import สำเร็จ! ดึง ${s.rowsFetched || 0} rows → เพิ่ม ${s.inserted || 0} / อัพเดท ${s.updated || 0}`
+                                            : `Import OK! Fetched ${s.rowsFetched || 0} rows → Inserted ${s.inserted || 0} / Updated ${s.updated || 0}`,
                                         'success',
                                     );
                                     // Reload runners
@@ -888,20 +885,20 @@ export default function ParticipantsPage() {
                                         setCategoryCounts(counts);
                                     }
                                 } catch (err: any) {
-                                    showToast(err?.message || 'Sync failed', 'error');
+                                    showToast(err?.message || 'Import failed', 'error');
                                 } finally {
                                     setSyncing(false);
                                 }
                             }}
                             disabled={syncing}
-                            className="px-4 py-2 text-[13px] rounded-md border cursor-pointer transition whitespace-nowrap border-orange-400 bg-orange-50 text-orange-600 font-bold hover:bg-orange-100 disabled:opacity-50"
+                            className="px-4 py-2 text-[13px] rounded-md border cursor-pointer transition whitespace-nowrap border-purple-400 bg-purple-50 text-purple-700 font-bold hover:bg-purple-100 disabled:opacity-50"
                         >
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={`inline mr-1.5 -mt-0.5 ${syncing ? 'animate-spin' : ''}`}>
                                 <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0118.8-4.3M22 12.5a10 10 0 01-18.8 4.2" />
                             </svg>
                             {syncing
-                                ? (language === 'th' ? 'กำลัง Sync...' : 'Syncing...')
-                                : (language === 'th' ? '🔄 Full Sync จาก RaceTiger' : '🔄 Full Sync from RaceTiger')
+                                ? (language === 'th' ? 'กำลัง Import...' : 'Importing...')
+                                : '🐯 Import From Race Tiger'
                             }
                         </button>
                     </div>
@@ -920,6 +917,8 @@ export default function ParticipantsPage() {
                                     { label: language === 'th' ? 'เพิ่มใหม่' : 'Inserted', value: syncResult.inserted || 0, color: '#16a34a' },
                                     { label: language === 'th' ? 'อัพเดท' : 'Updated', value: syncResult.updated || 0, color: '#f59e0b' },
                                     { label: language === 'th' ? 'ข้าม' : 'Skipped', value: syncResult.rowsSkipped || 0, color: '#ef4444' },
+                                    { label: 'DNF', value: syncResult.dnfDetected || 0, color: '#dc2626' },
+                                    { label: 'DNS', value: syncResult.dnsDetected || 0, color: '#9333ea' },
                                 ].map(item => (
                                     <div key={item.label} style={{ padding: '8px 10px', borderRadius: 6, background: '#f8fafc', textAlign: 'center' }}>
                                         <div style={{ fontSize: 18, fontWeight: 800, color: item.color }}>{item.value}</div>

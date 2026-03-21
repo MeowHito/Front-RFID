@@ -263,45 +263,82 @@ function LiveAnnouncerPanel({ campaign, recentScans, runnerMap, language }: {
     const [cpFilter, setCpFilter] = useState('FINISH');
     const [announcedIds, setAnnouncedIds] = useState<Set<string>>(new Set());
     const [announceLog, setAnnounceLog] = useState<Array<{ id: string; bib: string; name: string; cp: string; time: string }>>([]);
-    const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
-    const [selectedVoiceIdx, setSelectedVoiceIdx] = useState(0);
+    const [geminiVoices, setGeminiVoices] = useState<Array<{ name: string; label: string; lang: string }>>([]);
+    const [browserVoices, setBrowserVoices] = useState<SpeechSynthesisVoice[]>([]);
+    const [selectedVoice, setSelectedVoice] = useState('Kore');
     const [rate, setRate] = useState(1.0);
     const [volume, setVolume] = useState(1.0);
     const [speaking, setSpeaking] = useState(false);
     const queueRef = useRef<string[]>([]);
     const speakingRef = useRef(false);
+    const audioRef = useRef<HTMLAudioElement | null>(null);
     const th = language === 'th';
 
+    // Load Gemini AI voices from API
     useEffect(() => {
-        function loadVoices() {
-            const v = window.speechSynthesis.getVoices();
-            if (v.length > 0) {
-                setVoices(v);
-                const thaiIdx = v.findIndex(voice => voice.lang.startsWith('th'));
-                if (thaiIdx >= 0) setSelectedVoiceIdx(thaiIdx);
-            }
-        }
-        loadVoices();
-        window.speechSynthesis.onvoiceschanged = loadVoices;
-        return () => { window.speechSynthesis.onvoiceschanged = null; };
+        fetch('/api/tts/speak').then(r => r.json()).then(data => {
+            if (data?.voices?.length) setGeminiVoices(data.voices);
+        }).catch(() => {});
     }, []);
 
-    const speakText = useCallback((text: string) => {
+    // Load browser voices as fallback
+    useEffect(() => {
+        function loadBrowserVoices() {
+            const v = window.speechSynthesis?.getVoices?.() || [];
+            if (v.length > 0) setBrowserVoices(v);
+        }
+        loadBrowserVoices();
+        if (window.speechSynthesis) {
+            window.speechSynthesis.onvoiceschanged = loadBrowserVoices;
+            return () => { window.speechSynthesis.onvoiceschanged = null; };
+        }
+    }, []);
+
+    // Fallback: speak via browser speechSynthesis
+    const speakBrowser = useCallback((text: string): Promise<void> => {
         return new Promise<void>((resolve) => {
             const utterance = new SpeechSynthesisUtterance(text);
-            if (voices[selectedVoiceIdx]) utterance.voice = voices[selectedVoiceIdx];
+            // Try to find a Thai voice
+            const thVoice = browserVoices.find(v => v.lang.startsWith('th'));
+            if (thVoice) utterance.voice = thVoice;
             utterance.rate = rate;
             utterance.volume = volume;
-            utterance.lang = voices[selectedVoiceIdx]?.lang || 'th-TH';
-            utterance.onstart = () => { setSpeaking(true); speakingRef.current = true; };
+            utterance.lang = 'th-TH';
             utterance.onend = () => { setSpeaking(false); speakingRef.current = false; resolve(); };
-            utterance.onerror = (e) => {
-                if (e.error !== 'interrupted' && e.error !== 'canceled') console.warn('TTS error:', e.error);
-                setSpeaking(false); speakingRef.current = false; resolve();
-            };
+            utterance.onerror = () => { setSpeaking(false); speakingRef.current = false; resolve(); };
             window.speechSynthesis.speak(utterance);
         });
-    }, [voices, selectedVoiceIdx, rate, volume]);
+    }, [browserVoices, rate, volume]);
+
+    const speakText = useCallback((text: string) => {
+        return new Promise<void>(async (resolve) => {
+            setSpeaking(true); speakingRef.current = true;
+            try {
+                // Try Gemini TTS API first
+                const res = await fetch('/api/tts/speak', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text, voice: selectedVoice }),
+                });
+                if (!res.ok) throw new Error('TTS API failed');
+                const data = await res.json();
+                if (!data.audio) throw new Error('No audio data');
+                const audioSrc = `data:${data.mimeType || 'audio/mp3'};base64,${data.audio}`;
+                const audio = new Audio(audioSrc);
+                audio.volume = volume;
+                audio.playbackRate = rate;
+                audioRef.current = audio;
+                audio.onended = () => { setSpeaking(false); speakingRef.current = false; audioRef.current = null; resolve(); };
+                audio.onerror = () => { setSpeaking(false); speakingRef.current = false; audioRef.current = null; resolve(); };
+                audio.play().catch(() => { setSpeaking(false); speakingRef.current = false; audioRef.current = null; resolve(); });
+            } catch {
+                // Fallback to browser speechSynthesis
+                console.warn('Gemini TTS unavailable, using browser fallback');
+                await speakBrowser(text);
+                resolve();
+            }
+        });
+    }, [selectedVoice, rate, volume, speakBrowser]);
 
     const processQueue = useCallback(async () => {
         if (speakingRef.current || queueRef.current.length === 0) return;
@@ -358,7 +395,7 @@ function LiveAnnouncerPanel({ campaign, recentScans, runnerMap, language }: {
     }, [recentScans, enabled, cpFilter, announcedIds, runnerMap, th, processQueue]);
 
     const stopSpeaking = () => {
-        window.speechSynthesis.cancel();
+        if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; }
         queueRef.current = [];
         setSpeaking(false);
         speakingRef.current = false;
@@ -369,9 +406,8 @@ function LiveAnnouncerPanel({ campaign, recentScans, runnerMap, language }: {
         setAnnouncedIds(new Set());
     };
 
-    const voiceLabel = (v: SpeechSynthesisVoice) => {
-        const flag = v.lang.startsWith('th') ? '🇹🇭' : v.lang.startsWith('en') ? '🇬🇧' : '🌐';
-        return `${flag} ${v.name} (${v.lang})`;
+    const voiceLabel = (v: { name: string; label: string; lang: string }) => {
+        return `🤖 ${v.label}`;
     };
 
     return (
@@ -452,10 +488,11 @@ function LiveAnnouncerPanel({ campaign, recentScans, runnerMap, language }: {
                             <label className="text-[11px] font-bold text-slate-500 mb-1 block">
                                 🗣️ {th ? 'เสียง' : 'Voice'}
                             </label>
-                            <select value={selectedVoiceIdx} onChange={e => setSelectedVoiceIdx(Number(e.target.value))}
+                            <select value={selectedVoice} onChange={e => setSelectedVoice(e.target.value)}
                                 className="w-full px-2.5 py-2 rounded-lg border border-gray-300 text-xs outline-none">
-                                {voices.map((v, i) => (
-                                    <option key={i} value={i}>{voiceLabel(v)}</option>
+                                {geminiVoices.length === 0 && <option value="Kore">Loading voices...</option>}
+                                {geminiVoices.map(v => (
+                                    <option key={v.name} value={v.name}>{voiceLabel(v)}</option>
                                 ))}
                             </select>
                         </div>

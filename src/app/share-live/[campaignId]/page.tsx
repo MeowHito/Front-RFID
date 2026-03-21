@@ -40,6 +40,19 @@ function formatMs(ms?: number): string {
     return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
 }
 
+function normalizeRunnerStatus(status?: string): string {
+    const normalized = (status || '').trim().toLowerCase();
+    if (!normalized) return 'not_started';
+    return normalized;
+}
+
+function getStoppedStatusText(status: string, checkpoint?: string): string {
+    if (status === 'dns') return 'DNS';
+    if (status === 'dnf') return checkpoint ? `DNF @ ${checkpoint}` : 'DNF';
+    if (status === 'dq') return checkpoint ? `DQ @ ${checkpoint}` : 'DQ';
+    return '-';
+}
+
 function getRunnerDedupKey(runner: RunnerAtCheckpoint): string {
     const bib = (runner.bib || '').trim().toLowerCase();
     if (bib) return bib;
@@ -175,12 +188,15 @@ export default function ShareLiveMonitorPage() {
     }, []);
 
     const filteredRunners = runners.filter(r => {
-        // Status filter
+        const runnerStatus = normalizeRunnerStatus(r.status);
+        const isStopped = ['dnf', 'dns', 'dq'].includes(runnerStatus);
         if (statusFilter) {
-            if (statusFilter === 'in_progress') {
-                if (r.status && r.status !== 'in_progress') return false;
-            } else {
-                if (r.status !== statusFilter) return false;
+            if (statusFilter === 'passed') {
+                if (isStopped || !r.scanTime) return false;
+            } else if (statusFilter === 'coming') {
+                if (isStopped || !!r.scanTime) return false;
+            } else if (statusFilter === 'dns' || statusFilter === 'dnf' || statusFilter === 'dq') {
+                if (runnerStatus !== statusFilter) return false;
             }
         }
         if (!search) return true;
@@ -269,10 +285,11 @@ export default function ShareLiveMonitorPage() {
                     <div className="flex items-center gap-3 flex-wrap">
                         <span className="text-[12px] font-bold text-slate-500">สรุป:</span>
                         {[
-                            { key: null, label: 'ผ่านแล้ว', count: runners.filter(r => !r.status || r.status === 'in_progress' || r.status === 'finished').length, bg: 'text-green-700 border-b-2 border-green-500 bg-green-200', bgActive: 'bg-green-600 text-white border-b-0' },
-                            { key: 'in_progress', label: 'กำลังมา', count: runners.filter(r => !r.status || r.status === 'in_progress').length, bg: 'text-amber-800 bg-amber-200', bgActive: 'bg-amber-500 text-white' },
-                            { key: 'dnf', label: 'DNF', count: runners.filter(r => r.status === 'dnf').length, bg: 'text-red-800 bg-red-200', bgActive: 'bg-red-600 text-white' },
-                            { key: 'dq', label: 'DQ', count: runners.filter(r => r.status === 'dq').length, bg: 'text-pink-800 bg-pink-200', bgActive: 'bg-pink-600 text-white' },
+                            { key: 'passed', label: 'ผ่านแล้ว', count: runners.filter(r => { const s = normalizeRunnerStatus(r.status); return !['dnf','dns','dq'].includes(s) && !!r.scanTime; }).length, bg: 'text-green-700 border-b-2 border-green-500 bg-green-200', bgActive: 'bg-green-600 text-white border-b-0' },
+                            { key: 'coming', label: 'กำลังมา', count: runners.filter(r => { const s = normalizeRunnerStatus(r.status); return !['dnf','dns','dq','finished'].includes(s) && !r.scanTime; }).length, bg: 'text-amber-800 bg-amber-200', bgActive: 'bg-amber-500 text-white' },
+                            { key: 'dns', label: 'DNS', count: runners.filter(r => normalizeRunnerStatus(r.status) === 'dns').length, bg: 'text-red-800 bg-red-200', bgActive: 'bg-red-600 text-white' },
+                            { key: 'dnf', label: 'DNF', count: runners.filter(r => normalizeRunnerStatus(r.status) === 'dnf').length, bg: 'text-red-800 bg-red-200', bgActive: 'bg-red-600 text-white' },
+                            { key: 'dq', label: 'DQ', count: runners.filter(r => normalizeRunnerStatus(r.status) === 'dq').length, bg: 'text-pink-800 bg-pink-200', bgActive: 'bg-pink-600 text-white' },
                         ].map(item => (
                             <button key={item.key ?? 'all'}
                                 onClick={() => setStatusFilter(prev => prev === item.key ? null : item.key)}
@@ -347,21 +364,22 @@ export default function ShareLiveMonitorPage() {
                                     <tr><td colSpan={6} className="p-10 text-center text-slate-400">ยังไม่มีนักกีฬาถึงจุดนี้</td></tr>
                                 ) : sortedRunners.map((r, idx) => {
                                     const rowKey = r._id ? `${r._id}-${idx}` : `row-${idx}`;
-                                    const isDnf = ['dnf', 'dns', 'dq'].includes(r.status);
-                                    const rowCls = isDnf ? 'bg-red-50' : 'bg-white';
+                                    const runnerStatus = normalizeRunnerStatus(r.status);
+                                    const isStopped = ['dnf', 'dns', 'dq'].includes(runnerStatus);
+                                    const rowCls = isStopped ? 'bg-red-50' : 'bg-white';
                                     return (
                                         <tr key={rowKey} className={`border-b border-slate-100 ${rowCls}`}>
-                                            <td className={`p-2.5 text-center font-bold ${isDnf ? 'text-slate-400 line-through' : 'text-slate-700'}`}>
+                                            <td className={`p-2.5 text-center font-bold ${isStopped ? 'text-slate-400' : 'text-slate-700'}`}>
                                                 {r.bib}
                                             </td>
                                             <td className="p-2">
-                                                <div className={`font-semibold text-[13px] ${isDnf ? 'text-red-600' : 'text-slate-900'}`}>
+                                                <div className={`font-semibold text-[13px] ${isStopped ? 'text-red-600' : 'text-slate-900'}`}>
                                                     {r.firstName} {r.lastName}
                                                 </div>
-                                                <div className={`text-[11px] mt-0.5 ${isDnf ? 'text-red-300' : 'text-slate-400'}`}>
-                                                    Ovr: <b className={isDnf ? 'text-red-300' : 'text-slate-700'}>{r.overallRank || '-'}</b>{(() => { const d = rankDeltas.get(r.bib); if (d === undefined || d === 0) return r.bib && rankDeltas.size > 0 ? <span className="text-slate-400 ml-0.5">(—)</span> : null; return d > 0 ? <span style={{color:'#16a34a',fontWeight:700}} className="ml-0.5">(↑{d})</span> : <span style={{color:'#ef4444',fontWeight:700}} className="ml-0.5">(↓{Math.abs(d)})</span>; })()}
-                                                    {' | '}Gen: <b className={isDnf ? 'text-red-300' : 'text-slate-700'}>{r.genderRank || '-'}</b>
-                                                    {' | '}Cat: <b className={isDnf ? 'text-red-300' : 'text-slate-700'}>{r.categoryRank || '-'}</b>
+                                                <div className={`text-[11px] mt-0.5 ${isStopped ? 'text-red-300' : 'text-slate-400'}`}>
+                                                    Ovr: <b className={isStopped ? 'text-red-300' : 'text-slate-700'}>{r.overallRank || '-'}</b>{(() => { const d = rankDeltas.get(r.bib); if (d === undefined || d === 0) return r.bib && rankDeltas.size > 0 ? <span className="text-slate-400 ml-0.5">(—)</span> : null; return d > 0 ? <span style={{color:'#16a34a',fontWeight:700}} className="ml-0.5">(↑{d})</span> : <span style={{color:'#ef4444',fontWeight:700}} className="ml-0.5">(↓{Math.abs(d)})</span>; })()}
+                                                    {' | '}Gen: <b className={isStopped ? 'text-red-300' : 'text-slate-700'}>{r.genderRank || '-'}</b>
+                                                    {' | '}Cat: <b className={isStopped ? 'text-red-300' : 'text-slate-700'}>{r.categoryRank || '-'}</b>
                                                 </div>
                                             </td>
                                             <td className="p-2.5 text-center text-[11px] font-medium text-slate-500">
@@ -370,11 +388,11 @@ export default function ShareLiveMonitorPage() {
                                             <td className="p-2.5 text-center text-[12px] font-mono text-slate-600">
                                                 {r.scanTime ? new Date(r.scanTime).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '-'}
                                             </td>
-                                            <td className={`p-2.5 text-center font-bold text-sm ${isDnf ? 'text-red-600' : 'text-slate-900'}`}>
-                                                {isDnf ? (r.statusCheckpoint ? `Out at ${r.statusCheckpoint}` : '-') : formatMs(r.elapsedTime || r.netTime || r.gunTime)}
+                                            <td className={`p-2.5 text-center font-bold text-sm ${isStopped ? 'text-red-600' : 'text-slate-900'}`}>
+                                                {isStopped ? getStoppedStatusText(runnerStatus, r.statusCheckpoint) : formatMs(r.elapsedTime || r.netTime || r.gunTime)}
                                             </td>
                                             <td className="p-2.5 text-center text-[11px] text-slate-500">
-                                                {isDnf ? '-' : (r.netPace || r.gunPace || '-')}
+                                                {isStopped ? '-' : (r.netPace || r.gunPace || '-')}
                                             </td>
                                         </tr>
                                     );
