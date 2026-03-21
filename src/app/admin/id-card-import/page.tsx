@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useLanguage } from '@/lib/language-context';
 import AdminLayout from '../AdminLayout';
 import '../admin.css';
@@ -97,8 +97,16 @@ export default function IdCardImportPage() {
     const [saving, setSaving] = useState(false);
     const [saveError, setSaveError] = useState('');
 
-    // Tab state: 'card' or 'manual'
-    const [activeTab, setActiveTab] = useState<'card' | 'manual'>('card');
+    // Tab state: 'card', 'manual', or 'camera'
+    const [activeTab, setActiveTab] = useState<'card' | 'manual' | 'camera'>('card');
+
+    // Camera scanner state
+    const [cameraScanning, setCameraScanning] = useState(false);
+    const [cameraResult, setCameraResult] = useState('');
+    const [cameraLookupLoading, setCameraLookupLoading] = useState(false);
+    const [cameraRunner, setCameraRunner] = useState<any>(null);
+    const [cameraLookupDone, setCameraLookupDone] = useState(false);
+    const scannerInstanceRef = useRef<any>(null);
 
     // Manual entry form state
     const [manualForm, setManualForm] = useState({
@@ -449,12 +457,12 @@ export default function IdCardImportPage() {
                 </div>
             ) : (
                 <>
-                    {/* Tab Switcher */}
+                    {/* Tab Switcher — 3 tabs */}
                     <div style={{ display: 'flex', gap: 0, marginBottom: 16 }}>
                         <button
                             onClick={() => setActiveTab('card')}
                             style={{
-                                flex: 1, padding: '14px 20px', fontSize: 15, fontWeight: 700,
+                                flex: 1, padding: '14px 20px', fontSize: 14, fontWeight: 700,
                                 borderTop: activeTab === 'card' ? '2px solid #3b82f6' : '1px solid #e2e8f0',
                                 borderBottom: activeTab === 'card' ? '2px solid #3b82f6' : '1px solid #e2e8f0',
                                 borderLeft: activeTab === 'card' ? '2px solid #3b82f6' : '1px solid #e2e8f0',
@@ -463,32 +471,56 @@ export default function IdCardImportPage() {
                                 background: activeTab === 'card' ? '#eff6ff' : '#fff',
                                 color: activeTab === 'card' ? '#2563eb' : '#64748b',
                                 cursor: 'pointer', transition: 'all 0.15s',
-                                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
+                                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
                             }}
                         >
-                            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                                 <rect x="2" y="5" width="20" height="14" rx="2" />
                                 <line x1="2" y1="10" x2="22" y2="10" />
                             </svg>
-                            {language === 'th' ? 'นำเข้าด้วยบัตรประชาชน' : 'Import with ID Card'}
+                            {language === 'th' ? 'เครื่องอ่านบัตร' : 'Card Reader'}
+                        </button>
+                        <button
+                            onClick={() => setActiveTab('camera')}
+                            style={{
+                                flex: 1, padding: '14px 20px', fontSize: 14, fontWeight: 700,
+                                borderTop: activeTab === 'camera' ? '2px solid #f59e0b' : '1px solid #e2e8f0',
+                                borderBottom: activeTab === 'camera' ? '2px solid #f59e0b' : '1px solid #e2e8f0',
+                                borderLeft: activeTab === 'camera' ? '2px solid #f59e0b' : '1px solid #e2e8f0',
+                                borderRight: activeTab === 'camera' ? '2px solid #f59e0b' : '1px solid #e2e8f0',
+                                borderRadius: 0,
+                                background: activeTab === 'camera' ? '#fffbeb' : '#fff',
+                                color: activeTab === 'camera' ? '#d97706' : '#64748b',
+                                cursor: 'pointer', transition: 'all 0.15s',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                            }}
+                        >
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+                                <circle cx="12" cy="13" r="4" />
+                            </svg>
+                            {language === 'th' ? '📷 สแกนกล้อง (iPad)' : '📷 Camera Scan'}
                         </button>
                         <button
                             onClick={() => setActiveTab('manual')}
                             style={{
-                                flex: 1, padding: '14px 20px', fontSize: 15, fontWeight: 700,
-                                border: activeTab === 'manual' ? '2px solid #8b5cf6' : '1px solid #e2e8f0',
+                                flex: 1, padding: '14px 20px', fontSize: 14, fontWeight: 700,
+                                borderTop: activeTab === 'manual' ? '2px solid #8b5cf6' : '1px solid #e2e8f0',
+                                borderBottom: activeTab === 'manual' ? '2px solid #8b5cf6' : '1px solid #e2e8f0',
+                                borderLeft: activeTab === 'manual' ? '2px solid #8b5cf6' : 'none',
+                                borderRight: activeTab === 'manual' ? '2px solid #8b5cf6' : '1px solid #e2e8f0',
                                 borderRadius: '0 12px 12px 0',
                                 background: activeTab === 'manual' ? '#f5f3ff' : '#fff',
                                 color: activeTab === 'manual' ? '#7c3aed' : '#64748b',
                                 cursor: 'pointer', transition: 'all 0.15s',
-                                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
+                                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
                             }}
                         >
-                            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                                 <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
                                 <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
                             </svg>
-                            {language === 'th' ? 'กรอกข้อมูลด้วยตนเอง' : 'Manual Entry'}
+                            {language === 'th' ? 'กรอกเอง' : 'Manual'}
                         </button>
                     </div>
 
@@ -1256,6 +1288,185 @@ export default function IdCardImportPage() {
                                 </div>
                             )}
                         </>
+                    )}
+
+                    {/* ═══ CAMERA TAB ═══ */}
+                    {activeTab === 'camera' && (
+                        <div className="content-box" style={{ padding: 24 }}>
+                            <h3 style={{ margin: '0 0 8px', fontSize: 17, fontWeight: 700, color: '#1e293b', display: 'flex', alignItems: 'center', gap: 8 }}>
+                                📷 {language === 'th' ? 'สแกน Barcode ด้วยกล้อง' : 'Scan Barcode with Camera'}
+                            </h3>
+                            <p style={{ fontSize: 12, color: '#64748b', margin: '0 0 16px', lineHeight: 1.6 }}>
+                                {language === 'th'
+                                    ? 'หันด้านหลังบัตรประชาชนให้กล้องเห็น Barcode (PDF417) — รองรับ iPad, มือถือ, และ Webcam'
+                                    : 'Point the back of the Thai ID card at the camera to scan the PDF417 barcode'}
+                            </p>
+
+                            {/* Scanner viewport */}
+                            <div
+                                id="camera-barcode-scanner"
+                                style={{
+                                    width: '100%', minHeight: 280, borderRadius: 12, overflow: 'hidden',
+                                    background: cameraScanning ? '#000' : '#f8fafc',
+                                    border: cameraScanning ? '2px solid #f59e0b' : '2px dashed #cbd5e1',
+                                    marginBottom: 16, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                }}
+                            >
+                                {!cameraScanning && (
+                                    <div style={{ textAlign: 'center', color: '#94a3b8', padding: 30 }}>
+                                        <div style={{ fontSize: 56, marginBottom: 10, opacity: 0.6 }}>📸</div>
+                                        <div style={{ fontSize: 13, fontWeight: 600 }}>
+                                            {language === 'th' ? 'กดปุ่มด้านล่างเพื่อเปิดกล้อง' : 'Press button below to open camera'}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Start / Stop buttons */}
+                            {!cameraScanning ? (
+                                <button
+                                    onClick={async () => {
+                                        setCameraScanning(true);
+                                        setCameraResult('');
+                                        setCameraRunner(null);
+                                        setCameraLookupDone(false);
+                                        try {
+                                            const { Html5Qrcode } = await import('html5-qrcode');
+                                            const scanner = new Html5Qrcode('camera-barcode-scanner');
+                                            scannerInstanceRef.current = scanner;
+                                            await scanner.start(
+                                                { facingMode: 'environment' },
+                                                { fps: 10, qrbox: { width: 350, height: 150 } },
+                                                async (decodedText: string) => {
+                                                    const match = decodedText.match(/(\d{13})/);
+                                                    const cid = match ? match[1] : decodedText.trim();
+                                                    setCameraResult(cid);
+                                                    scanner.stop().catch(() => {});
+                                                    scannerInstanceRef.current = null;
+                                                    setCameraScanning(false);
+                                                    // Lookup runner
+                                                    setCameraLookupLoading(true);
+                                                    setCameraLookupDone(false);
+                                                    try {
+                                                        const res = await fetch(`/api/runners/lookup?code=${encodeURIComponent(cid)}`);
+                                                        const data = await res.json();
+                                                        setCameraRunner(data.runner || null);
+                                                    } catch { setCameraRunner(null); }
+                                                    finally { setCameraLookupLoading(false); setCameraLookupDone(true); }
+                                                },
+                                                () => {}
+                                            );
+                                        } catch (err) {
+                                            console.error('Camera error:', err);
+                                            setCameraScanning(false);
+                                        }
+                                    }}
+                                    style={{
+                                        width: '100%', padding: '16px 0', borderRadius: 12, border: 'none',
+                                        background: 'linear-gradient(135deg, #f59e0b, #d97706)', color: '#fff',
+                                        fontSize: 17, fontWeight: 800, cursor: 'pointer',
+                                        boxShadow: '0 4px 12px rgba(245,158,11,0.35)',
+                                        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
+                                    }}
+                                >
+                                    📷 {language === 'th' ? 'เปิดกล้องสแกน Barcode' : 'Open Camera Scanner'}
+                                </button>
+                            ) : (
+                                <button
+                                    onClick={async () => {
+                                        if (scannerInstanceRef.current) {
+                                            try { await scannerInstanceRef.current.stop(); } catch {}
+                                            scannerInstanceRef.current = null;
+                                        }
+                                        setCameraScanning(false);
+                                    }}
+                                    style={{
+                                        width: '100%', padding: '16px 0', borderRadius: 12, border: 'none',
+                                        background: '#ef4444', color: '#fff', fontSize: 17, fontWeight: 800,
+                                        cursor: 'pointer',
+                                    }}
+                                >
+                                    ■ {language === 'th' ? 'หยุดสแกน' : 'Stop Scanning'}
+                                </button>
+                            )}
+
+                            {/* Scanned result */}
+                            {cameraResult && (
+                                <div style={{ marginTop: 20, padding: '16px 20px', borderRadius: 12, background: '#fffbeb', border: '1px solid #fde68a' }}>
+                                    <div style={{ fontSize: 11, fontWeight: 700, color: '#92400e', textTransform: 'uppercase', marginBottom: 4 }}>
+                                        {language === 'th' ? 'เลขที่สแกนได้' : 'Scanned Code'}
+                                    </div>
+                                    <div style={{ fontSize: 22, fontWeight: 900, fontFamily: 'monospace', letterSpacing: 2, color: '#78350f' }}>
+                                        {cameraResult}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Lookup result */}
+                            {cameraLookupLoading && (
+                                <div style={{ textAlign: 'center', padding: 20, color: '#94a3b8' }}>
+                                    <div style={{ width: 28, height: 28, border: '3px solid #e2e8f0', borderTopColor: '#f59e0b', borderRadius: '50%', animation: 'spin 1s linear infinite', margin: '0 auto 8px' }} />
+                                    {language === 'th' ? 'กำลังค้นหา...' : 'Looking up...'}
+                                </div>
+                            )}
+
+                            {cameraLookupDone && cameraRunner && (
+                                <div style={{ marginTop: 16, padding: 20, borderRadius: 12, background: '#f0fdf4', border: '2px solid #22c55e' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                                        <span style={{ fontSize: 20 }}>✅</span>
+                                        <strong style={{ fontSize: 16, color: '#166534' }}>
+                                            {language === 'th' ? 'พบนักกีฬา' : 'Runner Found'}
+                                        </strong>
+                                    </div>
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 10 }}>
+                                        <div style={{ padding: '8px 12px', borderRadius: 8, background: '#dcfce7', border: '1px solid #bbf7d0' }}>
+                                            <div style={{ fontSize: 10, color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase' }}>BIB</div>
+                                            <div style={{ fontSize: 22, fontWeight: 900, color: '#166534' }}>{cameraRunner.bib}</div>
+                                        </div>
+                                        <div style={{ padding: '8px 12px', borderRadius: 8, background: '#f8fafc', border: '1px solid #e2e8f0' }}>
+                                            <div style={{ fontSize: 10, color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase' }}>{language === 'th' ? 'ชื่อ' : 'Name'}</div>
+                                            <div style={{ fontSize: 14, fontWeight: 700, color: '#0f172a' }}>{cameraRunner.firstNameTh || cameraRunner.firstName} {cameraRunner.lastNameTh || cameraRunner.lastName}</div>
+                                        </div>
+                                        <div style={{ padding: '8px 12px', borderRadius: 8, background: '#f8fafc', border: '1px solid #e2e8f0' }}>
+                                            <div style={{ fontSize: 10, color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase' }}>{language === 'th' ? 'ประเภท' : 'Category'}</div>
+                                            <div style={{ fontSize: 14, fontWeight: 700, color: '#0f172a' }}>{cameraRunner.category}</div>
+                                        </div>
+                                        <div style={{ padding: '8px 12px', borderRadius: 8, background: '#f8fafc', border: '1px solid #e2e8f0' }}>
+                                            <div style={{ fontSize: 10, color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase' }}>{language === 'th' ? 'สถานะ' : 'Status'}</div>
+                                            <div style={{ fontSize: 14, fontWeight: 700, color: '#0f172a' }}>{cameraRunner.status?.toUpperCase()}</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {cameraLookupDone && !cameraRunner && (
+                                <div style={{ marginTop: 16, padding: 20, borderRadius: 12, background: '#fffbeb', border: '2px solid #fbbf24', textAlign: 'center' }}>
+                                    <span style={{ fontSize: 40 }}>🔍</span>
+                                    <h4 style={{ fontSize: 16, fontWeight: 800, color: '#92400e', margin: '8px 0 4px' }}>
+                                        {language === 'th' ? 'ไม่พบนักกีฬา' : 'Runner Not Found'}
+                                    </h4>
+                                    <p style={{ fontSize: 13, color: '#b45309', margin: 0 }}>
+                                        {language === 'th'
+                                            ? `ไม่พบข้อมูลที่ตรงกับรหัส ${cameraResult}`
+                                            : `No runner matches code ${cameraResult}`}
+                                    </p>
+                                </div>
+                            )}
+
+                            {/* Scan again button */}
+                            {cameraLookupDone && (
+                                <button
+                                    onClick={() => { setCameraResult(''); setCameraRunner(null); setCameraLookupDone(false); }}
+                                    style={{
+                                        marginTop: 16, width: '100%', padding: '12px 0', borderRadius: 10,
+                                        border: '1px solid #d1d5db', background: '#f8fafc', color: '#475569',
+                                        fontSize: 14, fontWeight: 700, cursor: 'pointer',
+                                    }}
+                                >
+                                    🔄 {language === 'th' ? 'สแกนใหม่' : 'Scan Again'}
+                                </button>
+                            )}
+                        </div>
                     )}
                 </>
             )}
