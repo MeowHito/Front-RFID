@@ -15,14 +15,125 @@ export default function UploadPhotoPage() {
     const [uploadedPhoto, setUploadedPhoto] = useState<string>('');
     const fileInputRef = useRef<HTMLInputElement>(null);
 
-    const handleDownload = () => {
+    const handleDownload = async () => {
         if (!uploadedPhoto) return;
-        const link = document.createElement('a');
-        link.href = uploadedPhoto;
-        link.download = `BIB${runner?.bib || 'photo'}_${runner?.firstNameTh || runner?.firstName || ''}.jpg`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
+        const filename = `BIB${runner?.bib || 'photo'}_${runner?.firstNameTh || runner?.firstName || ''}.jpg`;
+
+        await document.fonts.ready;
+
+        // Load uploaded photo into Image
+        const img = new Image();
+        img.src = uploadedPhoto;
+        await new Promise<void>((res) => { img.onload = () => res(); });
+
+        // Compose landscape card: 1080 × 540 (matching scanning page style)
+        const CW = 1080, CH = 540;
+        const canvas = document.createElement('canvas');
+        canvas.width = CW; canvas.height = CH;
+        const ctx = canvas.getContext('2d')!;
+
+        // ── Dark background ──
+        ctx.fillStyle = '#0a1628';
+        ctx.fillRect(0, 0, CW, CH);
+
+        // ── Photo left half (cover crop) ──
+        const photoW = Math.floor(CW * 0.47);
+        {
+            const scale = Math.max(photoW / img.width, CH / img.height);
+            const dw = img.width * scale, dh = img.height * scale;
+            ctx.save();
+            ctx.beginPath(); ctx.rect(0, 0, photoW, CH); ctx.clip();
+            ctx.drawImage(img, (photoW - dw) / 2, (CH - dh) / 2, dw, dh);
+            ctx.restore();
+        }
+
+        // ── Fade photo's right edge into dark background ──
+        const fadeGrad = ctx.createLinearGradient(photoW - 90, 0, photoW + 10, 0);
+        fadeGrad.addColorStop(0, 'rgba(10,22,40,0)');
+        fadeGrad.addColorStop(1, 'rgba(10,22,40,1)');
+        ctx.fillStyle = fadeGrad;
+        ctx.fillRect(photoW - 90, 0, 100, CH);
+
+        // ── Right panel ──
+        const rx = photoW + 32;
+
+        // Green accent bar
+        ctx.fillStyle = '#4ade80';
+        ctx.fillRect(rx - 14, CH * 0.14, 4, CH * 0.72);
+
+        // "BIB" label
+        ctx.font = '700 15px "Prompt", Arial, sans-serif';
+        ctx.fillStyle = '#64748b';
+        ctx.textAlign = 'left';
+        ctx.fillText('BIB', rx, CH * 0.28);
+
+        // BIB number (large)
+        const bibStr = String(runner?.bib || '-');
+        const bibFontSize = bibStr.length <= 2 ? 180 : bibStr.length <= 3 ? 150 : 120;
+        ctx.font = `900 ${bibFontSize}px "Prompt", Arial, sans-serif`;
+        ctx.fillStyle = '#ffffff';
+        const bibW = ctx.measureText(bibStr).width;
+        ctx.fillText(bibStr, rx, CH * 0.68);
+
+        // Category badge (right of BIB number)
+        const catStr = runner?.category || '';
+        if (catStr) {
+            ctx.font = '800 21px "Prompt", Arial, sans-serif';
+            const cw = ctx.measureText(catStr).width + 30;
+            const ch2 = 36;
+            const cx = rx + bibW + 18;
+            const cy = CH * 0.5;
+            const r2 = 9;
+            ctx.fillStyle = '#ef4444';
+            ctx.beginPath();
+            ctx.moveTo(cx + r2, cy); ctx.lineTo(cx + cw - r2, cy);
+            ctx.arcTo(cx + cw, cy, cx + cw, cy + r2, r2);
+            ctx.lineTo(cx + cw, cy + ch2 - r2);
+            ctx.arcTo(cx + cw, cy + ch2, cx + cw - r2, cy + ch2, r2);
+            ctx.lineTo(cx + r2, cy + ch2);
+            ctx.arcTo(cx, cy + ch2, cx, cy + ch2 - r2, r2);
+            ctx.lineTo(cx, cy + r2);
+            ctx.arcTo(cx, cy, cx + r2, cy, r2);
+            ctx.closePath();
+            ctx.fill();
+            ctx.fillStyle = '#fff';
+            ctx.textAlign = 'center';
+            ctx.fillText(catStr, cx + cw / 2, cy + ch2 - 8);
+        }
+
+        // Names
+        const nameTh = [runner?.firstNameTh || runner?.firstName, runner?.lastNameTh || runner?.lastName].filter(Boolean).join(' ');
+        const nameEn = runner?.firstNameTh ? [runner?.firstName, runner?.lastName].filter(Boolean).join(' ') : '';
+        ctx.textAlign = 'left';
+        ctx.font = '800 48px "Prompt", Arial, sans-serif';
+        ctx.fillStyle = '#ffffff';
+        ctx.fillText(nameTh, rx, CH * 0.84);
+        if (nameEn) {
+            ctx.font = '600 26px "Prompt", Arial, sans-serif';
+            ctx.fillStyle = '#94a3b8';
+            ctx.fillText(nameEn.toUpperCase(), rx, CH * 0.93);
+        }
+
+        // Watermark
+        ctx.font = '700 12px "Prompt", Arial, sans-serif';
+        ctx.fillStyle = 'rgba(255,255,255,0.12)';
+        ctx.textAlign = 'right';
+        ctx.fillText('ACTION TIMING SYSTEM', CW - 18, CH - 10);
+
+        // ── Export & share/download ──
+        canvas.toBlob(async (blob) => {
+            if (!blob) return;
+            const file = new File([blob], filename, { type: 'image/jpeg' });
+            if (typeof navigator !== 'undefined' && navigator.share && navigator.canShare?.({ files: [file] })) {
+                try { await navigator.share({ files: [file] }); return; } catch { /* fall through */ }
+            }
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url; a.download = filename;
+            document.body.appendChild(a); a.click();
+            document.body.removeChild(a);
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
+        }, 'image/jpeg', 0.92);
     };
 
     // Fetch runner info
