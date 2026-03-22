@@ -33,10 +33,10 @@ interface RunnerAtCheckpoint {
 }
 
 const STATUS_OPTIONS = [
-    { value: 'finished', label_th: 'ผ่านแล้ว', label_en: 'Passed', tw: 'bg-green-50 border-green-400 text-green-900' },
-    { value: 'dns', label_th: 'DNS', label_en: 'DNS', tw: 'bg-red-50 border-red-400 text-red-900' },
-    { value: 'dnf', label_th: 'DNF', label_en: 'DNF', tw: 'bg-red-50 border-red-400 text-red-900' },
-    { value: 'dq', label_th: 'DQ', label_en: 'DQ', tw: 'bg-pink-50 border-pink-400 text-pink-900' },
+    { value: 'finished', label_th: 'ผ่านแล้ว', label_en: 'Passed', tw: 'bg-green-50 border-green-400 text-green-900', style: { backgroundColor: '#f0fdf4', borderColor: '#22c55e', color: '#166534' } },
+    { value: 'dns', label_th: 'DNS', label_en: 'DNS', tw: 'bg-red-50 border-red-400 text-red-900', style: { backgroundColor: '#fef2f2', borderColor: '#f87171', color: '#991b1b' } },
+    { value: 'dnf', label_th: 'DNF', label_en: 'DNF', tw: 'bg-red-50 border-red-400 text-red-900', style: { backgroundColor: '#fef2f2', borderColor: '#f87171', color: '#991b1b' } },
+    { value: 'dq', label_th: 'DQ', label_en: 'DQ', tw: 'bg-pink-50 border-pink-400 text-pink-900', style: { backgroundColor: '#fdf2f8', borderColor: '#f472b6', color: '#9d174d' } },
 ];
 
 function formatMs(ms?: number): string {
@@ -323,7 +323,28 @@ export default function CheckpointMonitorPage() {
         return sortDir === 'asc' ? cmp : -cmp;
     });
 
-    const getStatusOpt = (status: string) => STATUS_OPTIONS.find(s => s.value === normalizeRunnerStatus(status)) || STATUS_OPTIONS[2];
+    const getStatusOpt = (status: string) => {
+        const normalized = normalizeRunnerStatus(status);
+        // Only 'finished' shows green; all other statuses show red
+        if (normalized === 'finished') {
+            return STATUS_OPTIONS[0]; // green
+        }
+        // dns/dnf/dq show their specific red/pink variants
+        const found = STATUS_OPTIONS.find(s => s.value === normalized);
+        if (found) return found;
+        // Other statuses (in_progress, not_started, etc.) default to DNF style (red)
+        return STATUS_OPTIONS[2]; // DNF (red)
+    };
+    const getRankLabelColor = (kind: 'overall' | 'gender' | 'category', isStopped: boolean) => {
+        if (kind === 'overall') return isStopped ? '#fdba74' : '#ea580c';
+        if (kind === 'gender') return isStopped ? '#c4b5fd' : '#7c3aed';
+        return isStopped ? '#93c5fd' : '#2563eb';
+    };
+    const getRankValueColor = (kind: 'overall' | 'gender' | 'category', isStopped: boolean) => {
+        if (kind === 'overall') return isStopped ? '#fb923c' : '#c2410c';
+        if (kind === 'gender') return isStopped ? '#a78bfa' : '#6d28d9';
+        return isStopped ? '#60a5fa' : '#1d4ed8';
+    };
 
     if (loading) {
         return (
@@ -462,9 +483,15 @@ export default function CheckpointMonitorPage() {
                                                 {r.firstName} {r.lastName}
                                             </div>
                                             <div className={`text-[11px] mt-0.5 ${isStopped ? 'text-red-300' : 'text-slate-400'}`}>
-                                                Ovr: <b className={isStopped ? 'text-red-300' : 'text-slate-700'}>{r.overallRank || '-'}</b>{(() => { const d = rankDeltas.get(r.bib); if (d === undefined) return null; if (d === 0) return <span className="text-slate-400 ml-0.5">(—)</span>; return d > 0 ? <span style={{color:'#16a34a',fontWeight:700}} className="ml-0.5">(↑{d})</span> : <span style={{color:'#ef4444',fontWeight:700}} className="ml-0.5">(↓{Math.abs(d)})</span>; })()}
-                                                {' | '}Gen: <b className={isStopped ? 'text-red-300' : 'text-slate-700'}>{r.genderRank || '-'}</b>
-                                                {' | '}Cat: <b className={isStopped ? 'text-red-300' : 'text-slate-700'}>{r.categoryRank || '-'}</b>
+                                                <span style={{ color: getRankLabelColor('overall', isStopped), fontWeight: 600 }}>Ovr:</span>{' '}
+                                                <span style={{ color: getRankValueColor('overall', isStopped), fontWeight: 700 }}>{r.overallRank || '-'}</span>
+                                                {(() => { const d = rankDeltas.get(r.bib); if (d === undefined) return null; if (d === 0) return <span className="text-slate-400 ml-0.5">(—)</span>; return d > 0 ? <span style={{color:'#16a34a',fontWeight:700}} className="ml-0.5">(↑{d})</span> : <span style={{color:'#ef4444',fontWeight:700}} className="ml-0.5">(↓{Math.abs(d)})</span>; })()}
+                                                <span className="mx-1">|</span>
+                                                <span style={{ color: getRankLabelColor('gender', isStopped), fontWeight: 600 }}>Gen:</span>{' '}
+                                                <span style={{ color: getRankValueColor('gender', isStopped), fontWeight: 700 }}>{r.genderRank || '-'}</span>
+                                                <span className="mx-1">|</span>
+                                                <span style={{ color: getRankLabelColor('category', isStopped), fontWeight: 600 }}>Cat:</span>{' '}
+                                                <span style={{ color: getRankValueColor('category', isStopped), fontWeight: 700 }}>{r.categoryRank || '-'}</span>
                                             </div>
                                         </td>
                                         <td className="p-2.5 text-center text-[11px] font-medium text-slate-500">
@@ -490,6 +517,7 @@ export default function CheckpointMonitorPage() {
                                                 value={STATUS_OPTIONS.some(opt => opt.value === runnerStatus) ? runnerStatus : 'finished'}
                                                 onChange={e => handleStatusChange(r._id, e.target.value)}
                                                 className={`px-2 py-1 rounded-md border text-[11px] font-bold cursor-pointer outline-none ${statusOpt.tw}`}
+                                                style={statusOpt.style}
                                             >
                                                 {STATUS_OPTIONS.map(opt => (
                                                     <option key={opt.value} value={opt.value}>
