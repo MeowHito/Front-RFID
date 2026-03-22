@@ -39,7 +39,7 @@ interface RFIDStatus {
     latestPreview: any | null;
 }
 
-type PreviewType = 'info' | 'bio' | 'split';
+type PreviewType = 'info' | 'bio' | 'split' | 'score';
 
 interface SyncRequirements {
     allowRFIDSync: boolean;
@@ -508,19 +508,27 @@ export default function RFIDDashboardModal({ isOpen, onClose, eventId, eventName
                                             {getBlockedReason('full-sync') || getBlockedReason('preview')}
                                         </div>
                                     )}
-                                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
                                         <button
                                             className="btn-primary"
-                                            style={{ background: '#8e44ad' }}
+                                            style={{ background: '#8e44ad', fontSize: 14, padding: '8px 20px' }}
                                             onClick={importEventsFromRaceTiger}
                                             disabled={requirementsLoading || runningImportEvents || !!runningPreview || runningFullSync || !syncRequirements.allowRFIDSync || !syncRequirements.hasToken || !syncRequirements.hasRaceId}
                                         >
                                             {runningImportEvents
-                                                ? (language === 'th' ? 'กำลัง Import...' : 'Importing...')
-                                                : (language === 'th' ? 'Import Events จากเว็บจีน' : 'Import Events from RaceTiger')}
+                                                ? (language === 'th' ? '🔄 กำลัง Sync ทั้งหมด...' : '🔄 Syncing all...')
+                                                : (language === 'th' ? '🔄 Sync ทั้งหมดจาก RaceTiger' : '🔄 Sync All from RaceTiger')}
                                         </button>
+                                    </div>
+                                    <div style={{ fontSize: 11, color: '#64748b', marginTop: 6 }}>
+                                        {language === 'th'
+                                            ? 'ปุ่มนี้จะ Import/Update ทุกอย่าง: Events, Runners, Checkpoints, Timing, Status (DNF/DNS) จาก RaceTiger ข้อมูลซ้ำจะถูกแทนที่ด้วยข้อมูลใหม่'
+                                            : 'This button imports/updates everything: Events, Runners, Checkpoints, Timing, Status (DNF/DNS) from RaceTiger. Duplicate data is replaced with fresh data.'}
+                                    </div>
+                                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
                                         <button
                                             className="btn-primary"
+                                            style={{ background: '#64748b', fontSize: 11, padding: '4px 10px' }}
                                             onClick={() => runPreview('info')}
                                             disabled={requirementsLoading || !!runningPreview || runningFullSync || runningImportEvents || !!getBlockedReason('preview')}
                                         >
@@ -528,6 +536,7 @@ export default function RFIDDashboardModal({ isOpen, onClose, eventId, eventName
                                         </button>
                                         <button
                                             className="btn-primary"
+                                            style={{ background: '#64748b', fontSize: 11, padding: '4px 10px' }}
                                             onClick={() => runPreview('bio')}
                                             disabled={requirementsLoading || !!runningPreview || runningFullSync || runningImportEvents || !!getBlockedReason('preview')}
                                         >
@@ -535,6 +544,7 @@ export default function RFIDDashboardModal({ isOpen, onClose, eventId, eventName
                                         </button>
                                         <button
                                             className="btn-primary"
+                                            style={{ background: '#64748b', fontSize: 11, padding: '4px 10px' }}
                                             onClick={() => runPreview('split')}
                                             disabled={requirementsLoading || !!runningPreview || runningFullSync || runningImportEvents || !!getBlockedReason('preview')}
                                         >
@@ -542,12 +552,11 @@ export default function RFIDDashboardModal({ isOpen, onClose, eventId, eventName
                                         </button>
                                         <button
                                             className="btn-primary"
-                                            onClick={runFullSync}
-                                            disabled={requirementsLoading || !!runningPreview || runningFullSync || runningImportEvents || !!getBlockedReason('full-sync')}
+                                            style={{ background: '#64748b', fontSize: 11, padding: '4px 10px' }}
+                                            onClick={() => runPreview('score')}
+                                            disabled={requirementsLoading || !!runningPreview || runningFullSync || runningImportEvents || !!getBlockedReason('preview')}
                                         >
-                                            {runningFullSync
-                                                ? (language === 'th' ? 'กำลังซิงค์...' : 'Syncing...')
-                                                : (language === 'th' ? 'Sync All Runners' : 'Sync All Runners')}
+                                            {runningPreview === 'score' ? '...' : 'Preview SCORE'}
                                         </button>
                                     </div>
                                 </div>

@@ -261,9 +261,8 @@ export default function EventLivePage() {
 
     // Derive effective status from actual RaceTiger timing data
     function deriveEffectiveStatus(runner: Runner): Runner {
-        // If already explicitly finished/dq, keep as-is
-        // DNF is NOT preserved — we check if timing evidence proves the runner is actually racing
-        if (['finished', 'dq'].includes(runner.status)) return runner;
+        // Preserve explicit statuses set by admin or RaceTiger sync
+        if (['finished', 'dq', 'dnf', 'dns'].includes(runner.status)) return runner;
 
         const hasGunTime = (runner.gunTime && runner.gunTime > 0) || !!runner.gunTimeStr;
         const hasNetTime = (runner.netTime && runner.netTime > 0) || !!runner.netTimeStr;
@@ -413,7 +412,7 @@ export default function EventLivePage() {
     function getStatusLabel(status: string) {
         switch (status) {
             case 'finished': return 'FINISH';
-            case 'in_progress': return 'RACING';
+            case 'in_progress': return 'Running';
             case 'dnf': return 'DNF';
             case 'dns': return 'DNS';
             case 'dq': return 'DQ';
@@ -1073,9 +1072,16 @@ export default function EventLivePage() {
                                                 );
                                             case 'sex':
                                                 return (
-                                                    <td key={key} style={{ padding: '6px 6px', textAlign: 'center', fontSize: 10, fontWeight: 700, color: runner.gender === 'M' ? '#3b82f6' : '#ec4899' }}>
-                                                        {runner.gender}
-                                                    </td>
+                                                    <td key={key} style={{ 
+    padding: '6px 6px', 
+    textAlign: 'center', 
+    fontSize: 22, 
+    fontWeight: 900, 
+    color: runner.gender === 'M' ? '#3b82f6' : '#ec4899',
+    WebkitTextStroke: '0.8px currentColor'
+}}>
+    {runner.gender === 'F' ? '♀' : '♂'}
+</td>
                                                 );
                                             case 'status':
                                                 return (
@@ -1097,14 +1103,10 @@ export default function EventLivePage() {
                                                             )}
                                                         </div>
                                                         {!isMobile && (runner.statusCheckpoint || runner.latestCheckpoint) && (
-                                                            <span style={{ display: 'block', fontSize: 9, color: runner.statusCheckpoint ? '#dc2626' : themeStyles.textSecondary, textTransform: 'uppercase', fontWeight: 500, marginTop: 2 }}>
+                                                            <span style={{ display: 'block', fontSize: 9, color: runner.statusCheckpoint ? '#dc2626' : '#1e293b', textTransform: 'uppercase', fontWeight: 600, marginTop: 2 }}>
                                                                 {runner.statusCheckpoint || runner.latestCheckpoint}
                                                                 {runner.statusNote ? ` · ${runner.statusNote}` : ''}
-                                                            </span>
-                                                        )}
-                                                        {!isMobile && !isRaceFinished && runner.scanTime && (
-                                                            <span style={{ display: 'block', fontSize: 8, color: themeStyles.textSecondary, fontFamily: 'monospace', marginTop: 1 }}>
-                                                                {new Date(runner.scanTime).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                                                                {!isRaceFinished && runner.scanTime ? ` · ${new Date(runner.scanTime).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}` : ''}
                                                             </span>
                                                         )}
                                                     </td>
@@ -1435,11 +1437,6 @@ export default function EventLivePage() {
 
                                                 return (
                                                     <td key={key} className="px-1 py-1.5 text-center">
-                                                        {runner.latestCheckpoint && (
-                                                            <div className="text-[8px] font-semibold mb-0.5" style={{ color: themeStyles.textSecondary }}>
-                                                                @ {runner.latestCheckpoint.toUpperCase()}
-                                                            </div>
-                                                        )}
                                                         {nextCpName ? (
                                                             <div>
                                                                 <div className="text-[10px] font-bold text-blue-500">

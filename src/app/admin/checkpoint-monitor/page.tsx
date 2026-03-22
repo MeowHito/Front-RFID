@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useLanguage } from '@/lib/language-context';
 import AdminLayout from '../AdminLayout';
 
@@ -150,6 +150,7 @@ export default function CheckpointMonitorPage() {
     const [rankDeltas, setRankDeltas] = useState<Map<string, number>>(new Map());
     const [confirmModal, setConfirmModal] = useState<{ runnerId: string; bib: string; name: string; newStatus: string; label: string } | null>(null);
     const intervalRef = useRef<NodeJS.Timeout | null>(null);
+    const prevRanksRef = useRef<Map<string, number>>(new Map());
 
     // Load campaign
     useEffect(() => {
@@ -187,19 +188,21 @@ export default function CheckpointMonitorPage() {
             if (!res.ok) throw new Error();
             const data = await res.json();
             const newRunners = Array.isArray(data) ? dedupeCheckpointRunners(data) : [];
-            // Compute rank deltas: compare arrival position at this CP vs overallRank
+            // Compute rank deltas: compare current overallRank vs previous refresh
             const newDeltas = new Map<string, number>();
-            const sorted = [...newRunners].sort((a, b) =>
-                new Date(a.scanTime || 0).getTime() - new Date(b.scanTime || 0).getTime()
-            );
-            sorted.forEach((r, idx) => {
-                const arrivalPos = idx + 1;
+            const prev = prevRanksRef.current;
+            const newRanksMap = new Map<string, number>();
+            newRunners.forEach(r => {
                 if (r.bib && r.overallRank && r.overallRank > 0) {
-                    // positive = moved up (arrival pos was worse, overall rank is better)
-                    // negative = dropped (arrival pos was better, overall rank is worse)
-                    newDeltas.set(r.bib, arrivalPos - r.overallRank);
+                    newRanksMap.set(r.bib, r.overallRank);
+                    const prevRank = prev.get(r.bib);
+                    if (prevRank !== undefined && prevRank > 0) {
+                        // positive = moved up (prev rank was worse), negative = dropped
+                        newDeltas.set(r.bib, prevRank - r.overallRank);
+                    }
                 }
             });
+            prevRanksRef.current = newRanksMap;
             setRankDeltas(newDeltas);
             setRunners(newRunners);
         } catch { setRunners([]); }
@@ -336,12 +339,12 @@ export default function CheckpointMonitorPage() {
         return STATUS_OPTIONS[2]; // DNF (red)
     };
     const getRankLabelColor = (kind: 'overall' | 'gender' | 'category', isStopped: boolean) => {
-        if (kind === 'overall') return isStopped ? '#fdba74' : '#ea580c';
+        if (kind === 'overall') return isStopped ? '#86efac' : '#166534';
         if (kind === 'gender') return isStopped ? '#c4b5fd' : '#7c3aed';
         return isStopped ? '#93c5fd' : '#2563eb';
     };
     const getRankValueColor = (kind: 'overall' | 'gender' | 'category', isStopped: boolean) => {
-        if (kind === 'overall') return isStopped ? '#fb923c' : '#c2410c';
+        if (kind === 'overall') return isStopped ? '#4ade80' : '#15803d';
         if (kind === 'gender') return isStopped ? '#a78bfa' : '#6d28d9';
         return isStopped ? '#60a5fa' : '#1d4ed8';
     };
@@ -456,8 +459,6 @@ export default function CheckpointMonitorPage() {
                                         Pace{sortArrow('pace')}
                                     </button>
                                 </th>
-                                <th className="px-1 py-3 text-center font-bold text-slate-600 w-[50px]">Split#</th>
-                                <th className="px-1 py-3 text-center font-bold text-slate-600 w-[65px]">Dist.</th>
                                 <th className="px-1 py-3 text-center font-bold text-slate-600 w-[100px]">
                                     {th ? 'สถานะ' : 'Status'}
                                 </th>
@@ -479,13 +480,14 @@ export default function CheckpointMonitorPage() {
                                             {r.bib}
                                         </td>
                                         <td className="p-2">
-                                            <div className={`font-semibold text-[13px] ${isStopped ? 'text-red-600' : 'text-slate-900'}`}>
+                                            <div className={`font-semibold text-[13px] ${isStopped ? 'text-red-600' : 'text-slate-900'} flex items-center gap-1`}>
+                                                <span style={{ color: r.gender === 'F' ? '#ec4899' : '#3b82f6', fontSize: 14 }}>{r.gender === 'F' ? '♀' : '♂'}</span>
                                                 {r.firstName} {r.lastName}
                                             </div>
                                             <div className={`text-[11px] mt-0.5 ${isStopped ? 'text-red-300' : 'text-slate-400'}`}>
                                                 <span style={{ color: getRankLabelColor('overall', isStopped), fontWeight: 600 }}>Ovr:</span>{' '}
                                                 <span style={{ color: getRankValueColor('overall', isStopped), fontWeight: 700 }}>{r.overallRank || '-'}</span>
-                                                {(() => { const d = rankDeltas.get(r.bib); if (d === undefined) return null; if (d === 0) return <span className="text-slate-400 ml-0.5">(—)</span>; return d > 0 ? <span style={{color:'#16a34a',fontWeight:700}} className="ml-0.5">(↑{d})</span> : <span style={{color:'#ef4444',fontWeight:700}} className="ml-0.5">(↓{Math.abs(d)})</span>; })()}
+                                                {(() => { const d = rankDeltas.get(r.bib); if (d === undefined) return null; if (d === 0) return <span className="text-slate-400 ml-0.5">(—)</span>; return d > 0 ? <span style={{color:'#16a34a',fontWeight:700}} className="ml-0.5">(↑{d})</span> : <span style={{color:'#1F4E1C',fontWeight:700}} className="ml-0.5">(↓{Math.abs(d)})</span>; })()}
                                                 <span className="mx-1">|</span>
                                                 <span style={{ color: getRankLabelColor('gender', isStopped), fontWeight: 600 }}>Gen:</span>{' '}
                                                 <span style={{ color: getRankValueColor('gender', isStopped), fontWeight: 700 }}>{r.genderRank || '-'}</span>
@@ -505,12 +507,6 @@ export default function CheckpointMonitorPage() {
                                         </td>
                                         <td className="p-2.5 text-center text-[11px] text-slate-500">
                                             {isStopped ? '-' : (r.netPace || r.gunPace || '-')}
-                                        </td>
-                                        <td className="p-2.5 text-center text-[11px] text-slate-500">
-                                            {r.splitNo ?? '-'}
-                                        </td>
-                                        <td className="p-2.5 text-center text-[11px] text-slate-500">
-                                            {r.distanceFromStart != null ? `${r.distanceFromStart} km` : '-'}
                                         </td>
                                         <td className="p-2.5 text-center">
                                             <select
