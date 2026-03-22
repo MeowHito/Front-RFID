@@ -500,10 +500,18 @@ export default function CheckpointMonitorPage() {
                                             {r.category || '-'}
                                         </td>
                                         <td className="p-2.5 text-center text-[13px] font-bold text-slate-600">
-                                            {r.scanTime ? new Date(r.scanTime).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '-'}
+                                            {r.scanTime
+                                                ? new Date(r.scanTime).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+                                                : (!isStopped && r.statusCheckpoint)
+                                                    ? <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-amber-50 text-amber-700 text-[10px] font-bold border border-amber-200">⏳ {th ? 'จาก' : 'from'} {r.statusCheckpoint}</span>
+                                                    : '-'}
                                         </td>
-                                        <td className={`p-2.5 text-center text-[13px] ${isStopped ? 'text-red-600' : 'text-slate-900'}`}>
-                                            {isStopped ? getStoppedStatusText(runnerStatus, r.statusCheckpoint) : formatMs(r.netTime ?? r.elapsedTime ?? (r.scanTime ? 0 : undefined))}
+                                        <td className={`p-2.5 text-center text-[13px] ${isStopped ? 'text-red-600' : !r.scanTime && !isStopped ? 'text-amber-600 font-bold' : 'text-slate-900'}`}>
+                                            {isStopped
+                                                ? getStoppedStatusText(runnerStatus, r.statusCheckpoint)
+                                                : !r.scanTime
+                                                    ? (th ? 'กำลังมา' : 'Coming')
+                                                    : formatMs(r.netTime ?? r.elapsedTime ?? (r.scanTime ? 0 : undefined))}
                                         </td>
                                         <td className="p-2.5 text-center text-[11px] text-slate-500">
                                             {isStopped ? '-' : (r.netPace || r.gunPace || '-')}

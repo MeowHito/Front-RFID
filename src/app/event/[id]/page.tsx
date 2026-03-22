@@ -1072,14 +1072,7 @@ export default function EventLivePage() {
                                                 );
                                             case 'sex':
                                                 return (
-                                                    <td key={key} style={{ 
-    padding: '6px 6px', 
-    textAlign: 'center', 
-    fontSize: 22, 
-    fontWeight: 900, 
-    color: runner.gender === 'M' ? '#3b82f6' : '#ec4899',
-    WebkitTextStroke: '0.8px currentColor'
-}}>
+                                                    <td key={key} style={{ padding: '6px 6px', textAlign: 'center', fontSize: 22, fontWeight: 900, color: runner.gender === 'M' ? '#3b82f6' : '#ec4899' }}>
     {runner.gender === 'F' ? '♀' : '♂'}
 </td>
                                                 );
