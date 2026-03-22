@@ -299,6 +299,26 @@ export default function RFIDDashboardModal({ isOpen, onClose, eventId, eventName
                 errors: [summaryMessage, ...prev.errors],
             }));
 
+            // After import, run full-sync to classify DNF/DNS from checkpoint data
+            try {
+                const syncRes = await fetch(`/api/sync/full-sync?id=${eventId}`, {
+                    method: 'POST',
+                    cache: 'no-store',
+                });
+                const syncJson = await syncRes.json().catch(() => ({}));
+                if (syncRes.ok) {
+                    const sr = (syncJson?.data ?? syncJson)?.summary;
+                    const dnf = sr?.dnfDetected ?? 0;
+                    const dns = sr?.dnsDetected ?? 0;
+                    const finished = sr?.splitUpserted ?? 0;
+                    const syncMsg = language === 'th'
+                        ? `🔄 Full Sync สำเร็จ: DNF=${dnf}, DNS=${dns}, Split=${finished}`
+                        : `🔄 Full Sync done: DNF=${dnf}, DNS=${dns}, Split=${finished}`;
+                    showToast('success', syncMsg);
+                    setRfidStatus(prev => ({ ...prev, errors: [syncMsg, ...prev.errors] }));
+                }
+            } catch { /* non-fatal */ }
+
             await loadSyncRequirements();
             await loadRFIDStatus();
         } catch (error: any) {

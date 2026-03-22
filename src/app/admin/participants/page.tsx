@@ -851,18 +851,32 @@ export default function ParticipantsPage() {
                                 setSyncing(true);
                                 setSyncResult(null);
                                 try {
+                                    // Step 1: import-events (events + checkpoints + runners from BIO)
+                                    const importRes = await fetch(`/api/sync/import-events?id=${campaign._id}`, { method: 'POST' });
+                                    const importData = await importRes.json().catch(() => ({}));
+                                    if (!importRes.ok) {
+                                        showToast(importData?.error || importData?.message || 'Import events failed', 'error');
+                                        return;
+                                    }
+                                    const ir = (importData?.data ?? importData) as any;
+                                    const importMsg = language === 'th'
+                                        ? `✅ Import: Events ${ir?.imported ?? 0}/${ir?.updated ?? 0}, Runners ${ir?.runners?.inserted ?? 0}/${ir?.runners?.updated ?? 0}`
+                                        : `✅ Import: Events ${ir?.imported ?? 0}/${ir?.updated ?? 0}, Runners ${ir?.runners?.inserted ?? 0}/${ir?.runners?.updated ?? 0}`;
+                                    showToast(importMsg, 'success');
+
+                                    // Step 2: full-sync (timing + score + DNF/DNS classification)
                                     const res = await fetch(`/api/sync/full-sync?id=${campaign._id}`, { method: 'POST' });
-                                    const data = await res.json();
+                                    const data = await res.json().catch(() => ({}));
                                     if (!res.ok) {
-                                        showToast(data?.error || 'Import failed', 'error');
+                                        showToast(data?.error || 'Full sync failed', 'error');
                                         return;
                                     }
                                     const s = data?.data?.summary || data?.summary || {};
                                     setSyncResult(s);
                                     showToast(
                                         language === 'th'
-                                            ? `Import สำเร็จ! ดึง ${s.rowsFetched || 0} rows → เพิ่ม ${s.inserted || 0} / อัพเดท ${s.updated || 0}`
-                                            : `Import OK! Fetched ${s.rowsFetched || 0} rows → Inserted ${s.inserted || 0} / Updated ${s.updated || 0}`,
+                                            ? `Sync สำเร็จ! ดึง ${s.rowsFetched || 0} rows → เพิ่ม ${s.inserted || 0} / อัพเดท ${s.updated || 0} / DNF=${s.dnfDetected || 0}`
+                                            : `Sync OK! Fetched ${s.rowsFetched || 0} rows → Inserted ${s.inserted || 0} / Updated ${s.updated || 0} / DNF=${s.dnfDetected || 0}`,
                                         'success',
                                     );
                                     // Reload runners
