@@ -261,8 +261,10 @@ export default function EventLivePage() {
 
     // Derive effective status from actual RaceTiger timing data
     function deriveEffectiveStatus(runner: Runner): Runner {
-        // Preserve explicit statuses set by admin or RaceTiger sync
-        if (['finished', 'dq', 'dnf', 'dns'].includes(runner.status)) return runner;
+        // Preserve explicit admin-set statuses (with statusCheckpoint) and finished/dq
+        if (['finished', 'dq'].includes(runner.status)) return runner;
+        // For DNF/DNS: only preserve if admin explicitly set it (has statusCheckpoint)
+        if (['dnf', 'dns'].includes(runner.status) && runner.statusCheckpoint) return runner;
 
         const hasGunTime = (runner.gunTime && runner.gunTime > 0) || !!runner.gunTimeStr;
         const hasNetTime = (runner.netTime && runner.netTime > 0) || !!runner.netTimeStr;
@@ -958,7 +960,8 @@ export default function EventLivePage() {
                                     let progressDistKm = 0;
                                     let eventTotalKm = 0;
                                     let progressLabel = '';
-                                    if (runner.status === 'finished') {
+                                    const isFinishCp = (runner.latestCheckpoint || '').toUpperCase().includes('FINISH') || (runner.latestCheckpoint || '').toUpperCase() === 'FIN';
+                                    if (runner.status === 'finished' || isFinishCp) {
                                         progressPct = 100;
                                     } else {
                                         // Calculate progress for ALL non-finished statuses
@@ -982,7 +985,8 @@ export default function EventLivePage() {
 
                                         // Method 1: passedCount / totalCheckpoints (from RaceTiger sync)
                                         if ((runner.passedCount ?? 0) > 0 && totalCps > 0) {
-                                            progressPct = Math.min(99, Math.round((runner.passedCount! / totalCps) * 100));
+                                            const ratio = Math.round((runner.passedCount! / totalCps) * 100);
+                                            progressPct = runner.passedCount! >= totalCps ? 100 : Math.min(99, ratio);
                                             progressLabel = `${runner.passedCount}/${totalCps} CP`;
                                         }
 
