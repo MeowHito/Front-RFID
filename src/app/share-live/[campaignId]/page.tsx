@@ -29,6 +29,8 @@ interface RunnerAtCheckpoint {
     gunPace?: string;
     statusNote?: string;
     statusCheckpoint?: string;
+    splitNo?: number;
+    distanceFromStart?: number;
 }
 
 function formatMs(ms?: number): string {
@@ -356,13 +358,15 @@ export default function ShareLiveMonitorPage() {
                                             Pace{sortArrow('pace')}
                                         </button>
                                     </th>
+                                    <th className="px-1 py-3 text-center font-bold text-slate-600 w-[50px]">Split#</th>
+                                    <th className="px-1 py-3 text-center font-bold text-slate-600 w-[65px]">Dist.</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {dataLoading && sortedRunners.length === 0 ? (
-                                    <tr><td colSpan={6} className="p-10 text-center text-slate-400">กำลังโหลด...</td></tr>
+                                    <tr><td colSpan={8} className="p-10 text-center text-slate-400">กำลังโหลด...</td></tr>
                                 ) : sortedRunners.length === 0 ? (
-                                    <tr><td colSpan={6} className="p-10 text-center text-slate-400">ยังไม่มีนักกีฬาถึงจุดนี้</td></tr>
+                                    <tr><td colSpan={8} className="p-10 text-center text-slate-400">ยังไม่มีนักกีฬาถึงจุดนี้</td></tr>
                                 ) : sortedRunners.map((r, idx) => {
                                     const rowKey = r._id ? `${r._id}-${idx}` : `row-${idx}`;
                                     const runnerStatus = normalizeRunnerStatus(r.status);
@@ -394,6 +398,12 @@ export default function ShareLiveMonitorPage() {
                                             </td>
                                             <td className="p-2.5 text-center text-[11px] text-slate-500">
                                                 {isStopped ? '-' : (r.netPace || r.gunPace || '-')}
+                                            </td>
+                                            <td className="p-2.5 text-center text-[11px] text-slate-500">
+                                                {r.splitNo ?? '-'}
+                                            </td>
+                                            <td className="p-2.5 text-center text-[11px] text-slate-500">
+                                                {r.distanceFromStart != null ? `${r.distanceFromStart} km` : '-'}
                                             </td>
                                         </tr>
                                     );

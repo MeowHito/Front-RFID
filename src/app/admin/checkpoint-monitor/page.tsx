@@ -28,6 +28,8 @@ interface RunnerAtCheckpoint {
     gunPace?: string;
     statusNote?: string;
     statusCheckpoint?: string;
+    splitNo?: number;
+    distanceFromStart?: number;
 }
 
 const STATUS_OPTIONS = [
@@ -433,6 +435,8 @@ export default function CheckpointMonitorPage() {
                                         Pace{sortArrow('pace')}
                                     </button>
                                 </th>
+                                <th className="px-1 py-3 text-center font-bold text-slate-600 w-[50px]">Split#</th>
+                                <th className="px-1 py-3 text-center font-bold text-slate-600 w-[65px]">Dist.</th>
                                 <th className="px-1 py-3 text-center font-bold text-slate-600 w-[100px]">
                                     {th ? 'สถานะ' : 'Status'}
                                 </th>
@@ -440,9 +444,9 @@ export default function CheckpointMonitorPage() {
                         </thead>
                         <tbody>
                             {dataLoading && sortedRunners.length === 0 ? (
-                                <tr><td colSpan={7} className="p-10 text-center text-slate-400">{th ? 'กำลังโหลด...' : 'Loading...'}</td></tr>
+                                <tr><td colSpan={9} className="p-10 text-center text-slate-400">{th ? 'กำลังโหลด...' : 'Loading...'}</td></tr>
                             ) : sortedRunners.length === 0 ? (
-                                <tr><td colSpan={7} className="p-10 text-center text-slate-400">{th ? 'ยังไม่มีนักกีฬาถึงจุดนี้' : 'No runners arrived at this checkpoint yet'}</td></tr>
+                                <tr><td colSpan={9} className="p-10 text-center text-slate-400">{th ? 'ยังไม่มีนักกีฬาถึงจุดนี้' : 'No runners arrived at this checkpoint yet'}</td></tr>
                             ) : sortedRunners.map((r, idx) => { const rowKey = r._id ? `${r._id}-${idx}` : `row-${idx}`;
                                 const runnerStatus = normalizeRunnerStatus(r.status);
                                 const isStopped = ['dnf', 'dns', 'dq'].includes(runnerStatus);
@@ -474,6 +478,12 @@ export default function CheckpointMonitorPage() {
                                         </td>
                                         <td className="p-2.5 text-center text-[11px] text-slate-500">
                                             {isStopped ? '-' : (r.netPace || r.gunPace || '-')}
+                                        </td>
+                                        <td className="p-2.5 text-center text-[11px] text-slate-500">
+                                            {r.splitNo ?? '-'}
+                                        </td>
+                                        <td className="p-2.5 text-center text-[11px] text-slate-500">
+                                            {r.distanceFromStart != null ? `${r.distanceFromStart} km` : '-'}
                                         </td>
                                         <td className="p-2.5 text-center">
                                             <select
