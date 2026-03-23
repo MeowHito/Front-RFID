@@ -261,10 +261,9 @@ export default function EventLivePage() {
 
     // Derive effective status from actual RaceTiger timing data
     function deriveEffectiveStatus(runner: Runner): Runner {
-        // Preserve explicit admin-set statuses (with statusCheckpoint) and finished/dq
-        if (['finished', 'dq'].includes(runner.status)) return runner;
-        // For DNF/DNS: only preserve if admin explicitly set it (has statusCheckpoint)
-        if (['dnf', 'dns'].includes(runner.status) && runner.statusCheckpoint) return runner;
+        // Preserve explicit statuses from backend (finished/dq/dnf/dns)
+        // Backend already handles DNF correctly (from RaceTiger API or raceFinished=true auto-detection)
+        if (['finished', 'dq', 'dnf', 'dns'].includes(runner.status)) return runner;
 
         const hasGunTime = (runner.gunTime && runner.gunTime > 0) || !!runner.gunTimeStr;
         const hasNetTime = (runner.netTime && runner.netTime > 0) || !!runner.netTimeStr;
