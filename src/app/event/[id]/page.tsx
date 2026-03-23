@@ -604,7 +604,12 @@ export default function EventLivePage() {
                 const statusDiff = (statusOrder[a.status] ?? 5) - (statusOrder[b.status] ?? 5);
                 if (statusDiff !== 0) return statusDiff;
 
-                // Within same non-finished status: sort by time ascending
+                // Within same status: sort by progress DESC (most checkpoints passed = closest to finish)
+                const aPassed = a.passedCount ?? 0;
+                const bPassed = b.passedCount ?? 0;
+                if (aPassed !== bPassed) return bPassed - aPassed; // DESC: more passed = higher rank
+
+                // Same progress: sort by elapsed time ASC (faster = higher rank)
                 const aTime = a.netTime || a.gunTime || a.elapsedTime || 0;
                 const bTime = b.netTime || b.gunTime || b.elapsedTime || 0;
                 if (aTime > 0 && bTime > 0) return aTime - bTime;
@@ -1099,8 +1104,8 @@ export default function EventLivePage() {
                                                                 </button>
                                                             )}
                                                         </div>
-                                                        {!isMobile && (runner.statusCheckpoint || runner.latestCheckpoint) && (
-                                                            <span style={{ display: 'block', fontSize: 9, color: runner.statusCheckpoint ? '#dc2626' : '#1e293b', textTransform: 'uppercase', fontWeight: 600, marginTop: 2 }}>
+                                                        {(runner.statusCheckpoint || runner.latestCheckpoint) && (
+                                                            <span style={{ display: 'block', fontSize: isMobile ? 8 : 9, color: runner.statusCheckpoint ? '#dc2626' : '#1e293b', textTransform: 'uppercase', fontWeight: 600, marginTop: 2 }}>
                                                                 {runner.statusCheckpoint || runner.latestCheckpoint}
                                                                 {runner.statusNote ? ` · ${runner.statusNote}` : ''}
                                                                 {!isRaceFinished && runner.scanTime ? ` · ${new Date(runner.scanTime).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}` : ''}
