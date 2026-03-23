@@ -504,7 +504,7 @@ export default function EventLivePage() {
     // Build ordered list of visible columns based on admin displayColumns + mobile
     const visibleColumns = useMemo(() => {
         const adminCols = isLabMode ? campaign?.displayColumnsLab : campaign?.displayColumns;
-        const hasSavedAdminCols = Array.isArray(adminCols);
+        const hasSavedAdminCols = Array.isArray(adminCols) && adminCols.length > 0;
         // Rebuild full column order from admin settings
         let fullOrder: string[];
         if (hasSavedAdminCols) {
