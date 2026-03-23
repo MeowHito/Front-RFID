@@ -186,6 +186,8 @@ const COL_DEFS: ColDef[] = [
     { key: 'progress', label: 'Progress', w: '8%', mw: '8%', align: 'right', fixed: true, desktopOnly: true },
 ];
 const TOGGLEABLE_KEYS = COL_DEFS.filter(c => !c.fixed).map(c => c.key);
+// Default visible toggleable columns (only columns that typically have data from RaceTiger)
+const DEFAULT_VISIBLE_KEYS = ['sex', 'gunTime', 'netTime', 'netPace', 'splitTime', 'splitPace', 'legTime', 'legPace'];
 
 // Lab (lap-based) column definitions
 const LAB_COL_DEFS: ColDef[] = [
@@ -536,6 +538,8 @@ export default function EventLivePage() {
                 if (key === 'catRank' && !showCatRank) return false;
             }
             if (hasSavedAdminCols && !adminCols.includes(key)) return false;
+            // When no admin columns configured, use sensible defaults instead of showing all 30+ columns
+            if (!hasSavedAdminCols && !DEFAULT_VISIBLE_KEYS.includes(key)) return false;
             if (isMobile && !showAllColumns) {
                 return isLabMode ? ['laps'].includes(key) : ['gunTime'].includes(key);
             }
