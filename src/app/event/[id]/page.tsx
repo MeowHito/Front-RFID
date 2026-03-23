@@ -187,7 +187,7 @@ const COL_DEFS: ColDef[] = [
 ];
 const TOGGLEABLE_KEYS = COL_DEFS.filter(c => !c.fixed).map(c => c.key);
 // Default visible toggleable columns (only columns that typically have data from RaceTiger)
-const DEFAULT_VISIBLE_KEYS = ['sex', 'gunTime', 'netTime', 'netPace', 'splitTime', 'splitPace', 'distFromStart', 'legTime', 'legPace'];
+const DEFAULT_VISIBLE_KEYS = ['genRank', 'catRank', 'sex', 'gunTime', 'netTime', 'netPace', 'splitTime', 'splitPace', 'distFromStart', 'legTime', 'legPace'];
 
 // Lab (lap-based) column definitions
 const LAB_COL_DEFS: ColDef[] = [
@@ -295,11 +295,9 @@ export default function EventLivePage() {
         const hasElapsed = (runner.elapsedTime && runner.elapsedTime > 0);
 
         if (hasGunTime || hasNetTime || hasCheckpoint || hasPassedCount || hasElapsed) {
-            // Runner has evidence of starting — not DNS
-            // If has overallRank, treat as finished
-            if (runner.overallRank && runner.overallRank > 0 && (hasGunTime || hasNetTime)) {
-                return { ...runner, status: 'finished' };
-            }
+            // Runner has evidence of starting — mark as in_progress
+            // Do NOT promote to "finished" based on overallRank — backend live ranking
+            // now assigns overallRank to in_progress runners too
             return { ...runner, status: 'in_progress' };
         }
 
