@@ -187,7 +187,7 @@ const COL_DEFS: ColDef[] = [
 ];
 const TOGGLEABLE_KEYS = COL_DEFS.filter(c => !c.fixed).map(c => c.key);
 // Default visible toggleable columns (only columns that typically have data from RaceTiger)
-const DEFAULT_VISIBLE_KEYS = ['sex', 'gunTime', 'netTime', 'netPace', 'splitTime', 'splitPace', 'legTime', 'legPace'];
+const DEFAULT_VISIBLE_KEYS = ['sex', 'gunTime', 'netTime', 'netPace', 'splitTime', 'splitPace', 'distFromStart', 'legTime', 'legPace'];
 
 // Lab (lap-based) column definitions
 const LAB_COL_DEFS: ColDef[] = [
