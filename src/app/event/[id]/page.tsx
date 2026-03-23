@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { useParams, useRouter } from 'next/navigation';
@@ -251,6 +251,8 @@ export default function EventLivePage() {
     const [checkpointMappings, setCheckpointMappings] = useState<CheckpointMapping[]>([]);
     const [totalDistance, setTotalDistance] = useState<number>(0);
     const [cpDistanceLookup, setCpDistanceLookup] = useState<CheckpointDistanceLookup>({});
+    const [rankDeltas, setRankDeltas] = useState<Map<string, number>>(new Map());
+    const prevRanksRef = useRef<Map<string, number>>(new Map());
 
     // Admin status edit modal
     const [editingRunner, setEditingRunner] = useState<Runner | null>(null);
@@ -260,6 +262,25 @@ export default function EventLivePage() {
     const [editSaving, setEditSaving] = useState(false);
 
     const toApiData = (payload: any) => payload?.data ?? payload;
+
+    // Compute rank deltas: compare current overallRank vs previous refresh
+    function updateRankDeltas(newRunners: Runner[]) {
+        const prev = prevRanksRef.current;
+        const newRanksMap = new Map<string, number>();
+        const newDeltas = new Map<string, number>(rankDeltas); // preserve existing deltas
+        newRunners.forEach(r => {
+            if (r.bib && r.overallRank && r.overallRank > 0) {
+                newRanksMap.set(r.bib, r.overallRank);
+                const prevRank = prev.get(r.bib);
+                if (prevRank !== undefined && prevRank > 0) {
+                    const delta = prevRank - r.overallRank;
+                    if (delta !== 0) newDeltas.set(r.bib, delta);
+                }
+            }
+        });
+        prevRanksRef.current = newRanksMap;
+        setRankDeltas(newDeltas);
+    }
 
     // Derive effective status from actual RaceTiger timing data
     function deriveEffectiveStatus(runner: Runner): Runner {
@@ -321,7 +342,9 @@ export default function EventLivePage() {
                     const runnersData = await runnersRes.json().catch(() => ({}));
                     const list = (runnersData?.data?.data as Runner[]) || (runnersData?.data as Runner[]) || (Array.isArray(runnersData) ? runnersData : []);
                     if (Array.isArray(list) && list.length > 0) {
-                        setRunners(list.map(deriveEffectiveStatus));
+                        const mapped = list.map(deriveEffectiveStatus);
+                        updateRankDeltas(mapped);
+                        setRunners(mapped);
                         setLastUpdated(new Date());
                     }
                 }
@@ -351,6 +374,7 @@ export default function EventLivePage() {
                 const runnersData = await runnersRes.json().catch(() => ({}));
                 const list = (runnersData?.data?.data as Runner[]) || (runnersData?.data as Runner[]) || (Array.isArray(runnersData) ? runnersData : []);
                 const runnerList = (Array.isArray(list) ? list : []).map(deriveEffectiveStatus);
+                updateRankDeltas(runnerList);
                 setRunners(runnerList);
 
                 // Fetch checkpoint mappings per event for distance-based progress
@@ -1076,6 +1100,7 @@ export default function EventLivePage() {
                                                                     <span style={{ background: '#dc2626', color: '#fff', padding: '1px 6px', borderRadius: 4, fontSize: isMobile ? 9 : 10, fontWeight: 800, letterSpacing: '0.05em', border: '1px solid #dc2626' }}>
                                                                         {runner.bib}
                                                                     </span>
+                                                                    {(() => { const d = rankDeltas.get(runner.bib); if (!d) return null; return <span style={{ fontSize: isMobile ? 8 : 9, fontWeight: 800, color: d > 0 ? '#16a34a' : '#dc2626' }}>{d > 0 ? `▲${d}` : `▼${Math.abs(d)}`}</span>; })()}
                                                                     {runner.nationality ? `${runner.nationality} | ` : ''}{runner.ageGroup || runner.category}
                                                                 </span>
                                                             </div>

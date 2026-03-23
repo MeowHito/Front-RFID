@@ -133,6 +133,7 @@ export default function RunnerProfilePage() {
     const [timings, setTimings] = useState<TimingRecord[]>([]);
     const [campaign, setCampaign] = useState<CampaignData | null>(null);
     const [cpMappings, setCpMappings] = useState<CheckpointMappingData[]>([]);
+    const [checkpointRanks, setCheckpointRanks] = useState<Record<string, number>>({});
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
@@ -148,6 +149,7 @@ export default function RunnerProfilePage() {
                     setTimings(json.data.timingRecords || []);
                     setCampaign(json.data.campaign || null);
                     setCpMappings(json.data.checkpointMappings || []);
+                    setCheckpointRanks(json.data.checkpointRanks || {});
                 } else {
                     setError(json.status?.description || 'Runner not found');
                 }
@@ -375,7 +377,8 @@ export default function RunnerProfilePage() {
                         <table style={{ width: '100%', textAlign: 'left', borderCollapse: 'collapse', minWidth: 600 }}>
                             <thead>
                                 <tr style={{ fontSize: 10, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '-0.02em', background: '#f8fafc' }}>
-                                    <th style={{ padding: '12px 24px' }}>Checkpoint</th>
+                                    <th style={{ padding: '12px 16px', width: '60px' }}>Rank</th>
+                                    <th style={{ padding: '12px 16px' }}>Checkpoint</th>
                                     <th style={{ padding: '12px 8px' }}>Distance</th>
                                     <th style={{ padding: '12px 8px' }}>Time of Day</th>
                                     <th style={{ padding: '12px 8px' }}>Net Time</th>
@@ -400,9 +403,23 @@ export default function RunnerProfilePage() {
                                         segPace = `${pM}:${pS.toString().padStart(2, '0')} /km`;
                                     }
 
+                                    // Per-checkpoint rank and rank change
+                                    const cpRank = checkpointRanks[record.checkpoint] ?? null;
+                                    const prevCpName = i > 0 ? sortedTimings[i - 1].checkpoint : null;
+                                    const prevRank = prevCpName ? (checkpointRanks[prevCpName] ?? null) : null;
+                                    const rankDelta = (cpRank !== null && prevRank !== null) ? prevRank - cpRank : null;
+
                                     return (
                                         <tr key={record._id} className="checkpoint-row" style={{ background: isCurrent ? 'rgba(34,197,94,0.05)' : undefined }}>
-                                            <td style={{ padding: '16px 24px', fontWeight: 700, fontSize: 14, color: isFinishCp ? '#0f172a' : isCurrent ? '#16a34a' : isStartCp ? '#94a3b8' : '#16a34a', display: 'flex', alignItems: 'center', gap: 8 }}>
+                                            <td style={{ padding: '16px 16px', fontWeight: 800, fontSize: 16, color: '#0f172a', whiteSpace: 'nowrap' }}>
+                                                {isStartCp ? '-' : cpRank ?? '-'}
+                                                {rankDelta !== null && rankDelta !== 0 && (
+                                                    <span style={{ fontSize: 11, fontWeight: 700, marginLeft: 4, color: rankDelta > 0 ? '#16a34a' : '#dc2626' }}>
+                                                        {rankDelta > 0 ? `▲${rankDelta}` : `▼${Math.abs(rankDelta)}`}
+                                                    </span>
+                                                )}
+                                            </td>
+                                            <td style={{ padding: '16px 16px', fontWeight: 700, fontSize: 14, color: isFinishCp ? '#0f172a' : isCurrent ? '#16a34a' : isStartCp ? '#94a3b8' : '#16a34a', display: 'flex', alignItems: 'center', gap: 8 }}>
                                                 {isCurrent && <span style={{ fontSize: 10, background: '#16a34a', color: '#fff', padding: '1px 6px', borderRadius: 4 }}>Current</span>}
                                                 {record.checkpoint}
                                             </td>
@@ -428,9 +445,13 @@ export default function RunnerProfilePage() {
                                     const isCurrent = i === passedUpToIdx && !isFinished;
                                     const isFinishCp = cp.type === 'finish';
                                     const isStartCp = cp.type === 'start';
+                                    const cpRank = checkpointRanks[cp.name] ?? null;
                                     return (
                                         <tr key={`cp-${i}`} className="checkpoint-row" style={{ background: isCurrent ? 'rgba(34,197,94,0.05)' : undefined, opacity: passed ? 1 : 0.4 }}>
-                                            <td style={{ padding: '16px 24px', fontWeight: 700, fontSize: 14, display: 'flex', alignItems: 'center', gap: 8, color: passed ? (isFinishCp ? '#0f172a' : '#16a34a') : '#cbd5e1' }}>
+                                            <td style={{ padding: '16px 16px', fontWeight: 800, fontSize: 16, color: passed ? '#0f172a' : '#cbd5e1' }}>
+                                                {isStartCp ? '-' : (passed && cpRank ? cpRank : '-')}
+                                            </td>
+                                            <td style={{ padding: '16px 16px', fontWeight: 700, fontSize: 14, display: 'flex', alignItems: 'center', gap: 8, color: passed ? (isFinishCp ? '#0f172a' : '#16a34a') : '#cbd5e1' }}>
                                                 {isCurrent && <span style={{ fontSize: 10, background: '#16a34a', color: '#fff', padding: '1px 6px', borderRadius: 4 }}>Current</span>}
                                                 {passed && !isCurrent && <span style={{ color: '#22c55e', fontSize: 14 }}>✓</span>}
                                                 {!passed && <span style={{ color: '#cbd5e1', fontSize: 14 }}>○</span>}
@@ -451,7 +472,7 @@ export default function RunnerProfilePage() {
                                     );
                                 }) : (
                                     <tr>
-                                        <td colSpan={6} style={{ padding: '48px 24px', textAlign: 'center', color: '#94a3b8', fontSize: 14 }}>
+                                        <td colSpan={7} style={{ padding: '48px 24px', textAlign: 'center', color: '#94a3b8', fontSize: 14 }}>
                                             {runner.status === 'not_started' ? 'ยังไม่เริ่มวิ่ง' : 'ไม่มีข้อมูล Checkpoint'}
                                         </td>
                                     </tr>

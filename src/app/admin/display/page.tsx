@@ -6,7 +6,7 @@ import { useLanguage } from '@/lib/language-context';
 
 type ColDef = { key: string; thLabel: string; thLabelTh: string; width: string; align: 'left' | 'center' | 'right'; fixed?: boolean };
 
-// Marathon columns — same as event/[id]/page.tsx
+// Marathon columns — only columns that have data from RaceTiger API
 const MARATHON_COLUMNS: ColDef[] = [
     { key: 'rank', thLabel: 'Rank', thLabelTh: 'อันดับ', width: '3%', align: 'center', fixed: true },
     { key: 'genRank', thLabel: 'Gen', thLabelTh: 'Gen', width: '3%', align: 'center' },
@@ -21,24 +21,13 @@ const MARATHON_COLUMNS: ColDef[] = [
     { key: 'netPace', thLabel: 'Net Pace', thLabelTh: 'Net Pace', width: '5%', align: 'center' },
     { key: 'finish', thLabel: 'Finish', thLabelTh: 'จบ', width: '4%', align: 'center' },
     { key: 'genFin', thLabel: 'Gen Fin', thLabelTh: 'Gen Fin', width: '4%', align: 'center' },
-    // RaceTiger Pass Time columns
+    // RaceTiger Pass Time columns (only fields that RaceTiger API actually provides)
     { key: 'chipCode', thLabel: 'Chip Code', thLabelTh: 'Chip Code', width: '6%', align: 'center' },
-    { key: 'printingCode', thLabel: 'Printing Code', thLabelTh: 'Printing Code', width: '5%', align: 'center' },
-    { key: 'splitNo', thLabel: 'Split No', thLabelTh: 'Split No', width: '4%', align: 'center' },
-    { key: 'splitName', thLabel: 'Split Name', thLabelTh: 'ชื่อ Split', width: '6%', align: 'center' },
     { key: 'splitTime', thLabel: 'Split Time', thLabelTh: 'Split Time', width: '5%', align: 'center' },
     { key: 'splitPace', thLabel: 'Split Pace', thLabelTh: 'Split Pace', width: '5%', align: 'center' },
     { key: 'distFromStart', thLabel: 'Distance', thLabelTh: 'ระยะทาง', width: '5%', align: 'center' },
-    { key: 'gunTimeMs', thLabel: 'Gun(ms)', thLabelTh: 'Gun(ms)', width: '5%', align: 'center' },
-    { key: 'netTimeMs', thLabel: 'Net(ms)', thLabelTh: 'Net(ms)', width: '5%', align: 'center' },
-    { key: 'totalGunTime', thLabel: 'Total Gun', thLabelTh: 'Total Gun', width: '5%', align: 'center' },
-    { key: 'totalNetTime', thLabel: 'Total Net', thLabelTh: 'Total Net', width: '5%', align: 'center' },
-    { key: 'supplement', thLabel: 'Supplement', thLabelTh: 'Supplement', width: '5%', align: 'center' },
-    { key: 'cutOff', thLabel: 'Cut-off', thLabelTh: 'Cut-off', width: '4%', align: 'center' },
     { key: 'legTime', thLabel: 'Leg Time', thLabelTh: 'Leg Time', width: '5%', align: 'center' },
     { key: 'legPace', thLabel: 'Leg Pace', thLabelTh: 'Leg Pace', width: '5%', align: 'center' },
-    { key: 'legDistance', thLabel: 'Leg Dist', thLabelTh: 'Leg Dist', width: '5%', align: 'center' },
-    { key: 'lagMs', thLabel: 'Lag MS', thLabelTh: 'Lag MS', width: '4%', align: 'center' },
     { key: 'nextStation', thLabel: 'Next / ETA', thLabelTh: 'จุดถัดไป / ETA', width: '8%', align: 'center' },
     { key: 'progress', thLabel: 'Progress', thLabelTh: 'ความคืบหน้า', width: '8%', align: 'right', fixed: true },
 ];

@@ -159,21 +159,24 @@ export default function ShareLiveMonitorPage() {
             const data = await res.json();
             const newRunners = Array.isArray(data) ? dedupeRunners(data) : [];
             // Compute rank deltas: compare current overallRank vs previous refresh
-            const newDeltas = new Map<string, number>();
+            // Preserve non-zero deltas so they don't disappear when rank stabilizes
             const prev = prevRanksRef.current;
             const newRanksMap = new Map<string, number>();
-            newRunners.forEach(r => {
-                if (r.bib && r.overallRank && r.overallRank > 0) {
-                    newRanksMap.set(r.bib, r.overallRank);
-                    const prevRank = prev.get(r.bib);
-                    if (prevRank !== undefined && prevRank > 0) {
-                        // positive = moved up (prev rank was worse), negative = dropped
-                        newDeltas.set(r.bib, prevRank - r.overallRank);
+            setRankDeltas(existing => {
+                const merged = new Map<string, number>(existing);
+                newRunners.forEach(r => {
+                    if (r.bib && r.overallRank && r.overallRank > 0) {
+                        newRanksMap.set(r.bib, r.overallRank);
+                        const prevRank = prev.get(r.bib);
+                        if (prevRank !== undefined && prevRank > 0) {
+                            const delta = prevRank - r.overallRank;
+                            if (delta !== 0) merged.set(r.bib, delta);
+                        }
                     }
-                }
+                });
+                return merged;
             });
             prevRanksRef.current = newRanksMap;
-            setRankDeltas(newDeltas);
             setRunners(newRunners);
         } catch { setRunners([]); }
         finally { setDataLoading(false); setLastRefresh(new Date()); }
