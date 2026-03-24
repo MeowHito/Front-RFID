@@ -394,7 +394,7 @@ export default function ShareLiveMonitorPage() {
                                                 <div className={`text-[11px] mt-0.5 ${isStopped ? 'text-red-300' : 'text-slate-400'}`}>
                                                     <span style={{ color: isStopped ? '#86efac' : '#166534', fontWeight: 600 }}>Ovr:</span>{' '}
                                                     <span style={{ color: isStopped ? '#4ade80' : '#15803d', fontWeight: 700 }}>{r.overallRank || '-'}</span>
-                                                    {(() => { const d = rankDeltas.get(r.bib); if (d === undefined || d === 0) return r.bib && rankDeltas.size > 0 ? <span style={{color:'#94a3b8'}} className="ml-0.5">(—)</span> : null; return d > 0 ? <span style={{color:'#16a34a',fontWeight:700}} className="ml-0.5">(↑{d})</span> : <span style={{color:'#ef4444',fontWeight:700}} className="ml-0.5">(↓{Math.abs(d)})</span>; })()}
+                                                    {(() => { const d = rankDeltas.get(r.bib); if (d === undefined || d === 0) return r.bib && rankDeltas.size > 0 ? <span style={{color:'#94a3b8'}} className="ml-0.5">(—)</span> : null; return d > 0 ? <span style={{color:'#16a34a',fontWeight:700}} className="ml-0.5">(↑{d})</span> : <span style={{color:'#dc2626',fontWeight:700}} className="ml-0.5">(↓{Math.abs(d)})</span>; })()}
                                                     <span className="mx-1">|</span>
                                                     <span style={{ color: isStopped ? '#c4b5fd' : '#7c3aed', fontWeight: 600 }}>Gen:</span>{' '}
                                                     <span style={{ color: isStopped ? '#a78bfa' : '#6d28d9', fontWeight: 700 }}>{r.genderRank || '-'}</span>

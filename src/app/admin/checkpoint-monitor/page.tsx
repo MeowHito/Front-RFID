@@ -493,7 +493,7 @@ export default function CheckpointMonitorPage() {
                                             <div className={`text-[11px] mt-0.5 ${isStopped ? 'text-red-300' : 'text-slate-400'}`}>
                                                 <span style={{ color: getRankLabelColor('overall', isStopped), fontWeight: 600 }}>Ovr:</span>{' '}
                                                 <span style={{ color: getRankValueColor('overall', isStopped), fontWeight: 700 }}>{r.overallRank || '-'}</span>
-                                                {(() => { const d = rankDeltas.get(r.bib); if (d === undefined) return null; if (d === 0) return <span className="text-slate-400 ml-0.5">(—)</span>; return d > 0 ? <span style={{color:'#16a34a',fontWeight:700}} className="ml-0.5">(↑{d})</span> : <span style={{color:'#1F4E1C',fontWeight:700}} className="ml-0.5">(↓{Math.abs(d)})</span>; })()}
+                                                {(() => { const d = rankDeltas.get(r.bib); if (d === undefined) return null; if (d === 0) return <span className="text-slate-400 ml-0.5">(—)</span>; return d > 0 ? <span style={{color:'#16a34a',fontWeight:700}} className="ml-0.5">(↑{d})</span> : <span style={{color:'#dc2626',fontWeight:700}} className="ml-0.5">(↓{Math.abs(d)})</span>; })()}
                                                 <span className="mx-1">|</span>
                                                 <span style={{ color: getRankLabelColor('gender', isStopped), fontWeight: 600 }}>Gen:</span>{' '}
                                                 <span style={{ color: getRankValueColor('gender', isStopped), fontWeight: 700 }}>{r.genderRank || '-'}</span>
