@@ -422,11 +422,12 @@ export default function EventLivePage() {
 
     function formatTime(ms: number | undefined | null): string {
         if (ms === undefined || ms === null || ms < 0) return '-';
-        if (ms === 0) return '0:00:00';
+        if (ms === 0) return '0:00:00.000';
         const hours = Math.floor(ms / 3600000);
         const minutes = Math.floor((ms % 3600000) / 60000);
         const seconds = Math.floor((ms % 60000) / 1000);
-        return `${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+        const millis = Math.floor(ms % 1000);
+        return `${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}.${millis.toString().padStart(3, '0')}`;
     }
 
     function formatDate(dateString: string) {
@@ -609,12 +610,12 @@ export default function EventLivePage() {
                 return matchesSearch && matchesGender && matchesCategory && matchesStatus;
             })
             .sort((a, b) => {
-                // Group by status: finished runners FIRST, then non-finished
-                const aFinished = a.status === 'finished' ? 0 : 1;
-                const bFinished = b.status === 'finished' ? 0 : 1;
-                if (aFinished !== bFinished) return aFinished - bFinished;
+                // Group by status: finished FIRST, then in_progress, then DNF/DNS/DQ, then not_started
+                const statusOrder: Record<string, number> = { 'finished': 0, 'in_progress': 1, 'dnf': 2, 'dns': 3, 'dq': 4, 'not_started': 5 };
+                const statusDiff = (statusOrder[a.status] ?? 6) - (statusOrder[b.status] ?? 6);
+                if (statusDiff !== 0) return statusDiff;
 
-                // Within finished group: sort by netTime ASC (fastest first)
+                // Within finished group: sort by netTime ASC (fastest first, ms precision)
                 if (a.status === 'finished' && b.status === 'finished') {
                     const aNet = a.netTime || a.gunTime || 0;
                     const bNet = b.netTime || b.gunTime || 0;
@@ -624,27 +625,44 @@ export default function EventLivePage() {
                     return 0;
                 }
 
-                // Within non-finished group: sub-sort by status priority
-                const statusOrder: Record<string, number> = { 'in_progress': 0, 'not_started': 1, 'dns': 2, 'dnf': 3, 'dq': 4 };
-                const statusDiff = (statusOrder[a.status] ?? 5) - (statusOrder[b.status] ?? 5);
-                if (statusDiff !== 0) return statusDiff;
+                // Within in_progress group: sort by checkpoint closest to finish DESC, then fastest time ASC
+                if (a.status === 'in_progress' && b.status === 'in_progress') {
+                    const aPassed = a.passedCount ?? 0;
+                    const bPassed = b.passedCount ?? 0;
+                    if (aPassed !== bPassed) return bPassed - aPassed; // DESC: more passed = closer to finish
 
-                // Within same status: sort by progress DESC (most checkpoints passed = closest to finish)
-                const aPassed = a.passedCount ?? 0;
-                const bPassed = b.passedCount ?? 0;
-                if (aPassed !== bPassed) return bPassed - aPassed; // DESC: more passed = higher rank
-
-                // Same progress: sort by elapsed time ASC (faster = higher rank)
-                const aTime = a.netTime || a.gunTime || a.elapsedTime || 0;
-                const bTime = b.netTime || b.gunTime || b.elapsedTime || 0;
-                if (aTime > 0 && bTime > 0) return aTime - bTime;
-                if (aTime > 0 && bTime <= 0) return -1;
-                if (aTime <= 0 && bTime > 0) return 1;
+                    // Same checkpoint count: sort by elapsed time ASC (faster = higher rank)
+                    const aTime = a.netTime || a.gunTime || a.elapsedTime || 0;
+                    const bTime = b.netTime || b.gunTime || b.elapsedTime || 0;
+                    if (aTime > 0 && bTime > 0) return aTime - bTime;
+                    if (aTime > 0 && bTime <= 0) return -1;
+                    if (aTime <= 0 && bTime > 0) return 1;
+                }
 
                 // Fallback: by BIB
                 return (a.bib || '').localeCompare(b.bib || '', undefined, { numeric: true });
             });
     }, [runners, searchQuery, filterGender, filterCategory, filterStatus, resolveRunnerCategoryKey]);
+
+    // Compute live gender and category ranks from sorted runners
+    // These are computed AFTER sorting so rank=position within gender/category group
+    const liveRanks = useMemo(() => {
+        const genderCounters: Record<string, number> = {};
+        const categoryCounters: Record<string, number> = {};
+        const ranks = new Map<string, { genRank: number; catRank: number }>();
+        for (const runner of filteredRunners) {
+            // Rank runners who have passed at least one checkpoint (finished, in_progress, or DNF with progress)
+            // Skip DNS/DQ/not_started runners with no checkpoint progress
+            if (runner.status === 'not_started' || runner.status === 'dns' || runner.status === 'dq') continue;
+            if (runner.status === 'dnf' && !((runner.passedCount ?? 0) > 0)) continue;
+            const gender = runner.gender || '_';
+            const catKey = resolveRunnerCategoryKey(runner) || '_';
+            genderCounters[gender] = (genderCounters[gender] || 0) + 1;
+            categoryCounters[catKey] = (categoryCounters[catKey] || 0) + 1;
+            ranks.set(runner._id, { genRank: genderCounters[gender], catRank: categoryCounters[catKey] });
+        }
+        return ranks;
+    }, [filteredRunners, resolveRunnerCategoryKey]);
 
     const handleViewRunner = (runner: Runner) => {
         router.push(`/runner/${runner._id}`);
@@ -1064,18 +1082,24 @@ export default function EventLivePage() {
                                                         <span style={{ fontSize: isMobile ? 14 : 16, fontWeight: 900, color: isMobile ? '#0f172a' : (rank <= 3 ? (rank === 1 ? '#22c55e' : isDark ? '#94a3b8' : '#334155') : (isDark ? '#64748b' : '#cbd5e1')) }}>{rank}</span>
                                                     </td>
                                                 );
-                                            case 'genRank':
+                                            case 'genRank': {
+                                                const liveGen = liveRanks.get(runner._id)?.genRank;
+                                                const displayGenRank = liveGen || runner.genderRank || '-';
                                                 return (
                                                     <td key={key} style={{ padding: isMobile ? '4px 2px' : '6px 6px', textAlign: 'center' }}>
-                                                        <span style={{ fontSize: isMobile ? 11 : 12, fontWeight: 700, color: isMobile ? '#0f172a' : themeStyles.textMuted }}>{runner.genderRank || '-'}</span>
+                                                        <span style={{ fontSize: isMobile ? 11 : 12, fontWeight: 700, color: isMobile ? '#0f172a' : themeStyles.textMuted }}>{displayGenRank}</span>
                                                     </td>
                                                 );
-                                            case 'catRank':
+                                            }
+                                            case 'catRank': {
+                                                const liveCat = liveRanks.get(runner._id)?.catRank;
+                                                const displayCatRank = liveCat || runner.categoryRank || '-';
                                                 return (
                                                     <td key={key} style={{ padding: isMobile ? '4px 2px' : '6px 6px', textAlign: 'center' }}>
-                                                        <span style={{ fontSize: isMobile ? 11 : 12, fontWeight: 700, color: isMobile ? '#0f172a' : themeStyles.textMuted }}>{runner.categoryRank || '-'}</span>
+                                                        <span style={{ fontSize: isMobile ? 11 : 12, fontWeight: 700, color: isMobile ? '#0f172a' : themeStyles.textMuted }}>{displayCatRank}</span>
                                                     </td>
                                                 );
+                                            }
                                             case 'runner':
                                                 return (
                                                     <td key={key} style={{ padding: isMobile ? '4px 4px' : '6px 8px', overflow: 'hidden' }}>
@@ -1134,7 +1158,7 @@ export default function EventLivePage() {
                                                             <span style={{ display: 'block', fontSize: isMobile ? 8 : 9, color: runner.statusCheckpoint ? '#dc2626' : '#1e293b', textTransform: 'uppercase', fontWeight: 600, marginTop: 2 }}>
                                                                 {runner.statusCheckpoint || runner.latestCheckpoint}
                                                                 {runner.statusNote ? ` · ${runner.statusNote}` : ''}
-                                                                {!isRaceFinished && runner.scanTime ? ` · ${new Date(runner.scanTime).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}` : ''}
+                                                                {!isRaceFinished && runner.scanTime ? (() => { const d = new Date(runner.scanTime); return ` · ${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')}:${d.getSeconds().toString().padStart(2,'0')}.${d.getMilliseconds().toString().padStart(3,'0')}`; })() : ''}
                                                             </span>
                                                         )}
                                                     </td>

@@ -36,11 +36,11 @@ interface RunnerAtCheckpoint {
 function formatMs(ms?: number): string {
     if (ms === undefined || ms === null) return '-';
     if (ms < 0) return '-';
-    const totalSec = Math.floor(ms / 1000);
-    const h = Math.floor(totalSec / 3600);
-    const m = Math.floor((totalSec % 3600) / 60);
-    const s = totalSec % 60;
-    return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+    const h = Math.floor(ms / 3600000);
+    const m = Math.floor((ms % 3600000) / 60000);
+    const s = Math.floor((ms % 60000) / 1000);
+    const millis = Math.floor(ms % 1000);
+    return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}.${millis.toString().padStart(3, '0')}`;
 }
 
 function normalizeRunnerStatus(status?: string): string {
@@ -405,7 +405,7 @@ export default function ShareLiveMonitorPage() {
                                             </td>
                                             <td className="p-2.5 text-center text-[13px] font-bold text-black"> 
                                                 {r.scanTime
-                                                    ? new Date(r.scanTime).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+                                                    ? (() => { const d = new Date(r.scanTime); const hh = d.getHours().toString().padStart(2,'0'); const mm = d.getMinutes().toString().padStart(2,'0'); const ss = d.getSeconds().toString().padStart(2,'0'); const ms = d.getMilliseconds().toString().padStart(3,'0'); return `${hh}:${mm}:${ss}.${ms}`; })()
                                                     : (!isStopped && r.statusCheckpoint)
                                                         ? <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-amber-50 text-amber-700 text-[10px] font-bold border border-amber-200">⏳ จาก {r.statusCheckpoint}</span>
                                                         : '-'}
