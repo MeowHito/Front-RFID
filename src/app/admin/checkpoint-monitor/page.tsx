@@ -392,23 +392,23 @@ export default function CheckpointMonitorPage() {
                 </div>
 
                 {/* Search + info bar */}
-                <div className="flex justify-between items-center mt-3.5 border-t border-slate-100 pt-3.5 gap-3 flex-wrap">
-                    <div className="flex items-center gap-3 flex-wrap">
-                        <span className="text-[12px] font-bold text-slate-500">{th ? 'สรุป:' : 'Summary:'}</span>
+                <div className="flex justify-between items-center mt-3.5 border-t border-slate-100 pt-3.5 gap-2 flex-wrap">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="text-[11px] font-bold text-slate-400">{th ? 'สรุป:' : 'Sum:'}</span>
                         {[
-                            { key: 'passed', label: th ? 'ผ่านแล้ว' : 'Passed', count: runners.filter(r => { const s = normalizeRunnerStatus(r.status); return !['dnf','dns','dq'].includes(s) && !!r.scanTime; }).length, bg: 'text-green-700 border-b-2 border-green-500 bg-green-200 ', bgActive: 'bg-green-600 text-white border-b-0' },
-                            { key: 'coming', label: th ? 'กำลังมา' : 'Coming', count: runners.filter(r => { const s = normalizeRunnerStatus(r.status); return !['dnf','dns','dq','finished'].includes(s) && !r.scanTime; }).length, bg: 'text-amber-800 bg-amber-200', bgActive: 'bg-amber-500 text-white' },
+                            { key: 'passed', label: th ? 'ผ่าน' : 'Pass', count: runners.filter(r => { const s = normalizeRunnerStatus(r.status); return !['dnf','dns','dq'].includes(s) && !!r.scanTime; }).length, bg: 'text-green-700 border-b-2 border-green-500 bg-green-200 ', bgActive: 'bg-green-600 text-white border-b-0' },
+                            { key: 'coming', label: th ? 'มา' : 'Go', count: runners.filter(r => { const s = normalizeRunnerStatus(r.status); return !['dnf','dns','dq','finished'].includes(s) && !r.scanTime; }).length, bg: 'text-amber-800 bg-amber-200', bgActive: 'bg-amber-500 text-white' },
                             { key: 'dns', label: 'DNS', count: runners.filter(r => normalizeRunnerStatus(r.status) === 'dns').length, bg: 'text-red-800 bg-red-200', bgActive: 'bg-red-600 text-white' },
                             { key: 'dnf', label: 'DNF', count: runners.filter(r => normalizeRunnerStatus(r.status) === 'dnf').length, bg: 'text-red-800 bg-red-200', bgActive: 'bg-red-600 text-white' },
                             { key: 'dq', label: 'DQ', count: runners.filter(r => normalizeRunnerStatus(r.status) === 'dq').length, bg: 'text-pink-800 bg-pink-200', bgActive: 'bg-pink-600 text-white' },
                         ].map(item => (
                             <button key={item.key ?? 'all'}
                                 onClick={() => setStatusFilter(prev => prev === item.key ? null : item.key)}
-                                className={`px-2.5 py-1 rounded-md text-[11px] font-bold cursor-pointer border-none transition-all ${
+                                className={`px-1.5 py-0.5 rounded text-[10px] font-bold cursor-pointer border-none transition-all ${
                                     statusFilter === item.key ? item.bgActive : item.bg
                                 } hover:opacity-80`}
                             >
-                                {item.label}: {item.count}
+                                {item.label} {item.count}
                             </button>
                         ))}
                     </div>
@@ -417,7 +417,7 @@ export default function CheckpointMonitorPage() {
                             <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400">🔍</span>
                             <input type="text" value={search} onChange={e => setSearch(e.target.value)}
                                 placeholder={th ? 'ค้นหา BIB, ชื่อ...' : 'Search BIB, name...'}
-                                className="py-2 pr-3 pl-[30px] rounded-[10px] border-[1.5px] border-slate-200 text-[13px] w-[350px] outline-none focus:border-slate-400 transition-colors" />
+                                className="py-1.5 pr-3 pl-[30px] rounded-[10px] border-[1.5px] border-slate-200 text-[12px] w-full sm:w-[250px] outline-none focus:border-slate-400 transition-colors" />
                         </div>
                         <button onClick={fetchRunners} disabled={dataLoading}
                             className="px-3.5 py-2 rounded-lg border border-slate-200 bg-white text-xs font-semibold cursor-pointer text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed transition-colors">
@@ -493,7 +493,7 @@ export default function CheckpointMonitorPage() {
                                             <div className={`text-[11px] mt-0.5 ${isStopped ? 'text-red-300' : 'text-slate-400'}`}>
                                                 <span style={{ color: getRankLabelColor('overall', isStopped), fontWeight: 600 }}>Ovr:</span>{' '}
                                                 <span style={{ color: getRankValueColor('overall', isStopped), fontWeight: 700 }}>{r.overallRank || '-'}</span>
-                                                {(() => { const d = rankDeltas.get(r.bib); if (d === undefined) return null; if (d === 0) return <span className="text-slate-400 ml-0.5">(—)</span>; return d > 0 ? <span style={{color:'#16a34a',fontWeight:700}} className="ml-0.5">(↑{d})</span> : <span style={{color:'#dc2626',fontWeight:700}} className="ml-0.5">(↓{Math.abs(d)})</span>; })()}
+                                                {(() => { const d = rankDeltas.get(r.bib); if (d === undefined) return null; if (d === 0) return <span className="text-slate-400 ml-0.5">(—)</span>; return d > 0 ? <span style={{color:'#16a34a',fontWeight:700}} className="ml-0.5">(-{d})</span> : <span style={{color:'#dc2626',fontWeight:700}} className="ml-0.5">(+{Math.abs(d)})</span>; })()}
                                                 <span className="mx-1">|</span>
                                                 <span style={{ color: getRankLabelColor('gender', isStopped), fontWeight: 600 }}>Gen:</span>{' '}
                                                 <span style={{ color: getRankValueColor('gender', isStopped), fontWeight: 700 }}>{r.genderRank || '-'}</span>
