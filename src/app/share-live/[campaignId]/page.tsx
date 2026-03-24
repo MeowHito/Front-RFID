@@ -39,8 +39,7 @@ function formatMs(ms?: number): string {
     const h = Math.floor(ms / 3600000);
     const m = Math.floor((ms % 3600000) / 60000);
     const s = Math.floor((ms % 60000) / 1000);
-    const millis = Math.floor(ms % 1000);
-    return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}.${millis.toString().padStart(3, '0')}`;
+    return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
 }
 
 function normalizeRunnerStatus(status?: string): string {
@@ -159,14 +158,18 @@ export default function ShareLiveMonitorPage() {
             const data = await res.json();
             const newRunners = Array.isArray(data) ? dedupeRunners(data) : [];
             // Compute rank deltas: compare current overallRank vs previous refresh
-            // Preserve non-zero deltas so they don't disappear when rank stabilizes
+            // Deltas are "sticky" — once set, they persist and don't get overwritten
             const prev = prevRanksRef.current;
             const newRanksMap = new Map<string, number>();
+            newRunners.forEach(r => {
+                if (r.bib && r.overallRank && r.overallRank > 0) {
+                    newRanksMap.set(r.bib, r.overallRank);
+                }
+            });
             setRankDeltas(existing => {
                 const merged = new Map<string, number>(existing);
                 newRunners.forEach(r => {
-                    if (r.bib && r.overallRank && r.overallRank > 0) {
-                        newRanksMap.set(r.bib, r.overallRank);
+                    if (r.bib && r.overallRank && r.overallRank > 0 && !merged.has(r.bib)) {
                         const prevRank = prev.get(r.bib);
                         if (prevRank !== undefined && prevRank > 0) {
                             const delta = prevRank - r.overallRank;

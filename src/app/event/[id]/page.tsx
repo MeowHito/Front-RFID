@@ -264,6 +264,7 @@ export default function EventLivePage() {
     const toApiData = (payload: any) => payload?.data ?? payload;
 
     // Compute rank deltas: compare current overallRank vs previous refresh
+    // Deltas are "sticky" — once set, they persist and don't get overwritten
     function updateRankDeltas(newRunners: Runner[]) {
         const prev = prevRanksRef.current;
         const newRanksMap = new Map<string, number>();
@@ -271,10 +272,12 @@ export default function EventLivePage() {
         newRunners.forEach(r => {
             if (r.bib && r.overallRank && r.overallRank > 0) {
                 newRanksMap.set(r.bib, r.overallRank);
-                const prevRank = prev.get(r.bib);
-                if (prevRank !== undefined && prevRank > 0) {
-                    const delta = prevRank - r.overallRank;
-                    if (delta !== 0) newDeltas.set(r.bib, delta);
+                if (!newDeltas.has(r.bib)) {
+                    const prevRank = prev.get(r.bib);
+                    if (prevRank !== undefined && prevRank > 0) {
+                        const delta = prevRank - r.overallRank;
+                        if (delta !== 0) newDeltas.set(r.bib, delta);
+                    }
                 }
             }
         });
@@ -422,12 +425,11 @@ export default function EventLivePage() {
 
     function formatTime(ms: number | undefined | null): string {
         if (ms === undefined || ms === null || ms < 0) return '-';
-        if (ms === 0) return '0:00:00.000';
+        if (ms === 0) return '0:00:00';
         const hours = Math.floor(ms / 3600000);
         const minutes = Math.floor((ms % 3600000) / 60000);
         const seconds = Math.floor((ms % 60000) / 1000);
-        const millis = Math.floor(ms % 1000);
-        return `${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}.${millis.toString().padStart(3, '0')}`;
+        return `${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
     }
 
     function formatDate(dateString: string) {
