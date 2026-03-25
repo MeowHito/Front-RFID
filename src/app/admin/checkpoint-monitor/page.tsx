@@ -34,6 +34,7 @@ interface RunnerAtCheckpoint {
 
 const STATUS_OPTIONS = [
     { value: 'finished', label_th: 'ผ่านแล้ว', label_en: 'Passed', tw: 'bg-green-50 border-green-400 text-green-900', style: { backgroundColor: '#f0fdf4', borderColor: '#22c55e', color: '#166534' } },
+    { value: 'in_progress', label_th: 'กำลังวิ่ง', label_en: 'Revert to Running', tw: 'bg-blue-50 border-blue-400 text-blue-900', style: { backgroundColor: '#eff6ff', borderColor: '#60a5fa', color: '#1e40af' } },
     { value: 'dns', label_th: 'DNS', label_en: 'DNS', tw: 'bg-red-50 border-red-400 text-red-900', style: { backgroundColor: '#fef2f2', borderColor: '#f87171', color: '#991b1b' } },
     { value: 'dnf', label_th: 'DNF', label_en: 'DNF', tw: 'bg-red-50 border-red-400 text-red-900', style: { backgroundColor: '#fef2f2', borderColor: '#f87171', color: '#991b1b' } },
     { value: 'dq', label_th: 'DQ', label_en: 'DQ', tw: 'bg-pink-50 border-pink-400 text-pink-900', style: { backgroundColor: '#fdf2f8', borderColor: '#f472b6', color: '#9d174d' } },
@@ -334,15 +335,13 @@ export default function CheckpointMonitorPage() {
 
     const getStatusOpt = (status: string) => {
         const normalized = normalizeRunnerStatus(status);
-        // Only 'finished' shows green; all other statuses show red
-        if (normalized === 'finished') {
-            return STATUS_OPTIONS[0]; // green
-        }
-        // dns/dnf/dq show their specific red/pink variants
         const found = STATUS_OPTIONS.find(s => s.value === normalized);
         if (found) return found;
-        // Other statuses (in_progress, not_started, etc.) default to DNF style (red)
-        return STATUS_OPTIONS[2]; // DNF (red)
+        // Fallback: in_progress/not_started → blue (running), unknown → DNF style
+        if (normalized === 'not_started' || normalized === 'in_progress') {
+            return STATUS_OPTIONS.find(s => s.value === 'in_progress')!;
+        }
+        return STATUS_OPTIONS.find(s => s.value === 'dnf')!;
     };
     const getRankLabelColor = (kind: 'overall' | 'gender' | 'category', isStopped: boolean) => {
         if (kind === 'overall') return isStopped ? '#86efac' : '#166534';
