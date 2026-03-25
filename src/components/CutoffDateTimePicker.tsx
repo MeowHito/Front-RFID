@@ -81,7 +81,14 @@ export default function CutoffDateTimePicker({ value, onChange, onClose, anchorR
     };
 
     const handleApply = () => {
-        const iso = `${selYear}-${pad2(selMonth + 1)}-${pad2(selDay)}T${pad2(selHour)}:${pad2(selMinute)}`;
+        // Include timezone offset so server (EC2/UTC) correctly interprets local time
+        const d = new Date(selYear, selMonth, selDay, selHour, selMinute);
+        const offset = -d.getTimezoneOffset(); // positive = east of UTC (e.g. +420 for UTC+7)
+        const sign = offset >= 0 ? '+' : '-';
+        const absOff = Math.abs(offset);
+        const offHH = pad2(Math.floor(absOff / 60));
+        const offMM = pad2(absOff % 60);
+        const iso = `${selYear}-${pad2(selMonth + 1)}-${pad2(selDay)}T${pad2(selHour)}:${pad2(selMinute)}${sign}${offHH}:${offMM}`;
         onChange(iso);
         onClose();
     };
