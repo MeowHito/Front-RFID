@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useLanguage } from '@/lib/language-context';
 import AdminLayout from '../../AdminLayout';
+import CutoffDateTimePicker from '@/components/CutoffDateTimePicker';
 import '../../admin.css';
 
 interface RaceCategory {
@@ -53,6 +54,8 @@ export default function RouteMappingPage() {
     // Drag-and-drop reorder state (per distance view)
     const [dragIdx, setDragIdx] = useState<number | null>(null);
     const [overIdx, setOverIdx] = useState<number | null>(null);
+    const [cutoffPickerCpId, setCutoffPickerCpId] = useState<string | null>(null);
+    const [cutoffPickerAnchor, setCutoffPickerAnchor] = useState<DOMRect | null>(null);
 
     // Delete confirmation modal state
     const [deleteConfirm, setDeleteConfirm] = useState<{ open: boolean; checkpoint: Checkpoint | null }>({
@@ -504,6 +507,17 @@ export default function RouteMappingPage() {
         setOverIdx(null);
     };
 
+    // Cutoff time helpers: stored as "YYYY-MM-DDTHH:mm", displayed as "DD/MM/YYYY" + "HH:MM" (24h)
+    const parseCutoffDate = (iso: string | undefined): string => {
+        if (!iso) return '';
+        const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})/);
+        return m ? `${m[3]}/${m[2]}/${m[1]}` : '';
+    };
+    const parseCutoffTime = (iso: string | undefined): string => {
+        if (!iso) return '';
+        const m = iso.match(/T(\d{2}):(\d{2})/);
+        return m ? `${m[1]}:${m[2]}` : '';
+    };
     const getModeBadgeStyle = (mode: 'rfid' | 'manual') => {
         return mode === 'manual'
             ? { bg: '#fef3c7', text: '#b45309', border: '#fbbf24' }
@@ -951,7 +965,7 @@ export default function RouteMappingPage() {
                                         </th>
                                         <th style={{ width: 90 }}>{language === 'th' ? 'KM สะสม' : 'Cumul. KM'}</th>
                                         <th style={{ width: 190 }}>{language === 'th' ? 'Timing Method / Reader ID' : 'Timing Method / Reader ID'}</th>
-                                        <th style={{ width: 160 }}>Cut-off</th>
+                                        <th style={{ width: 170 }}>Cut-off</th>
                                         <th style={{ width: 60 }}>{language === 'th' ? 'ใช้งาน' : 'Active'}</th>
                                         <th style={{ width: 45 }}>{language === 'th' ? 'ลบ' : 'Del'}</th>
                                     </tr>
@@ -1075,25 +1089,50 @@ export default function RouteMappingPage() {
                                                         </div>
                                                     </td>
                                                     <td>
-                                                        <input
-                                                            type="datetime-local"
-                                                            className="table-input"
+                                                        <button
+                                                            type="button"
                                                             draggable={false}
                                                             onDragStart={e => e.stopPropagation()}
                                                             onMouseDown={e => e.stopPropagation()}
-                                                            value={cp.cutoffTime || ''}
-                                                            onChange={e => updateCheckpoint(cp._id, { cutoffTime: e.target.value })}
+                                                            onClick={e => {
+                                                                setCutoffPickerCpId(cp._id);
+                                                                setCutoffPickerAnchor(e.currentTarget.getBoundingClientRect());
+                                                            }}
                                                             title={isStart
                                                                 ? (language === 'th' ? 'ถ้าเกินเวลานี้ นักวิ่งที่ยังไม่เริ่ม → DNS' : 'After this time, not-started runners → DNS')
                                                                 : (language === 'th' ? 'ถ้าเกินเวลานี้ นักวิ่งที่ยังวิ่งไม่ถึง → DNF' : 'After this time, runners not reached → DNF')
                                                             }
                                                             style={{
-                                                                width: '100%', padding: '3px 4px', border: '1px solid #ddd',
-                                                                borderRadius: 3, fontFamily: 'inherit', fontSize: 12,
+                                                                width: '100%', padding: '4px 8px', border: '1px solid #ddd',
+                                                                borderRadius: 4, fontFamily: 'inherit', fontSize: 12,
+                                                                cursor: 'pointer', textAlign: 'left',
+                                                                background: hasCutoff ? '#fff8f7' : '#fff',
                                                                 color: hasCutoff ? '#dd4b39' : '#999',
                                                                 fontWeight: hasCutoff ? 600 : 400,
+                                                                display: 'flex', alignItems: 'center', gap: 6,
                                                             }}
-                                                        />
+                                                        >
+                                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={hasCutoff ? '#dd4b39' : '#bbb'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                                <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+                                                                <line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" />
+                                                                <line x1="3" y1="10" x2="21" y2="10" />
+                                                                <circle cx="16" cy="16" r="2" />
+                                                            </svg>
+                                                            {hasCutoff
+                                                                ? `${parseCutoffDate(cp.cutoffTime)}  ${parseCutoffTime(cp.cutoffTime)}`
+                                                                : (language === 'th' ? 'ตั้งเวลา...' : 'Set cutoff...')
+                                                            }
+                                                        </button>
+                                                        {cutoffPickerCpId === cp._id && (
+                                                            <CutoffDateTimePicker
+                                                                value={cp.cutoffTime || ''}
+                                                                anchorRect={cutoffPickerAnchor}
+                                                                onChange={val => {
+                                                                    updateCheckpoint(cp._id, { cutoffTime: val });
+                                                                }}
+                                                                onClose={() => setCutoffPickerCpId(null)}
+                                                            />
+                                                        )}
                                                     </td>
                                                     <td style={{ textAlign: 'center' }}>
                                                         <div
