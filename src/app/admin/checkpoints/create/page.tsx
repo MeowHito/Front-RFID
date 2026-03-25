@@ -1075,28 +1075,25 @@ export default function RouteMappingPage() {
                                                         </div>
                                                     </td>
                                                     <td>
-                                                        {isStart ? (
-                                                            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                                                                <span style={{ color: '#ccc', fontSize: 13 }}>—</span>
-                                                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ccc" strokeWidth="2"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>
-                                                            </div>
-                                                        ) : (
-                                                            <input
-                                                                type="datetime-local"
-                                                                className="table-input"
-                                                                draggable={false}
-                                                                onDragStart={e => e.stopPropagation()}
-                                                                onMouseDown={e => e.stopPropagation()}
-                                                                value={cp.cutoffTime || ''}
-                                                                onChange={e => updateCheckpoint(cp._id, { cutoffTime: e.target.value })}
-                                                                style={{
-                                                                    width: '100%', padding: '3px 4px', border: '1px solid #ddd',
-                                                                    borderRadius: 3, fontFamily: 'inherit', fontSize: 12,
-                                                                    color: hasCutoff ? '#dd4b39' : '#999',
-                                                                    fontWeight: hasCutoff ? 600 : 400,
-                                                                }}
-                                                            />
-                                                        )}
+                                                        <input
+                                                            type="datetime-local"
+                                                            className="table-input"
+                                                            draggable={false}
+                                                            onDragStart={e => e.stopPropagation()}
+                                                            onMouseDown={e => e.stopPropagation()}
+                                                            value={cp.cutoffTime || ''}
+                                                            onChange={e => updateCheckpoint(cp._id, { cutoffTime: e.target.value })}
+                                                            title={isStart
+                                                                ? (language === 'th' ? 'ถ้าเกินเวลานี้ นักวิ่งที่ยังไม่เริ่ม → DNS' : 'After this time, not-started runners → DNS')
+                                                                : (language === 'th' ? 'ถ้าเกินเวลานี้ นักวิ่งที่ยังวิ่งไม่ถึง → DNF' : 'After this time, runners not reached → DNF')
+                                                            }
+                                                            style={{
+                                                                width: '100%', padding: '3px 4px', border: '1px solid #ddd',
+                                                                borderRadius: 3, fontFamily: 'inherit', fontSize: 12,
+                                                                color: hasCutoff ? '#dd4b39' : '#999',
+                                                                fontWeight: hasCutoff ? 600 : 400,
+                                                            }}
+                                                        />
                                                     </td>
                                                     <td style={{ textAlign: 'center' }}>
                                                         <div
