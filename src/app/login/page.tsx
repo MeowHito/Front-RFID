@@ -14,6 +14,7 @@ export default function LoginPage() {
     const { login, isAuthenticated, isAdmin } = useAuth();
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
+    const [showPassword, setShowPassword] = useState(false);
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
     const [focusedField, setFocusedField] = useState<string | null>(null);
@@ -118,21 +119,36 @@ export default function LoginPage() {
                             <label className="block text-xs uppercase tracking-wider font-medium mb-2" style={{ color: 'var(--muted-foreground)' }}>
                                 รหัสผ่าน
                             </label>
-                            <input
-                                type="password"
-                                value={password}
-                                onChange={(e) => setPassword(e.target.value)}
-                                onFocus={() => setFocusedField('password')}
-                                onBlur={() => setFocusedField(null)}
-                                className="w-full px-4 py-3.5 rounded-xl glass focus:outline-none transition-all"
-                                style={{
-                                    color: 'var(--foreground)',
-                                    transform: focusedField === 'password' ? 'scale(1.02)' : 'scale(1)',
-                                    borderColor: focusedField === 'password' ? 'var(--accent)' : 'transparent'
-                                }}
-                                placeholder="••••••••"
-                                required
-                            />
+                            <div style={{ position: 'relative' }}>
+                                <input
+                                    type={showPassword ? 'text' : 'password'}
+                                    value={password}
+                                    onChange={(e) => setPassword(e.target.value)}
+                                    onFocus={() => setFocusedField('password')}
+                                    onBlur={() => setFocusedField(null)}
+                                    className="w-full px-4 py-3.5 rounded-xl glass focus:outline-none transition-all"
+                                    style={{
+                                        color: 'var(--foreground)',
+                                        transform: focusedField === 'password' ? 'scale(1.02)' : 'scale(1)',
+                                        borderColor: focusedField === 'password' ? 'var(--accent)' : 'transparent',
+                                        paddingRight: 44,
+                                    }}
+                                    placeholder="••••••••"
+                                    required
+                                />
+                                <button
+                                    type="button"
+                                    onClick={() => setShowPassword(!showPassword)}
+                                    style={{
+                                        position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)',
+                                        background: 'none', border: 'none', cursor: 'pointer', fontSize: 18,
+                                        color: 'var(--muted-foreground)', padding: 4,
+                                    }}
+                                    tabIndex={-1}
+                                >
+                                    {showPassword ? '🙈' : '👁'}
+                                </button>
+                            </div>
                         </div>
 
                         <button

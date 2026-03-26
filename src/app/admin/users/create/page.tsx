@@ -77,6 +77,7 @@ function CreateUserContent() {
     const [email, setEmail] = useState('');
     const [username, setUsername] = useState('');
     const [password, setPassword] = useState('');
+    const [showPassword, setShowPassword] = useState(false);
     const [firstName, setFirstName] = useState('');
     const [lastName, setLastName] = useState('');
     const [phone, setPhone] = useState('');
@@ -292,8 +293,14 @@ function CreateUserContent() {
                         {!isEdit && (
                             <div>
                                 <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#374151', marginBottom: 6 }}>{th ? 'รหัสผ่าน' : 'Password'} *</label>
-                                <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="••••••"
-                                    style={{ width: '100%', padding: '10px 14px', borderRadius: 10, border: '1.5px solid #e2e8f0', fontSize: 13, outline: 'none', boxSizing: 'border-box' }} />
+                                <div style={{ position: 'relative' }}>
+                                    <input type={showPassword ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)} placeholder="••••••"
+                                        style={{ width: '100%', padding: '10px 44px 10px 14px', borderRadius: 10, border: '1.5px solid #e2e8f0', fontSize: 13, outline: 'none', boxSizing: 'border-box' }} />
+                                    <button type="button" onClick={() => setShowPassword(!showPassword)}
+                                        style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', fontSize: 16, color: '#94a3b8', padding: 4 }}>
+                                        {showPassword ? '🙈' : '👁'}
+                                    </button>
+                                </div>
                             </div>
                         )}
                         <div>

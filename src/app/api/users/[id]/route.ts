@@ -38,8 +38,15 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
             method: 'DELETE',
             headers: proxyHeaders(req),
         });
-        const data = await res.json();
-        return NextResponse.json(data, { status: res.status });
+        if (!res.ok) {
+            const text = await res.text();
+            let errData: any = { error: 'Delete failed' };
+            try { errData = JSON.parse(text); } catch { errData = { error: text || 'Delete failed' }; }
+            return NextResponse.json(errData, { status: res.status });
+        }
+        const text = await res.text();
+        const data = text ? JSON.parse(text) : { success: true };
+        return NextResponse.json(data, { status: 200 });
     } catch (error: any) {
         return NextResponse.json({ error: error.message }, { status: 500 });
     }
