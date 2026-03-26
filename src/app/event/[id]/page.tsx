@@ -1723,12 +1723,25 @@ export default function EventLivePage() {
                         onClick={e => e.stopPropagation()}
                         style={{ background: isDark ? '#1e293b' : '#fff', borderRadius: 12, padding: 24, width: 520, maxWidth: '95vw', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}
                     >
-                        <h3 style={{ margin: '0 0 4px', fontSize: 16, fontWeight: 800, color: themeStyles.text }}>
-                            {language === 'th' ? 'แก้ไขข้อมูล Runner' : 'Edit Runner'}
-                        </h3>
-                        <p style={{ margin: '0 0 16px', fontSize: 12, color: themeStyles.textSecondary }}>
-                            BIB {editingRunner.bib} — {editingRunner.firstName} {editingRunner.lastName}
-                        </p>
+                        <div style={{ marginBottom: 16 }}>
+                            <h3 style={{ margin: '0 0 8px', fontSize: 14, fontWeight: 700, color: themeStyles.textSecondary, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                                {language === 'th' ? 'แก้ไขข้อมูล Runner' : 'Edit Runner'}
+                            </h3>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                <span style={{
+                                    display: 'inline-flex', alignItems: 'center', gap: 4,
+                                    padding: '4px 12px', borderRadius: 6,
+                                    background: '#2563eb', color: '#fff',
+                                    fontSize: 13, fontWeight: 800, fontFamily: 'monospace', letterSpacing: '0.05em',
+                                    flexShrink: 0,
+                                }}>
+                                    BIB {editingRunner.bib}
+                                </span>
+                                <span style={{ fontSize: 16, fontWeight: 700, color: themeStyles.text, lineHeight: 1.3 }}>
+                                    {editingRunner.firstName} {editingRunner.lastName}
+                                </span>
+                            </div>
+                        </div>
 
                         <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: themeStyles.textSecondary, marginBottom: 4, textTransform: 'uppercase' }}>
                             {language === 'th' ? 'สถานะ' : 'Status'}
