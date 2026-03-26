@@ -7,6 +7,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { useLanguage } from '@/lib/language-context';
 import { useTheme } from '@/lib/theme-context';
 import { useAuth } from '@/lib/auth-context';
+import CutoffDateTimePicker from '@/components/CutoffDateTimePicker';
 
 interface Campaign {
     _id: string;
@@ -260,6 +261,14 @@ export default function EventLivePage() {
     const [editCheckpoint, setEditCheckpoint] = useState('');
     const [editNote, setEditNote] = useState('');
     const [editSaving, setEditSaving] = useState(false);
+
+    // Checkpoint timing data for edit modal
+    const [editCheckpoints, setEditCheckpoints] = useState<{name: string; orderNum: number; type: string}[]>([]);
+    const [editTimingRecords, setEditTimingRecords] = useState<{_id?: string; checkpoint: string; scanTime: string; order?: number}[]>([]);
+    const [editTimingChanges, setEditTimingChanges] = useState<Record<string, string>>({});
+    const [editTimingLoading, setEditTimingLoading] = useState(false);
+    const [editTimingSaveMsg, setEditTimingSaveMsg] = useState<string | null>(null);
+    const [cpTimingPickerOpen, setCpTimingPickerOpen] = useState<string | null>(null);
 
     const toApiData = (payload: any) => payload?.data ?? payload;
 
@@ -670,12 +679,45 @@ export default function EventLivePage() {
         router.push(`/runner/${runner._id}`);
     };
 
-    const openStatusEdit = (runner: Runner, e: React.MouseEvent) => {
+    const openStatusEdit = async (runner: Runner, e: React.MouseEvent) => {
         e.stopPropagation(); // Don't navigate to runner page
         setEditingRunner(runner);
         setEditStatus(runner.status);
         setEditCheckpoint(runner.statusCheckpoint || runner.latestCheckpoint || '');
         setEditNote(runner.statusNote || '');
+        setEditTimingChanges({});
+        setEditTimingSaveMsg(null);
+
+        // Fetch checkpoints and timing records for this runner
+        if (campaign?._id && runner.eventId) {
+            setEditTimingLoading(true);
+            try {
+                const [cpRes, trRes] = await Promise.all([
+                    fetch(`/api/checkpoints/campaign/${campaign._id}`, { cache: 'no-store' }),
+                    fetch(`/api/timing/runner/${runner.eventId}/${runner._id}`, { cache: 'no-store' }),
+                ]);
+                if (cpRes.ok) {
+                    const cpData = await cpRes.json();
+                    const cps = (Array.isArray(cpData) ? cpData : cpData?.data || []).map((cp: any) => ({
+                        name: cp.name || '',
+                        orderNum: cp.orderNum ?? 0,
+                        type: cp.type || 'checkpoint',
+                    })).sort((a: any, b: any) => a.orderNum - b.orderNum);
+                    setEditCheckpoints(cps);
+                }
+                if (trRes.ok) {
+                    const trData = await trRes.json();
+                    const records = (Array.isArray(trData) ? trData : trData?.data || []).map((r: any) => ({
+                        _id: r._id,
+                        checkpoint: r.checkpoint || '',
+                        scanTime: r.scanTime || '',
+                        order: r.order,
+                    }));
+                    setEditTimingRecords(records);
+                }
+            } catch { /* ignore fetch errors */ }
+            setEditTimingLoading(false);
+        }
     };
 
     const handleStatusUpdate = async () => {
@@ -1078,15 +1120,18 @@ export default function EventLivePage() {
                                     // Render cell content per column key
                                     const renderCell = (key: string) => {
                                         switch (key) {
-                                            case 'rank':
+                                            case 'rank': {
+                                                const hideRank = ['dnf', 'dns', 'dq', 'not_started'].includes(runner.status);
                                                 return (
                                                     <td key={key} style={{ padding: isMobile ? '4px 2px' : '6px 8px', textAlign: 'center' }}>
-                                                        <span style={{ fontSize: isMobile ? 14 : 16, fontWeight: 900, color: isMobile ? '#0f172a' : (rank <= 3 ? (rank === 1 ? '#22c55e' : isDark ? '#94a3b8' : '#334155') : (isDark ? '#64748b' : '#cbd5e1')) }}>{rank}</span>
+                                                        <span style={{ fontSize: isMobile ? 14 : 16, fontWeight: 900, color: hideRank ? (isDark ? '#64748b' : '#cbd5e1') : (isMobile ? '#0f172a' : (rank <= 3 ? (rank === 1 ? '#22c55e' : isDark ? '#94a3b8' : '#334155') : (isDark ? '#64748b' : '#cbd5e1'))) }}>{hideRank ? '-' : rank}</span>
                                                     </td>
                                                 );
+                                            }
                                             case 'genRank': {
+                                                const hideGenRank = ['dnf', 'dns', 'dq', 'not_started'].includes(runner.status);
                                                 const liveGen = liveRanks.get(runner._id)?.genRank;
-                                                const displayGenRank = liveGen || runner.genderRank || '-';
+                                                const displayGenRank = hideGenRank ? '-' : (liveGen || runner.genderRank || '-');
                                                 return (
                                                     <td key={key} style={{ padding: isMobile ? '4px 2px' : '6px 6px', textAlign: 'center' }}>
                                                         <span style={{ fontSize: isMobile ? 11 : 12, fontWeight: 700, color: isMobile ? '#0f172a' : themeStyles.textMuted }}>{displayGenRank}</span>
@@ -1094,8 +1139,9 @@ export default function EventLivePage() {
                                                 );
                                             }
                                             case 'catRank': {
+                                                const hideCatRank = ['dnf', 'dns', 'dq', 'not_started'].includes(runner.status);
                                                 const liveCat = liveRanks.get(runner._id)?.catRank;
-                                                const displayCatRank = liveCat || runner.categoryRank || '-';
+                                                const displayCatRank = hideCatRank ? '-' : (liveCat || runner.categoryRank || '-');
                                                 return (
                                                     <td key={key} style={{ padding: isMobile ? '4px 2px' : '6px 6px', textAlign: 'center' }}>
                                                         <span style={{ fontSize: isMobile ? 11 : 12, fontWeight: 700, color: isMobile ? '#0f172a' : themeStyles.textMuted }}>{displayCatRank}</span>
@@ -1675,10 +1721,10 @@ export default function EventLivePage() {
                 >
                     <div
                         onClick={e => e.stopPropagation()}
-                        style={{ background: isDark ? '#1e293b' : '#fff', borderRadius: 12, padding: 24, width: 380, maxWidth: '90vw', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}
+                        style={{ background: isDark ? '#1e293b' : '#fff', borderRadius: 12, padding: 24, width: 520, maxWidth: '95vw', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}
                     >
                         <h3 style={{ margin: '0 0 4px', fontSize: 16, fontWeight: 800, color: themeStyles.text }}>
-                            {language === 'th' ? 'แก้ไขสถานะ' : 'Edit Status'}
+                            {language === 'th' ? 'แก้ไขข้อมูล Runner' : 'Edit Runner'}
                         </h3>
                         <p style={{ margin: '0 0 16px', fontSize: 12, color: themeStyles.textSecondary }}>
                             BIB {editingRunner.bib} — {editingRunner.firstName} {editingRunner.lastName}
@@ -1729,8 +1775,150 @@ export default function EventLivePage() {
                             value={editNote}
                             onChange={e => setEditNote(e.target.value)}
                             placeholder={language === 'th' ? 'เช่น ขาเจ็บ, หลงทาง' : 'e.g. injury, lost route'}
-                            style={{ width: '100%', padding: '8px 12px', borderRadius: 6, border: `1px solid ${themeStyles.border}`, background: isDark ? '#0f172a' : '#fff', color: themeStyles.text, fontSize: 13, marginBottom: 20, boxSizing: 'border-box' }}
+                            style={{ width: '100%', padding: '8px 12px', borderRadius: 6, border: `1px solid ${themeStyles.border}`, background: isDark ? '#0f172a' : '#fff', color: themeStyles.text, fontSize: 13, marginBottom: 14, boxSizing: 'border-box' }}
                         />
+
+                        {/* ===== CHECKPOINT TIMING SECTION ===== */}
+                        <div style={{ borderTop: `1px solid ${themeStyles.border}`, paddingTop: 14, marginBottom: 14 }}>
+                            <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: themeStyles.textSecondary, marginBottom: 8, textTransform: 'uppercase' }}>
+                                {language === 'th' ? 'เวลาเข้าจุด Checkpoint' : 'Checkpoint Times'}
+                            </label>
+                            {editTimingLoading ? (
+                                <div style={{ textAlign: 'center', padding: 16, color: themeStyles.textSecondary, fontSize: 12 }}>
+                                    {language === 'th' ? 'กำลังโหลด...' : 'Loading...'}
+                                </div>
+                            ) : editCheckpoints.length === 0 ? (
+                                <div style={{ textAlign: 'center', padding: 12, color: themeStyles.textSecondary, fontSize: 12, background: isDark ? '#0f172a' : '#f9fafb', borderRadius: 6 }}>
+                                    {language === 'th' ? 'ไม่พบข้อมูล Checkpoint' : 'No checkpoints found'}
+                                </div>
+                            ) : (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                    {editCheckpoints.map((cp, i) => {
+                                        const matchedRecord = editTimingRecords.find(r =>
+                                            r.checkpoint.toUpperCase() === cp.name.toUpperCase()
+                                        );
+                                        // Get display value: from pending changes or existing record
+                                        const isoValue = editTimingChanges[cp.name] !== undefined
+                                            ? editTimingChanges[cp.name]
+                                            : (matchedRecord?.scanTime ? (() => {
+                                                const d = new Date(matchedRecord.scanTime);
+                                                if (isNaN(d.getTime())) return '';
+                                                const pad2 = (n: number) => String(n).padStart(2, '0');
+                                                return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}T${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+                                            })() : '');
+                                        // Format for display as DD/MM/YYYY HH:MM
+                                        let displayTime = '';
+                                        if (isoValue) {
+                                            const m = isoValue.match(/(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
+                                            if (m) displayTime = `${m[3]}/${m[2]}/${m[1]} ${m[4]}:${m[5]}`;
+                                        }
+                                        const cpColor = cp.type === 'start' ? '#3b82f6' : cp.type === 'finish' ? '#22c55e' : '#8b5cf6';
+                                        const hasChanged = editTimingChanges[cp.name] !== undefined;
+                                        return (
+                                            <div key={cp.name + i} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                                <span style={{
+                                                    display: 'inline-block', padding: '2px 8px', borderRadius: 4,
+                                                    fontSize: 10, fontWeight: 700, color: '#fff', background: cpColor,
+                                                    minWidth: 60, textAlign: 'center', whiteSpace: 'nowrap',
+                                                }}>
+                                                    {cp.name}
+                                                </span>
+                                                <button
+                                                    onClick={() => setCpTimingPickerOpen(cp.name)}
+                                                    style={{
+                                                        flex: 1, padding: '6px 10px', borderRadius: 6,
+                                                        border: `1px solid ${hasChanged ? '#8b5cf6' : themeStyles.border}`,
+                                                        background: isDark ? '#0f172a' : '#fff',
+                                                        color: displayTime ? themeStyles.text : themeStyles.textSecondary,
+                                                        fontSize: 12, fontFamily: 'monospace', cursor: 'pointer',
+                                                        textAlign: 'left', boxSizing: 'border-box',
+                                                        transition: 'all 0.15s',
+                                                    }}
+                                                >
+                                                    {displayTime || (language === 'th' ? 'กดเพื่อตั้งเวลา' : 'Click to set time')}
+                                                </button>
+                                            </div>
+                                        );
+                                    })}
+                                    {/* Save checkpoint times button */}
+                                    {Object.keys(editTimingChanges).length > 0 && (
+                                        <button
+                                            onClick={async () => {
+                                                setEditTimingSaveMsg(null);
+                                                let savedCount = 0;
+                                                for (const [cpName, isoVal] of Object.entries(editTimingChanges)) {
+                                                    if (!isoVal.trim()) continue;
+                                                    // Convert ISO to full ISO date string
+                                                    const isoDate = new Date(isoVal).toISOString();
+                                                    const matchedRecord = editTimingRecords.find(r =>
+                                                        r.checkpoint.toUpperCase() === cpName.toUpperCase()
+                                                    );
+                                                    try {
+                                                        if (matchedRecord?._id) {
+                                                            await fetch(`/api/timing/${matchedRecord._id}`, {
+                                                                method: 'PUT',
+                                                                headers: { 'Content-Type': 'application/json' },
+                                                                body: JSON.stringify({ scanTime: isoDate }),
+                                                            });
+                                                            savedCount++;
+                                                        } else if (editingRunner?.eventId) {
+                                                            await fetch('/api/timing/scan', {
+                                                                method: 'POST',
+                                                                headers: { 'Content-Type': 'application/json' },
+                                                                body: JSON.stringify({
+                                                                    eventId: editingRunner.eventId,
+                                                                    bib: editingRunner.bib,
+                                                                    checkpoint: cpName,
+                                                                    scanTime: isoDate,
+                                                                    note: 'Admin manual entry',
+                                                                }),
+                                                            });
+                                                            savedCount++;
+                                                        }
+                                                    } catch { /* ignore individual save errors */ }
+                                                }
+                                                setEditTimingChanges({});
+                                                setEditTimingSaveMsg(
+                                                    language === 'th'
+                                                        ? `บันทึกเวลา ${savedCount} จุด เรียบร้อย`
+                                                        : `Saved ${savedCount} checkpoint time(s)`
+                                                );
+                                                // Re-fetch timing records
+                                                if (editingRunner?.eventId) {
+                                                    try {
+                                                        const trRes = await fetch(`/api/timing/runner/${editingRunner.eventId}/${editingRunner._id}`, { cache: 'no-store' });
+                                                        if (trRes.ok) {
+                                                            const trData = await trRes.json();
+                                                            const records = (Array.isArray(trData) ? trData : trData?.data || []).map((r: any) => ({
+                                                                _id: r._id,
+                                                                checkpoint: r.checkpoint || '',
+                                                                scanTime: r.scanTime || '',
+                                                                order: r.order,
+                                                            }));
+                                                            setEditTimingRecords(records);
+                                                        }
+                                                    } catch { /* ignore */ }
+                                                }
+                                                setTimeout(() => setEditTimingSaveMsg(null), 3000);
+                                            }}
+                                            style={{
+                                                padding: '6px 16px', borderRadius: 6, border: 'none',
+                                                background: '#8b5cf6', color: '#fff', fontSize: 12,
+                                                fontWeight: 700, cursor: 'pointer', alignSelf: 'flex-end',
+                                                marginTop: 4,
+                                            }}
+                                        >
+                                            {language === 'th' ? 'บันทึกเวลา Checkpoint' : 'Save Checkpoint Times'}
+                                        </button>
+                                    )}
+                                    {editTimingSaveMsg && (
+                                        <span style={{ fontSize: 11, fontWeight: 600, color: '#22c55e', alignSelf: 'flex-end' }}>
+                                            ✓ {editTimingSaveMsg}
+                                        </span>
+                                    )}
+                                </div>
+                            )}
+                        </div>
 
                         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
                             <button
@@ -1750,6 +1938,40 @@ export default function EventLivePage() {
                     </div>
                 </div>
             )}
+            {/* ===== CHECKPOINT TIMING DATE/TIME PICKER POPUP ===== */}
+            {cpTimingPickerOpen && (() => {
+                // Find the ISO value for the checkpoint being edited
+                const cpName = cpTimingPickerOpen;
+                const matchedRecord = editTimingRecords.find(r =>
+                    r.checkpoint.toUpperCase() === cpName.toUpperCase()
+                );
+                const currentIso = editTimingChanges[cpName] !== undefined
+                    ? editTimingChanges[cpName]
+                    : (matchedRecord?.scanTime ? (() => {
+                        const d = new Date(matchedRecord.scanTime);
+                        if (isNaN(d.getTime())) return '';
+                        const pad2 = (n: number) => String(n).padStart(2, '0');
+                        return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}T${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+                    })() : '');
+                return (
+                    <CutoffDateTimePicker
+                        value={currentIso}
+                        onChange={(isoValue) => {
+                            if (isoValue) {
+                                setEditTimingChanges(prev => ({ ...prev, [cpName]: isoValue }));
+                            } else {
+                                // Clear was pressed
+                                setEditTimingChanges(prev => {
+                                    const next = { ...prev };
+                                    delete next[cpName];
+                                    return next;
+                                });
+                            }
+                        }}
+                        onClose={() => setCpTimingPickerOpen(null)}
+                    />
+                );
+            })()}
         </div>
     );
 }
