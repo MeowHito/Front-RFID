@@ -4,6 +4,8 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useLanguage } from '@/lib/language-context';
 import { useAuth } from '@/lib/auth-context';
+import { usePermissions } from '@/lib/usePermissions';
+import { authHeaders } from '@/lib/authHeaders';
 import AdminLayout from '../AdminLayout';
 
 interface User {
@@ -31,6 +33,7 @@ const ROLE_LABELS: Record<string, { th: string; en: string; color: string; bg: s
 export default function UsersPage() {
     const { language } = useLanguage();
     const { user: currentUser } = useAuth();
+    const { canCreate, canDelete, readOnly } = usePermissions('userManagement');
     const router = useRouter();
 
     const [users, setUsers] = useState<User[]>([]);
@@ -73,7 +76,10 @@ export default function UsersPage() {
 
     const loadUsers = async () => {
         try {
-            const res = await fetch('/api/users?limit=500', { cache: 'no-store' });
+            const res = await fetch('/api/users?limit=500', {
+                cache: 'no-store',
+                headers: authHeaders(),
+            });
             const data = await res.json();
             const list = data?.data || (Array.isArray(data) ? data : []);
             setUsers(list);
@@ -109,7 +115,7 @@ export default function UsersPage() {
         try {
             const res = await fetch(`/api/users/${userId}/role`, {
                 method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
+                headers: authHeaders(),
                 body: JSON.stringify({
                     role: newRole,
                     requestorRole: currentUser?.role,
@@ -150,7 +156,10 @@ export default function UsersPage() {
         if (!deletePopup || deletePopup.emailInput !== deletePopup.userEmail) return;
         setDeleting(true);
         try {
-            const res = await fetch(`/api/users/${deletePopup.userId}`, { method: 'DELETE' });
+            const res = await fetch(`/api/users/${deletePopup.userId}`, {
+                method: 'DELETE',
+                headers: authHeaders(),
+            });
             if (!res.ok) {
                 const err = await res.json();
                 throw new Error(err.message || 'Failed to delete user');
@@ -215,16 +224,18 @@ export default function UsersPage() {
                                 outline: 'none',
                             }}
                         />
-                        <button
-                            onClick={() => router.push('/admin/users/create')}
-                            style={{
-                                padding: '8px 18px', borderRadius: 10, border: 'none',
-                                background: '#22c55e', color: '#fff', fontWeight: 700, fontSize: 13,
-                                cursor: 'pointer', whiteSpace: 'nowrap', boxShadow: '0 2px 8px rgba(34,197,94,0.3)',
-                            }}
-                        >
-                            + {language === 'th' ? 'สร้างผู้ใช้' : 'Create User'}
-                        </button>
+                        {!readOnly && (
+                            <button
+                                onClick={() => router.push('/admin/users/create')}
+                                style={{
+                                    padding: '8px 18px', borderRadius: 10, border: 'none',
+                                    background: '#22c55e', color: '#fff', fontWeight: 700, fontSize: 13,
+                                    cursor: 'pointer', whiteSpace: 'nowrap', boxShadow: '0 2px 8px rgba(34,197,94,0.3)',
+                                }}
+                            >
+                                + {language === 'th' ? 'สร้างผู้ใช้' : 'Create User'}
+                            </button>
+                        )}
                     </div>
                 </div>
 
@@ -259,7 +270,7 @@ export default function UsersPage() {
                                     const roleInfo = getRoleInfo(u.role);
                                     const isAdminMaster = u.role === 'admin_master';
                                     const isSelf = u._id === currentUser?._id || u.email === currentUser?.email;
-                                    const canEdit = !isAdminMaster && !isSelf;
+                                    const canEdit = !isAdminMaster && !isSelf && !readOnly;
 
                                     return (
                                         <tr key={u._id}>
@@ -364,7 +375,7 @@ export default function UsersPage() {
                                                     >
                                                         {language === 'th' ? '✏️ แก้ไข' : '✏️ Edit'}
                                                     </button>
-                                                    {canEdit && u.role !== 'admin' && u.role !== 'admin_master' && isCurrentUserAdmin && (
+                                                    {canDelete && canEdit && u.role !== 'admin' && u.role !== 'admin_master' && isCurrentUserAdmin && (
                                                         <button
                                                             onClick={() => setDeletePopup({ userId: u._id, userName: `${u.firstName} ${u.lastName}`.trim(), userEmail: u.email, emailInput: '' })}
                                                             style={{

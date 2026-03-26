@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-
-const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:3001';
+import { BACKEND_URL, proxyHeaders } from '../../../_helpers';
 
 export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
     const { id } = await params;
@@ -8,7 +7,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         const body = await request.json();
         const res = await fetch(`${BACKEND_URL}/runners/${id}/status`, {
             method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
+            headers: proxyHeaders(request),
             body: JSON.stringify(body),
         });
 

@@ -1,13 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-
-const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:3001';
+import { BACKEND_URL, proxyHeaders } from '../_helpers';
 
 export async function POST(req: NextRequest) {
     try {
         const body = await req.json();
         const res = await fetch(`${BACKEND_URL}/users`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: proxyHeaders(req),
             body: JSON.stringify(body),
         });
         const data = await res.json();
@@ -24,7 +23,7 @@ export async function GET(req: NextRequest) {
         const limit = searchParams.get('limit') || '100';
 
         const res = await fetch(`${BACKEND_URL}/users?page=${page}&limit=${limit}`, {
-            headers: { 'Content-Type': 'application/json' },
+            headers: proxyHeaders(req),
             cache: 'no-store',
         });
 

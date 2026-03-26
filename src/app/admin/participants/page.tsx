@@ -2,6 +2,8 @@
 
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { useLanguage } from '@/lib/language-context';
+import { usePermissions } from '@/lib/usePermissions';
+import { authHeaders } from '@/lib/authHeaders';
 import * as XLSX from 'xlsx';
 import AdminLayout from '../AdminLayout';
 import { countryToFlag } from '@/lib/country-flags';
@@ -158,6 +160,7 @@ function formatRunnerName(firstName?: string, lastName?: string): string {
 
 export default function ParticipantsPage() {
     const { language } = useLanguage();
+    const { canCreate, canDelete, readOnly } = usePermissions('participants');
     const [campaign, setCampaign] = useState<Campaign | null>(null);
     const [loading, setLoading] = useState(true);
     const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
@@ -365,7 +368,7 @@ export default function ParticipantsPage() {
         );
         if (!confirmed) return;
         try {
-            const res = await fetch(`/api/runners/${runner._id}`, { method: 'DELETE' });
+            const res = await fetch(`/api/runners/${runner._id}`, { method: 'DELETE', headers: authHeaders() });
             if (!res.ok) throw new Error('Failed');
             setRunners(prev => prev.filter(r => r._id !== runner._id));
             setRunnersTotal(prev => prev - 1);
@@ -391,7 +394,7 @@ export default function ParticipantsPage() {
         try {
             const res = await fetch('/api/runners/bulk', {
                 method: 'DELETE',
-                headers: { 'Content-Type': 'application/json' },
+                headers: authHeaders(),
                 body: JSON.stringify({ ids: Array.from(selectedIds) }),
             });
             if (!res.ok) throw new Error('Failed');
@@ -453,7 +456,7 @@ export default function ParticipantsPage() {
         try {
             const res = await fetch(`/api/runners/${editingRunner._id}`, {
                 method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
+                headers: authHeaders(),
                 body: JSON.stringify(editForm),
             });
             if (!res.ok) {
@@ -484,7 +487,7 @@ export default function ParticipantsPage() {
         if (!confirmed) return;
         setSavingRunner(true);
         try {
-            const res = await fetch(`/api/runners/${editingRunner._id}`, { method: 'DELETE' });
+            const res = await fetch(`/api/runners/${editingRunner._id}`, { method: 'DELETE', headers: authHeaders() });
             if (!res.ok) {
                 let errMsg = 'Failed';
                 try { const e = await res.json(); errMsg = e?.message || e?.error || errMsg; } catch { /* */ }
@@ -797,17 +800,19 @@ export default function ParticipantsPage() {
                 <>
                     {/* Tabs */}
                     <div className="flex gap-2 mb-5 overflow-x-auto flex-wrap">
-                        <button
-                            onClick={() => { setActiveTab('import'); setListSearch(''); setListPage(1); setSelectedIds(new Set()); }}
-                            className={`px-4 py-2 text-[13px] rounded-md border cursor-pointer transition whitespace-nowrap ${activeTab === 'import' ? 'border-[#3c8dbc] border-2 bg-blue-50 text-[#3c8dbc] font-bold' : 'border-gray-300 bg-white text-gray-500'}`}
-                        >
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="inline mr-1.5 -mt-0.5">
-                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                                <polyline points="7 10 12 15 17 10" />
-                                <line x1="12" y1="15" x2="12" y2="3" />
-                            </svg>
-                            {language === 'th' ? 'นำเข้าข้อมูลผู้เข้าแข่งขัน' : 'Import Participants'}
-                        </button>
+                        {!readOnly && (
+                            <button
+                                onClick={() => { setActiveTab('import'); setListSearch(''); setListPage(1); setSelectedIds(new Set()); }}
+                                className={`px-4 py-2 text-[13px] rounded-md border cursor-pointer transition whitespace-nowrap ${activeTab === 'import' ? 'border-[#3c8dbc] border-2 bg-blue-50 text-[#3c8dbc] font-bold' : 'border-gray-300 bg-white text-gray-500'}`}
+                            >
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="inline mr-1.5 -mt-0.5">
+                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                                    <polyline points="7 10 12 15 17 10" />
+                                    <line x1="12" y1="15" x2="12" y2="3" />
+                                </svg>
+                                {language === 'th' ? 'นำเข้าข้อมูลผู้เข้าแข่งขัน' : 'Import Participants'}
+                            </button>
+                        )}
                         {/* All Runners tab */}
                         <button
                             onClick={() => { setActiveTab('all'); setListSearch(''); setListPage(1); setSelectedIds(new Set()); }}
@@ -1220,7 +1225,7 @@ export default function ParticipantsPage() {
                                             </span>
                                         )}
                                     </div>
-                                    {selectedIds.size > 0 && (
+                                    {!readOnly && selectedIds.size > 0 && (
                                         <>
                                             <button
                                                 onClick={handleBulkDelete}
@@ -1332,9 +1337,11 @@ export default function ParticipantsPage() {
                                                                     <button onClick={() => openEditModal(r)} title={language === 'th' ? 'แก้ไข' : 'Edit'} className="p-1 border border-gray-300 rounded bg-white text-[#3c8dbc] cursor-pointer hover:bg-blue-50">
                                                                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
                                                                     </button>
-                                                                    <button onClick={() => handleDeleteSingle(r)} title={language === 'th' ? 'ลบ' : 'Delete'} className="p-1 border border-red-300 rounded bg-white text-red-500 cursor-pointer hover:bg-red-50">
-                                                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>
-                                                                    </button>
+                                                                    {!readOnly && (
+                                                                        <button onClick={() => handleDeleteSingle(r)} title={language === 'th' ? 'ลบ' : 'Delete'} className="p-1 border border-red-300 rounded bg-white text-red-500 cursor-pointer hover:bg-red-50">
+                                                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>
+                                                                        </button>
+                                                                    )}
                                                                 </div>
                                                             </td>
                                                             <td className="text-center"><input type="checkbox" checked={checked} onChange={() => setSelectedIds(prev => { const n = new Set(prev); if (n.has(r._id)) n.delete(r._id); else n.add(r._id); return n; })} /></td>

@@ -2,6 +2,8 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useLanguage } from '@/lib/language-context';
+import { usePermissions } from '@/lib/usePermissions';
+import { authHeaders } from '@/lib/authHeaders';
 import AdminLayout from '../AdminLayout';
 import '../admin.css';
 
@@ -33,6 +35,7 @@ interface Campaign {
 
 export default function CategoriesPage() {
     const { language } = useLanguage();
+    const { readOnly } = usePermissions('participants');
     const [campaign, setCampaign] = useState<Campaign | null>(null);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
@@ -228,7 +231,7 @@ export default function CategoriesPage() {
             );
             const res = await fetch(`/api/campaigns/${campaign._id}`, {
                 method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
+                headers: authHeaders(),
                 body: JSON.stringify({ categories: updatedCategories }),
             });
             if (!res.ok) throw new Error('Failed to save');
@@ -328,27 +331,29 @@ export default function CategoriesPage() {
                                     </svg>
                                     {language === 'th' ? 'กำหนดเงื่อนไขการคำนวณอัตโนมัติ' : 'Auto-calculation settings'}
                                 </div>
-                                <button
-                                    className="btn"
-                                    onClick={handleSaveAll}
-                                    disabled={saving}
-                                    style={{
-                                        background: '#00a65a',
-                                        width: 180,
-                                        fontSize: 13,
-                                        opacity: saving ? 0.7 : 1,
-                                    }}
-                                >
-                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ display: 'inline-block', marginRight: 6 }}>
-                                        <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
-                                        <polyline points="17 21 17 13 7 13 7 21" />
-                                        <polyline points="7 3 7 8 15 8" />
-                                    </svg>
-                                    {saving
-                                        ? (language === 'th' ? 'กำลังบันทึก...' : 'Saving...')
-                                        : (language === 'th' ? 'บันทึกข้อมูลทั้งหมด' : 'Save All Data')
-                                    }
-                                </button>
+                                {!readOnly && (
+                                    <button
+                                        className="btn"
+                                        onClick={handleSaveAll}
+                                        disabled={saving}
+                                        style={{
+                                            background: '#00a65a',
+                                            width: 180,
+                                            fontSize: 13,
+                                            opacity: saving ? 0.7 : 1,
+                                        }}
+                                    >
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ display: 'inline-block', marginRight: 6 }}>
+                                            <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+                                            <polyline points="17 21 17 13 7 13 7 21" />
+                                            <polyline points="7 3 7 8 15 8" />
+                                        </svg>
+                                        {saving
+                                            ? (language === 'th' ? 'กำลังบันทึก...' : 'Saving...')
+                                            : (language === 'th' ? 'บันทึกข้อมูลทั้งหมด' : 'Save All Data')
+                                        }
+                                    </button>
+                                )}
                             </div>
                             <div style={{ display: 'flex', gap: 15, alignItems: 'center', marginBottom: 10, flexWrap: 'wrap' }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>

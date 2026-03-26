@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-
-const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:3001';
+import { BACKEND_URL, proxyHeaders } from '../../_helpers';
 
 export async function GET(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
     const { id } = await params;
@@ -25,7 +24,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         const body = await request.json();
         const res = await fetch(`${BACKEND_URL}/runners/${id}`, {
             method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
+            headers: proxyHeaders(request),
             body: JSON.stringify(body),
         });
 
@@ -43,11 +42,12 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     }
 }
 
-export async function DELETE(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
     const { id } = await params;
     try {
         const res = await fetch(`${BACKEND_URL}/runners/${id}`, {
             method: 'DELETE',
+            headers: proxyHeaders(request),
         });
 
         if (!res.ok) {

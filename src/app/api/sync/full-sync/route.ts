@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-
-const BACKEND_URL = process.env.BACKEND_URL || 'http://3.26.160.149:3001';
+import { BACKEND_URL, proxyHeaders } from '../../_helpers';
 
 export async function POST(request: NextRequest) {
     try {
@@ -14,7 +13,7 @@ export async function POST(request: NextRequest) {
         const query = new URLSearchParams({ id });
         const res = await fetch(`${BACKEND_URL}/api/sync/full-sync?${query.toString()}`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: proxyHeaders(request),
             cache: 'no-store',
         });
 

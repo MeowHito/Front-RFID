@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { useLanguage } from '@/lib/language-context';
+import { ROUTE_TO_MODULE, isAdminRole } from '@/lib/permissions';
 
 interface MenuItem {
     href: string;
@@ -115,47 +116,22 @@ function SidebarIcon({ name, color }: { name: string; color?: string }) {
     return icons[name] || <span>•</span>;
 }
 
-// Map sidebar items to module permission keys
-const HREF_TO_MODULE: Record<string, string> = {
-    '/admin/events': '_always',
-    '/admin/events/create': '_always',
-    '/admin/checkpoints': 'checkpoints',
-    '/admin/checkpoints/create': 'checkpoints',
-    '/admin/participants': 'participants',
-    '/admin/categories': 'participants',
-    '/admin/bib-check': 'participants',
-    '/admin/id-card-import': 'participants',
-    '/admin/live-monitor': 'rfidCheckin',
-    '/admin/checkpoint-monitor': 'checkpoints',
-    '/admin/rfid-config': 'rfidCheckin',
-    '/admin/chip-mapping': 'rfidCheckin',
-    '/admin/raw-data': 'rfidCheckin',
-    '/admin/results': 'results',
-    '/admin/display': 'results',
-    '/admin/age-group-ranking': 'results',
-    '/admin/certificates': 'certificates',
-    '/admin/eslip': 'certificates',
-    '/admin/links': 'results',
-    '/admin/export': 'reports',
-    '/admin/users': 'userManagement',
-    '/admin/settings': 'settings',
-    '/admin/profile': '_always',
-};
 
 export default function AdminSidebar() {
     const pathname = usePathname();
     const { user } = useAuth();
     const { language } = useLanguage();
 
-    const isAdmin = user?.role === 'admin' || user?.role === 'admin_master';
+    const admin = isAdminRole(user?.role);
     const perms = user?.modulePermissions || {};
 
     // Filter sections based on permissions
-    const sections = isAdmin ? menuSections : menuSections.map(section => {
+    const sections = admin ? menuSections : menuSections.map(section => {
         const filteredItems = section.items.filter(item => {
-            const modKey = HREF_TO_MODULE[item.href];
+            const modKey = ROUTE_TO_MODULE[item.href];
             if (!modKey) return false;
             if (modKey === '_always') return true;
+            if (modKey === '_admin_only') return false;
             return perms[modKey]?.view === true;
         });
         return { ...section, items: filteredItems };

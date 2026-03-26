@@ -1,13 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-
-const BACKEND_URL = process.env.BACKEND_URL || 'http://3.26.160.149:3001';
+import { BACKEND_URL, proxyHeaders } from '../../_helpers';
 
 export async function POST(request: NextRequest) {
     try {
         const body = await request.json();
         const res = await fetch(`${BACKEND_URL}/timing/scan`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: proxyHeaders(request),
             body: JSON.stringify(body),
         });
 

@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useLanguage } from '@/lib/language-context';
+import { authHeaders } from '@/lib/authHeaders';
 import AdminLayout from '../../AdminLayout';
 
 interface Campaign {
@@ -178,7 +179,7 @@ function CreateUserContent() {
                 const updateBody: any = { email, username, firstName, lastName, phone, role };
                 const res1 = await fetch(`/api/users/${editId}`, {
                     method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: authHeaders(),
                     body: JSON.stringify(updateBody),
                 });
                 if (!res1.ok) {
@@ -188,7 +189,7 @@ function CreateUserContent() {
                 // Update permissions
                 const res2 = await fetch(`/api/users/${editId}/permissions`, {
                     method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: authHeaders(),
                     body: JSON.stringify({ allEventsAccess, allowedCampaigns: selectedCampaigns, modulePermissions: modulePerms }),
                 });
                 if (!res2.ok) {
@@ -206,7 +207,7 @@ function CreateUserContent() {
                 };
                 const res = await fetch('/api/users', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: authHeaders(),
                     body: JSON.stringify(createBody),
                 });
                 if (!res.ok) {

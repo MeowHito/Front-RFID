@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-
-const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:3001';
+import { BACKEND_URL, proxyHeaders } from '../../../_helpers';
 
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
     try {
@@ -9,7 +8,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 
         const res = await fetch(`${BACKEND_URL}/users/${id}/role`, {
             method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
+            headers: proxyHeaders(req),
             body: JSON.stringify(body),
         });
 

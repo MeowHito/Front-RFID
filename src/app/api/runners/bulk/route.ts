@@ -1,13 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-
-const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:3001';
+import { BACKEND_URL, proxyHeaders } from '../../_helpers';
 
 export async function DELETE(request: NextRequest) {
     try {
         const body = await request.json();
         const res = await fetch(`${BACKEND_URL}/runners/bulk`, {
             method: 'DELETE',
-            headers: { 'Content-Type': 'application/json' },
+            headers: proxyHeaders(request),
             body: JSON.stringify(body),
         });
         if (!res.ok) {
@@ -26,11 +25,7 @@ export async function DELETE(request: NextRequest) {
 export async function POST(request: NextRequest) {
     try {
         const body = await request.json();
-        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-        const authHeader = request.headers.get('Authorization');
-        if (authHeader) {
-            headers['Authorization'] = authHeader;
-        }
+        const headers = proxyHeaders(request);
         const updateExisting = request.nextUrl.searchParams.get('updateExisting') || '';
         const url = updateExisting === 'true'
             ? `${BACKEND_URL}/runners/bulk?updateExisting=true`

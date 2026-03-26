@@ -1,12 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-
-const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:3001';
+import { BACKEND_URL, proxyHeaders } from '../../_helpers';
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
     try {
         const { id } = await params;
         const res = await fetch(`${BACKEND_URL}/users/${id}`, {
-            headers: { 'Content-Type': 'application/json' },
+            headers: proxyHeaders(req),
             cache: 'no-store',
         });
         const data = await res.json();
@@ -22,7 +21,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
         const body = await req.json();
         const res = await fetch(`${BACKEND_URL}/users/${id}`, {
             method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
+            headers: proxyHeaders(req),
             body: JSON.stringify(body),
         });
         const data = await res.json();
@@ -37,7 +36,7 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
         const { id } = await params;
         const res = await fetch(`${BACKEND_URL}/users/${id}`, {
             method: 'DELETE',
-            headers: { 'Content-Type': 'application/json' },
+            headers: proxyHeaders(req),
         });
         const data = await res.json();
         return NextResponse.json(data, { status: res.status });

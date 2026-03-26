@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-
-const BACKEND_URL = process.env.BACKEND_URL || 'http://3.26.160.149:3001';
+import { BACKEND_URL, proxyHeaders } from '../../../_helpers';
 
 export async function PUT(
     request: NextRequest,
@@ -14,7 +13,7 @@ export async function PUT(
 
         const res = await fetch(`${BACKEND_URL}/campaigns/${id}/featured`, {
             method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
+            headers: proxyHeaders(request),
             body: JSON.stringify({ value }),
         });
 
