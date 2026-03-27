@@ -49,6 +49,9 @@ export const ROUTE_TO_MODULE: Record<string, string> = {
     '/admin/users': 'userManagement',
     '/admin/users/create': 'userManagement',
     '/admin/settings': 'settings',
+    '/admin/cctv-cameras': 'cctvMonitor',
+    '/admin/cctv-live': 'cctvMonitor',
+    '/admin/cctv-settings': 'cctvMonitor',
 
     // Always accessible
     '/admin/profile': '_always',
