@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import AdminLayout from '@/app/admin/AdminLayout';
 import { useLanguage } from '@/lib/language-context';
+import { authHeaders } from '@/lib/authHeaders';
 
 export default function AgeGroupRankingPage() {
     const { language } = useLanguage();
@@ -40,7 +41,7 @@ export default function AgeGroupRankingPage() {
         try {
             const res = await fetch(`/api/campaigns/${campaign._id}`, {
                 method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
+                headers: authHeaders(),
                 body: JSON.stringify({ excludeOverallFromAgeGroup: excludeTop }),
             });
             if (res.ok) {

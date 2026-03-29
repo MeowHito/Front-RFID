@@ -857,7 +857,7 @@ export default function ParticipantsPage() {
                                 setSyncResult(null);
                                 try {
                                     // Step 1: import-events (events + checkpoints + runners from BIO)
-                                    const importRes = await fetch(`/api/sync/import-events?id=${campaign._id}`, { method: 'POST' });
+                                    const importRes = await fetch(`/api/sync/import-events?id=${campaign._id}`, { method: 'POST', headers: authHeaders() });
                                     const importData = await importRes.json().catch(() => ({}));
                                     if (!importRes.ok) {
                                         showToast(importData?.error || importData?.message || 'Import events failed', 'error');
@@ -870,7 +870,7 @@ export default function ParticipantsPage() {
                                     showToast(importMsg, 'success');
 
                                     // Step 2: full-sync (timing + score + DNF/DNS classification)
-                                    const res = await fetch(`/api/sync/full-sync?id=${campaign._id}`, { method: 'POST' });
+                                    const res = await fetch(`/api/sync/full-sync?id=${campaign._id}`, { method: 'POST', headers: authHeaders() });
                                     const data = await res.json().catch(() => ({}));
                                     if (!res.ok) {
                                         showToast(data?.error || 'Full sync failed', 'error');

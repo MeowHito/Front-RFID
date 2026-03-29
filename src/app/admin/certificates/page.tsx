@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useLanguage } from '@/lib/language-context';
+import { authHeaders } from '@/lib/authHeaders';
 import AdminLayout from '../AdminLayout';
 
 // ============= TYPES =============
@@ -520,7 +521,7 @@ export default function CertificatesPage() {
         if (!campaign?._id) return;
         setSaving(true);
         try {
-            const res = await fetch(`/api/campaigns/${campaign._id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ certBackgroundImage: bgImage, certLayout: elements }) });
+            const res = await fetch(`/api/campaigns/${campaign._id}`, { method: 'PUT', headers: authHeaders(), body: JSON.stringify({ certBackgroundImage: bgImage, certLayout: elements }) });
             if (res.ok) showToast('บันทึก Layout แล้ว', 'success');
             else showToast('Save failed', 'error');
         } catch { showToast('Error', 'error'); }

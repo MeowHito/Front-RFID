@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { useLanguage } from '@/lib/language-context';
+import { authHeaders } from '@/lib/authHeaders';
 import AdminLayout from '../AdminLayout';
 import '../admin.css';
 
@@ -216,7 +217,7 @@ export default function ManageCheckpointsPage() {
         if (!confirm(confirmMessage)) return;
 
         try {
-            const res = await fetch(`/api/checkpoints/${checkpoint._id}`, { method: 'DELETE' });
+            const res = await fetch(`/api/checkpoints/${checkpoint._id}`, { method: 'DELETE', headers: authHeaders() });
             if (!res.ok) throw new Error('Failed to delete');
             setCheckpoints(prev => prev.filter(cp => cp._id !== checkpoint._id));
             showToast(language === 'th' ? 'ลบสำเร็จ' : 'Deleted successfully', 'success');
@@ -315,7 +316,7 @@ export default function ManageCheckpointsPage() {
             try {
                 const res = await fetch(`/api/checkpoints/${cpId}`, {
                     method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: authHeaders(),
                     body: JSON.stringify({
                         name: cp.name, orderNum: cp.orderNum, active: cp.active,
                         description: cp.description, readerId: cp.readerId || '',
@@ -340,7 +341,7 @@ export default function ManageCheckpointsPage() {
             try {
                 const res = await fetch('/api/checkpoints', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: authHeaders(),
                     body: JSON.stringify(toCreate),
                 });
                 if (!res.ok) throw new Error('Failed');

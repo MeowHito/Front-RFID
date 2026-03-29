@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { useLanguage } from '@/lib/language-context';
+import { authHeaders } from '@/lib/authHeaders';
 import AdminLayout from '../../AdminLayout';
 import CutoffDateTimePicker from '@/components/CutoffDateTimePicker';
 import '../../admin.css';
@@ -81,7 +82,7 @@ export default function RouteMappingPage() {
         if (hasUnsavedChanges && !confirm(language === 'th' ? 'มีการเปลี่ยนแปลงที่ยังไม่บันทึก ต้องการ Sync หรือไม่?' : 'Unsaved changes will be overwritten. Sync anyway?')) return;
         setSyncing(true);
         try {
-            const res = await fetch(`/api/sync/import-events?id=${campaign._id}`, { method: 'POST' });
+            const res = await fetch(`/api/sync/import-events?id=${campaign._id}`, { method: 'POST', headers: authHeaders() });
             if (!res.ok) throw new Error('Sync failed');
             const result = await res.json();
             const data = result?.data || result;
@@ -187,7 +188,7 @@ export default function RouteMappingPage() {
         setDeleteConfirm({ open: false, checkpoint: null });
 
         try {
-            const res = await fetch(`/api/checkpoints/${cp._id}`, { method: 'DELETE' });
+            const res = await fetch(`/api/checkpoints/${cp._id}`, { method: 'DELETE', headers: authHeaders() });
             if (!res.ok) throw new Error('Failed');
             setCheckpoints(prev => prev.filter(c => c._id !== cp._id));
             showToast(language === 'th' ? 'ลบสำเร็จ' : 'Deleted', 'success');
@@ -253,12 +254,12 @@ export default function RouteMappingPage() {
                 };
                 const res = await fetch(`/api/checkpoints/${cpId}`, {
                     method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: authHeaders(),
                     body: JSON.stringify(payload),
                 });
                 if (!res.ok) {
                     const errorText = await res.text();
-                    console.error(`Save failed for ${cpId}:`, errorText, payload);
+                    console.error(`Save failed for ${cpId}:`, errorText);
                     return { success: false };
                 }
                 return { success: true };
@@ -384,7 +385,7 @@ export default function RouteMappingPage() {
                 };
                 const res = await fetch(`/api/checkpoints/${cp._id}`, {
                     method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: authHeaders(),
                     body: JSON.stringify(payload),
                 });
                 if (!res.ok) {

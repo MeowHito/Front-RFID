@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useLanguage } from '@/lib/language-context';
 import { useAuth } from '@/lib/auth-context';
+import { authHeaders } from '@/lib/authHeaders';
 import AdminLayout from '../AdminLayout';
 
 interface Campaign { _id: string; name: string; }
@@ -167,7 +168,7 @@ export default function CctvCamerasPage() {
     const handleDelete = async () => {
         if (!deleteConfirm) return;
         try {
-            const res = await fetch(`/api/cctv-cameras/${deleteConfirm._id}`, { method: 'DELETE' });
+            const res = await fetch(`/api/cctv-cameras/${deleteConfirm._id}`, { method: 'DELETE', headers: authHeaders() });
             if (!res.ok) throw new Error();
             setToast({ msg: th ? 'ลบกล้องสำเร็จ' : 'Camera deleted', type: 'success' });
             setDeleteConfirm(null);
@@ -183,7 +184,7 @@ export default function CctvCamerasPage() {
         try {
             const res = await fetch(`/api/cctv-cameras/${cam._id}`, {
                 method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
+                headers: authHeaders(),
                 body: JSON.stringify({ isLiveStreamEnabled: newVal }),
             });
             if (!res.ok) throw new Error();

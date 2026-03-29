@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useLanguage } from '@/lib/language-context';
+import { authHeaders } from '@/lib/authHeaders';
 import '../admin.css';
 
 interface RFIDDashboardModalProps {
@@ -268,6 +269,7 @@ export default function RFIDDashboardModal({ isOpen, onClose, eventId, eventName
         try {
             const res = await fetch(`/api/sync/import-events?id=${eventId}`, {
                 method: 'POST',
+                headers: authHeaders(),
                 cache: 'no-store',
             });
             const json = await res.json().catch(() => ({}));
@@ -303,6 +305,7 @@ export default function RFIDDashboardModal({ isOpen, onClose, eventId, eventName
             try {
                 const syncRes = await fetch(`/api/sync/full-sync?id=${eventId}`, {
                     method: 'POST',
+                    headers: authHeaders(),
                     cache: 'no-store',
                 });
                 const syncJson = await syncRes.json().catch(() => ({}));
@@ -347,6 +350,7 @@ export default function RFIDDashboardModal({ isOpen, onClose, eventId, eventName
         try {
             const res = await fetch(`/api/sync/full-sync?id=${eventId}`, {
                 method: 'POST',
+                headers: authHeaders(),
                 cache: 'no-store',
             });
             const json = await res.json().catch(() => ({}));

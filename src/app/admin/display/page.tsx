@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import AdminLayout from '@/app/admin/AdminLayout';
 import { useLanguage } from '@/lib/language-context';
+import { authHeaders } from '@/lib/authHeaders';
 
 type ColDef = { key: string; thLabel: string; thLabelTh: string; width: string; align: 'left' | 'center' | 'right'; fixed?: boolean };
 
@@ -183,7 +184,7 @@ export default function DisplaySettingsPage() {
             const orderedLab = colOrderLab.filter(k => !LAB_COLUMNS.find(c => c.key === k)?.fixed && selectedColsLab.includes(k));
             const res = await fetch(`/api/campaigns/${campaign._id}`, {
                 method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
+                headers: authHeaders(),
                 body: JSON.stringify({
                     displayColumns: orderedMarathon,
                     displayColumnsLab: orderedLab,

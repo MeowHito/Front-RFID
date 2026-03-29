@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import AdminLayout from '../AdminLayout';
+import { authHeaders } from '@/lib/authHeaders';
 
 interface Campaign {
     _id: string;
@@ -62,7 +63,7 @@ export default function BibCheckPage() {
         try {
             const res = await fetch(`/api/campaigns/${campaign._id}`, {
                 method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
+                headers: authHeaders(),
                 body: JSON.stringify({
                     scanningTemplate: selectedTemplate,
                     scanningBgImage: bgImage || '',

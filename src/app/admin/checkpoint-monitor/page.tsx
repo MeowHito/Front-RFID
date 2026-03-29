@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useLanguage } from '@/lib/language-context';
+import { authHeaders } from '@/lib/authHeaders';
 import AdminLayout from '../AdminLayout';
 
 interface Campaign { _id: string; name: string; slug?: string; categories?: { name: string; distance?: string }[]; }
@@ -260,7 +261,7 @@ export default function CheckpointMonitorPage() {
         try {
             const res = await fetch(`/api/runners/${runnerId}/status`, {
                 method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
+                headers: authHeaders(),
                 body: JSON.stringify({ status: newStatus, statusCheckpoint: selectedCp, changedBy: 'staff' }),
             });
             if (!res.ok) throw new Error('Failed');

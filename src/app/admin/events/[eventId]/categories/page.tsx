@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useLanguage } from '@/lib/language-context';
+import { authHeaders } from '@/lib/authHeaders';
 import AdminLayout from '../../../AdminLayout';
 
 interface EventData {
@@ -199,7 +200,7 @@ export default function CategoriesPage() {
         try {
             const res = await fetch(`/api/events/${ev._id}/autofix`, {
                 method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
+                headers: authHeaders(),
                 body: JSON.stringify({ isAutoFix: newVal }),
             });
             if (!res.ok) throw new Error('Failed');
@@ -216,7 +217,7 @@ export default function CategoriesPage() {
         try {
             const res = await fetch(`/api/events/${ev._id}/finished`, {
                 method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
+                headers: authHeaders(),
                 body: JSON.stringify({ isFinished: newVal }),
             });
             if (!res.ok) throw new Error('Failed');
@@ -252,7 +253,7 @@ export default function CategoriesPage() {
         try {
             const res = await fetch(`/api/checkpoints/${cp._id}`, {
                 method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
+                headers: authHeaders(),
                 body: JSON.stringify({ active: newActive }),
             });
             if (!res.ok) throw new Error('Failed');
@@ -272,7 +273,7 @@ export default function CategoriesPage() {
         try {
             const res = await fetch('/api/checkpoints/mapping/bulk', {
                 method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
+                headers: authHeaders(),
                 body: JSON.stringify(checkpointMappings),
             });
             if (!res.ok) throw new Error('Failed');
@@ -313,7 +314,7 @@ export default function CategoriesPage() {
 
             const res = await fetch('/api/checkpoints', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: authHeaders(),
                 body: JSON.stringify(checkpointsToCreate),
             });
             if (!res.ok) throw new Error('Failed to create');
