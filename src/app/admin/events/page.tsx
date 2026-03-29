@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useLanguage } from '@/lib/language-context';
 import { useAuth } from '@/lib/auth-context';
+import { authHeaders } from '@/lib/authHeaders';
 import AdminLayout from '../AdminLayout';
 import RFIDDashboardModal from './RFIDDashboardModal';
 import CertificateFormModal from './CertificateFormModal';
@@ -171,7 +172,7 @@ export default function EventsPage() {
             const body = field === 'isDraft' ? { isDraft: newValue } : { [field]: newValue };
             const res = await fetch(`/api/campaigns/${campaignId}`, {
                 method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
+                headers: authHeaders(),
                 body: JSON.stringify(body),
             });
             if (!res.ok) throw new Error('Failed to update');
@@ -200,7 +201,7 @@ export default function EventsPage() {
         try {
             const res = await fetch(`/api/campaigns/${campaignId}`, {
                 method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
+                headers: authHeaders(),
                 body: JSON.stringify({ status: newStatus }),
             });
             if (!res.ok) throw new Error('Failed to update status');
@@ -222,7 +223,7 @@ export default function EventsPage() {
         try {
             const res = await fetch(`/api/campaigns/${campaignId}`, {
                 method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
+                headers: authHeaders(),
                 body: JSON.stringify({ raceFinished: newValue }),
             });
             if (!res.ok) throw new Error('Failed to update');
@@ -244,6 +245,7 @@ export default function EventsPage() {
         try {
             const res = await fetch(`/api/sync/auto-sync?id=${campaignId}&enabled=${newValue}`, {
                 method: 'POST',
+                headers: authHeaders(),
             });
             if (!res.ok) throw new Error('Failed to update auto sync');
         } catch (error) {
@@ -265,7 +267,7 @@ export default function EventsPage() {
         try {
             const res = await fetch(`/api/campaigns/${campaignId}`, {
                 method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
+                headers: authHeaders(),
                 body: JSON.stringify({ isApproveCertificate: newValue }),
             });
             if (!res.ok) throw new Error('Failed to update');
@@ -286,7 +288,7 @@ export default function EventsPage() {
             try {
                 await fetch(`/api/campaigns/${campaignId}/featured`, {
                     method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: authHeaders(),
                     body: JSON.stringify({ value: false }),
                 });
                 window.dispatchEvent(new CustomEvent('admin-featured-updated'));
@@ -301,7 +303,7 @@ export default function EventsPage() {
         try {
             const res = await fetch(`/api/campaigns/${campaignId}/featured`, {
                 method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
+                headers: authHeaders(),
                 body: JSON.stringify({ value: true }),
             });
             if (!res.ok) throw new Error('Failed to set featured');
@@ -416,7 +418,7 @@ export default function EventsPage() {
         }
         setDeleting(true);
         try {
-            const res = await fetch(`/api/campaigns/${campaignToDelete._id}`, { method: 'DELETE' });
+            const res = await fetch(`/api/campaigns/${campaignToDelete._id}`, { method: 'DELETE', headers: authHeaders() });
             if (!res.ok) throw new Error('Failed to delete');
             setToastMessage(language === 'th' ? 'ลบกิจกรรมสำเร็จ!' : 'Event deleted successfully!');
             loadCampaigns();
