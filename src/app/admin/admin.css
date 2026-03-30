@@ -77,7 +77,8 @@
 
 /* Container */
 .admin-container {
-    min-height: 100vh;
+    height: 100vh;
+    overflow: hidden;
     background-color: var(--content-bg);
     display: flex;
     flex-direction: column;
@@ -381,7 +382,8 @@
 .admin-body {
     display: flex;
     flex: 1;
-    min-height: calc(100vh - 50px);
+    height: calc(100vh - 50px);
+    overflow: hidden;
 }
 
 /* ==================== */
@@ -397,7 +399,7 @@
     flex-direction: column;
     padding-top: 0;
     flex-shrink: 0;
-    min-height: calc(100vh - 50px);
+    height: 100%;
     border-right: 1px solid #e5e7eb;
 }
 
@@ -411,7 +413,7 @@
     flex-direction: column;
     padding-top: 0;
     flex-shrink: 0;
-    min-height: calc(100vh - 50px);
+    height: 100%;
 }
 
 .sidebar-profile {
@@ -569,6 +571,7 @@
     max-width: 100%;
     overflow-x: hidden;
     overflow-y: auto;
+    height: 100%;
     background-color: var(--content-bg);
 }
 
