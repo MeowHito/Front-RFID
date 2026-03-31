@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { BACKEND_URL } from '../../_helpers';
+import { BACKEND_URL, proxyHeaders } from '../../_helpers';
 
 export async function POST(request: NextRequest) {
     try {
         const body = await request.json();
         const res = await fetch(`${BACKEND_URL}/cctv-recordings/clip`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: proxyHeaders(request),
             body: JSON.stringify(body),
         });
         if (!res.ok) {

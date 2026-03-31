@@ -1,8 +1,9 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import AdminLayout from '../AdminLayout';
 import { useLanguage } from '@/lib/language-context';
+import { authHeaders } from '@/lib/authHeaders';
 
 interface Recording {
     _id: string;
@@ -55,6 +56,8 @@ export default function CctvRecordingsPage() {
     // Player modal
     const [playingId, setPlayingId] = useState<string | null>(null);
     const [playingName, setPlayingName] = useState('');
+    const [videoSrc, setVideoSrc] = useState<string | null>(null);
+    const [videoLoading, setVideoLoading] = useState(false);
     const videoRef = useRef<HTMLVideoElement>(null);
 
     // Delete modal
@@ -67,8 +70,8 @@ export default function CctvRecordingsPage() {
         setLoading(true);
         try {
             const [recRes, storRes] = await Promise.all([
-                fetch('/api/cctv-recordings', { cache: 'no-store' }),
-                fetch('/api/cctv-recordings/storage', { cache: 'no-store' }),
+                fetch('/api/cctv-recordings', { cache: 'no-store', headers: authHeaders() }),
+                fetch('/api/cctv-recordings/storage', { cache: 'no-store', headers: authHeaders() }),
             ]);
             const recData = await recRes.json();
             const storData = await storRes.json();
@@ -103,10 +106,10 @@ export default function CctvRecordingsPage() {
         setDeleting(true);
         try {
             if (deleteTarget === 'all') {
-                await fetch('/api/cctv-recordings', { method: 'DELETE' });
+                await fetch('/api/cctv-recordings', { method: 'DELETE', headers: authHeaders() });
                 setSelected(new Set());
             } else if (deleteTarget === 'one' && deleteId) {
-                await fetch(`/api/cctv-recordings/${deleteId}`, { method: 'DELETE' });
+                await fetch(`/api/cctv-recordings/${deleteId}`, { method: 'DELETE', headers: authHeaders() });
             }
             setDeleteTarget(null);
             setDeleteId(null);
@@ -115,13 +118,29 @@ export default function CctvRecordingsPage() {
         } finally { setDeleting(false); }
     };
 
-    const openPlayer = (rec: Recording) => {
+    const openPlayer = useCallback(async (rec: Recording) => {
         setPlayingId(rec._id);
         setPlayingName(`${rec.cameraName} — ${fmtDate(rec.startTime)}`);
-    };
+        setVideoSrc(null);
+        setVideoLoading(true);
+        try {
+            const res = await fetch(`/api/cctv-recordings/${rec._id}/stream`, {
+                headers: authHeaders(),
+            });
+            if (res.ok) {
+                const blob = await res.blob();
+                const url = URL.createObjectURL(blob);
+                setVideoSrc(url);
+            }
+        } finally {
+            setVideoLoading(false);
+        }
+    }, []);
 
     const closePlayer = () => {
         videoRef.current?.pause();
+        if (videoSrc) URL.revokeObjectURL(videoSrc);
+        setVideoSrc(null);
         setPlayingId(null);
     };
 
@@ -306,14 +325,19 @@ export default function CctvRecordingsPage() {
                         <button onClick={closePlayer} className="text-white text-2xl leading-none cursor-pointer bg-transparent border-none">✕</button>
                     </div>
                     <div className="flex-1 flex items-center justify-center p-4" onClick={e => e.stopPropagation()}>
-                        <video
-                            ref={videoRef}
-                            src={`/api/cctv-recordings/${playingId}/stream`}
-                            controls
-                            autoPlay
-                            className="max-w-full max-h-full rounded-lg shadow-2xl"
-                            style={{ maxHeight: 'calc(100vh - 80px)' }}
-                        />
+                        {videoLoading && (
+                            <div className="text-white text-sm animate-pulse">⏳ กำลังโหลดวิดีโอ...</div>
+                        )}
+                        {videoSrc && (
+                            <video
+                                ref={videoRef}
+                                src={videoSrc}
+                                controls
+                                autoPlay
+                                className="max-w-full max-h-full rounded-lg shadow-2xl"
+                                style={{ maxHeight: 'calc(100vh - 80px)' }}
+                            />
+                        )}
                     </div>
                 </div>
             )}

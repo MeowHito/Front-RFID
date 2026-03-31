@@ -213,9 +213,10 @@ export default function CameraPage() {
                 binary += String.fromCharCode(...Array.from(uint8.subarray(i, i + CHUNK)));
             }
             const videoBase64 = btoa(binary);
+            const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
             const res = await fetch('/api/cctv-recordings/clip', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', ...(token ? { 'Authorization': `Bearer ${token}` } : {}) },
                 body: JSON.stringify({
                     videoBase64, mimeType, cameraId,
                     cameraName: cameraName.trim(), campaignId, checkpointName, location, deviceId,

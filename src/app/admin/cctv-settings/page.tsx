@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useLanguage } from '@/lib/language-context';
 import { useAuth } from '@/lib/auth-context';
+import { authHeaders } from '@/lib/authHeaders';
 import AdminLayout from '../AdminLayout';
 
 export default function CctvSettingsPage() {
@@ -81,7 +82,7 @@ export default function CctvSettingsPage() {
         try {
             const res = await fetch('/api/cctv-settings', {
                 method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
+                headers: authHeaders(),
                 body: JSON.stringify({
                     resolution: selectedResolution,
                     autoScale,
