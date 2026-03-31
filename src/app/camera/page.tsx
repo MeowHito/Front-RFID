@@ -53,7 +53,7 @@ export default function CameraPage() {
     const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
 
     const [clipSaveStatus, setClipSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
-    const [videoBitrateKbps, setVideoBitrateKbps] = useState(800);
+    const [videoBitrateKbps, setVideoBitrateKbps] = useState(2500);
 
     const videoRef = useRef<HTMLVideoElement>(null);
     const streamRef = useRef<MediaStream | null>(null);
@@ -320,7 +320,7 @@ export default function CameraPage() {
                 {/* Camera — fixed height: 38vh keeps proportions on any screen */}
                 <section className="shrink-0 relative bg-[#1a1e1e] overflow-hidden" style={{ height: '38vh' }}>
                     <video ref={videoRef} autoPlay muted playsInline
-                        className="w-full h-full object-cover"
+                        className="w-full h-full object-contain"
                         style={{ display: isStreaming || isConnecting ? 'block' : 'none' }} />
                     {!isStreaming && !isConnecting && (
                         <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">

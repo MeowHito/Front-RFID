@@ -54,6 +54,7 @@ export default function CctvLivePage() {
     const [featuredCampaign, setFeaturedCampaign] = useState<Campaign | null>(null);
     const [selectedCampaign, setSelectedCampaign] = useState('');
     const [liveCameras, setLiveCameras] = useState<LiveCameraInfo[]>([]);
+    const [offlineCameraIds, setOfflineCameraIds] = useState<Set<string>>(new Set());
     const socketCctvRef = useRef<Socket | null>(null);
     const [loading, setLoading] = useState(true);
     const [selectedFeed, setSelectedFeed] = useState<CctvCamera | null>(null);
@@ -104,9 +105,19 @@ export default function CctvLivePage() {
                 const without = prev.filter(c => c.cameraId !== cam.cameraId);
                 return [...without, cam];
             });
+            setOfflineCameraIds(prev => {
+                const next = new Set(prev);
+                next.delete(cam.cameraId);
+                return next;
+            });
         });
         socket.on('camera:offline', ({ cameraId }: { cameraId: string }) => {
-            setLiveCameras(prev => prev.filter(c => c.cameraId !== cameraId));
+            setOfflineCameraIds(prev => new Set(prev).add(cameraId));
+            // Remove from list after 30s so the card stays visible briefly
+            setTimeout(() => {
+                setLiveCameras(prev => prev.filter(c => c.cameraId !== cameraId));
+                setOfflineCameraIds(prev => { const next = new Set(prev); next.delete(cameraId); return next; });
+            }, 30000);
         });
         return () => { socket.disconnect(); socketCctvRef.current = null; };
     }, [selectedCampaign]);
@@ -254,8 +265,9 @@ export default function CctvLivePage() {
                         {allCams.map((entry, idx) => {
                             if (entry.kind === 'live') {
                                 const cam = entry.data;
+                                const isOffline = offlineCameraIds.has(cam.cameraId);
                                 return (
-                                    <LiveVideoFeed key={`live-${cam.cameraId}`} cam={cam} socket={socketCctvRef.current} th={th} />
+                                    <LiveVideoFeed key={`live-${cam.cameraId}`} cam={cam} socket={socketCctvRef.current} th={th} isOffline={isOffline} />
                                 );
                             }
                             // iframe camera
@@ -364,23 +376,47 @@ export default function CctvLivePage() {
 }
 
 // ── Live Video Feed component (MediaSource Extensions) ──────────────────────
-function LiveVideoFeed({ cam, socket, th }: { cam: LiveCameraInfo; socket: Socket | null; th: boolean }) {
+function LiveVideoFeed({ cam, socket, th, isOffline }: { cam: LiveCameraInfo; socket: Socket | null; th: boolean; isOffline?: boolean }) {
     const videoRef = useRef<HTMLVideoElement>(null);
     const msRef = useRef<MediaSource | null>(null);
     const sbRef = useRef<SourceBuffer | null>(null);
     const queueRef = useRef<ArrayBuffer[]>([]);
     const mimeTypeRef = useRef<string>('video/webm;codecs=vp8');
     const watchingRef = useRef(false);
+    const [feedError, setFeedError] = useState(false);
+    const [hasVideo, setHasVideo] = useState(false);
+
+    const safeEndOfStream = useCallback((ms: MediaSource | null) => {
+        try {
+            if (ms && ms.readyState === 'open') ms.endOfStream();
+        } catch { /* ignore InvalidStateError */ }
+    }, []);
 
     const appendNext = useCallback(() => {
-        if (!sbRef.current || sbRef.current.updating || queueRef.current.length === 0) return;
+        const sb = sbRef.current;
+        if (!sb || sb.updating || queueRef.current.length === 0) return;
         try {
-            sbRef.current.appendBuffer(queueRef.current.shift()!);
-        } catch { /* ignore quota/abort errors */ }
+            // Trim buffer to prevent memory buildup (keep last 30s)
+            if (sb.buffered.length > 0) {
+                const end = sb.buffered.end(sb.buffered.length - 1);
+                const start = sb.buffered.start(0);
+                if (end - start > 60) {
+                    try { sb.remove(start, end - 30); return; } catch { /* ignore */ }
+                }
+            }
+            sb.appendBuffer(queueRef.current.shift()!);
+        } catch (err: any) {
+            // QuotaExceededError — drop oldest data
+            if (err?.name === 'QuotaExceededError' && sb.buffered.length > 0) {
+                try { sb.remove(sb.buffered.start(0), sb.buffered.start(0) + 10); } catch { /* ignore */ }
+            }
+        }
     }, []);
 
     useEffect(() => {
-        if (!socket || !cam.cameraId) return;
+        if (!socket || !cam.cameraId || isOffline) return;
+        setFeedError(false);
+        setHasVideo(false);
 
         // Watch this camera
         socket.emit('viewer:watch', cam.cameraId);
@@ -400,25 +436,28 @@ function LiveVideoFeed({ cam, socket, th }: { cam: LiveCameraInfo; socket: Socke
                 const sb = msRef.current.addSourceBuffer(mime);
                 sbRef.current = sb;
                 sb.addEventListener('updateend', appendNext);
-                // Flush any queued chunks now that SourceBuffer is ready
                 appendNext();
-            } catch { /* codec not supported */ }
+            } catch {
+                setFeedError(true);
+            }
         };
 
         ms.addEventListener('sourceopen', () => {
-            // Wait for first chunk to know the real mimeType before initialising SourceBuffer
             if (mimeTypeRef.current) initSourceBuffer(mimeTypeRef.current);
         });
+
+        ms.addEventListener('sourceended', () => { /* normal end, do nothing */ });
+        ms.addEventListener('sourceclose', () => { /* source closed, do nothing */ });
 
         const handleChunk = ({ cameraId, chunk, mimeType }: { cameraId: string; chunk: ArrayBuffer; mimeType?: string }) => {
             if (cameraId !== cam.cameraId) return;
             if (mimeType && mimeType !== mimeTypeRef.current) {
                 mimeTypeRef.current = mimeType;
-                // Initialise SourceBuffer with the real codec on first chunk
                 if (!sbRef.current) initSourceBuffer(mimeType);
             }
             const buf = chunk instanceof ArrayBuffer ? chunk : (chunk as any).buffer ?? new Uint8Array(chunk as any).buffer;
             queueRef.current.push(buf);
+            if (!hasVideo) setHasVideo(true);
             appendNext();
         };
         socket.on('camera:chunk', handleChunk);
@@ -426,28 +465,50 @@ function LiveVideoFeed({ cam, socket, th }: { cam: LiveCameraInfo; socket: Socke
         return () => {
             socket.off('camera:chunk', handleChunk);
             if (watchingRef.current) { socket.emit('viewer:unwatch', cam.cameraId); watchingRef.current = false; }
-            ms.endOfStream?.();
+            safeEndOfStream(msRef.current);
             URL.revokeObjectURL(objUrl);
             sbRef.current = null;
             msRef.current = null;
             queueRef.current = [];
         };
-    }, [socket, cam.cameraId, appendNext]);
+    }, [socket, cam.cameraId, isOffline, appendNext, safeEndOfStream]);
 
     return (
-        <div style={{ position: 'relative', overflow: 'hidden', background: '#0a0f1a', border: '2px solid #ea580c', borderRadius: 4 }}>
+        <div style={{ position: 'relative', overflow: 'hidden', background: '#0a0f1a', border: `2px solid ${isOffline ? '#475569' : '#ea580c'}`, borderRadius: 4, opacity: isOffline ? 0.6 : 1, transition: 'opacity 0.3s, border-color 0.3s' }}>
             <video
                 ref={videoRef}
                 autoPlay
                 muted
                 playsInline
-                style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', position: 'absolute', inset: 0 }}
+                style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block', position: 'absolute', inset: 0 }}
+                onError={() => setFeedError(true)}
             />
-            {/* LIVE badge */}
-            <div style={{ position: 'absolute', top: 6, left: 6, display: 'flex', gap: 4, zIndex: 5 }}>
-                <span style={{ padding: '2px 6px', borderRadius: 4, background: 'rgba(234,88,12,0.9)', color: '#fff', fontSize: 9, fontWeight: 800 }}>
-                    🔴 LIVE
-                </span>
+            {/* Offline overlay */}
+            {isOffline && (
+                <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.7)', zIndex: 8 }}>
+                    <div style={{ fontSize: 28, marginBottom: 6 }}>📵</div>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8' }}>{th ? 'กล้องออฟไลน์' : 'Camera Offline'}</div>
+                    <div style={{ fontSize: 9, color: '#475569', marginTop: 2 }}>{th ? 'รอการเชื่อมต่อใหม่...' : 'Waiting to reconnect...'}</div>
+                </div>
+            )}
+            {/* Error overlay */}
+            {feedError && !isOffline && (
+                <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.6)', zIndex: 8 }}>
+                    <div style={{ fontSize: 24, marginBottom: 4 }}>⚠️</div>
+                    <div style={{ fontSize: 10, color: '#f59e0b' }}>{th ? 'ไม่สามารถเล่นวิดีโอได้' : 'Cannot play feed'}</div>
+                </div>
+            )}
+            {/* LIVE / OFFLINE badge */}
+            <div style={{ position: 'absolute', top: 6, left: 6, display: 'flex', gap: 4, zIndex: 10 }}>
+                {isOffline ? (
+                    <span style={{ padding: '2px 6px', borderRadius: 4, background: 'rgba(71,85,105,0.9)', color: '#94a3b8', fontSize: 9, fontWeight: 800 }}>
+                        ⚫ OFFLINE
+                    </span>
+                ) : (
+                    <span style={{ padding: '2px 6px', borderRadius: 4, background: 'rgba(234,88,12,0.9)', color: '#fff', fontSize: 9, fontWeight: 800 }}>
+                        🔴 LIVE
+                    </span>
+                )}
                 <span style={{ padding: '2px 6px', borderRadius: 4, background: 'rgba(0,0,0,0.6)', color: '#fff', fontSize: 9 }}>
                     📱 Mobile
                 </span>
