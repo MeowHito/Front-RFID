@@ -132,6 +132,34 @@ export default function CameraPage() {
 
     const stopStream = () => { socketRef.current?.emit('camera:stop'); cleanup(); setStatus('stopped'); setBytesSent(0); setElapsed(0); };
 
+    const switchCamera = useCallback(async () => {
+        const newFacing: 'user' | 'environment' = facingMode === 'environment' ? 'user' : 'environment';
+        setFacingMode(newFacing);
+        if (status !== 'streaming') return; // not live → just update state
+        try {
+            // Stop recorder (keep socket alive)
+            if (recorderRef.current && recorderRef.current.state !== 'inactive') recorderRef.current.stop();
+            recorderRef.current = null;
+            // Stop old tracks
+            streamRef.current?.getTracks().forEach(t => t.stop());
+            streamRef.current = null;
+            if (videoRef.current) videoRef.current.srcObject = null;
+            // Open new camera
+            const newStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: newFacing, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false });
+            streamRef.current = newStream;
+            if (videoRef.current) { videoRef.current.srcObject = newStream; await videoRef.current.play(); }
+            // New recorder on same socket
+            const socket = socketRef.current;
+            const camId = cameraId;
+            const mimeType = getSupportedMimeType();
+            const recorder = new MediaRecorder(newStream, { mimeType, videoBitsPerSecond: 800000 });
+            recorderRef.current = recorder;
+            recorder.ondataavailable = (e) => { if (e.data && e.data.size > 0 && socket?.connected) { e.data.arrayBuffer().then(buf => { socket?.emit('camera:chunk', { cameraId: camId, chunk: buf, mimeType }); setBytesSent(prev => prev + buf.byteLength); }); } };
+            recorder.onerror = () => setStatus('error');
+            recorder.start(2000);
+        } catch (err: any) { setErrorMsg('ไม่สามารถสลับกล้องได้: ' + (err?.message || '')); }
+    }, [facingMode, status, cameraId]);
+
     const cleanup = () => {
         recorderRef.current?.stop(); recorderRef.current = null;
         streamRef.current?.getTracks().forEach(t => t.stop()); streamRef.current = null;
@@ -248,7 +276,7 @@ export default function CameraPage() {
                         {/* Bottom controls */}
                         <div className="flex justify-center">
                             <div className="glass-hud px-6 py-2.5 rounded-xl flex items-center gap-6 pointer-events-auto">
-                                <button onClick={() => setFacingMode(f => f === 'environment' ? 'user' : 'environment')}
+                                <button onClick={switchCamera}
                                     className="bg-transparent border-none cursor-pointer"
                                     style={{ color: facingMode === 'user' ? '#745c00' : '#2d3435' }}>
                                     <span className="material-symbols-outlined text-[1.375rem]">cameraswitch</span>
