@@ -1319,9 +1319,12 @@ export default function EventLivePage() {
                                                 return (
                                                     <td key={key} style={{ padding: isMobile ? '4px 2px' : '6px 6px' }}>
                                                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, minWidth: 0 }}>
-                                                            <span style={{ display: 'inline-block', padding: isMobile ? '1px 4px' : '2px 8px', borderRadius: 3, fontWeight: 700, fontSize: isMobile ? 8 : 10, color: '#fff', background: getStatusBgColor(runner.status), lineHeight: 1.3 }}>
-                                                                {getStatusLabel(runner.status)}
-                                                            </span>
+                                                            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4, minWidth: 0 }}>
+                                                                <span style={{ display: 'inline-block', padding: isMobile ? '1px 4px' : '2px 8px', borderRadius: 3, fontWeight: 700, fontSize: isMobile ? 8 : 10, color: '#fff', background: getStatusBgColor(runner.status), lineHeight: 1.3 }}>
+                                                                    {getStatusLabel(runner.status)}
+                                                                </span>
+                                                                {statusCheckpointHasCamera && <CheckpointCameraIcon dark={isDark} />}
+                                                            </div>
                                                             {isAdmin && !isMobile && (
                                                                 <button
                                                                     onClick={(e) => openStatusEdit(runner, e)}
@@ -1340,7 +1343,6 @@ export default function EventLivePage() {
                                                                     <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{statusCheckpointName}</span>
                                                                     {runner.statusNote && <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>· {runner.statusNote}</span>}
                                                                     {statusScanTimeLabel && <span style={{ flexShrink: 0 }}>· {statusScanTimeLabel}</span>}
-                                                                    {statusCheckpointHasCamera && <CheckpointCameraIcon dark={isDark} />}
                                                                 </span>
                                                             </div>
                                                         )}
