@@ -127,6 +127,13 @@ interface CheckpointMapping {
     checkpoint?: { name: string; type: string; kmCumulative?: number };
 }
 
+interface CheckpointCameraRecording {
+    checkpointName?: string;
+    startTime?: string;
+    endTime?: string | null;
+    recordingStatus?: string;
+}
+
 // Resolved checkpoint distance info per event
 interface CheckpointDistanceLookup {
     [eventId: string]: {
@@ -223,6 +230,31 @@ function getInitials(firstName: string, lastName: string): string {
     return ((firstName?.[0] || '') + (lastName?.[0] || '')).toUpperCase() || '?';
 }
 
+function CheckpointCameraIcon({ dark }: { dark: boolean }) {
+    return (
+        <span
+            aria-label="มีวิดีโอ CCTV"
+            title="มีวิดีโอ CCTV"
+            style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: 16,
+                height: 16,
+                borderRadius: 999,
+                border: `1px solid ${dark ? 'rgba(96,165,250,0.28)' : '#bfdbfe'}`,
+                background: dark ? 'rgba(59,130,246,0.14)' : '#dbeafe',
+                color: dark ? '#bfdbfe' : '#1d4ed8',
+                flexShrink: 0,
+            }}
+        >
+            <svg viewBox="0 0 24 24" fill="currentColor" style={{ width: 10, height: 10 }}>
+                <path d="M4 7.75A2.75 2.75 0 0 1 6.75 5h6.5A2.75 2.75 0 0 1 16 7.75v.8l2.73-1.95A1.5 1.5 0 0 1 21 7.82v8.36a1.5 1.5 0 0 1-2.27 1.22L16 15.45v.8A2.75 2.75 0 0 1 13.25 19h-6.5A2.75 2.75 0 0 1 4 16.25v-8.5Z" />
+            </svg>
+        </span>
+    );
+}
+
 export default function EventLivePage() {
     const { language } = useLanguage();
     const { theme } = useTheme();
@@ -253,6 +285,7 @@ export default function EventLivePage() {
     const [checkpointMappings, setCheckpointMappings] = useState<CheckpointMapping[]>([]);
     const [totalDistance, setTotalDistance] = useState<number>(0);
     const [cpDistanceLookup, setCpDistanceLookup] = useState<CheckpointDistanceLookup>({});
+    const [checkpointCameraCoverage, setCheckpointCameraCoverage] = useState<Record<string, CheckpointCameraRecording[]>>({});
     const [rankDeltas, setRankDeltas] = useState<Map<string, number>>(new Map());
     const prevRanksRef = useRef<Map<string, number>>(new Map());
 
@@ -364,6 +397,54 @@ export default function EventLivePage() {
         }, interval);
         return () => clearInterval(refreshInterval);
     }, [campaign?._id, isRaceFinished]);
+
+    useEffect(() => {
+        if (!campaign?._id || !isAdmin) {
+            setCheckpointCameraCoverage({});
+            return;
+        }
+
+        let cancelled = false;
+        const interval = isRaceFinished ? 15_000 : 10_000;
+
+        const loadCheckpointCameraCoverage = async () => {
+            try {
+                const res = await fetch(`/api/cctv-recordings?campaignId=${encodeURIComponent(campaign._id)}`, {
+                    headers: authHeaders(),
+                    cache: 'no-store',
+                });
+                if (!res.ok) throw new Error('Failed to load CCTV recordings');
+
+                const payload = await res.json().catch(() => []);
+                const recordings: CheckpointCameraRecording[] = Array.isArray(payload)
+                    ? payload
+                    : Array.isArray(payload?.data)
+                        ? payload.data
+                        : Array.isArray(payload?.data?.data)
+                            ? payload.data.data
+                            : [];
+
+                const nextCoverage: Record<string, CheckpointCameraRecording[]> = {};
+                recordings.forEach((recording) => {
+                    const key = normalizeComparableText(recording?.checkpointName);
+                    if (!key) return;
+                    if (!nextCoverage[key]) nextCoverage[key] = [];
+                    nextCoverage[key].push(recording);
+                });
+
+                if (!cancelled) setCheckpointCameraCoverage(nextCoverage);
+            } catch {
+                if (!cancelled) setCheckpointCameraCoverage({});
+            }
+        };
+
+        loadCheckpointCameraCoverage();
+        const coverageInterval = window.setInterval(loadCheckpointCameraCoverage, interval);
+        return () => {
+            cancelled = true;
+            window.clearInterval(coverageInterval);
+        };
+    }, [campaign?._id, isAdmin, isRaceFinished]);
 
     async function fetchEventData() {
         try {
@@ -1141,6 +1222,31 @@ export default function EventLivePage() {
                                         }
                                     }
 
+                                    const statusCheckpointName = runner.statusCheckpoint || runner.latestCheckpoint || '';
+                                    const statusCheckpointRecordings = statusCheckpointName
+                                        ? checkpointCameraCoverage[normalizeComparableText(statusCheckpointName)] || []
+                                        : [];
+                                    const statusScanTimeValue = runner.scanTime ? new Date(runner.scanTime).getTime() : Number.NaN;
+                                    const statusCheckpointHasCamera = statusCheckpointRecordings.length > 0 && (
+                                        runner.statusCheckpoint
+                                            ? true
+                                            : !Number.isFinite(statusScanTimeValue)
+                                                ? true
+                                                : statusCheckpointRecordings.some((recording) => {
+                                                    const startTime = recording.startTime ? new Date(recording.startTime).getTime() : Number.NaN;
+                                                    if (!Number.isFinite(startTime) || startTime > statusScanTimeValue) return false;
+                                                    if (recording.recordingStatus === 'recording' || !recording.endTime) return true;
+                                                    const endTime = new Date(recording.endTime).getTime();
+                                                    return Number.isFinite(endTime) && endTime >= statusScanTimeValue;
+                                                })
+                                    );
+                                    const statusScanTimeLabel = !isRaceFinished && runner.scanTime
+                                        ? (() => {
+                                            const d = new Date(runner.scanTime!);
+                                            return `${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')}:${d.getSeconds().toString().padStart(2,'0')}.${d.getMilliseconds().toString().padStart(3,'0')}`;
+                                        })()
+                                        : '';
+
                                     // Render cell content per column key
                                     const renderCell = (key: string) => {
                                         switch (key) {
@@ -1226,12 +1332,13 @@ export default function EventLivePage() {
                                                                 </button>
                                                             )}
                                                         </div>
-                                                        {(runner.statusCheckpoint || runner.latestCheckpoint) && (
-                                                            <span style={{ display: 'block', fontSize: isMobile ? 8 : 9, color: runner.statusCheckpoint ? '#dc2626' : '#1e293b', textTransform: 'uppercase', fontWeight: 600, marginTop: 2 }}>
-                                                                {runner.statusCheckpoint || runner.latestCheckpoint}
-                                                                {runner.statusNote ? ` · ${runner.statusNote}` : ''}
-                                                                {!isRaceFinished && runner.scanTime ? (() => { const d = new Date(runner.scanTime); return ` · ${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')}:${d.getSeconds().toString().padStart(2,'0')}.${d.getMilliseconds().toString().padStart(3,'0')}`; })() : ''}
-                                                            </span>
+                                                        {statusCheckpointName && (
+                                                            <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap', fontSize: isMobile ? 8 : 9, color: runner.statusCheckpoint ? '#dc2626' : '#1e293b', textTransform: 'uppercase', fontWeight: 600, marginTop: 2 }}>
+                                                                <span>{statusCheckpointName}</span>
+                                                                {statusCheckpointHasCamera && <CheckpointCameraIcon dark={isDark} />}
+                                                                {runner.statusNote && <span>· {runner.statusNote}</span>}
+                                                                {statusScanTimeLabel && <span>· {statusScanTimeLabel}</span>}
+                                                            </div>
                                                         )}
                                                     </td>
                                                 );

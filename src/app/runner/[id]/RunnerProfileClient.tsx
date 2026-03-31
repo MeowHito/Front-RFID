@@ -163,6 +163,24 @@ function getCheckpointBadge(name: string) {
     return 'bg-amber-500/15 text-amber-200 ring-1 ring-amber-400/25';
 }
 
+function CheckpointCameraIcon({ tone }: { tone: 'light' | 'dark' }) {
+    const wrapperClass = tone === 'light'
+        ? 'border border-emerald-200 bg-emerald-100 text-emerald-700'
+        : 'border border-rose-400/25 bg-rose-500/10 text-rose-200';
+
+    return (
+        <span
+            aria-label="มีวิดีโอ CCTV"
+            title="มีวิดีโอ CCTV"
+            className={`inline-flex h-6 w-6 items-center justify-center rounded-full ${wrapperClass}`}
+        >
+            <svg viewBox="0 0 24 24" fill="currentColor" className="h-3.5 w-3.5">
+                <path d="M4 7.75A2.75 2.75 0 0 1 6.75 5h6.5A2.75 2.75 0 0 1 16 7.75v.8l2.73-1.95A1.5 1.5 0 0 1 21 7.82v8.36a1.5 1.5 0 0 1-2.27 1.22L16 15.45v.8A2.75 2.75 0 0 1 13.25 19h-6.5A2.75 2.75 0 0 1 4 16.25v-8.5Z" />
+            </svg>
+        </span>
+    );
+}
+
 export default function RunnerProfileClient() {
     const params = useParams();
     const pathname = usePathname();
@@ -470,9 +488,7 @@ export default function RunnerProfileClient() {
                                             <span className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-wide ${option.name.toLowerCase().includes('start') ? 'bg-emerald-100 text-emerald-700' : option.name.toLowerCase().includes('finish') ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-700'}`}>
                                                 {option.name}
                                             </span>
-                                            {option.hit?.recording && (
-                                                <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" />
-                                            )}
+                                            {option.hit?.recording && <CheckpointCameraIcon tone="light" />}
                                         </div>
                                         <div className="mt-2 text-xs font-semibold text-slate-500">
                                             {option.distanceFromStart != null ? `${option.distanceFromStart} KM` : 'No distance'}
@@ -749,7 +765,7 @@ export default function RunnerProfileClient() {
                                         <span className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-wide ${getCheckpointBadge(option.name)}`}>
                                             {option.name}
                                         </span>
-                                        {option.hit?.recording && <span className="inline-flex h-2.5 w-2.5 rounded-full bg-rose-400" />}
+                                        {option.hit?.recording && <CheckpointCameraIcon tone="dark" />}
                                     </div>
                                     <div className="mt-2 flex items-center gap-2 text-xs text-slate-300">
                                         <span>{option.distanceFromStart != null ? `${option.distanceFromStart} KM` : 'No distance'}</span>
