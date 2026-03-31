@@ -72,7 +72,6 @@ const menuSections: MenuSection[] = [
         header: 'CCTV MONITOR (กล้องวงจรปิด)',
         headerEn: 'CCTV MONITOR',
         items: [
-            { href: '/admin/cctv-cameras', label: 'จัดการกล้อง', labelEn: 'Camera Management', icon: 'video', iconColor: '#ea580c' },
             { href: '/admin/cctv-live', label: 'ดูกล้องสด', labelEn: 'Live Feeds', icon: 'signal', iconColor: '#16a34a' },
             { href: '/admin/cctv-recordings', label: 'พื้นที่จัดเก็บวิดีโอ', labelEn: 'Video Storage', icon: 'database', iconColor: '#7c3aed' },
             { href: '/admin/cctv-settings', label: 'ตั้งค่า CCTV', labelEn: 'CCTV Settings', icon: 'gear', iconColor: '#6366f1' },

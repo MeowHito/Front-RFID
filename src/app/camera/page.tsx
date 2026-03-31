@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { useParams } from 'next/navigation';
 import { io, Socket } from 'socket.io-client';
 
 // ── Design tokens ────────────────────────────────────────────────────────────
@@ -24,7 +25,7 @@ const F = { headline: "'Newsreader', Georgia, serif", body: "'Manrope', system-u
 const labelStyle: React.CSSProperties = { fontFamily: F.body, fontSize: '0.6875rem', fontWeight: 700, letterSpacing: '0.15em', textTransform: 'uppercase', color: C.onSurface, opacity: 0.6, display: 'block', marginBottom: 10 };
 const inputBase: React.CSSProperties = { width: '100%', background: C.containerHigh, border: 'none', outline: 'none', padding: '14px 16px', borderRadius: 2, fontFamily: F.body, fontSize: '0.9375rem', color: C.onSurface, boxSizing: 'border-box', appearance: 'none' };
 
-interface Campaign { _id: string; name: string; }
+interface Campaign { _id: string; name: string; nameTh?: string; slug?: string; }
 interface Checkpoint { _id: string; name: string; orderNum?: number; }
 
 type StreamStatus = 'idle' | 'setting-up' | 'connecting' | 'streaming' | 'stopped' | 'error';
@@ -32,6 +33,8 @@ type StreamStatus = 'idle' | 'setting-up' | 'connecting' | 'streaming' | 'stoppe
 const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL || (typeof window !== 'undefined' ? window.location.origin : '');
 
 export default function CameraPage() {
+    const params = useParams();
+    const routeCampaign = (params?.campaign as string | undefined) || '';
     const [checkpoints, setCheckpoints] = useState<Checkpoint[]>([]);
     const [campaignId, setCampaignId] = useState('');
     const [campaignName, setCampaignName] = useState('');
@@ -75,11 +78,6 @@ export default function CameraPage() {
             })
             .catch(() => {});
 
-        fetch('/api/campaigns/featured', { cache: 'no-store' })
-            .then(r => r.ok ? r.json() : null)
-            .then(data => { if (data?._id) { setCampaignId(data._id); setCampaignName(data.name || data.nameTh || ''); } })
-            .catch(() => {});
-
         const storedDevId = localStorage.getItem('cctv_device_id');
         if (storedDevId) { setDeviceId(storedDevId); }
         else { const g = 'MK1-' + Math.random().toString(36).substring(2, 8).toUpperCase(); setDeviceId(g); localStorage.setItem('cctv_device_id', g); }
@@ -90,6 +88,36 @@ export default function CameraPage() {
         const sid = localStorage.getItem('camera_saved_id');
         if (sid) setSavedCameraId(sid);
     }, []);
+
+    useEffect(() => {
+        const loadCampaign = async () => {
+            try {
+                if (routeCampaign) {
+                    const res = await fetch(`/api/campaigns/${encodeURIComponent(routeCampaign)}`, { cache: 'no-store' });
+                    if (res.ok) {
+                        const data = await res.json();
+                        if (data?._id) {
+                            setCampaignId(data._id);
+                            setCampaignName(data.name || data.nameTh || '');
+                            return;
+                        }
+                    }
+                }
+
+                const featuredRes = await fetch('/api/campaigns/featured', { cache: 'no-store' });
+                if (!featuredRes.ok) return;
+                const featured = await featuredRes.json();
+                if (featured?._id) {
+                    setCampaignId(featured._id);
+                    setCampaignName(featured.name || featured.nameTh || '');
+                }
+            } catch {
+                return;
+            }
+        };
+
+        loadCampaign();
+    }, [routeCampaign]);
 
     useEffect(() => {
         if (!campaignId) return;

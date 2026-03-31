@@ -116,9 +116,10 @@ export default function CctvRecordingsPage() {
     const load = async () => {
         setLoading(true);
         try {
+            const qs = campaignId ? `?campaignId=${campaignId}` : '';
             const [recRes, storRes] = await Promise.all([
-                fetch('/api/cctv-recordings', { cache: 'no-store', headers: authHeaders() }),
-                fetch('/api/cctv-recordings/storage', { cache: 'no-store', headers: authHeaders() }),
+                fetch(`/api/cctv-recordings${qs}`, { cache: 'no-store', headers: authHeaders() }),
+                fetch(`/api/cctv-recordings/storage${qs}`, { cache: 'no-store', headers: authHeaders() }),
             ]);
             const recData = await recRes.json();
             const storData = await storRes.json();
@@ -128,7 +129,7 @@ export default function CctvRecordingsPage() {
         finally { setLoading(false); }
     };
 
-    useEffect(() => { load(); }, []);
+    useEffect(() => { if (campaignId) load(); }, [campaignId]);
 
     // Auto-refresh every 10s while any recording is live
     useEffect(() => {
@@ -479,11 +480,18 @@ export default function CctvRecordingsPage() {
             <div className="bg-white border border-slate-200 rounded-xl p-5 mb-5 shadow-sm">
                 <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
                     <div>
-                        <h1 className="text-lg font-extrabold text-slate-900 m-0">
-                            🗄️ {th ? 'พื้นที่จัดเก็บวิดีโอ CCTV' : 'CCTV Video Storage'}
-                        </h1>
+                        <div className="flex items-center gap-2 flex-wrap">
+                            <h1 className="text-lg font-extrabold text-slate-900 m-0">
+                                🗄️ {th ? 'พื้นที่จัดเก็บวิดีโอ CCTV' : 'CCTV Video Storage'}
+                            </h1>
+                            {campaignName && (
+                                <span className="text-xs font-bold text-amber-800 bg-amber-100 border border-amber-300 px-2.5 py-0.5 rounded-lg">
+                                    ⭐ {campaignName}
+                                </span>
+                            )}
+                        </div>
                         <p className="text-xs text-slate-400 mt-0.5">
-                            {th ? 'วิดีโอที่บันทึกจากการถ่ายทอดสด' : 'Recordings from live streams'}
+                            {th ? 'แสดงเฉพาะวิดีโอของกิจกรรมที่เลือก' : 'Showing recordings for the selected campaign only'}
                         </p>
                     </div>
                     <div className="flex gap-2 items-center flex-wrap">

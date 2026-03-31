@@ -44,7 +44,7 @@ const LINK_ROWS: LinkRow[] = [
         id: 'cctv-camera',
         label: '📹 กล้อง CCTV มือถือ — เปิดบนมือถือที่จุด Checkpoint แล้วกด "เริ่มส่งภาพ"',
         labelEn: '📹 CCTV Mobile Camera — open on phone at Checkpoint, tap "Start Stream"',
-        buildUrl: (origin) => `${origin}/camera`,
+        buildUrl: (origin, campaign) => `${origin}/camera/${campaign?.slug || campaign?._id || ''}`,
     },
 ];
 

@@ -3,7 +3,9 @@ import { BACKEND_URL, proxyHeaders } from '../../_helpers';
 
 export async function GET(request: NextRequest) {
     try {
-        const res = await fetch(`${BACKEND_URL}/cctv-recordings/storage`, {
+        const campaignId = request.nextUrl.searchParams.get('campaignId');
+        const qs = campaignId ? `?campaignId=${campaignId}` : '';
+        const res = await fetch(`${BACKEND_URL}/cctv-recordings/storage${qs}`, {
             headers: proxyHeaders(request),
             cache: 'no-store',
         });

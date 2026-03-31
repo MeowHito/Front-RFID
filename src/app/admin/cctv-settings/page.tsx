@@ -372,10 +372,10 @@ export default function CctvSettingsPage() {
                         </h4>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                             {[
-                                { step: 1, title: th ? 'เปิด App Live Streaming บนมือถือ' : 'Open Live Streaming App on mobile', desc: th ? 'iOS: YouTube Live / Streamlabs / Prism Live Studio / Larix Broadcaster' : 'iOS: YouTube Live / Streamlabs / Prism Live Studio / Larix Broadcaster' },
-                                { step: 2, title: th ? 'เริ่ม Live Stream ไปยัง YouTube หรือ Facebook' : 'Start Live Stream to YouTube or Facebook', desc: th ? 'กด Go Live → รอ stream เริ่มทำงาน' : 'Tap Go Live → wait for stream to start' },
-                                { step: 3, title: th ? 'คัดลอก Embed URL' : 'Copy Embed URL', desc: th ? 'YouTube: youtube.com/embed/[ID] • Facebook: ดึง embed URL จาก Share' : 'YouTube: youtube.com/embed/[ID] • Facebook: get embed URL via Share' },
-                                { step: 4, title: th ? 'วาง URL ในระบบ' : 'Paste URL into the system', desc: th ? 'ไปหน้า "จัดการกล้อง" → เพิ่มกล้อง → วาง URL → บันทึก' : 'Go to Camera Management → Add Camera → Paste URL → Save' },
+                                { step: 1, title: th ? 'เปิดหน้า /camera บนมือถือ' : 'Open /camera on mobile phone', desc: th ? 'เปิด browser บนมือถือแล้วเข้า URL ของระบบ เช่น https://live.action.in.th/camera' : 'Open browser on phone and go to system URL e.g. https://live.action.in.th/camera' },
+                                { step: 2, title: th ? 'เลือกกิจกรรมและจุด Checkpoint' : 'Select campaign & checkpoint', desc: th ? 'เลือก campaign ที่ต้องการ, ตั้งชื่อกล้อง, เลือก Checkpoint' : 'Pick campaign, name the camera, select checkpoint' },
+                                { step: 3, title: th ? 'กด "เริ่มการถ่ายทอดสด"' : 'Tap "Start Streaming"', desc: th ? 'ระบบจะเปิดกล้องและเริ่มส่ง Live ไปยัง /admin/cctv-live อัตโนมัติ' : 'Camera opens and starts streaming to /admin/cctv-live automatically' },
+                                { step: 4, title: th ? 'ดูสดในหน้า Admin' : 'Watch live on Admin page', desc: th ? 'เปิด /admin/cctv-live เพื่อดูกล้องสด • วิดีโอจะบันทึกอัตโนมัติใน /admin/cctv-recordings' : 'Open /admin/cctv-live to watch • Recordings saved automatically to /admin/cctv-recordings' },
                             ].map(item => (
                                 <div key={item.step} style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
                                     <span style={{ width: 26, height: 26, borderRadius: '50%', background: '#ea580c', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 800, flexShrink: 0 }}>
@@ -388,14 +388,14 @@ export default function CctvSettingsPage() {
                                 </div>
                             ))}
                         </div>
-                        {/* iOS App options */}
+                        {/* How it works */}
                         <div style={{ marginTop: 16, padding: '12px', background: '#f0f9ff', borderRadius: 8, border: '1px solid #bae6fd' }}>
-                            <div style={{ fontSize: 11, fontWeight: 800, color: '#0369a1', marginBottom: 8 }}>📱 {th ? 'แอปที่แนะนำสำหรับ iOS (ไม่ต้องใช้ OBS)' : 'Recommended iOS Apps (No OBS needed)'}</div>
+                            <div style={{ fontSize: 11, fontWeight: 800, color: '#0369a1', marginBottom: 8 }}>📱 {th ? 'วิธีการทำงาน' : 'How it works'}</div>
                             {[
-                                { name: 'YouTube Live', desc: th ? 'ฟรี • ได้ embed URL ทันที' : 'Free • Embed URL ready instantly' },
-                                { name: 'Streamlabs Mobile', desc: th ? 'ฟรี • stream ไป YouTube/Facebook' : 'Free • stream to YouTube/Facebook' },
-                                { name: 'Prism Live Studio', desc: th ? 'ฟรี • multi-platform' : 'Free • multi-platform streaming' },
-                                { name: 'Larix Broadcaster', desc: th ? 'ฟรี • รองรับ RTMP server' : 'Free • RTMP server support' },
+                                { name: th ? 'ไม่ต้องติดตั้งแอป' : 'No app install needed', desc: th ? 'ใช้ browser มือถือได้เลย' : 'Works in mobile browser' },
+                                { name: th ? 'Live + บันทึกอัตโนมัติ' : 'Live + Auto Record', desc: th ? 'ส่ง Live ไปหน้า Admin พร้อมบันทึกวิดีโอ' : 'Streams to admin + records video' },
+                                { name: th ? 'รองรับหลายกล้อง' : 'Multi-camera support', desc: th ? 'เปิดได้หลายเครื่องพร้อมกัน' : 'Multiple phones at once' },
+                                { name: th ? 'Save Clip ย้อนหลัง' : 'Clip Buffer', desc: th ? `กดบันทึกคลิปย้อนหลังได้ ${clipBufferSeconds} วินาที` : `Save last ${clipBufferSeconds}s as clip` },
                             ].map(a => (
                                 <div key={a.name} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: '1px solid #e0f2fe', fontSize: 11 }}>
                                     <span style={{ fontWeight: 700, color: '#0f172a' }}>{a.name}</span>
