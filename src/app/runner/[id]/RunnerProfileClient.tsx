@@ -247,6 +247,13 @@ export default function RunnerProfileClient() {
         })();
     }, [runnerId]);
 
+    useEffect(() => {
+        setLookupLoaded(false);
+        setLookupLoading(false);
+        setRunnerHits([]);
+        setSelectedCheckpoint('');
+    }, [runnerId]);
+
     const sortedTimings = useMemo(() => [...timings].sort((a, b) => (a.order || 0) - (b.order || 0)), [timings]);
     const latestCheckpointKey = normalizeCheckpoint(runner?.latestCheckpoint);
     const isFinished = runner?.status === 'finished';

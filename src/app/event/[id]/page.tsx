@@ -1226,20 +1226,7 @@ export default function EventLivePage() {
                                     const statusCheckpointRecordings = statusCheckpointName
                                         ? checkpointCameraCoverage[normalizeComparableText(statusCheckpointName)] || []
                                         : [];
-                                    const statusScanTimeValue = runner.scanTime ? new Date(runner.scanTime).getTime() : Number.NaN;
-                                    const statusCheckpointHasCamera = statusCheckpointRecordings.length > 0 && (
-                                        runner.statusCheckpoint
-                                            ? true
-                                            : !Number.isFinite(statusScanTimeValue)
-                                                ? true
-                                                : statusCheckpointRecordings.some((recording) => {
-                                                    const startTime = recording.startTime ? new Date(recording.startTime).getTime() : Number.NaN;
-                                                    if (!Number.isFinite(startTime) || startTime > statusScanTimeValue) return false;
-                                                    if (recording.recordingStatus === 'recording' || !recording.endTime) return true;
-                                                    const endTime = new Date(recording.endTime).getTime();
-                                                    return Number.isFinite(endTime) && endTime >= statusScanTimeValue;
-                                                })
-                                    );
+                                    const statusCheckpointHasCamera = statusCheckpointRecordings.length > 0;
                                     const statusScanTimeLabel = !isRaceFinished && runner.scanTime
                                         ? (() => {
                                             const d = new Date(runner.scanTime!);
