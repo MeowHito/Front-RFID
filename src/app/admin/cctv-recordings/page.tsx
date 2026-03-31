@@ -105,6 +105,7 @@ export default function CctvRecordingsPage() {
     const [timeSearch, setTimeSearch] = useState('');
     const [timeResults, setTimeResults] = useState<Recording[]>([]);
     const [timeSearchDone, setTimeSearchDone] = useState(false);
+    const [nearestRecs, setNearestRecs] = useState<{ rec: Recording; diffMs: number; relation: 'before' | 'after' }[]>([]);
 
     // Delete modal
     const [deleteTarget, setDeleteTarget] = useState<'one' | 'all' | null>(null);
@@ -274,9 +275,12 @@ export default function CctvRecordingsPage() {
                     <span className="text-xs font-bold text-slate-500">⏰ {th ? 'ค้นหาตามเวลาจริง' : 'Search by time'}:</span>
                     <input
                         type="datetime-local"
+                        step="1"
+                        lang="th-TH-u-hc-h23"
                         value={timeSearch}
                         onChange={e => setTimeSearch(e.target.value)}
                         className="border-2 border-slate-200 rounded-lg px-3 py-1.5 text-sm outline-none focus:border-blue-400 transition-colors"
+                        style={{ colorScheme: 'light' }}
                     />
                     <button
                         onClick={() => {
@@ -289,6 +293,23 @@ export default function CctvRecordingsPage() {
                             });
                             setTimeResults(matched);
                             setTimeSearchDone(true);
+
+                            // Find nearest recordings when no exact match
+                            if (matched.length === 0 && recordings.length > 0) {
+                                const sorted = recordings
+                                    .map(r => {
+                                        const st = new Date(r.startTime).getTime();
+                                        const et = r.endTime ? new Date(r.endTime).getTime() : Date.now();
+                                        if (ts < st) return { rec: r, diffMs: st - ts, relation: 'after' as const };
+                                        if (ts > et) return { rec: r, diffMs: ts - et, relation: 'before' as const };
+                                        return { rec: r, diffMs: 0, relation: 'after' as const };
+                                    })
+                                    .sort((a, b) => a.diffMs - b.diffMs)
+                                    .slice(0, 3);
+                                setNearestRecs(sorted);
+                            } else {
+                                setNearestRecs([]);
+                            }
                         }}
                         disabled={!timeSearch}
                         className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer border-none ${
@@ -307,8 +328,64 @@ export default function CctvRecordingsPage() {
                 )}
                 {/* Time search results */}
                 {timeSearchDone && timeResults.length === 0 && (
-                    <div className="mt-4 text-sm text-slate-400 text-center py-4">
-                        {th ? 'ไม่พบวิดีโอที่ครอบคลุมเวลานี้' : 'No recordings cover this time'}
+                    <div className="mt-4 border border-amber-200 rounded-lg overflow-hidden">
+                        <div className="bg-amber-50 px-4 py-3 text-sm text-amber-800 font-semibold">
+                            ⚠️ {th
+                                ? `ไม่พบวิดีโอที่ครอบคลุมเวลา ${new Date(timeSearch).toLocaleString('th-TH', { hour12: false })}`
+                                : `No recordings cover ${new Date(timeSearch).toLocaleString('en-GB', { hour12: false })}`}
+                        </div>
+                        {nearestRecs.length > 0 && (
+                            <div className="px-4 py-3">
+                                <p className="text-xs font-bold text-slate-500 mb-2">
+                                    {th ? `วิดีโอที่ใกล้เคียงที่สุด (${nearestRecs.length} รายการ):` : `Nearest recordings (${nearestRecs.length}):`}
+                                </p>
+                                {nearestRecs.map(({ rec, diffMs, relation }) => {
+                                    const diffSec = Math.floor(diffMs / 1000);
+                                    const diffMin = Math.floor(diffSec / 60);
+                                    const diffH = Math.floor(diffMin / 60);
+                                    const diffLabel = diffH > 0
+                                        ? `${diffH} ${th ? 'ชั่วโมง' : 'hr'} ${diffMin % 60} ${th ? 'นาที' : 'min'}`
+                                        : diffMin > 0
+                                            ? `${diffMin} ${th ? 'นาที' : 'min'} ${diffSec % 60} ${th ? 'วินาที' : 'sec'}`
+                                            : `${diffSec} ${th ? 'วินาที' : 'sec'}`;
+                                    const relationLabel = relation === 'before'
+                                        ? (th ? 'จบไปแล้วก่อนหน้า' : 'ended before')
+                                        : (th ? 'เริ่มหลังจาก' : 'starts after');
+                                    return (
+                                        <div key={rec._id} className="flex items-center justify-between py-2 border-t border-slate-100 first:border-t-0">
+                                            <div className="flex-1 min-w-0">
+                                                <span className="font-bold text-sm text-slate-800">{rec.cameraName}</span>
+                                                {rec.checkpointName && (
+                                                    <span className="ml-2 text-xs bg-orange-100 text-orange-700 font-bold px-1.5 py-0.5 rounded">{rec.checkpointName}</span>
+                                                )}
+                                                <div className="text-xs text-slate-500 mt-0.5">
+                                                    {new Date(rec.startTime).toLocaleString('th-TH', { hour12: false })}
+                                                    {rec.endTime && <> → {new Date(rec.endTime).toLocaleTimeString('th-TH', { hour12: false })}</>}
+                                                    <span className="ml-1 text-slate-400">({fmtDuration(rec.duration)})</span>
+                                                    <span className="ml-1 text-slate-400">• {fmtBytes(rec.fileSize)}</span>
+                                                </div>
+                                                <div className="text-xs mt-0.5">
+                                                    <span className={`font-semibold ${relation === 'before' ? 'text-orange-600' : 'text-blue-600'}`}>
+                                                        {relationLabel} {diffLabel}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                            <button
+                                                onClick={() => {
+                                                    const seekSec = relation === 'before'
+                                                        ? Math.max(0, rec.duration - seekOffsetSec)
+                                                        : 0;
+                                                    openPlayerWithSeek(rec._id, `${rec.cameraName} — ${th ? 'ใกล้เคียงที่สุด' : 'Nearest'}`, seekSec);
+                                                }}
+                                                className="text-xs font-bold text-amber-600 hover:text-amber-800 cursor-pointer bg-transparent border-none ml-3 shrink-0"
+                                            >
+                                                ▶ {th ? 'ดูวิดีโอ' : 'Watch'}
+                                            </button>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
                     </div>
                 )}
                 {timeResults.length > 0 && (
