@@ -127,11 +127,11 @@ interface CheckpointMapping {
     checkpoint?: { name: string; type: string; kmCumulative?: number };
 }
 
-interface CheckpointCameraRecording {
-    checkpointName?: string;
-    startTime?: string;
-    endTime?: string | null;
-    recordingStatus?: string;
+interface RunnerCameraHit {
+    checkpoint?: string;
+    recording?: {
+        _id?: string;
+    } | null;
 }
 
 // Resolved checkpoint distance info per event
@@ -285,9 +285,10 @@ export default function EventLivePage() {
     const [checkpointMappings, setCheckpointMappings] = useState<CheckpointMapping[]>([]);
     const [totalDistance, setTotalDistance] = useState<number>(0);
     const [cpDistanceLookup, setCpDistanceLookup] = useState<CheckpointDistanceLookup>({});
-    const [checkpointCameraCoverage, setCheckpointCameraCoverage] = useState<Record<string, CheckpointCameraRecording[]>>({});
+    const [runnerCameraAvailability, setRunnerCameraAvailability] = useState<Record<string, Record<string, boolean>>>({});
     const [rankDeltas, setRankDeltas] = useState<Map<string, number>>(new Map());
     const prevRanksRef = useRef<Map<string, number>>(new Map());
+    const runnerCameraRequestKeyRef = useRef<Map<string, string>>(new Map());
 
     // Admin status edit modal
     const [editingRunner, setEditingRunner] = useState<Runner | null>(null);
@@ -399,52 +400,9 @@ export default function EventLivePage() {
     }, [campaign?._id, isRaceFinished]);
 
     useEffect(() => {
-        if (!campaign?._id || !isAdmin) {
-            setCheckpointCameraCoverage({});
-            return;
-        }
-
-        let cancelled = false;
-        const interval = isRaceFinished ? 15_000 : 10_000;
-
-        const loadCheckpointCameraCoverage = async () => {
-            try {
-                const res = await fetch(`/api/cctv-recordings?campaignId=${encodeURIComponent(campaign._id)}`, {
-                    headers: authHeaders(),
-                    cache: 'no-store',
-                });
-                if (!res.ok) throw new Error('Failed to load CCTV recordings');
-
-                const payload = await res.json().catch(() => []);
-                const recordings: CheckpointCameraRecording[] = Array.isArray(payload)
-                    ? payload
-                    : Array.isArray(payload?.data)
-                        ? payload.data
-                        : Array.isArray(payload?.data?.data)
-                            ? payload.data.data
-                            : [];
-
-                const nextCoverage: Record<string, CheckpointCameraRecording[]> = {};
-                recordings.forEach((recording) => {
-                    const key = normalizeComparableText(recording?.checkpointName);
-                    if (!key) return;
-                    if (!nextCoverage[key]) nextCoverage[key] = [];
-                    nextCoverage[key].push(recording);
-                });
-
-                if (!cancelled) setCheckpointCameraCoverage(nextCoverage);
-            } catch {
-                if (!cancelled) setCheckpointCameraCoverage({});
-            }
-        };
-
-        loadCheckpointCameraCoverage();
-        const coverageInterval = window.setInterval(loadCheckpointCameraCoverage, interval);
-        return () => {
-            cancelled = true;
-            window.clearInterval(coverageInterval);
-        };
-    }, [campaign?._id, isAdmin, isRaceFinished]);
+        setRunnerCameraAvailability({});
+        runnerCameraRequestKeyRef.current = new Map();
+    }, [campaign?._id]);
 
     async function fetchEventData() {
         try {
@@ -757,6 +715,65 @@ export default function EventLivePage() {
         }
         return ranks;
     }, [filteredRunners, resolveRunnerCategoryKey]);
+
+    useEffect(() => {
+        if (!campaign?._id || filteredRunners.length === 0) return;
+
+        let cancelled = false;
+        const runnersToLoad = filteredRunners.filter((runner) => {
+            if (!runner._id) return false;
+            if (!runner.scanTime && !runner.latestCheckpoint && !runner.statusCheckpoint) return false;
+
+            const requestKey = [runner.latestCheckpoint || '', runner.statusCheckpoint || '', runner.scanTime || ''].join('|');
+            if (runnerCameraRequestKeyRef.current.get(runner._id) === requestKey) return false;
+            runnerCameraRequestKeyRef.current.set(runner._id, requestKey);
+            return true;
+        });
+
+        if (runnersToLoad.length === 0) return;
+
+        (async () => {
+            const updates = await Promise.all(runnersToLoad.map(async (runner) => {
+                try {
+                    const res = await fetch(`/api/runner/${runner._id}/cctv`, { cache: 'no-store' });
+                    const payload = await res.json().catch(() => ({}));
+                    const hits: RunnerCameraHit[] = payload?.status?.code === '200' && Array.isArray(payload?.data?.hits)
+                        ? payload.data.hits
+                        : [];
+
+                    const checkpointMap: Record<string, boolean> = {};
+                    hits.forEach((hit) => {
+                        const key = normalizeComparableText(hit?.checkpoint);
+                        if (key && hit?.recording) checkpointMap[key] = true;
+                    });
+
+                    return { runnerId: runner._id, checkpointMap, shouldRetry: false };
+                } catch {
+                    return { runnerId: runner._id, checkpointMap: {}, shouldRetry: true };
+                }
+            }));
+
+            if (cancelled) return;
+
+            updates.forEach((update) => {
+                if (update.shouldRetry) {
+                    runnerCameraRequestKeyRef.current.delete(update.runnerId);
+                }
+            });
+
+            setRunnerCameraAvailability((prev) => {
+                const next = { ...prev };
+                updates.forEach((update) => {
+                    next[update.runnerId] = update.checkpointMap;
+                });
+                return next;
+            });
+        })();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [campaign?._id, filteredRunners]);
 
     const handleViewRunner = (runner: Runner) => {
         router.push(`/runner/${runner._id}`);
@@ -1223,10 +1240,8 @@ export default function EventLivePage() {
                                     }
 
                                     const statusCheckpointName = runner.statusCheckpoint || runner.latestCheckpoint || '';
-                                    const statusCheckpointRecordings = statusCheckpointName
-                                        ? checkpointCameraCoverage[normalizeComparableText(statusCheckpointName)] || []
-                                        : [];
-                                    const statusCheckpointHasCamera = statusCheckpointRecordings.length > 0;
+                                    const statusCheckpointKey = normalizeComparableText(statusCheckpointName);
+                                    const statusCheckpointHasCamera = !!statusCheckpointKey && !!runnerCameraAvailability[runner._id]?.[statusCheckpointKey];
                                     const statusScanTimeLabel = !isRaceFinished && runner.scanTime
                                         ? (() => {
                                             const d = new Date(runner.scanTime!);
