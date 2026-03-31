@@ -90,7 +90,9 @@ export default function CctvRecordingsPage() {
     const [videoSrc, setVideoSrc] = useState<string | null>(null);
     const [videoLoading, setVideoLoading] = useState(false);
     const [seekTarget, setSeekTarget] = useState<number>(0);
+    const [knownDuration, setKnownDuration] = useState<number>(0);
     const videoRef = useRef<HTMLVideoElement>(null);
+    const seekAppliedRef = useRef(false);
 
     // Runner lookup
     const [bibSearch, setBibSearch] = useState('');
@@ -196,30 +198,30 @@ export default function CctvRecordingsPage() {
         } finally { setDeleting(false); }
     };
 
-    const openPlayerWithSeek = useCallback(async (recId: string, name: string, seek: number) => {
+    const openPlayerWithSeek = useCallback((recId: string, name: string, seek: number, duration?: number) => {
         setPlayingId(recId);
         setPlayingName(name);
         setSeekTarget(seek);
-        setVideoSrc(null);
+        setKnownDuration(duration || 0);
+        seekAppliedRef.current = false;
         setVideoLoading(true);
-        try {
-            const res = await fetch(`/api/cctv-recordings/${recId}/stream`, { headers: authHeaders() });
-            if (res.ok) {
-                const blob = await res.blob();
-                setVideoSrc(URL.createObjectURL(blob));
-            }
-        } finally { setVideoLoading(false); }
+        // Use stream URL directly so browser can make Range requests for seeking
+        const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
+        const url = `/api/cctv-recordings/${recId}/stream${token ? `?token=${encodeURIComponent(token)}` : ''}`;
+        setVideoSrc(url);
+        setVideoLoading(false);
     }, []);
 
-    const openPlayer = useCallback(async (rec: Recording) => {
-        openPlayerWithSeek(rec._id, `${rec.cameraName} — ${fmtDate(rec.startTime)}`, 0);
+    const openPlayer = useCallback((rec: Recording) => {
+        openPlayerWithSeek(rec._id, `${rec.cameraName} — ${fmtDate(rec.startTime)}`, 0, rec.duration);
     }, [openPlayerWithSeek]);
 
     const closePlayer = () => {
         videoRef.current?.pause();
-        if (videoSrc) URL.revokeObjectURL(videoSrc);
         setVideoSrc(null);
         setPlayingId(null);
+        setKnownDuration(0);
+        seekAppliedRef.current = false;
     };
 
     const allSelected = recordings.length > 0 && selected.size === recordings.length;
@@ -384,7 +386,7 @@ export default function CctvRecordingsPage() {
                                                     const seekSec = relation === 'before'
                                                         ? Math.max(0, rec.duration - seekOffsetSec)
                                                         : 0;
-                                                    openPlayerWithSeek(rec._id, `${rec.cameraName} — ${th ? 'ใกล้เคียงที่สุด' : 'Nearest'}`, seekSec);
+                                                    openPlayerWithSeek(rec._id, `${rec.cameraName} — ${th ? 'ใกล้เคียงที่สุด' : 'Nearest'}`, seekSec, rec.duration);
                                                 }}
                                                 className="text-xs font-bold text-amber-600 hover:text-amber-800 cursor-pointer bg-transparent border-none ml-3 shrink-0"
                                             >
@@ -414,7 +416,7 @@ export default function CctvRecordingsPage() {
                                         <span className="ml-2 text-xs text-slate-400">{fmtDate(rec.startTime)} — {fmtDuration(rec.duration)}</span>
                                     </div>
                                     <button
-                                        onClick={() => openPlayerWithSeek(rec._id, `${rec.cameraName} — ${new Date(timeSearch).toLocaleTimeString('th-TH')}`, seekSec)}
+                                        onClick={() => openPlayerWithSeek(rec._id, `${rec.cameraName} — ${new Date(timeSearch).toLocaleTimeString('th-TH')}`, seekSec, rec.duration)}
                                         className="text-xs font-bold text-emerald-600 hover:text-emerald-800 cursor-pointer bg-transparent border-none"
                                     >
                                         ▶ {th ? 'ดูตรงเวลา' : 'Watch at time'} ({fmtDuration(seekSec)})
@@ -459,6 +461,7 @@ export default function CctvRecordingsPage() {
                                                         hit.recording!._id,
                                                         `BIB ${bibSearch} — ${hit.checkpoint} — ${fmtTime(hit.scanTime)}`,
                                                         Math.max(0, hit.seekSeconds - seekOffsetSec),
+                                                        hit.recording!.duration,
                                                     )}
                                                     className="text-xs font-bold text-blue-600 hover:text-blue-800 cursor-pointer bg-transparent border-none"
                                                 >
@@ -672,12 +675,40 @@ export default function CctvRecordingsPage() {
                                 src={videoSrc}
                                 controls
                                 autoPlay
+                                preload="auto"
                                 className="max-w-full max-h-full rounded-lg shadow-2xl"
                                 style={{ maxHeight: 'calc(100vh - 80px)' }}
                                 onClick={e => e.stopPropagation()}
+                                onLoadedMetadata={() => {
+                                    const vid = videoRef.current;
+                                    if (!vid) return;
+                                    // WebM from MediaRecorder often has Infinity duration
+                                    // Fix: set a very large currentTime to force the browser to discover the real duration
+                                    if (!isFinite(vid.duration) && knownDuration > 0) {
+                                        vid.currentTime = 1e101;
+                                    }
+                                }}
+                                onDurationChange={() => {
+                                    const vid = videoRef.current;
+                                    if (!vid) return;
+                                    // After the browser discovers the real duration (from the jump trick),
+                                    // apply the seek target
+                                    if (isFinite(vid.duration) && !seekAppliedRef.current) {
+                                        seekAppliedRef.current = true;
+                                        if (seekTarget > 0) {
+                                            vid.currentTime = Math.min(seekTarget, vid.duration - 0.5);
+                                        }
+                                    }
+                                }}
                                 onLoadedData={() => {
-                                    if (seekTarget > 0 && videoRef.current) {
-                                        videoRef.current.currentTime = seekTarget;
+                                    const vid = videoRef.current;
+                                    if (!vid) return;
+                                    // Fallback: if duration is finite and seek hasn't been applied yet
+                                    if (isFinite(vid.duration) && !seekAppliedRef.current) {
+                                        seekAppliedRef.current = true;
+                                        if (seekTarget > 0) {
+                                            vid.currentTime = Math.min(seekTarget, vid.duration - 0.5);
+                                        }
                                     }
                                 }}
                             />

@@ -7,6 +7,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { useLanguage } from '@/lib/language-context';
 import { useTheme } from '@/lib/theme-context';
 import { useAuth } from '@/lib/auth-context';
+import { authHeaders } from '@/lib/authHeaders';
 import CutoffDateTimePicker from '@/components/CutoffDateTimePicker';
 
 interface Campaign {
@@ -261,6 +262,7 @@ export default function EventLivePage() {
     const [editCheckpoint, setEditCheckpoint] = useState('');
     const [editNote, setEditNote] = useState('');
     const [editSaving, setEditSaving] = useState(false);
+    const [editSaveError, setEditSaveError] = useState<string | null>(null);
 
     // Checkpoint timing data for edit modal
     const [editCheckpoints, setEditCheckpoints] = useState<{name: string; orderNum: number; type: string}[]>([]);
@@ -685,6 +687,7 @@ export default function EventLivePage() {
         setEditStatus(runner.status);
         setEditCheckpoint(runner.statusCheckpoint || runner.latestCheckpoint || '');
         setEditNote(runner.statusNote || '');
+        setEditSaveError(null);
         setEditTimingChanges({});
         setEditTimingSaveMsg(null);
 
@@ -723,10 +726,11 @@ export default function EventLivePage() {
     const handleStatusUpdate = async () => {
         if (!editingRunner) return;
         setEditSaving(true);
+        setEditSaveError(null);
         try {
             const res = await fetch(`/api/runners/${editingRunner._id}/status`, {
                 method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
+                headers: authHeaders(),
                 body: JSON.stringify({
                     status: editStatus,
                     statusCheckpoint: editCheckpoint || undefined,
@@ -734,17 +738,37 @@ export default function EventLivePage() {
                     changedBy: 'admin',
                 }),
             });
-            if (res.ok) {
-                // Update local state immediately
-                setRunners(prev => prev.map(r =>
-                    r._id === editingRunner._id
-                        ? { ...r, status: editStatus, statusCheckpoint: editCheckpoint, statusNote: editNote, statusChangedAt: new Date().toISOString() }
-                        : r
-                ));
-                setEditingRunner(null);
+            if (!res.ok) {
+                let message = language === 'th' ? 'บันทึกข้อมูลไม่สำเร็จ' : 'Failed to save runner status';
+                try {
+                    const payload = await res.json();
+                    const rawMessage = payload?.message || payload?.error;
+                    if (Array.isArray(rawMessage)) {
+                        message = rawMessage.join(', ');
+                    } else if (typeof rawMessage === 'string' && rawMessage.trim()) {
+                        message = rawMessage;
+                    }
+                } catch {
+                    try {
+                        const text = await res.text();
+                        if (text.trim()) message = text;
+                    } catch {
+                    }
+                }
+                throw new Error(message);
             }
-        } catch { /* ignore */ }
-        setEditSaving(false);
+
+            setRunners(prev => prev.map(r =>
+                r._id === editingRunner._id
+                    ? { ...r, status: editStatus, statusCheckpoint: editCheckpoint, statusNote: editNote, statusChangedAt: new Date().toISOString() }
+                    : r
+            ));
+            setEditingRunner(null);
+        } catch (err: unknown) {
+            setEditSaveError(err instanceof Error ? err.message : (language === 'th' ? 'บันทึกข้อมูลไม่สำเร็จ' : 'Failed to save runner status'));
+        } finally {
+            setEditSaving(false);
+        }
     };
 
     // Loading state
@@ -1932,6 +1956,12 @@ export default function EventLivePage() {
                                 </div>
                             )}
                         </div>
+
+                        {editSaveError && (
+                            <div style={{ marginBottom: 12, borderRadius: 8, border: '1px solid #fecaca', background: '#fef2f2', padding: '10px 12px', fontSize: 12, fontWeight: 600, color: '#b91c1c' }}>
+                                {editSaveError}
+                            </div>
+                        )}
 
                         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
                             <button
