@@ -1338,12 +1338,16 @@ export default function EventLivePage() {
                                                             )}
                                                         </div>
                                                         {statusCheckpointName && (
-                                                            <div style={{ marginTop: 2, minWidth: 0, overflow: 'hidden' }}>
-                                                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, maxWidth: '100%', minWidth: 0, fontSize: isMobile ? 8 : 9, color: runner.statusCheckpoint ? '#dc2626' : '#1e293b', textTransform: 'uppercase', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', verticalAlign: 'top' }}>
-                                                                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{statusCheckpointName}</span>
-                                                                    {runner.statusNote && <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>· {runner.statusNote}</span>}
-                                                                    {statusScanTimeLabel && <span style={{ flexShrink: 0 }}>· {statusScanTimeLabel}</span>}
+                                                            <div style={{ marginTop: 2, minWidth: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 1 }}>
+                                                                <span style={{ display: 'block', maxWidth: '100%', minWidth: 0, fontSize: isMobile ? 8 : 9, color: runner.statusCheckpoint ? '#dc2626' : '#1e293b', textTransform: 'uppercase', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', verticalAlign: 'top' }}>
+                                                                    {statusCheckpointName}
+                                                                    {runner.statusNote ? ` · ${runner.statusNote}` : ''}
                                                                 </span>
+                                                                {statusScanTimeLabel && (
+                                                                    <span style={{ display: 'block', maxWidth: '100%', fontSize: isMobile ? 8 : 9, color: runner.statusCheckpoint ? '#dc2626' : '#1e293b', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                                                        · {statusScanTimeLabel}
+                                                                    </span>
+                                                                )}
                                                             </div>
                                                         )}
                                                     </td>

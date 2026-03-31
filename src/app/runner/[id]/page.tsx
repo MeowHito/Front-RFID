@@ -74,6 +74,24 @@ interface CheckpointMappingData {
     active?: boolean;
 }
 
+interface RunnerHit {
+    checkpoint: string;
+    scanTime: string;
+    elapsedTime: number | null;
+    splitTime: number | null;
+    recording: {
+        _id: string;
+        cameraName: string;
+        checkpointName?: string;
+        startTime: string;
+        endTime?: string | null;
+        duration: number;
+        fileSize: number;
+        recordingStatus?: string;
+    } | null;
+    seekSeconds: number;
+}
+
 function formatTime(ms?: number | null): string {
     if (!ms || ms <= 0) return '--:--:--';
     const totalSeconds = Math.floor(ms / 1000);
@@ -88,6 +106,29 @@ function formatTimeOfDay(dateStr?: string): string {
     const d = new Date(dateStr);
     if (isNaN(d.getTime())) return '--:--:--';
     return d.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
+
+function normalizeCheckpoint(value?: string | null): string {
+    return String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+function formatBytes(bytes?: number | null): string {
+    if (!bytes || bytes <= 0) return '--';
+    const units = ['B', 'KB', 'MB', 'GB'];
+    let value = bytes;
+    let unitIndex = 0;
+    while (value >= 1024 && unitIndex < units.length - 1) {
+        value /= 1024;
+        unitIndex += 1;
+    }
+    return `${value >= 100 || unitIndex === 0 ? value.toFixed(0) : value.toFixed(1)} ${units[unitIndex]}`;
+}
+
+function formatDateTime(dateStr?: string | null): string {
+    if (!dateStr) return '-';
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return '-';
+    return d.toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'medium' });
 }
 
 function getStatusLabel(status: string): { text: string; bg: string; color: string } {
@@ -106,6 +147,31 @@ function parseDistanceValue(value: unknown): number | null {
     if (!match) return null;
     const parsed = Number(match[0]);
     return Number.isFinite(parsed) ? parsed : null;
+}
+
+function CheckpointCameraIcon() {
+    return (
+        <span
+            aria-label="มีวิดีโอ CCTV"
+            title="มีวิดีโอ CCTV"
+            style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: 16,
+                height: 16,
+                borderRadius: 999,
+                border: '1px solid #bfdbfe',
+                background: '#dbeafe',
+                color: '#1d4ed8',
+                flexShrink: 0,
+            }}
+        >
+            <svg viewBox="0 0 24 24" fill="currentColor" style={{ width: 9, height: 9 }}>
+                <path d="M4 7.75A2.75 2.75 0 0 1 6.75 5h6.5A2.75 2.75 0 0 1 16 7.75v.8l2.73-1.95A1.5 1.5 0 0 1 21 7.82v8.36a1.5 1.5 0 0 1-2.27 1.22L16 15.45v.8A2.75 2.75 0 0 1 13.25 19h-6.5A2.75 2.75 0 0 1 4 16.25v-8.5Z" />
+            </svg>
+        </span>
+    );
 }
 
 /** Auto-shrink text to always fit one line within its container */
@@ -136,6 +202,12 @@ export default function RunnerProfilePage() {
     const [checkpointRanks, setCheckpointRanks] = useState<Record<string, number>>({});
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [lookupLoading, setLookupLoading] = useState(false);
+    const [lookupLoaded, setLookupLoaded] = useState(false);
+    const [runnerHits, setRunnerHits] = useState<RunnerHit[]>([]);
+    const [selectedCheckpointKey, setSelectedCheckpointKey] = useState('');
+    const [preArrivalBufferSeconds, setPreArrivalBufferSeconds] = useState(5);
+    const videoSectionRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
         if (!runnerId) return;
@@ -159,6 +231,53 @@ export default function RunnerProfilePage() {
                 setLoading(false);
             }
         })();
+    }, [runnerId]);
+
+    useEffect(() => {
+        fetch('/api/cctv-settings', { cache: 'no-store' })
+            .then((response) => response.json())
+            .then((settings) => {
+                const nextValue = Number(settings?.preArrivalBuffer);
+                if (Number.isFinite(nextValue) && nextValue >= 0) {
+                    setPreArrivalBufferSeconds(nextValue);
+                }
+            })
+            .catch(() => {});
+    }, []);
+
+    useEffect(() => {
+        setLookupLoaded(false);
+        setLookupLoading(false);
+        setRunnerHits([]);
+        setSelectedCheckpointKey('');
+    }, [runnerId]);
+
+    useEffect(() => {
+        if (!runnerId) return;
+        let cancelled = false;
+        (async () => {
+            try {
+                setLookupLoading(true);
+                const res = await fetch(`/api/runner/${runnerId}/cctv`, { cache: 'no-store' });
+                const json = await res.json();
+                if (cancelled) return;
+                if (json.status?.code === '200') {
+                    setRunnerHits(Array.isArray(json.data?.hits) ? json.data.hits : []);
+                } else {
+                    setRunnerHits([]);
+                }
+            } catch {
+                if (!cancelled) setRunnerHits([]);
+            } finally {
+                if (!cancelled) {
+                    setLookupLoaded(true);
+                    setLookupLoading(false);
+                }
+            }
+        })();
+        return () => {
+            cancelled = true;
+        };
     }, [runnerId]);
 
     if (loading) {
@@ -201,6 +320,8 @@ export default function RunnerProfilePage() {
 
     // Sort timings by order
     const sortedTimings = [...timings].sort((a, b) => (a.order || 0) - (b.order || 0));
+    const runnerHitMap = new Map(runnerHits.map(hit => [normalizeCheckpoint(hit.checkpoint), hit]));
+    const availableVideoCount = runnerHits.filter(hit => hit.recording).length;
 
     // Build checkpoint rows from checkpoint mappings (fallback when no timing records)
     const checkpointRows = cpMappings
@@ -228,6 +349,29 @@ export default function RunnerProfilePage() {
 
     // Find latest checkpoint index for timing records
     const latestCpIdx = sortedTimings.length - 1;
+    const selectedTiming = selectedCheckpointKey
+        ? sortedTimings.find(record => normalizeCheckpoint(record.checkpoint) === selectedCheckpointKey) || null
+        : null;
+    const selectedFallbackCheckpoint = selectedCheckpointKey
+        ? checkpointRows.find(cp => normalizeCheckpoint(cp.name) === selectedCheckpointKey) || null
+        : null;
+    const selectedHit = selectedCheckpointKey ? runnerHitMap.get(selectedCheckpointKey) || null : null;
+    const hasSelectedCheckpoint = selectedCheckpointKey !== '';
+    const selectedCheckpointName = selectedTiming?.checkpoint || selectedFallbackCheckpoint?.name || selectedHit?.checkpoint || '';
+    const videoSeekSeconds = Math.max(0, (selectedHit?.seekSeconds || 0) - preArrivalBufferSeconds);
+    const streamUrl = selectedHit?.recording
+        ? `/api/runner/${runnerId}/cctv/${selectedHit.recording._id}/stream`
+        : '';
+    const downloadUrl = selectedHit?.recording
+        ? `/api/runner/${runnerId}/cctv/${selectedHit.recording._id}/stream?download=1`
+        : '';
+
+    const openCheckpointVideo = (checkpointKey: string) => {
+        setSelectedCheckpointKey(checkpointKey);
+        window.setTimeout(() => {
+            videoSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }, 80);
+    };
 
     return (
         <div style={{ minHeight: '100vh', background: '#f8fafc', fontFamily: "'Prompt', sans-serif", color: '#1e293b' }}>
@@ -286,9 +430,12 @@ export default function RunnerProfilePage() {
                     </div>
 
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                        <Link href={`/runner/${runnerId}/follow`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0f172a', color: '#fff', padding: '10px 24px', borderRadius: 12, fontWeight: 700, fontSize: 14, textDecoration: 'none', border: 'none', cursor: 'pointer' }}>
-                            ติดตามนักวิ่ง
-                        </Link>
+                        <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', background: '#0f172a', color: '#fff', padding: '10px 24px', borderRadius: 12, minWidth: 240, minHeight: 44 }}>
+                            <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: 1.5, textTransform: 'uppercase', color: '#cbd5e1' }}>Checkpoint CCTV</div>
+                            <div style={{ marginTop: 4, fontSize: 12, color: '#cbd5e1', fontWeight: 700 }}>
+                                {lookupLoading ? 'กำลังค้นหาวิดีโอ CCTV...' : lookupLoaded ? `พบวิดีโอ ${availableVideoCount} จุด` : 'กำลังโหลดข้อมูลวิดีโอ'}
+                            </div>
+                        </div>
                         {isFinished ? (
                             <>
                                 <Link href={`/runner/${runnerId}/eslip`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, background: '#16a34a', color: '#fff', padding: '10px 24px', borderRadius: 12, fontWeight: 700, fontSize: 14, textDecoration: 'none', border: 'none', cursor: 'pointer' }}>
@@ -303,7 +450,7 @@ export default function RunnerProfilePage() {
                             </>
                         ) : (
                             <div style={{ background: '#f1f5f9', color: '#94a3b8', padding: '10px 24px', borderRadius: 12, fontWeight: 700, fontSize: 13, textAlign: 'center', border: '1px solid #e2e8f0' }}>
-                                ⏳ ยังวิ่งไม่จบ
+                                ⏳ ยังวิ่งไม่จบ แต่ถ้ามีกล้องใน Checkpoint ก็เปิดดูได้ทันที
                             </div>
                         )}
                     </div>
@@ -388,6 +535,10 @@ export default function RunnerProfilePage() {
                             </thead>
                             <tbody>
                                 {sortedTimings.length > 0 ? sortedTimings.map((record, i) => {
+                                    const rowKey = normalizeCheckpoint(record.checkpoint);
+                                    const rowHit = runnerHitMap.get(rowKey) || null;
+                                    const rowHasVideo = !!rowHit?.recording;
+                                    const isSelected = rowKey === selectedCheckpointKey;
                                     const isFinishCp = record.checkpoint?.toLowerCase().includes('finish');
                                     const isStartCp = record.checkpoint?.toLowerCase().includes('start');
                                     const isCurrent = i === latestCpIdx && !isFinished;
@@ -410,7 +561,13 @@ export default function RunnerProfilePage() {
                                     const rankDelta = (cpRank !== null && prevRank !== null) ? prevRank - cpRank : null;
 
                                     return (
-                                        <tr key={record._id} className="checkpoint-row" style={{ background: isCurrent ? 'rgba(34,197,94,0.05)' : undefined }}>
+                                        <tr
+                                            key={record._id}
+                                            className="checkpoint-row"
+                                            onClick={() => openCheckpointVideo(rowKey)}
+                                            title={rowHasVideo ? 'คลิกเพื่อดูวิดีโอ CCTV' : 'คลิกเพื่อดูรายละเอียด Checkpoint'}
+                                            style={{ background: isSelected ? '#eff6ff' : isCurrent ? 'rgba(34,197,94,0.05)' : undefined, cursor: 'pointer' }}
+                                        >
                                             <td style={{ padding: '16px 16px', fontWeight: 800, fontSize: 16, color: '#0f172a', whiteSpace: 'nowrap' }}>
                                                 {isStartCp ? '-' : cpRank ?? '-'}
                                                 {rankDelta !== null && rankDelta !== 0 && (
@@ -421,7 +578,8 @@ export default function RunnerProfilePage() {
                                             </td>
                                             <td style={{ padding: '16px 16px', fontWeight: 700, fontSize: 14, color: isFinishCp ? '#0f172a' : isCurrent ? '#16a34a' : isStartCp ? '#94a3b8' : '#16a34a', display: 'flex', alignItems: 'center', gap: 8 }}>
                                                 {isCurrent && <span style={{ fontSize: 10, background: '#16a34a', color: '#fff', padding: '1px 6px', borderRadius: 4 }}>Current</span>}
-                                                {record.checkpoint}
+                                                <span>{record.checkpoint}</span>
+                                                {rowHasVideo && <CheckpointCameraIcon />}
                                             </td>
                                             <td style={{ padding: '16px 8px', fontSize: 12, fontWeight: 700, color: '#64748b' }}>
                                                 {record.distanceFromStart != null ? `${record.distanceFromStart} KM` : '-'}
@@ -441,13 +599,23 @@ export default function RunnerProfilePage() {
                                         </tr>
                                     );
                                 }) : checkpointRows.length > 0 ? checkpointRows.map((cp, i) => {
+                                    const rowKey = normalizeCheckpoint(cp.name);
+                                    const rowHit = runnerHitMap.get(rowKey) || null;
+                                    const rowHasVideo = !!rowHit?.recording;
+                                    const isSelected = rowKey === selectedCheckpointKey;
                                     const passed = i <= passedUpToIdx;
                                     const isCurrent = i === passedUpToIdx && !isFinished;
                                     const isFinishCp = cp.type === 'finish';
                                     const isStartCp = cp.type === 'start';
                                     const cpRank = checkpointRanks[cp.name] ?? null;
                                     return (
-                                        <tr key={`cp-${i}`} className="checkpoint-row" style={{ background: isCurrent ? 'rgba(34,197,94,0.05)' : undefined, opacity: passed ? 1 : 0.4 }}>
+                                        <tr
+                                            key={`cp-${i}`}
+                                            className="checkpoint-row"
+                                            onClick={() => openCheckpointVideo(rowKey)}
+                                            title={rowHasVideo ? 'คลิกเพื่อดูวิดีโอ CCTV' : 'คลิกเพื่อดูรายละเอียด Checkpoint'}
+                                            style={{ background: isSelected ? '#eff6ff' : isCurrent ? 'rgba(34,197,94,0.05)' : undefined, opacity: passed ? 1 : 0.4, cursor: 'pointer' }}
+                                        >
                                             <td style={{ padding: '16px 16px', fontWeight: 800, fontSize: 16, color: passed ? '#0f172a' : '#cbd5e1' }}>
                                                 {isStartCp ? '-' : (passed && cpRank ? cpRank : '-')}
                                             </td>
@@ -455,7 +623,8 @@ export default function RunnerProfilePage() {
                                                 {isCurrent && <span style={{ fontSize: 10, background: '#16a34a', color: '#fff', padding: '1px 6px', borderRadius: 4 }}>Current</span>}
                                                 {passed && !isCurrent && <span style={{ color: '#22c55e', fontSize: 14 }}>✓</span>}
                                                 {!passed && <span style={{ color: '#cbd5e1', fontSize: 14 }}>○</span>}
-                                                {cp.name}
+                                                <span>{cp.name}</span>
+                                                {rowHasVideo && <CheckpointCameraIcon />}
                                             </td>
                                             <td style={{ padding: '16px 8px', fontSize: 12, fontWeight: 700, color: passed ? '#64748b' : '#cbd5e1' }}>
                                                 {cp.distanceFromStart != null ? `${cp.distanceFromStart} KM` : '-'}
@@ -480,6 +649,90 @@ export default function RunnerProfilePage() {
                             </tbody>
                         </table>
                     </div>
+                </div>}
+
+                {campaign?.displayMode !== 'lab' && <div ref={videoSectionRef} style={{ background: '#fff', borderRadius: 16, border: '1px solid #e2e8f0', overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.04)', marginTop: 24 }}>
+                    <div style={{ padding: '16px 24px', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                        <div>
+                            <h3 style={{ fontWeight: 900, textTransform: 'uppercase', fontSize: 13, letterSpacing: 2, color: '#64748b', margin: 0 }}>Checkpoint CCTV</h3>
+                            <p style={{ margin: '6px 0 0', fontSize: 13, color: '#64748b' }}>กดที่ Checkpoint ที่มีรูปกล้องเพื่อเปิดวิดีโอของนักวิ่งคนนั้นและบันทึกไฟล์ได้ทันที</p>
+                        </div>
+                        <span style={{ fontSize: 12, fontWeight: 700, color: '#475569' }}>
+                            {lookupLoading || !lookupLoaded ? 'กำลังค้นหาวิดีโอ CCTV...' : selectedHit?.recording ? 'พร้อมดูและบันทึกวิดีโอ' : hasSelectedCheckpoint ? 'ยังไม่พบวิดีโอของ Checkpoint ที่เลือก' : availableVideoCount > 0 ? 'มีวิดีโอพร้อมให้เลือกตาม Checkpoint' : 'กดเลือก Checkpoint เพื่อดูรายละเอียด'}
+                        </span>
+                    </div>
+
+                    {lookupLoading || !lookupLoaded ? (
+                        <div style={{ padding: 32, textAlign: 'center', color: '#64748b', fontSize: 14 }}>
+                            กำลังค้นหาวิดีโอ CCTV ที่ตรงกับเวลาผ่านจุดของนักวิ่ง...
+                        </div>
+                    ) : selectedHit?.recording ? (
+                        <div style={{ padding: 24 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap' }}>
+                                <div>
+                                    <h4 style={{ margin: 0, fontSize: 24, fontWeight: 900, color: '#0f172a' }}>{selectedCheckpointName}</h4>
+                                    <p style={{ margin: '8px 0 0', fontSize: 13, color: '#64748b' }}>ระบบจะเริ่มวิดีโอก่อนเวลาผ่านจุดประมาณ {preArrivalBufferSeconds} วินาที ตามค่าที่ตั้งในระบบ</p>
+                                </div>
+                                <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 12, padding: '12px 16px', fontSize: 13, color: '#475569', minWidth: 240 }}>
+                                    <div>กล้อง: <strong style={{ color: '#0f172a' }}>{selectedHit.recording.cameraName}</strong></div>
+                                    <div style={{ marginTop: 4 }}>เวลาในระบบ: <strong style={{ color: '#0f172a' }}>{formatTimeOfDay(selectedHit.scanTime)}</strong></div>
+                                    <div style={{ marginTop: 4, fontSize: 12, color: '#64748b' }}>เริ่มไฟล์ {formatDateTime(selectedHit.recording.startTime)}</div>
+                                </div>
+                            </div>
+
+                            <div style={{ marginTop: 20, overflow: 'hidden', borderRadius: 20, border: '1px solid #e2e8f0', background: '#020617', boxShadow: '0 16px 40px rgba(15,23,42,0.18)' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, padding: '12px 16px', borderBottom: '1px solid rgba(255,255,255,0.08)', color: '#cbd5e1', fontSize: 11, fontWeight: 800, letterSpacing: 1.5, textTransform: 'uppercase' }}>
+                                    <span>{selectedCheckpointName}</span>
+                                    <span style={{ color: selectedHit.recording.recordingStatus === 'recording' ? '#f87171' : '#4ade80' }}>
+                                        {selectedHit.recording.recordingStatus === 'recording' ? 'Live CCTV' : 'CCTV Replay'}
+                                    </span>
+                                </div>
+                                <video
+                                    key={`${selectedHit.recording._id}-${videoSeekSeconds}`}
+                                    src={streamUrl}
+                                    controls
+                                    preload="metadata"
+                                    style={{ width: '100%', aspectRatio: '16 / 9', background: '#000' }}
+                                    onLoadedMetadata={(event) => {
+                                        const video = event.currentTarget;
+                                        if (Number.isFinite(videoSeekSeconds)) {
+                                            try {
+                                                video.currentTime = videoSeekSeconds;
+                                            } catch {
+                                                return;
+                                            }
+                                        }
+                                    }}
+                                />
+                            </div>
+
+                            <div style={{ marginTop: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, flexWrap: 'wrap', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 16, padding: 16 }}>
+                                <div style={{ fontSize: 13, color: '#475569' }}>
+                                    <div>เริ่มเล่นที่ตำแหน่ง <strong style={{ color: '#0f172a' }}>{formatTime(videoSeekSeconds * 1000)}</strong></div>
+                                    <div style={{ marginTop: 4 }}>ขนาดไฟล์ <strong style={{ color: '#0f172a' }}>{formatBytes(selectedHit.recording.fileSize)}</strong></div>
+                                    {selectedHit.recording.recordingStatus === 'recording' && (
+                                        <div style={{ marginTop: 4, color: '#dc2626', fontWeight: 700 }}>กำลังถ่ายทอดสดอยู่ สามารถกดดูหรือบันทึกได้ทันที</div>
+                                    )}
+                                </div>
+                                <a href={downloadUrl} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: '#16a34a', color: '#fff', padding: '10px 20px', borderRadius: 12, fontWeight: 700, fontSize: 14, textDecoration: 'none' }}>
+                                    บันทึกวิดีโอจุดนี้
+                                </a>
+                            </div>
+                        </div>
+                    ) : hasSelectedCheckpoint ? (
+                        <div style={{ padding: 32, textAlign: 'center' }}>
+                            <div style={{ fontSize: 44 }}>�</div>
+                            <h4 style={{ margin: '12px 0 0', fontSize: 22, fontWeight: 900, color: '#0f172a' }}>ยังไม่พบวิดีโอ CCTV ของนักวิ่งคนนี้</h4>
+                            <p style={{ margin: '8px auto 0', maxWidth: 560, fontSize: 14, color: '#64748b' }}>Checkpoint ที่คุณกดไม่มีวิดีโอที่ตรงกับช่วงเวลาของนักวิ่งคนนี้</p>
+                        </div>
+                    ) : availableVideoCount > 0 ? (
+                        <div style={{ padding: 32, textAlign: 'center' }}>
+                            <div style={{ fontSize: 44 }}>�</div>
+                            <h4 style={{ margin: '12px 0 0', fontSize: 22, fontWeight: 900, color: '#0f172a' }}>เลือก Checkpoint ที่มีรูปกล้องเพื่อดูวิดีโอ</h4>
+                            <p style={{ margin: '8px auto 0', maxWidth: 560, fontSize: 14, color: '#64748b' }}>ถ้า Checkpoint ไหนไม่มีรูปกล้อง แปลว่ายังไม่พบวิดีโอที่ตรงกับช่วงเวลาของนักวิ่งคนนั้น และกดแล้วจะไม่มีอะไรเกิดขึ้น</p>
+                        </div>
+                    ) : null
+                    }
                 </div>}
 
                 {/* LAP RESULTS TABLE — Lab mode only */}
