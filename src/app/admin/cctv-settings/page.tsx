@@ -15,29 +15,34 @@ export default function CctvSettingsPage() {
     const [autoScale, setAutoScale] = useState(true);
     const [bufferMin, setBufferMin] = useState(15);
     const [preArrivalBuffer, setPreArrivalBuffer] = useState(30);
+    const [clipBufferSeconds, setClipBufferSeconds] = useState(10);
+    const [videoBitrateKbps, setVideoBitrateKbps] = useState(800);
+    const [loading, setLoading] = useState(true);
     const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
     const [pairingToken, setPairingToken] = useState('');
     const [tokenExpiry, setTokenExpiry] = useState(0);
 
-    // Load settings from localStorage on mount
+    // Load settings from API on mount
     useEffect(() => {
-        try {
-            const saved = localStorage.getItem('cctv_settings');
-            if (saved) {
-                const s = JSON.parse(saved);
-                if (s.selectedResolution) setSelectedResolution(s.selectedResolution);
+        fetch('/api/cctv-settings', { cache: 'no-store' })
+            .then(r => r.json())
+            .then(s => {
+                if (s.resolution) setSelectedResolution(s.resolution);
                 if (s.autoScale !== undefined) setAutoScale(s.autoScale);
-                if (s.bufferMin) setBufferMin(s.bufferMin);
+                if (s.bufferMinutes) setBufferMin(s.bufferMinutes);
                 if (s.preArrivalBuffer) setPreArrivalBuffer(s.preArrivalBuffer);
-            }
+                if (s.clipBufferSeconds) setClipBufferSeconds(s.clipBufferSeconds);
+                if (s.videoBitrateKbps) setVideoBitrateKbps(s.videoBitrateKbps);
+            })
+            .catch(() => {})
+            .finally(() => setLoading(false));
+
+        try {
             const savedToken = localStorage.getItem('cctv_pairing_token');
             if (savedToken) {
                 const t = JSON.parse(savedToken);
                 const remaining = Math.floor((t.expiresAt - Date.now()) / 1000);
-                if (remaining > 0) {
-                    setPairingToken(t.token);
-                    setTokenExpiry(remaining);
-                }
+                if (remaining > 0) { setPairingToken(t.token); setTokenExpiry(remaining); }
             }
         } catch { /* ignore */ }
     }, []);
@@ -72,9 +77,21 @@ export default function CctvSettingsPage() {
         return `${m.toString().padStart(2, '0')}:${ss.toString().padStart(2, '0')}`;
     };
 
-    const handleSave = () => {
+    const handleSave = async () => {
         try {
-            localStorage.setItem('cctv_settings', JSON.stringify({ selectedResolution, autoScale, bufferMin, preArrivalBuffer }));
+            const res = await fetch('/api/cctv-settings', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    resolution: selectedResolution,
+                    autoScale,
+                    bufferMinutes: bufferMin,
+                    preArrivalBuffer,
+                    clipBufferSeconds,
+                    videoBitrateKbps,
+                }),
+            });
+            if (!res.ok) throw new Error('API error');
             setToast({ msg: th ? 'บันทึกการตั้งค่าแล้ว' : 'Settings saved', type: 'success' });
         } catch {
             setToast({ msg: th ? 'เกิดข้อผิดพลาด' : 'Failed to save', type: 'error' });
@@ -184,7 +201,7 @@ export default function CctvSettingsPage() {
                         </div>
 
                         {/* Pre-Arrival Alert Buffer */}
-                        <div style={{ padding: '12px 16px', background: '#fff7ed', borderRadius: 10, border: '1.5px solid #fed7aa', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div style={{ padding: '12px 16px', background: '#fff7ed', borderRadius: 10, border: '1.5px solid #fed7aa', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
                             <div>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                                     <span style={{ fontSize: 13 }}>🏃</span>
@@ -212,6 +229,66 @@ export default function CctvSettingsPage() {
                                         ))}
                                     </div>
                                 )}
+                            </div>
+                        </div>
+
+                        {/* Clip Buffer Seconds — Save Clip window */}
+                        <div style={{ padding: '12px 16px', background: '#f0fdf4', borderRadius: 10, border: '1.5px solid #86efac', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                            <div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                    <span style={{ fontSize: 13 }}>💾</span>
+                                    <span style={{ fontWeight: 700, fontSize: 13, color: '#166534' }}>{th ? 'บัฟเฟอร์บันทึกคลิป (วินาที)' : 'Save Clip Buffer (Sec)'}</span>
+                                </div>
+                                <div style={{ fontSize: 11, color: '#166534', opacity: 0.75, marginTop: 2 }}>
+                                    {th ? `เมื่อ Staff กดปุ่ม SAVE ในหน้า /camera จะบันทึกวิดีโอย้อนหลัง ${clipBufferSeconds} วินาทีก่อนกดบันทึก` : `When staff taps SAVE on /camera, records the last ${clipBufferSeconds}s before the tap`}
+                                </div>
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <span style={{ padding: '4px 14px', borderRadius: 6, border: '1.5px solid #16a34a', fontWeight: 800, fontSize: 14, color: '#16a34a', background: '#fff' }}>{clipBufferSeconds}s</span>
+                                {isAdmin && (
+                                    <div style={{ display: 'flex', gap: 4 }}>
+                                        {[5, 10, 15, 20, 30].map(v => (
+                                            <button
+                                                key={v}
+                                                onClick={() => setClipBufferSeconds(v)}
+                                                style={{
+                                                    padding: '3px 8px', borderRadius: 5, fontSize: 11, fontWeight: 700, cursor: 'pointer',
+                                                    border: clipBufferSeconds === v ? 'none' : '1px solid #e2e8f0',
+                                                    background: clipBufferSeconds === v ? '#16a34a' : '#fff',
+                                                    color: clipBufferSeconds === v ? '#fff' : '#64748b',
+                                                }}
+                                            >{v}s</button>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Video Bitrate */}
+                        <div style={{ padding: '12px 16px', background: '#f8fafc', borderRadius: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                    <span style={{ fontSize: 13 }}>📶</span>
+                                    <span style={{ fontWeight: 700, fontSize: 13, color: '#0f172a' }}>{th ? 'Video Bitrate (kbps)' : 'Video Bitrate (kbps)'}</span>
+                                </div>
+                                <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>
+                                    {th ? 'ค่าต่ำ = ไฟล์เล็ก / ค่าสูง = คุณภาพดีขึ้น' : 'Lower = smaller files / Higher = better quality'}
+                                </div>
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                {isAdmin && [400, 800, 1200, 2000].map(v => (
+                                    <button
+                                        key={v}
+                                        onClick={() => setVideoBitrateKbps(v)}
+                                        style={{
+                                            padding: '3px 8px', borderRadius: 5, fontSize: 11, fontWeight: 700, cursor: 'pointer',
+                                            border: videoBitrateKbps === v ? 'none' : '1px solid #e2e8f0',
+                                            background: videoBitrateKbps === v ? '#000666' : '#fff',
+                                            color: videoBitrateKbps === v ? '#fff' : '#64748b',
+                                        }}
+                                    >{v}</button>
+                                ))}
+                                {!isAdmin && <span style={{ padding: '4px 12px', borderRadius: 6, border: '1px solid #e2e8f0', fontWeight: 700, fontSize: 13, color: '#0f172a' }}>{videoBitrateKbps} kbps</span>}
                             </div>
                         </div>
                     </div>

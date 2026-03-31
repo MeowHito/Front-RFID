@@ -52,14 +52,29 @@ export default function CameraPage() {
     const [savedCameraId, setSavedCameraId] = useState('');
     const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
 
+    const [clipSaveStatus, setClipSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+    const [videoBitrateKbps, setVideoBitrateKbps] = useState(800);
+
     const videoRef = useRef<HTMLVideoElement>(null);
     const streamRef = useRef<MediaStream | null>(null);
     const recorderRef = useRef<MediaRecorder | null>(null);
     const socketRef = useRef<Socket | null>(null);
     const elapsedRef = useRef<ReturnType<typeof setInterval> | null>(null);
     const startTimeRef = useRef<number>(0);
+    const initChunkRef = useRef<Blob | null>(null);
+    const chunkBufferRef = useRef<Blob[]>([]);
+    const mimeTypeRef = useRef<string>('');
+    const clipBufferSecsRef = useRef<number>(10);
 
     useEffect(() => {
+        fetch('/api/cctv-settings', { cache: 'no-store' })
+            .then(r => r.json())
+            .then(s => {
+                if (s.clipBufferSeconds) clipBufferSecsRef.current = s.clipBufferSeconds;
+                if (s.videoBitrateKbps) setVideoBitrateKbps(s.videoBitrateKbps);
+            })
+            .catch(() => {});
+
         fetch('/api/campaigns/featured', { cache: 'no-store' })
             .then(r => r.ok ? r.json() : null)
             .then(data => { if (data?._id) { setCampaignId(data._id); setCampaignName(data.name || data.nameTh || ''); } })
@@ -120,9 +135,23 @@ export default function CameraPage() {
             if (!regResult?.success) throw new Error('Registration failed');
             const camId = regResult.cameraId; setCameraId(camId);
             const mimeType = getSupportedMimeType();
-            const recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 800000 });
+            mimeTypeRef.current = mimeType;
+            initChunkRef.current = null;
+            chunkBufferRef.current = [];
+            const recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: videoBitrateKbps * 1000 });
             recorderRef.current = recorder;
-            recorder.ondataavailable = (e) => { if (e.data && e.data.size > 0 && socket.connected) { e.data.arrayBuffer().then(buf => { socket.emit('camera:chunk', { cameraId: camId, chunk: buf, mimeType }); setBytesSent(prev => prev + buf.byteLength); }); } };
+            recorder.ondataavailable = (e) => {
+                if (e.data && e.data.size > 0) {
+                    if (!initChunkRef.current) {
+                        initChunkRef.current = e.data;
+                    } else {
+                        chunkBufferRef.current.push(e.data);
+                        const maxChunks = Math.max(1, Math.ceil(clipBufferSecsRef.current / 2));
+                        if (chunkBufferRef.current.length > maxChunks) chunkBufferRef.current.shift();
+                    }
+                    if (socket.connected) { e.data.arrayBuffer().then(buf => { socket.emit('camera:chunk', { cameraId: camId, chunk: buf, mimeType }); setBytesSent(prev => prev + buf.byteLength); }); }
+                }
+            };
             recorder.onerror = () => setStatus('error');
             recorder.start(2000);
             setStatus('streaming'); startTimeRef.current = Date.now();
@@ -149,16 +178,56 @@ export default function CameraPage() {
             streamRef.current = newStream;
             if (videoRef.current) { videoRef.current.srcObject = newStream; await videoRef.current.play(); }
             // New recorder on same socket
+            initChunkRef.current = null;
+            chunkBufferRef.current = [];
             const socket = socketRef.current;
             const camId = cameraId;
             const mimeType = getSupportedMimeType();
-            const recorder = new MediaRecorder(newStream, { mimeType, videoBitsPerSecond: 800000 });
+            mimeTypeRef.current = mimeType;
+            const recorder = new MediaRecorder(newStream, { mimeType, videoBitsPerSecond: videoBitrateKbps * 1000 });
             recorderRef.current = recorder;
-            recorder.ondataavailable = (e) => { if (e.data && e.data.size > 0 && socket?.connected) { e.data.arrayBuffer().then(buf => { socket?.emit('camera:chunk', { cameraId: camId, chunk: buf, mimeType }); setBytesSent(prev => prev + buf.byteLength); }); } };
+            recorder.ondataavailable = (e) => {
+                if (e.data && e.data.size > 0) {
+                    if (!initChunkRef.current) { initChunkRef.current = e.data; }
+                    else { chunkBufferRef.current.push(e.data); const maxChunks = Math.max(1, Math.ceil(clipBufferSecsRef.current / 2)); if (chunkBufferRef.current.length > maxChunks) chunkBufferRef.current.shift(); }
+                    if (socket?.connected) { e.data.arrayBuffer().then(buf => { socket?.emit('camera:chunk', { cameraId: camId, chunk: buf, mimeType }); setBytesSent(prev => prev + buf.byteLength); }); }
+                }
+            };
             recorder.onerror = () => setStatus('error');
             recorder.start(2000);
         } catch (err: any) { setErrorMsg('ไม่สามารถสลับกล้องได้: ' + (err?.message || '')); }
-    }, [facingMode, status, cameraId]);
+    }, [facingMode, status, cameraId, videoBitrateKbps]);
+
+    const saveClip = useCallback(async () => {
+        if (status !== 'streaming' || !initChunkRef.current) return;
+        setClipSaveStatus('saving');
+        const mimeType = mimeTypeRef.current || 'video/webm';
+        const allChunks = [initChunkRef.current, ...chunkBufferRef.current];
+        const blob = new Blob(allChunks, { type: mimeType });
+        try {
+            const arrayBuffer = await blob.arrayBuffer();
+            const uint8 = new Uint8Array(arrayBuffer);
+            let binary = '';
+            const CHUNK = 8192;
+            for (let i = 0; i < uint8.length; i += CHUNK) {
+                binary += String.fromCharCode(...Array.from(uint8.subarray(i, i + CHUNK)));
+            }
+            const videoBase64 = btoa(binary);
+            const res = await fetch('/api/cctv-recordings/clip', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    videoBase64, mimeType, cameraId,
+                    cameraName: cameraName.trim(), campaignId, checkpointName, location, deviceId,
+                    durationSeconds: Math.min(chunkBufferRef.current.length * 2, clipBufferSecsRef.current),
+                }),
+            });
+            setClipSaveStatus(res.ok ? 'saved' : 'error');
+        } catch {
+            setClipSaveStatus('error');
+        }
+        setTimeout(() => setClipSaveStatus('idle'), 3000);
+    }, [status, cameraId, cameraName, campaignId, checkpointName, location, deviceId]);
 
     const cleanup = () => {
         recorderRef.current?.stop(); recorderRef.current = null;
@@ -374,10 +443,22 @@ export default function CameraPage() {
                                 หยุดการถ่ายทอด (STOP)
                             </button>
                         )}
-                        <button onClick={handleSavePreset}
-                            className="shrink-0 px-5 py-4 bg-transparent border border-[#adb3b4]/30 text-[#5f5e5e] text-xs font-bold tracking-widest uppercase cursor-pointer hover:bg-[#f2f4f4] transition-colors whitespace-nowrap">
-                            {saveStatus === 'saved' ? '✓ SAVED' : 'SAVE'}
-                        </button>
+                        {isStreaming ? (
+                            <button onClick={saveClip} disabled={clipSaveStatus === 'saving'}
+                                className={`shrink-0 px-5 py-4 text-xs font-bold tracking-widest uppercase cursor-pointer border transition-colors whitespace-nowrap ${
+                                    clipSaveStatus === 'saving' ? 'bg-[#e4e9ea] text-[#adb3b4] border-[#adb3b4]/20 cursor-not-allowed'
+                                    : clipSaveStatus === 'saved' ? 'bg-[#166534] text-white border-transparent'
+                                    : clipSaveStatus === 'error' ? 'bg-[#9f403d] text-white border-transparent'
+                                    : 'bg-[#166534]/10 text-[#166534] border-[#166534]/30 hover:bg-[#166534]/20'
+                                }`}>
+                                {clipSaveStatus === 'saving' ? '⏳ SAVING...' : clipSaveStatus === 'saved' ? '✓ CLIP SAVED' : clipSaveStatus === 'error' ? '✗ ERROR' : `💾 SAVE CLIP (${clipBufferSecsRef.current}s)`}
+                            </button>
+                        ) : (
+                            <button onClick={handleSavePreset}
+                                className="shrink-0 px-5 py-4 bg-transparent border border-[#adb3b4]/30 text-[#5f5e5e] text-xs font-bold tracking-widest uppercase cursor-pointer hover:bg-[#f2f4f4] transition-colors whitespace-nowrap">
+                                {saveStatus === 'saved' ? '✓ SAVED' : 'SAVE'}
+                            </button>
+                        )}
                     </div>
                 </div>
             </main>
