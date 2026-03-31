@@ -1,10 +1,24 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useLanguage } from '@/lib/language-context';
 import AdminLayout from '../AdminLayout';
+import { io, Socket } from 'socket.io-client';
 
 interface Campaign { _id: string; name: string; }
+
+interface LiveCameraInfo {
+    cameraId: string;
+    socketId: string;
+    campaignId: string;
+    name: string;
+    checkpointId?: string;
+    checkpointName?: string;
+    location?: string;
+    description?: string;
+    deviceId?: string;
+    connectedAt: string;
+}
 interface CctvCamera {
     _id: string;
     campaignId: string;
@@ -19,27 +33,83 @@ interface CctvCamera {
     lastSeenAt?: string;
 }
 
+interface RunnerArrival {
+    _id: string;
+    bib: string;
+    checkpoint: string;
+    scanTime: string;
+    firstName?: string;
+    lastName?: string;
+    firstNameTh?: string;
+    lastNameTh?: string;
+    category?: string;
+    gender?: string;
+}
+
 export default function CctvLivePage() {
     const { language } = useLanguage();
     const th = language === 'th';
 
     const [cameras, setCameras] = useState<CctvCamera[]>([]);
-    const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+    const [featuredCampaign, setFeaturedCampaign] = useState<Campaign | null>(null);
     const [selectedCampaign, setSelectedCampaign] = useState('');
+    const [liveCameras, setLiveCameras] = useState<LiveCameraInfo[]>([]);
+    const socketCctvRef = useRef<Socket | null>(null);
     const [loading, setLoading] = useState(true);
     const [selectedFeed, setSelectedFeed] = useState<CctvCamera | null>(null);
     const [layout, setLayout] = useState<'grid' | 'list'>('grid');
+    const [arrivals, setArrivals] = useState<RunnerArrival[]>([]);
+    const [preArrivalBuffer, setPreArrivalBuffer] = useState(30);
+    const arrivalTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+    // dismissed alerts: key = `${bib}-${checkpoint}-${scanTime}`
+    const [dismissed, setDismissed] = useState<Set<string>>(new Set());
 
+    // Load preArrivalBuffer from localStorage
     useEffect(() => {
-        fetch('/api/campaigns', { cache: 'no-store' })
-            .then(r => r.json())
-            .then(data => {
-                const list = Array.isArray(data?.data || data) ? (data?.data || data) : [];
-                setCampaigns(list);
-                if (list.length > 0 && !selectedCampaign) setSelectedCampaign(list[0]._id);
-            })
-            .catch(() => setCampaigns([]));
+        try {
+            const saved = localStorage.getItem('cctv_settings');
+            if (saved) {
+                const s = JSON.parse(saved);
+                if (s.preArrivalBuffer) setPreArrivalBuffer(s.preArrivalBuffer);
+            }
+        } catch { /* ignore */ }
     }, []);
+
+    // Load featured campaign
+    useEffect(() => {
+        fetch('/api/campaigns/featured', { cache: 'no-store' })
+            .then(r => r.ok ? r.json() : null)
+            .then(data => {
+                if (data?._id) {
+                    setFeaturedCampaign(data);
+                    setSelectedCampaign(data._id);
+                }
+            })
+            .catch(() => {});
+    }, []);
+
+    // Connect to Socket.io CCTV namespace for live mobile cameras
+    useEffect(() => {
+        if (!selectedCampaign) return;
+        const socketUrl = typeof window !== 'undefined' ? window.location.origin : '';
+        const socket = io(`${socketUrl}/cctv`, { path: '/socket.io', transports: ['websocket', 'polling'] });
+        socketCctvRef.current = socket;
+        socket.on('connect', () => {
+            socket.emit('admin:join', selectedCampaign, (res: any) => {
+                if (res?.cameras) setLiveCameras(res.cameras);
+            });
+        });
+        socket.on('camera:online', (cam: LiveCameraInfo) => {
+            setLiveCameras(prev => {
+                const without = prev.filter(c => c.cameraId !== cam.cameraId);
+                return [...without, cam];
+            });
+        });
+        socket.on('camera:offline', ({ cameraId }: { cameraId: string }) => {
+            setLiveCameras(prev => prev.filter(c => c.cameraId !== cameraId));
+        });
+        return () => { socket.disconnect(); socketCctvRef.current = null; };
+    }, [selectedCampaign]);
 
     const loadCameras = async () => {
         if (!selectedCampaign) return;
@@ -54,11 +124,55 @@ export default function CctvLivePage() {
 
     useEffect(() => { loadCameras(); }, [selectedCampaign]);
 
-    // Auto-refresh every 15s
+    // Auto-refresh cameras every 15s
     useEffect(() => {
         const interval = setInterval(loadCameras, 15000);
         return () => clearInterval(interval);
     }, [selectedCampaign]);
+
+    // Poll recent arrivals
+    const fetchArrivals = useCallback(async () => {
+        if (!selectedCampaign) return;
+        try {
+            const res = await fetch(
+                `/api/timing/recent-arrivals/${selectedCampaign}?withinSeconds=${preArrivalBuffer}`,
+                { cache: 'no-store' },
+            );
+            if (!res.ok) return;
+            const data = await res.json();
+            setArrivals(Array.isArray(data) ? data : []);
+        } catch { /* ignore */ }
+    }, [selectedCampaign, preArrivalBuffer]);
+
+    useEffect(() => {
+        fetchArrivals();
+        if (arrivalTimerRef.current) clearInterval(arrivalTimerRef.current);
+        arrivalTimerRef.current = setInterval(fetchArrivals, 5000);
+        return () => { if (arrivalTimerRef.current) clearInterval(arrivalTimerRef.current); };
+    }, [fetchArrivals]);
+
+    // Helpers
+    const getArrivalsForCamera = (cam: CctvCamera): RunnerArrival[] => {
+        const cpName = (cam.checkpointName || cam.coverageZone || '').toLowerCase().trim();
+        if (!cpName) return [];
+        return arrivals.filter(a => {
+            const key = `${a.bib}-${a.checkpoint}-${a.scanTime}`;
+            if (dismissed.has(key)) return false;
+            return (a.checkpoint || '').toLowerCase().trim() === cpName;
+        });
+    };
+
+    const dismissAlert = (a: RunnerArrival, e: React.MouseEvent) => {
+        e.stopPropagation();
+        const key = `${a.bib}-${a.checkpoint}-${a.scanTime}`;
+        setDismissed(prev => new Set(prev).add(key));
+    };
+
+    const formatElapsed = (scanTime: string) => {
+        const diff = Math.floor((Date.now() - new Date(scanTime).getTime()) / 1000);
+        if (diff < 60) return `${diff}s ago`;
+        return `${Math.floor(diff / 60)}m ${diff % 60}s ago`;
+    };
 
     const getStatusColor = (status: string) => {
         if (status === 'online') return '#22c55e';
@@ -92,20 +206,39 @@ export default function CctvLivePage() {
                         >
                             {layout === 'grid' ? '▤ Layout' : '▦ Layout'}
                         </button>
-                        <select
-                            value={selectedCampaign}
-                            onChange={e => setSelectedCampaign(e.target.value)}
-                            style={{ padding: '8px 12px', borderRadius: 8, border: '1.5px solid #cbd5e1', fontSize: 13, fontWeight: 600 }}
-                        >
-                            {campaigns.map(c => (
-                                <option key={c._id} value={c._id}>{c.name}</option>
-                            ))}
-                        </select>
+                        {featuredCampaign && (
+                            <span style={{ padding: '6px 14px', borderRadius: 8, background: '#fef3c7', border: '1.5px solid #fcd34d', fontSize: 13, fontWeight: 700, color: '#92400e' }}>
+                                ⭐ {featuredCampaign.name}
+                            </span>
+                        )}
                     </div>
                 </div>
             </div>
 
-            {/* Feed Grid */}
+            {/* Live Mobile Cameras (Socket.io) */}
+            {liveCameras.length > 0 && (
+                <div style={{ marginBottom: 20 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+                        <span style={{ fontSize: 13, fontWeight: 800, color: '#0f172a' }}>
+                            📱 {th ? 'กล้องมือถือ Live' : 'Mobile Live Cameras'}
+                        </span>
+                        <span style={{ padding: '2px 8px', borderRadius: 10, background: '#fef2f2', border: '1px solid #fecaca', fontSize: 11, fontWeight: 700, color: '#dc2626' }}>
+                            🔴 {liveCameras.length} {th ? 'เครื่อง' : 'device(s)'}
+                        </span>
+                    </div>
+                    <div style={{
+                        display: 'grid',
+                        gridTemplateColumns: liveCameras.length === 1 ? '1fr' : liveCameras.length <= 4 ? 'repeat(2, 1fr)' : 'repeat(3, 1fr)',
+                        gap: 14,
+                    }}>
+                        {liveCameras.map(cam => (
+                            <LiveVideoFeed key={cam.cameraId} cam={cam} socket={socketCctvRef.current} th={th} />
+                        ))}
+                    </div>
+                </div>
+            )}
+
+            {/* Feed Grid (iframe cameras) */}
             {loading ? (
                 <div style={{ padding: 60, textAlign: 'center', color: '#94a3b8', fontSize: 14 }}>
                     {th ? 'กำลังโหลด...' : 'Loading feeds...'}
@@ -128,84 +261,130 @@ export default function CctvLivePage() {
                         : '1fr',
                     gap: 16,
                 }}>
-                    {cameras.map((cam, idx) => (
-                        <div
-                            key={cam._id}
-                            onClick={() => setSelectedFeed(cam)}
-                            style={{
-                                background: '#1e293b',
-                                borderRadius: 14,
-                                overflow: 'hidden',
-                                cursor: 'pointer',
-                                border: '2px solid transparent',
-                                transition: 'border-color 0.2s, transform 0.2s',
-                                position: 'relative',
-                                minHeight: idx === 0 && cameras.length >= 3 && layout === 'grid' ? 350 : 220,
-                                gridRow: idx === 0 && cameras.length >= 3 && layout === 'grid' ? 'span 2' : undefined,
-                            }}
-                            onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.borderColor = '#ea580c'; }}
-                            onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.borderColor = 'transparent'; }}
-                        >
-                            {/* Stream embed or placeholder */}
-                            {cam.streamUrl ? (
-                                <iframe
-                                    src={cam.streamUrl}
-                                    style={{ width: '100%', height: '100%', position: 'absolute', inset: 0, border: 'none' }}
-                                    allow="autoplay; encrypted-media"
-                                    allowFullScreen
-                                />
-                            ) : (
-                                <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg, #1e293b, #0f172a)' }}>
-                                    <div style={{ textAlign: 'center', color: '#475569' }}>
-                                        <div style={{ fontSize: 40, marginBottom: 8 }}>📹</div>
-                                        <div style={{ fontSize: 12 }}>{th ? 'ยังไม่มี Stream URL' : 'No Stream URL'}</div>
-                                    </div>
-                                </div>
-                            )}
-
-                            {/* Overlay info */}
-                            <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'linear-gradient(transparent, rgba(0,0,0,0.8))', padding: '40px 16px 14px' }}>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
-                                    <div>
-                                        <div style={{ fontWeight: 800, color: '#fff', fontSize: 15, textTransform: 'uppercase' }}>
-                                            {cam.name}
-                                        </div>
-                                        <div style={{ fontSize: 11, color: '#ea580c', fontWeight: 700, letterSpacing: 0.5 }}>
-                                            {cam.status === 'online' ? 'SIGNAL ACTIVE' : cam.status === 'paused' ? 'PAUSED' : 'SIGNAL INACTIVE'}
+                    {cameras.map((cam, idx) => {
+                        const camArrivals = getArrivalsForCamera(cam);
+                        const hasAlert = camArrivals.length > 0;
+                        return (
+                            <div
+                                key={cam._id}
+                                onClick={() => setSelectedFeed(cam)}
+                                style={{
+                                    background: '#1e293b',
+                                    borderRadius: 14,
+                                    overflow: 'hidden',
+                                    cursor: 'pointer',
+                                    border: hasAlert ? '2px solid #ea580c' : '2px solid transparent',
+                                    transition: 'border-color 0.2s, transform 0.2s',
+                                    position: 'relative',
+                                    minHeight: idx === 0 && cameras.length >= 3 && layout === 'grid' ? 350 : 220,
+                                    gridRow: idx === 0 && cameras.length >= 3 && layout === 'grid' ? 'span 2' : undefined,
+                                    boxShadow: hasAlert ? '0 0 0 3px rgba(234,88,12,0.35)' : 'none',
+                                }}
+                                onMouseEnter={e => { if (!hasAlert) (e.currentTarget as HTMLDivElement).style.borderColor = '#475569'; }}
+                                onMouseLeave={e => { if (!hasAlert) (e.currentTarget as HTMLDivElement).style.borderColor = 'transparent'; }}
+                            >
+                                {/* Stream embed or placeholder */}
+                                {cam.streamUrl ? (
+                                    <iframe
+                                        src={cam.streamUrl}
+                                        style={{ width: '100%', height: '100%', position: 'absolute', inset: 0, border: 'none' }}
+                                        allow="autoplay; encrypted-media"
+                                        allowFullScreen
+                                    />
+                                ) : (
+                                    <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg, #1e293b, #0f172a)' }}>
+                                        <div style={{ textAlign: 'center', color: '#475569' }}>
+                                            <div style={{ fontSize: 40, marginBottom: 8 }}>📹</div>
+                                            <div style={{ fontSize: 12 }}>{th ? 'ยังไม่มี Stream URL' : 'No Stream URL'}</div>
                                         </div>
                                     </div>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                                        <span style={{
-                                            width: 8, height: 8, borderRadius: '50%',
-                                            background: getStatusColor(cam.status),
-                                            animation: cam.status === 'online' ? 'pulse 2s infinite' : 'none',
-                                        }} />
+                                )}
+
+                                {/* Runner Arrival Alert Panel */}
+                                {hasAlert && (
+                                    <div style={{
+                                        position: 'absolute', top: 0, left: 0, right: 0,
+                                        background: 'linear-gradient(180deg, rgba(234,88,12,0.97) 0%, rgba(234,88,12,0.85) 100%)',
+                                        zIndex: 10, padding: '8px 10px',
+                                        maxHeight: 140, overflowY: 'auto',
+                                    }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                                            <span style={{ fontSize: 10, fontWeight: 800, color: '#fff', letterSpacing: 1 }}>🏃 {th ? 'นักวิ่งถึง Checkpoint' : 'RUNNER AT CHECKPOINT'}</span>
+                                            <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.7)', marginLeft: 'auto' }}>{preArrivalBuffer}s window</span>
+                                        </div>
+                                        {camArrivals.slice(0, 5).map((a, i) => {
+                                            const name = th
+                                                ? `${a.firstNameTh || a.firstName || ''} ${a.lastNameTh || a.lastName || ''}`.trim()
+                                                : `${a.firstName || ''} ${a.lastName || ''}`.trim();
+                                            return (
+                                                <div key={i} style={{
+                                                    display: 'flex', alignItems: 'center', gap: 6,
+                                                    padding: '3px 0', borderBottom: i < camArrivals.length - 1 ? '1px solid rgba(255,255,255,0.2)' : 'none',
+                                                }}>
+                                                    <span style={{ background: '#fff', color: '#ea580c', fontWeight: 900, fontSize: 11, padding: '1px 6px', borderRadius: 4, minWidth: 36, textAlign: 'center' }}>#{a.bib}</span>
+                                                    <span style={{ color: '#fff', fontSize: 11, fontWeight: 600, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                        {name || (th ? 'ไม่ระบุชื่อ' : 'Unknown')}
+                                                    </span>
+                                                    {a.category && <span style={{ color: 'rgba(255,255,255,0.7)', fontSize: 9 }}>{a.category}</span>}
+                                                    <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: 9, whiteSpace: 'nowrap' }}>{formatElapsed(a.scanTime)}</span>
+                                                    <button
+                                                        onClick={(e) => dismissAlert(a, e)}
+                                                        style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.7)', cursor: 'pointer', fontSize: 12, padding: '0 2px', lineHeight: 1 }}
+                                                        title={th ? 'ปิด' : 'Dismiss'}
+                                                    >×</button>
+                                                </div>
+                                            );
+                                        })}
+                                        {camArrivals.length > 5 && (
+                                            <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.6)', textAlign: 'center', paddingTop: 3 }}>+{camArrivals.length - 5} more</div>
+                                        )}
+                                    </div>
+                                )}
+
+                                {/* Overlay info */}
+                                <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'linear-gradient(transparent, rgba(0,0,0,0.8))', padding: '40px 16px 14px' }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+                                        <div>
+                                            <div style={{ fontWeight: 800, color: '#fff', fontSize: 15, textTransform: 'uppercase' }}>
+                                                {cam.name}
+                                            </div>
+                                            <div style={{ fontSize: 11, color: '#ea580c', fontWeight: 700, letterSpacing: 0.5 }}>
+                                                {cam.status === 'online' ? 'SIGNAL ACTIVE' : cam.status === 'paused' ? 'PAUSED' : 'SIGNAL INACTIVE'}
+                                            </div>
+                                        </div>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                            <span style={{
+                                                width: 8, height: 8, borderRadius: '50%',
+                                                background: getStatusColor(cam.status),
+                                                animation: cam.status === 'online' ? 'pulse 2s infinite' : 'none',
+                                            }} />
+                                        </div>
                                     </div>
                                 </div>
-                            </div>
 
-                            {/* Top overlay badges */}
-                            <div style={{ position: 'absolute', top: 10, left: 10, display: 'flex', gap: 6 }}>
-                                {cam.status === 'online' && (
-                                    <span style={{ padding: '3px 8px', borderRadius: 6, background: 'rgba(234,88,12,0.9)', color: '#fff', fontSize: 10, fontWeight: 700, letterSpacing: 0.5 }}>
-                                        🔴 LIVE
-                                    </span>
-                                )}
-                                {cam.checkpointName && (
-                                    <span style={{ padding: '3px 8px', borderRadius: 6, background: 'rgba(0,0,0,0.6)', color: '#fff', fontSize: 10, fontWeight: 600 }}>
-                                        {cam.checkpointName}
-                                    </span>
+                                {/* Top overlay badges */}
+                                <div style={{ position: 'absolute', top: hasAlert ? 'auto' : 10, bottom: hasAlert ? 60 : 'auto', left: 10, display: 'flex', gap: 6 }}>
+                                    {cam.status === 'online' && (
+                                        <span style={{ padding: '3px 8px', borderRadius: 6, background: 'rgba(234,88,12,0.9)', color: '#fff', fontSize: 10, fontWeight: 700, letterSpacing: 0.5 }}>
+                                            🔴 LIVE
+                                        </span>
+                                    )}
+                                    {cam.checkpointName && (
+                                        <span style={{ padding: '3px 8px', borderRadius: 6, background: 'rgba(0,0,0,0.6)', color: '#fff', fontSize: 10, fontWeight: 600 }}>
+                                            {cam.checkpointName}
+                                        </span>
+                                    )}
+                                </div>
+                                {cam.viewerCount > 0 && (
+                                    <div style={{ position: 'absolute', top: hasAlert ? 'auto' : 10, bottom: hasAlert ? 60 : 'auto', right: 10 }}>
+                                        <span style={{ padding: '3px 8px', borderRadius: 6, background: 'rgba(0,0,0,0.6)', color: '#fff', fontSize: 10, fontWeight: 600 }}>
+                                            👁 {cam.viewerCount.toLocaleString()} {th ? 'ผู้ชม' : 'VIEWERS'}
+                                        </span>
+                                    </div>
                                 )}
                             </div>
-                            {cam.viewerCount > 0 && (
-                                <div style={{ position: 'absolute', top: 10, right: 10 }}>
-                                    <span style={{ padding: '3px 8px', borderRadius: 6, background: 'rgba(0,0,0,0.6)', color: '#fff', fontSize: 10, fontWeight: 600 }}>
-                                        👁 {cam.viewerCount.toLocaleString()} {th ? 'ผู้ชม' : 'VIEWERS'}
-                                    </span>
-                                </div>
-                            )}
-                        </div>
-                    ))}
+                        );
+                    })}
                 </div>
             )}
 
@@ -295,5 +474,113 @@ export default function CctvLivePage() {
                 }
             `}</style>
         </AdminLayout>
+    );
+}
+
+// ── Live Video Feed component (MediaSource Extensions) ──────────────────────
+function LiveVideoFeed({ cam, socket, th }: { cam: LiveCameraInfo; socket: Socket | null; th: boolean }) {
+    const videoRef = useRef<HTMLVideoElement>(null);
+    const msRef = useRef<MediaSource | null>(null);
+    const sbRef = useRef<SourceBuffer | null>(null);
+    const queueRef = useRef<ArrayBuffer[]>([]);
+    const mimeTypeRef = useRef<string>('video/webm;codecs=vp8');
+    const watchingRef = useRef(false);
+
+    const appendNext = useCallback(() => {
+        if (!sbRef.current || sbRef.current.updating || queueRef.current.length === 0) return;
+        try {
+            sbRef.current.appendBuffer(queueRef.current.shift()!);
+        } catch { /* ignore quota/abort errors */ }
+    }, []);
+
+    useEffect(() => {
+        if (!socket || !cam.cameraId) return;
+
+        // Watch this camera
+        socket.emit('viewer:watch', cam.cameraId);
+        watchingRef.current = true;
+
+        // Set up MediaSource
+        if (typeof window === 'undefined' || !('MediaSource' in window)) return;
+        const ms = new MediaSource();
+        msRef.current = ms;
+        const objUrl = URL.createObjectURL(ms);
+        if (videoRef.current) videoRef.current.src = objUrl;
+
+        const initSourceBuffer = (mime: string) => {
+            if (sbRef.current || !msRef.current || msRef.current.readyState !== 'open') return;
+            if (!MediaSource.isTypeSupported(mime)) return;
+            try {
+                const sb = msRef.current.addSourceBuffer(mime);
+                sbRef.current = sb;
+                sb.addEventListener('updateend', appendNext);
+                // Flush any queued chunks now that SourceBuffer is ready
+                appendNext();
+            } catch { /* codec not supported */ }
+        };
+
+        ms.addEventListener('sourceopen', () => {
+            // Wait for first chunk to know the real mimeType before initialising SourceBuffer
+            if (mimeTypeRef.current) initSourceBuffer(mimeTypeRef.current);
+        });
+
+        const handleChunk = ({ cameraId, chunk, mimeType }: { cameraId: string; chunk: ArrayBuffer; mimeType?: string }) => {
+            if (cameraId !== cam.cameraId) return;
+            if (mimeType && mimeType !== mimeTypeRef.current) {
+                mimeTypeRef.current = mimeType;
+                // Initialise SourceBuffer with the real codec on first chunk
+                if (!sbRef.current) initSourceBuffer(mimeType);
+            }
+            const buf = chunk instanceof ArrayBuffer ? chunk : (chunk as any).buffer ?? new Uint8Array(chunk as any).buffer;
+            queueRef.current.push(buf);
+            appendNext();
+        };
+        socket.on('camera:chunk', handleChunk);
+
+        return () => {
+            socket.off('camera:chunk', handleChunk);
+            if (watchingRef.current) { socket.emit('viewer:unwatch', cam.cameraId); watchingRef.current = false; }
+            ms.endOfStream?.();
+            URL.revokeObjectURL(objUrl);
+            sbRef.current = null;
+            msRef.current = null;
+            queueRef.current = [];
+        };
+    }, [socket, cam.cameraId, appendNext]);
+
+    return (
+        <div style={{ background: '#1e293b', borderRadius: 14, overflow: 'hidden', position: 'relative', minHeight: 240, border: '2px solid #ea580c' }}>
+            <video
+                ref={videoRef}
+                autoPlay
+                muted
+                playsInline
+                style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', minHeight: 240 }}
+            />
+            {/* LIVE badge */}
+            <div style={{ position: 'absolute', top: 10, left: 10, display: 'flex', gap: 6 }}>
+                <span style={{ padding: '3px 8px', borderRadius: 6, background: 'rgba(234,88,12,0.9)', color: '#fff', fontSize: 10, fontWeight: 800, letterSpacing: 0.5 }}>
+                    🔴 LIVE
+                </span>
+                <span style={{ padding: '3px 8px', borderRadius: 6, background: 'rgba(0,0,0,0.6)', color: '#fff', fontSize: 10 }}>
+                    📱 Mobile
+                </span>
+            </div>
+            {/* Info bar */}
+            <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'linear-gradient(transparent, rgba(0,0,0,0.85))', padding: '30px 14px 12px' }}>
+                <div style={{ fontWeight: 800, color: '#fff', fontSize: 14 }}>{cam.name}</div>
+                <div style={{ display: 'flex', gap: 8, marginTop: 3 }}>
+                    {cam.checkpointName && (
+                        <span style={{ fontSize: 10, color: '#ea580c', fontWeight: 700 }}>{cam.checkpointName}</span>
+                    )}
+                    {cam.location && (
+                        <span style={{ fontSize: 10, color: '#94a3b8' }}>{cam.location}</span>
+                    )}
+                    {cam.deviceId && (
+                        <span style={{ fontSize: 10, color: '#475569' }}>ID: {cam.deviceId}</span>
+                    )}
+                </div>
+            </div>
+        </div>
     );
 }

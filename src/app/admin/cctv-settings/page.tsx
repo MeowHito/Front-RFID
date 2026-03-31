@@ -14,9 +14,33 @@ export default function CctvSettingsPage() {
     const [selectedResolution, setSelectedResolution] = useState('1080p');
     const [autoScale, setAutoScale] = useState(true);
     const [bufferMin, setBufferMin] = useState(15);
+    const [preArrivalBuffer, setPreArrivalBuffer] = useState(30);
     const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
     const [pairingToken, setPairingToken] = useState('');
-    const [tokenExpiry, setTokenExpiry] = useState(300);
+    const [tokenExpiry, setTokenExpiry] = useState(0);
+
+    // Load settings from localStorage on mount
+    useEffect(() => {
+        try {
+            const saved = localStorage.getItem('cctv_settings');
+            if (saved) {
+                const s = JSON.parse(saved);
+                if (s.selectedResolution) setSelectedResolution(s.selectedResolution);
+                if (s.autoScale !== undefined) setAutoScale(s.autoScale);
+                if (s.bufferMin) setBufferMin(s.bufferMin);
+                if (s.preArrivalBuffer) setPreArrivalBuffer(s.preArrivalBuffer);
+            }
+            const savedToken = localStorage.getItem('cctv_pairing_token');
+            if (savedToken) {
+                const t = JSON.parse(savedToken);
+                const remaining = Math.floor((t.expiresAt - Date.now()) / 1000);
+                if (remaining > 0) {
+                    setPairingToken(t.token);
+                    setTokenExpiry(remaining);
+                }
+            }
+        } catch { /* ignore */ }
+    }, []);
 
     useEffect(() => {
         if (toast) { const t = setTimeout(() => setToast(null), 3000); return () => clearTimeout(t); }
@@ -27,8 +51,12 @@ export default function CctvSettingsPage() {
         const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
         let token = '';
         for (let i = 0; i < 8; i++) token += chars[Math.floor(Math.random() * chars.length)];
+        const expiresAt = Date.now() + 300 * 1000;
         setPairingToken(token);
         setTokenExpiry(300);
+        try {
+            localStorage.setItem('cctv_pairing_token', JSON.stringify({ token, expiresAt }));
+        } catch { /* ignore */ }
     };
 
     // Countdown timer for pairing token
@@ -45,7 +73,12 @@ export default function CctvSettingsPage() {
     };
 
     const handleSave = () => {
-        setToast({ msg: th ? 'บันทึกการตั้งค่าแล้ว' : 'Settings saved', type: 'success' });
+        try {
+            localStorage.setItem('cctv_settings', JSON.stringify({ selectedResolution, autoScale, bufferMin, preArrivalBuffer }));
+            setToast({ msg: th ? 'บันทึกการตั้งค่าแล้ว' : 'Settings saved', type: 'success' });
+        } catch {
+            setToast({ msg: th ? 'เกิดข้อผิดพลาด' : 'Failed to save', type: 'error' });
+        }
     };
 
     const resolutions = [
@@ -129,7 +162,7 @@ export default function CctvSettingsPage() {
                         </div>
 
                         {/* Buffer */}
-                        <div style={{ padding: '12px 16px', background: '#f8fafc', borderRadius: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div style={{ padding: '12px 16px', background: '#f8fafc', borderRadius: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
                             <div>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                                     <span style={{ fontSize: 13 }}>🕐</span>
@@ -145,6 +178,38 @@ export default function CctvSettingsPage() {
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                                         <button onClick={() => setBufferMin(prev => Math.min(prev + 5, 60))} style={{ background: 'none', border: '1px solid #e2e8f0', borderRadius: 3, cursor: 'pointer', fontSize: 8, padding: '1px 4px' }}>▲</button>
                                         <button onClick={() => setBufferMin(prev => Math.max(prev - 5, 5))} style={{ background: 'none', border: '1px solid #e2e8f0', borderRadius: 3, cursor: 'pointer', fontSize: 8, padding: '1px 4px' }}>▼</button>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Pre-Arrival Alert Buffer */}
+                        <div style={{ padding: '12px 16px', background: '#fff7ed', borderRadius: 10, border: '1.5px solid #fed7aa', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                    <span style={{ fontSize: 13 }}>🏃</span>
+                                    <span style={{ fontWeight: 700, fontSize: 13, color: '#c2410c' }}>{th ? 'แจ้งเตือนนักวิ่งถึง (วินาที)' : 'Runner Arrival Alert (Sec)'}</span>
+                                </div>
+                                <div style={{ fontSize: 11, color: '#9a3412', marginTop: 2 }}>
+                                    {th ? 'แสดง alert บน feed เมื่อนักวิ่งผ่าน checkpoint ภายใน X วินาที' : 'Show alert overlay when runner scanned at checkpoint within X seconds'}
+                                </div>
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <span style={{ padding: '4px 14px', borderRadius: 6, border: '1.5px solid #ea580c', fontWeight: 800, fontSize: 14, color: '#ea580c', background: '#fff' }}>{preArrivalBuffer}s</span>
+                                {isAdmin && (
+                                    <div style={{ display: 'flex', gap: 4 }}>
+                                        {[5, 10, 15, 20, 30, 45, 60].map(v => (
+                                            <button
+                                                key={v}
+                                                onClick={() => setPreArrivalBuffer(v)}
+                                                style={{
+                                                    padding: '3px 8px', borderRadius: 5, fontSize: 11, fontWeight: 700, cursor: 'pointer',
+                                                    border: preArrivalBuffer === v ? 'none' : '1px solid #e2e8f0',
+                                                    background: preArrivalBuffer === v ? '#ea580c' : '#fff',
+                                                    color: preArrivalBuffer === v ? '#fff' : '#64748b',
+                                                }}
+                                            >{v}s</button>
+                                        ))}
                                     </div>
                                 )}
                             </div>
@@ -229,9 +294,10 @@ export default function CctvSettingsPage() {
                         </h4>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                             {[
-                                { step: 1, title: th ? 'เปิด App Live Streaming บนมือถือ' : 'Open Live Streaming App on mobile', desc: th ? 'เช่น YouTube, Facebook, OBS Camera' : 'e.g. YouTube, Facebook, OBS Camera' },
-                                { step: 2, title: th ? 'เริ่ม Live Stream' : 'Start Live Stream', desc: th ? 'เปิดกล้องและเริ่ม Broadcasting' : 'Start camera and begin broadcasting' },
-                                { step: 3, title: th ? 'คัดลอก Stream URL มาใส่ระบบ' : 'Copy Stream URL to the system', desc: th ? 'ไปหน้า "จัดการกล้อง" → เพิ่มกล้อง → วาง URL' : 'Go to Camera Management → Add Camera → Paste URL' },
+                                { step: 1, title: th ? 'เปิด App Live Streaming บนมือถือ' : 'Open Live Streaming App on mobile', desc: th ? 'iOS: YouTube Live / Streamlabs / Prism Live Studio / Larix Broadcaster' : 'iOS: YouTube Live / Streamlabs / Prism Live Studio / Larix Broadcaster' },
+                                { step: 2, title: th ? 'เริ่ม Live Stream ไปยัง YouTube หรือ Facebook' : 'Start Live Stream to YouTube or Facebook', desc: th ? 'กด Go Live → รอ stream เริ่มทำงาน' : 'Tap Go Live → wait for stream to start' },
+                                { step: 3, title: th ? 'คัดลอก Embed URL' : 'Copy Embed URL', desc: th ? 'YouTube: youtube.com/embed/[ID] • Facebook: ดึง embed URL จาก Share' : 'YouTube: youtube.com/embed/[ID] • Facebook: get embed URL via Share' },
+                                { step: 4, title: th ? 'วาง URL ในระบบ' : 'Paste URL into the system', desc: th ? 'ไปหน้า "จัดการกล้อง" → เพิ่มกล้อง → วาง URL → บันทึก' : 'Go to Camera Management → Add Camera → Paste URL → Save' },
                             ].map(item => (
                                 <div key={item.step} style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
                                     <span style={{ width: 26, height: 26, borderRadius: '50%', background: '#ea580c', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 800, flexShrink: 0 }}>
@@ -241,6 +307,21 @@ export default function CctvSettingsPage() {
                                         <div style={{ fontWeight: 700, fontSize: 13, color: '#0f172a' }}>{item.title}</div>
                                         <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>{item.desc}</div>
                                     </div>
+                                </div>
+                            ))}
+                        </div>
+                        {/* iOS App options */}
+                        <div style={{ marginTop: 16, padding: '12px', background: '#f0f9ff', borderRadius: 8, border: '1px solid #bae6fd' }}>
+                            <div style={{ fontSize: 11, fontWeight: 800, color: '#0369a1', marginBottom: 8 }}>📱 {th ? 'แอปที่แนะนำสำหรับ iOS (ไม่ต้องใช้ OBS)' : 'Recommended iOS Apps (No OBS needed)'}</div>
+                            {[
+                                { name: 'YouTube Live', desc: th ? 'ฟรี • ได้ embed URL ทันที' : 'Free • Embed URL ready instantly' },
+                                { name: 'Streamlabs Mobile', desc: th ? 'ฟรี • stream ไป YouTube/Facebook' : 'Free • stream to YouTube/Facebook' },
+                                { name: 'Prism Live Studio', desc: th ? 'ฟรี • multi-platform' : 'Free • multi-platform streaming' },
+                                { name: 'Larix Broadcaster', desc: th ? 'ฟรี • รองรับ RTMP server' : 'Free • RTMP server support' },
+                            ].map(a => (
+                                <div key={a.name} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: '1px solid #e0f2fe', fontSize: 11 }}>
+                                    <span style={{ fontWeight: 700, color: '#0f172a' }}>{a.name}</span>
+                                    <span style={{ color: '#64748b' }}>{a.desc}</span>
                                 </div>
                             ))}
                         </div>

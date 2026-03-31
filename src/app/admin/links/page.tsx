@@ -40,6 +40,12 @@ const LINK_ROWS: LinkRow[] = [
         labelEn: '📍 Share Live Checkpoint Monitor',
         buildUrl: (origin, campaign) => `${origin}/share-live/${campaign?._id || ''}`,
     },
+    {
+        id: 'cctv-camera',
+        label: '📹 กล้อง CCTV มือถือ — เปิดบนมือถือที่จุด Checkpoint แล้วกด "เริ่มส่งภาพ"',
+        labelEn: '📹 CCTV Mobile Camera — open on phone at Checkpoint, tap "Start Stream"',
+        buildUrl: (origin) => `${origin}/camera`,
+    },
 ];
 
 export default function LinksPage() {

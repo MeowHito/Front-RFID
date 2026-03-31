@@ -32,7 +32,7 @@ export default function CctvCamerasPage() {
     const isAdmin = user?.role === 'admin' || user?.role === 'admin_master';
 
     const [cameras, setCameras] = useState<CctvCamera[]>([]);
-    const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+    const [featuredCampaign, setFeaturedCampaign] = useState<Campaign | null>(null);
     const [checkpoints, setCheckpoints] = useState<Checkpoint[]>([]);
     const [loading, setLoading] = useState(true);
     const [selectedCampaign, setSelectedCampaign] = useState('');
@@ -56,16 +56,17 @@ export default function CctvCamerasPage() {
     // Stats
     const [stats, setStats] = useState({ total: 0, online: 0, offline: 0, totalViewers: 0 });
 
-    // Load campaigns
+    // Load featured campaign
     useEffect(() => {
-        fetch('/api/campaigns', { cache: 'no-store' })
-            .then(r => r.json())
+        fetch('/api/campaigns/featured', { cache: 'no-store' })
+            .then(r => r.ok ? r.json() : null)
             .then(data => {
-                const list = Array.isArray(data?.data || data) ? (data?.data || data) : [];
-                setCampaigns(list);
-                if (list.length > 0 && !selectedCampaign) setSelectedCampaign(list[0]._id);
+                if (data?._id) {
+                    setFeaturedCampaign(data);
+                    setSelectedCampaign(data._id);
+                }
             })
-            .catch(() => setCampaigns([]));
+            .catch(() => {});
     }, []);
 
     // Load checkpoints when campaign changes
@@ -184,7 +185,7 @@ export default function CctvCamerasPage() {
         try {
             const res = await fetch(`/api/cctv-cameras/${cam._id}`, {
                 method: 'PUT',
-                headers: authHeaders(),
+                headers: { ...authHeaders(), 'Content-Type': 'application/json' },
                 body: JSON.stringify({ isLiveStreamEnabled: newVal }),
             });
             if (!res.ok) throw new Error();
@@ -217,15 +218,11 @@ export default function CctvCamerasPage() {
                         </p>
                     </div>
                     <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                        <select
-                            value={selectedCampaign}
-                            onChange={e => setSelectedCampaign(e.target.value)}
-                            style={{ padding: '8px 12px', borderRadius: 8, border: '1.5px solid #cbd5e1', fontSize: 13, fontWeight: 600, minWidth: 200 }}
-                        >
-                            {campaigns.map(c => (
-                                <option key={c._id} value={c._id}>{c.name}</option>
-                            ))}
-                        </select>
+                        {featuredCampaign && (
+                            <span style={{ padding: '6px 14px', borderRadius: 8, background: '#fef3c7', border: '1.5px solid #fcd34d', fontSize: 13, fontWeight: 700, color: '#92400e' }}>
+                                ⭐ {featuredCampaign.name}
+                            </span>
+                        )}
                         {isAdmin && (
                             <button
                                 onClick={openAddModal}
