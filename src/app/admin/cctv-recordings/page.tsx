@@ -24,6 +24,37 @@ interface Recording {
 
 interface StorageInfo { totalSize: number; count: number; }
 
+interface RunnerHit {
+    checkpoint: string;
+    scanTime: string;
+    elapsedTime: number | null;
+    splitTime: number | null;
+    recording: {
+        _id: string;
+        cameraName: string;
+        startTime: string;
+        endTime: string;
+        duration: number;
+        fileSize: number;
+    } | null;
+    seekSeconds: number;
+}
+
+function fmtMs(ms: number | null) {
+    if (!ms) return '—';
+    const totalSec = Math.floor(ms / 1000);
+    const h = Math.floor(totalSec / 3600);
+    const m = Math.floor((totalSec % 3600) / 60);
+    const s = totalSec % 60;
+    return h > 0
+        ? `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+        : `${m}:${String(s).padStart(2, '0')}`;
+}
+
+function fmtTime(iso: string) {
+    return new Date(iso).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
+
 function fmtBytes(b: number) {
     if (b < 1024) return `${b} B`;
     if (b < 1048576) return `${(b / 1024).toFixed(1)} KB`;
@@ -58,7 +89,22 @@ export default function CctvRecordingsPage() {
     const [playingName, setPlayingName] = useState('');
     const [videoSrc, setVideoSrc] = useState<string | null>(null);
     const [videoLoading, setVideoLoading] = useState(false);
+    const [seekTarget, setSeekTarget] = useState<number>(0);
     const videoRef = useRef<HTMLVideoElement>(null);
+
+    // Runner lookup
+    const [bibSearch, setBibSearch] = useState('');
+    const [campaignId, setCampaignId] = useState('');
+    const [campaignName, setCampaignName] = useState('');
+    const [runnerHits, setRunnerHits] = useState<RunnerHit[]>([]);
+    const [lookupLoading, setLookupLoading] = useState(false);
+    const [lookupDone, setLookupDone] = useState(false);
+    const [seekOffsetSec, setSeekOffsetSec] = useState(5);
+
+    // Time search
+    const [timeSearch, setTimeSearch] = useState('');
+    const [timeResults, setTimeResults] = useState<Recording[]>([]);
+    const [timeSearchDone, setTimeSearchDone] = useState(false);
 
     // Delete modal
     const [deleteTarget, setDeleteTarget] = useState<'one' | 'all' | null>(null);
@@ -82,6 +128,28 @@ export default function CctvRecordingsPage() {
     };
 
     useEffect(() => { load(); }, []);
+
+    useEffect(() => {
+        fetch('/api/campaigns/featured', { cache: 'no-store' })
+            .then(r => r.ok ? r.json() : null)
+            .then(d => { if (d?._id) { setCampaignId(d._id); setCampaignName(d.name || d.nameTh || ''); } })
+            .catch(() => {});
+    }, []);
+
+    const searchRunner = async () => {
+        if (!bibSearch.trim() || !campaignId) return;
+        setLookupLoading(true);
+        setLookupDone(false);
+        try {
+            const res = await fetch(
+                `/api/cctv-recordings/runner-lookup?bib=${encodeURIComponent(bibSearch.trim())}&campaignId=${encodeURIComponent(campaignId)}`,
+                { headers: authHeaders(), cache: 'no-store' },
+            );
+            const data = await res.json();
+            setRunnerHits(Array.isArray(data) ? data : []);
+        } catch { setRunnerHits([]); }
+        finally { setLookupLoading(false); setLookupDone(true); }
+    };
 
     const toggleSelect = (id: string) => {
         setSelected(prev => {
@@ -118,24 +186,24 @@ export default function CctvRecordingsPage() {
         } finally { setDeleting(false); }
     };
 
-    const openPlayer = useCallback(async (rec: Recording) => {
-        setPlayingId(rec._id);
-        setPlayingName(`${rec.cameraName} — ${fmtDate(rec.startTime)}`);
+    const openPlayerWithSeek = useCallback(async (recId: string, name: string, seek: number) => {
+        setPlayingId(recId);
+        setPlayingName(name);
+        setSeekTarget(seek);
         setVideoSrc(null);
         setVideoLoading(true);
         try {
-            const res = await fetch(`/api/cctv-recordings/${rec._id}/stream`, {
-                headers: authHeaders(),
-            });
+            const res = await fetch(`/api/cctv-recordings/${recId}/stream`, { headers: authHeaders() });
             if (res.ok) {
                 const blob = await res.blob();
-                const url = URL.createObjectURL(blob);
-                setVideoSrc(url);
+                setVideoSrc(URL.createObjectURL(blob));
             }
-        } finally {
-            setVideoLoading(false);
-        }
+        } finally { setVideoLoading(false); }
     }, []);
+
+    const openPlayer = useCallback(async (rec: Recording) => {
+        openPlayerWithSeek(rec._id, `${rec.cameraName} — ${fmtDate(rec.startTime)}`, 0);
+    }, [openPlayerWithSeek]);
 
     const closePlayer = () => {
         videoRef.current?.pause();
@@ -150,6 +218,177 @@ export default function CctvRecordingsPage() {
 
     return (
         <AdminLayout breadcrumbItems={[{ label: 'พื้นที่จัดเก็บวิดีโอ', labelEn: 'Video Storage' }]}>
+
+            {/* ── Runner Video Lookup ── */}
+            <div className="bg-white border border-slate-200 rounded-xl p-5 mb-5 shadow-sm">
+                <h2 className="text-base font-extrabold text-slate-900 mb-1">
+                    🏃 {th ? 'ค้นหาวิดีโอนักวิ่ง' : 'Runner Video Lookup'}
+                </h2>
+                <p className="text-xs text-slate-400 mb-4">
+                    {th
+                        ? 'กรอก BIB เพื่อค้นหาวิดีโอตรงจุดที่นักวิ่งวิ่งผ่าน Checkpoint'
+                        : 'Enter BIB to find video at the moment the runner passed each checkpoint'}
+                </p>
+                <div className="flex items-center gap-2 flex-wrap">
+                    <input
+                        type="text"
+                        value={bibSearch}
+                        onChange={e => setBibSearch(e.target.value)}
+                        onKeyDown={e => e.key === 'Enter' && searchRunner()}
+                        placeholder={th ? 'หมายเลข BIB...' : 'BIB number...'}
+                        className="border-2 border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400 transition-colors w-36"
+                    />
+                    {campaignName && (
+                        <span className="text-xs bg-blue-50 text-blue-700 font-semibold px-2.5 py-1.5 rounded-lg">
+                            {campaignName}
+                        </span>
+                    )}
+                    <button
+                        onClick={searchRunner}
+                        disabled={lookupLoading || !bibSearch.trim() || !campaignId}
+                        className={`px-4 py-2 text-sm font-bold rounded-lg transition-all cursor-pointer border-none ${
+                            lookupLoading || !bibSearch.trim() || !campaignId
+                                ? 'bg-slate-100 text-slate-300 cursor-not-allowed'
+                                : 'bg-blue-600 text-white hover:bg-blue-700'
+                        }`}
+                    >
+                        {lookupLoading ? 'กำลังค้นหา...' : (th ? 'ค้นหา' : 'Search')}
+                    </button>
+                    <span className="text-slate-300">|</span>
+                    <label className="flex items-center gap-1.5 text-xs text-slate-500 font-semibold">
+                        {th ? 'ถอยหลัง' : 'Rewind'}
+                        <input
+                            type="number"
+                            min={0}
+                            max={120}
+                            value={seekOffsetSec}
+                            onChange={e => setSeekOffsetSec(Math.max(0, Math.min(120, Number(e.target.value) || 0)))}
+                            className="border-2 border-slate-200 rounded-lg px-2 py-1.5 text-sm outline-none focus:border-blue-400 w-16 text-center"
+                        />
+                        {th ? 'วินาที' : 'sec'}
+                    </label>
+                </div>
+
+                {/* Time-based search */}
+                <div className="flex items-center gap-2 flex-wrap mt-3 pt-3 border-t border-slate-100">
+                    <span className="text-xs font-bold text-slate-500">⏰ {th ? 'ค้นหาตามเวลาจริง' : 'Search by time'}:</span>
+                    <input
+                        type="datetime-local"
+                        value={timeSearch}
+                        onChange={e => setTimeSearch(e.target.value)}
+                        className="border-2 border-slate-200 rounded-lg px-3 py-1.5 text-sm outline-none focus:border-blue-400 transition-colors"
+                    />
+                    <button
+                        onClick={() => {
+                            if (!timeSearch) return;
+                            const ts = new Date(timeSearch).getTime();
+                            const matched = recordings.filter(r => {
+                                const st = new Date(r.startTime).getTime();
+                                const et = r.endTime ? new Date(r.endTime).getTime() : Date.now();
+                                return st <= ts && ts <= et;
+                            });
+                            setTimeResults(matched);
+                            setTimeSearchDone(true);
+                        }}
+                        disabled={!timeSearch}
+                        className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer border-none ${
+                            !timeSearch ? 'bg-slate-100 text-slate-300 cursor-not-allowed' : 'bg-emerald-600 text-white hover:bg-emerald-700'
+                        }`}
+                    >
+                        {th ? 'ค้นหา' : 'Search'}
+                    </button>
+                </div>
+
+                {/* Results */}
+                {lookupDone && runnerHits.length === 0 && (
+                    <div className="mt-4 text-sm text-slate-400 text-center py-4">
+                        {th ? `ไม่พบข้อมูล BIB "${bibSearch}"` : `No records found for BIB "${bibSearch}"`}
+                    </div>
+                )}
+                {/* Time search results */}
+                {timeSearchDone && timeResults.length === 0 && (
+                    <div className="mt-4 text-sm text-slate-400 text-center py-4">
+                        {th ? 'ไม่พบวิดีโอที่ครอบคลุมเวลานี้' : 'No recordings cover this time'}
+                    </div>
+                )}
+                {timeResults.length > 0 && (
+                    <div className="mt-4 border border-emerald-100 rounded-lg overflow-hidden">
+                        <div className="bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-700">
+                            {th ? `พบ ${timeResults.length} วิดีโอตรงเวลา ${new Date(timeSearch).toLocaleString('th-TH')}` : `Found ${timeResults.length} recording(s) at ${new Date(timeSearch).toLocaleString()}`}
+                        </div>
+                        {timeResults.map(rec => {
+                            const seekSec = Math.max(0, Math.floor((new Date(timeSearch).getTime() - new Date(rec.startTime).getTime()) / 1000) - seekOffsetSec);
+                            return (
+                                <div key={rec._id} className="flex items-center justify-between px-3 py-2.5 border-t border-emerald-100 hover:bg-emerald-50/50">
+                                    <div>
+                                        <span className="font-bold text-sm text-slate-800">{rec.cameraName}</span>
+                                        {rec.checkpointName && (
+                                            <span className="ml-2 text-xs bg-orange-100 text-orange-700 font-bold px-1.5 py-0.5 rounded">{rec.checkpointName}</span>
+                                        )}
+                                        <span className="ml-2 text-xs text-slate-400">{fmtDate(rec.startTime)} — {fmtDuration(rec.duration)}</span>
+                                    </div>
+                                    <button
+                                        onClick={() => openPlayerWithSeek(rec._id, `${rec.cameraName} — ${new Date(timeSearch).toLocaleTimeString('th-TH')}`, seekSec)}
+                                        className="text-xs font-bold text-emerald-600 hover:text-emerald-800 cursor-pointer bg-transparent border-none"
+                                    >
+                                        ▶ {th ? 'ดูตรงเวลา' : 'Watch at time'} ({fmtDuration(seekSec)})
+                                    </button>
+                                </div>
+                            );
+                        })}
+                    </div>
+                )}
+
+                {runnerHits.length > 0 && (
+                    <div className="mt-4 border border-slate-100 rounded-lg overflow-hidden">
+                        <table className="w-full text-sm">
+                            <thead>
+                                <tr className="bg-slate-50 text-left">
+                                    <th className="px-3 py-2 font-bold text-slate-600 text-xs uppercase">{th ? 'จุดตรวจ' : 'Checkpoint'}</th>
+                                    <th className="px-3 py-2 font-bold text-slate-600 text-xs uppercase">{th ? 'เวลาจริง' : 'Real Time'}</th>
+                                    <th className="px-3 py-2 font-bold text-slate-600 text-xs uppercase">{th ? 'Elapsed' : 'Elapsed'}</th>
+                                    <th className="px-3 py-2 font-bold text-slate-600 text-xs uppercase">{th ? 'กล้อง' : 'Camera'}</th>
+                                    <th className="px-3 py-2 font-bold text-slate-600 text-xs uppercase">{th ? 'ตำแหน่งวิดีโอ' : 'Seek'}</th>
+                                    <th className="px-3 py-2"></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {runnerHits.map((hit, i) => (
+                                    <tr key={i} className={`border-t border-slate-100 ${hit.recording ? 'hover:bg-blue-50/50' : 'opacity-60'}`}>
+                                        <td className="px-3 py-2.5 font-bold text-slate-800">
+                                            <span className={`inline-block px-2 py-0.5 rounded text-xs font-bold ${
+                                                hit.checkpoint === 'START' ? 'bg-green-100 text-green-700'
+                                                : hit.checkpoint === 'FINISH' ? 'bg-red-100 text-red-700'
+                                                : 'bg-orange-100 text-orange-700'
+                                            }`}>{hit.checkpoint}</span>
+                                        </td>
+                                        <td className="px-3 py-2.5 text-slate-700 font-mono text-xs">{fmtTime(hit.scanTime)}</td>
+                                        <td className="px-3 py-2.5 text-slate-500 font-mono text-xs">{fmtMs(hit.elapsedTime)}</td>
+                                        <td className="px-3 py-2.5 text-xs text-slate-500">{hit.recording?.cameraName || '—'}</td>
+                                        <td className="px-3 py-2.5 text-xs font-mono text-slate-500">{hit.recording ? fmtDuration(Math.max(0, hit.seekSeconds - seekOffsetSec)) : '—'}</td>
+                                        <td className="px-3 py-2.5 text-right">
+                                            {hit.recording ? (
+                                                <button
+                                                    onClick={() => openPlayerWithSeek(
+                                                        hit.recording!._id,
+                                                        `BIB ${bibSearch} — ${hit.checkpoint} — ${fmtTime(hit.scanTime)}`,
+                                                        Math.max(0, hit.seekSeconds - seekOffsetSec),
+                                                    )}
+                                                    className="text-xs font-bold text-blue-600 hover:text-blue-800 cursor-pointer bg-transparent border-none"
+                                                >
+                                                    ▶ {th ? 'ดูวิดีโอ' : 'Watch'}
+                                                </button>
+                                            ) : (
+                                                <span className="text-xs text-slate-300">{th ? 'ไม่มีวิดีโอ' : 'No video'}</span>
+                                            )}
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
+            </div>
 
             {/* ── Storage bar ── */}
             <div className="bg-white border border-slate-200 rounded-xl p-5 mb-5 shadow-sm">
@@ -337,6 +576,11 @@ export default function CctvRecordingsPage() {
                                 className="max-w-full max-h-full rounded-lg shadow-2xl"
                                 style={{ maxHeight: 'calc(100vh - 80px)' }}
                                 onClick={e => e.stopPropagation()}
+                                onLoadedData={() => {
+                                    if (seekTarget > 0 && videoRef.current) {
+                                        videoRef.current.currentTime = seekTarget;
+                                    }
+                                }}
                             />
                         )}
                     </div>
