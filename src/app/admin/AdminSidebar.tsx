@@ -1,11 +1,13 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { useLanguage } from '@/lib/language-context';
 import { ROUTE_TO_MODULE, isAdminRole } from '@/lib/permissions';
+
+const SIDEBAR_SCROLL_KEY = 'admin_sidebar_scroll_top';
 
 interface MenuItem {
     href: string;
@@ -133,6 +135,7 @@ export default function AdminSidebar() {
     const pathname = usePathname();
     const { user } = useAuth();
     const { language } = useLanguage();
+    const sidebarRef = useRef<HTMLElement | null>(null);
 
     const admin = isAdminRole(user?.role);
     const perms = user?.modulePermissions || {};
@@ -158,8 +161,39 @@ export default function AdminSidebar() {
 
     const isActive = (href: string) => href.split('?')[0] === bestPartialMatchHref;
 
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
+
+        const restoreScroll = () => {
+            const saved = window.sessionStorage.getItem(SIDEBAR_SCROLL_KEY);
+            const scrollTop = saved ? Number(saved) : 0;
+            if (sidebarRef.current && Number.isFinite(scrollTop)) {
+                sidebarRef.current.scrollTop = scrollTop;
+            }
+        };
+
+        restoreScroll();
+        const raf = window.requestAnimationFrame(restoreScroll);
+        return () => window.cancelAnimationFrame(raf);
+    }, [pathname]);
+
+    useEffect(() => {
+        const el = sidebarRef.current;
+        if (!el || typeof window === 'undefined') return;
+
+        const handleScroll = () => {
+            window.sessionStorage.setItem(SIDEBAR_SCROLL_KEY, String(el.scrollTop));
+        };
+
+        el.addEventListener('scroll', handleScroll, { passive: true });
+        return () => el.removeEventListener('scroll', handleScroll);
+    }, []);
+
     return (
-        <aside className="main-sidebar">
+        <aside
+            ref={sidebarRef}
+            className="main-sidebar"
+        >
             <ul className="sidebar-menu">
                 {sections.map((section, sIdx) => (
                     <div key={sIdx} className="sidebar-section">
@@ -168,7 +202,14 @@ export default function AdminSidebar() {
                         </span>
                         {section.items.map((item) => (
                             <li key={item.href} className={isActive(item.href) ? 'active' : ''}>
-                                <Link href={item.href}>
+                                <Link
+                                    href={item.href}
+                                    onClick={() => {
+                                        if (typeof window !== 'undefined' && sidebarRef.current) {
+                                            window.sessionStorage.setItem(SIDEBAR_SCROLL_KEY, String(sidebarRef.current.scrollTop));
+                                        }
+                                    }}
+                                >
                                     <span className="sidebar-icon">
                                         <SidebarIcon name={item.icon} color={item.iconColor} />
                                     </span>

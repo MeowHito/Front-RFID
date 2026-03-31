@@ -130,6 +130,14 @@ export default function CctvRecordingsPage() {
 
     useEffect(() => { load(); }, []);
 
+    // Auto-refresh every 10s while any recording is live
+    useEffect(() => {
+        const hasLive = recordings.some(r => r.recordingStatus === 'recording');
+        if (!hasLive) return;
+        const interval = setInterval(load, 10000);
+        return () => clearInterval(interval);
+    }, [recordings]);
+
     useEffect(() => {
         fetch('/api/campaigns/featured', { cache: 'no-store' })
             .then(r => r.ok ? r.json() : null)
@@ -564,14 +572,20 @@ export default function CctvRecordingsPage() {
                             >
                                 {/* Thumbnail area */}
                                 <div
-                                    className="relative bg-slate-900 cursor-pointer group"
+                                    className={`relative bg-slate-900 cursor-pointer group ${rec.recordingStatus === 'recording' ? 'ring-2 ring-red-500/60' : ''}`}
                                     style={{ aspectRatio: '16/9' }}
                                     onClick={() => openPlayer(rec)}
                                 >
                                     <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
-                                        <div className="text-4xl opacity-20">📹</div>
+                                        <div className="text-4xl opacity-20">{rec.recordingStatus === 'recording' ? '🔴' : '📹'}</div>
                                         <span className="text-xs text-slate-400 font-mono">{fmtDuration(rec.duration)}</span>
                                     </div>
+                                    {/* LIVE badge */}
+                                    {rec.recordingStatus === 'recording' && (
+                                        <div className="absolute top-2 left-10 flex items-center gap-1.5 bg-red-600 text-white text-[10px] font-extrabold px-2.5 py-0.5 rounded-full animate-pulse">
+                                            <span className="w-1.5 h-1.5 bg-white rounded-full inline-block" /> REC
+                                        </div>
+                                    )}
                                     {/* Play overlay */}
                                     <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/30">
                                         <div className="w-12 h-12 bg-white/90 rounded-full flex items-center justify-center shadow-lg">
