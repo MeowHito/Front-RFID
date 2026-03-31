@@ -318,15 +318,15 @@ export default function CctvRecordingsPage() {
                     onClick={closePlayer}
                 >
                     <div
-                        className="flex items-center justify-between px-5 py-3 flex-shrink-0"
+                        className="flex items-center justify-between px-5 py-3 shrink-0"
                         onClick={e => e.stopPropagation()}
                     >
                         <div className="text-white font-bold text-sm truncate max-w-[80%]">{playingName}</div>
                         <button onClick={closePlayer} className="text-white text-2xl leading-none cursor-pointer bg-transparent border-none">✕</button>
                     </div>
-                    <div className="flex-1 flex items-center justify-center p-4" onClick={e => e.stopPropagation()}>
+                    <div className="flex-1 flex items-center justify-center p-4">
                         {videoLoading && (
-                            <div className="text-white text-sm animate-pulse">⏳ กำลังโหลดวิดีโอ...</div>
+                            <div className="text-white text-sm animate-pulse" onClick={e => e.stopPropagation()}>⏳ กำลังโหลดวิดีโอ...</div>
                         )}
                         {videoSrc && (
                             <video
@@ -336,6 +336,7 @@ export default function CctvRecordingsPage() {
                                 autoPlay
                                 className="max-w-full max-h-full rounded-lg shadow-2xl"
                                 style={{ maxHeight: 'calc(100vh - 80px)' }}
+                                onClick={e => e.stopPropagation()}
                             />
                         )}
                     </div>
