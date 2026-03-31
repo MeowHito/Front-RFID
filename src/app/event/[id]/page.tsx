@@ -1338,9 +1338,9 @@ export default function EventLivePage() {
                                                             <div style={{ marginTop: 2, minWidth: 0, overflow: 'hidden' }}>
                                                                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, maxWidth: '100%', minWidth: 0, fontSize: isMobile ? 8 : 9, color: runner.statusCheckpoint ? '#dc2626' : '#1e293b', textTransform: 'uppercase', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', verticalAlign: 'top' }}>
                                                                     <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{statusCheckpointName}</span>
-                                                                    {statusCheckpointHasCamera && <CheckpointCameraIcon dark={isDark} />}
                                                                     {runner.statusNote && <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>· {runner.statusNote}</span>}
                                                                     {statusScanTimeLabel && <span style={{ flexShrink: 0 }}>· {statusScanTimeLabel}</span>}
+                                                                    {statusCheckpointHasCamera && <CheckpointCameraIcon dark={isDark} />}
                                                                 </span>
                                                             </div>
                                                         )}
