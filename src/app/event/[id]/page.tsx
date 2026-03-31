@@ -239,8 +239,8 @@ function CheckpointCameraIcon({ dark }: { dark: boolean }) {
                 display: 'inline-flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                width: 16,
-                height: 16,
+                width: 12,
+                height: 12,
                 borderRadius: 999,
                 border: `1px solid ${dark ? 'rgba(96,165,250,0.28)' : '#bfdbfe'}`,
                 background: dark ? 'rgba(59,130,246,0.14)' : '#dbeafe',
@@ -248,7 +248,7 @@ function CheckpointCameraIcon({ dark }: { dark: boolean }) {
                 flexShrink: 0,
             }}
         >
-            <svg viewBox="0 0 24 24" fill="currentColor" style={{ width: 10, height: 10 }}>
+            <svg viewBox="0 0 24 24" fill="currentColor" style={{ width: 7, height: 7 }}>
                 <path d="M4 7.75A2.75 2.75 0 0 1 6.75 5h6.5A2.75 2.75 0 0 1 16 7.75v.8l2.73-1.95A1.5 1.5 0 0 1 21 7.82v8.36a1.5 1.5 0 0 1-2.27 1.22L16 15.45v.8A2.75 2.75 0 0 1 13.25 19h-6.5A2.75 2.75 0 0 1 4 16.25v-8.5Z" />
             </svg>
         </span>
@@ -1318,7 +1318,7 @@ export default function EventLivePage() {
                                             case 'status':
                                                 return (
                                                     <td key={key} style={{ padding: isMobile ? '4px 2px' : '6px 6px' }}>
-                                                        <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
+                                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, minWidth: 0 }}>
                                                             <span style={{ display: 'inline-block', padding: isMobile ? '1px 4px' : '2px 8px', borderRadius: 3, fontWeight: 700, fontSize: isMobile ? 8 : 10, color: '#fff', background: getStatusBgColor(runner.status), lineHeight: 1.3 }}>
                                                                 {getStatusLabel(runner.status)}
                                                             </span>
@@ -1335,11 +1335,13 @@ export default function EventLivePage() {
                                                             )}
                                                         </div>
                                                         {statusCheckpointName && (
-                                                            <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap', fontSize: isMobile ? 8 : 9, color: runner.statusCheckpoint ? '#dc2626' : '#1e293b', textTransform: 'uppercase', fontWeight: 600, marginTop: 2 }}>
-                                                                <span>{statusCheckpointName}</span>
-                                                                {statusCheckpointHasCamera && <CheckpointCameraIcon dark={isDark} />}
-                                                                {runner.statusNote && <span>· {runner.statusNote}</span>}
-                                                                {statusScanTimeLabel && <span>· {statusScanTimeLabel}</span>}
+                                                            <div style={{ marginTop: 2, minWidth: 0, overflow: 'hidden' }}>
+                                                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, maxWidth: '100%', minWidth: 0, fontSize: isMobile ? 8 : 9, color: runner.statusCheckpoint ? '#dc2626' : '#1e293b', textTransform: 'uppercase', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', verticalAlign: 'top' }}>
+                                                                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{statusCheckpointName}</span>
+                                                                    {statusCheckpointHasCamera && <CheckpointCameraIcon dark={isDark} />}
+                                                                    {runner.statusNote && <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>· {runner.statusNote}</span>}
+                                                                    {statusScanTimeLabel && <span style={{ flexShrink: 0 }}>· {statusScanTimeLabel}</span>}
+                                                                </span>
                                                             </div>
                                                         )}
                                                     </td>
