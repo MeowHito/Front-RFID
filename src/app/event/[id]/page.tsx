@@ -307,7 +307,7 @@ export default function EventLivePage() {
     const [checkpointMappings, setCheckpointMappings] = useState<CheckpointMapping[]>([]);
     const [totalDistance, setTotalDistance] = useState<number>(0);
     const [cpDistanceLookup, setCpDistanceLookup] = useState<CheckpointDistanceLookup>({});
-    const [, setRunnerCameraAvailability] = useState<Record<string, Record<string, boolean>>>({});
+    const [runnerCameraAvailability, setRunnerCameraAvailability] = useState<Record<string, Record<string, boolean>>>({});
     const [followedRunners, setFollowedRunners] = useState<FollowedRunner[]>([]);
     const [rankDeltas, setRankDeltas] = useState<Map<string, number>>(new Map());
     const prevRanksRef = useRef<Map<string, number>>(new Map());
@@ -690,6 +690,13 @@ export default function EventLivePage() {
         [followedRunnersForEvent]
     );
 
+    const runnersWithVideo = useMemo(
+        () => new Set(Object.entries(runnerCameraAvailability)
+            .filter(([, checkpointMap]) => Object.values(checkpointMap || {}).some(Boolean))
+            .map(([runnerId]) => runnerId)),
+        [runnerCameraAvailability]
+    );
+
     const toggleRunnerFollow = useCallback((runner: Runner) => {
         const displayName = language === 'th' && runner.firstNameTh
             ? `${runner.firstNameTh} ${runner.lastNameTh || ''}`.trim()
@@ -718,7 +725,7 @@ export default function EventLivePage() {
             .filter(runner => {
                 const matchesSearch = !searchQuery || runner.firstName?.toLowerCase().includes(searchQuery.toLowerCase()) || runner.lastName?.toLowerCase().includes(searchQuery.toLowerCase()) || runner.bib?.includes(searchQuery);
                 const matchesGender = filterGender === 'ALL' || filterGender === 'FOLLOWED' || runner.gender === filterGender;
-                const matchesFollowed = filterGender !== 'FOLLOWED' || followedRunnerIds.has(runner._id);
+                const matchesFollowed = filterGender !== 'FOLLOWED' || (followedRunnerIds.has(runner._id) && runnersWithVideo.has(runner._id));
                 const matchesCategory = !filterCategory || resolveRunnerCategoryKey(runner) === filterCategory;
                 const matchesStatus = filterStatus === 'ALL' || runner.status === filterStatus;
                 return matchesSearch && matchesGender && matchesFollowed && matchesCategory && matchesStatus;
@@ -756,7 +763,7 @@ export default function EventLivePage() {
                 // Fallback: by BIB
                 return (a.bib || '').localeCompare(b.bib || '', undefined, { numeric: true });
             });
-    }, [runners, searchQuery, filterGender, followedRunnerIds, filterCategory, filterStatus, resolveRunnerCategoryKey]);
+    }, [runners, searchQuery, filterGender, followedRunnerIds, runnersWithVideo, filterCategory, filterStatus, resolveRunnerCategoryKey]);
 
     // Compute live gender and category ranks from sorted runners
     // These are computed AFTER sorting so rank=position within gender/category group
@@ -1236,6 +1243,7 @@ export default function EventLivePage() {
                                         ? `${runner.firstNameTh} ${runner.lastNameTh || ''}`
                                         : `${runner.firstName} ${runner.lastName}`;
                                     const isFollowedRunner = isRunnerFollowed(followedRunnersForEvent, runner._id);
+                                    const canFollowRunner = runnersWithVideo.has(runner._id);
                                     const initials = getInitials(runner.firstName, runner.lastName);
                                     const avatarBg = getAvatarColor(runner.firstName + runner.lastName);
                                     // Calculate progress % based on RaceTiger checkpoint data
@@ -1390,7 +1398,7 @@ export default function EventLivePage() {
                                                                 <span style={{ display: 'inline-block', padding: isMobile ? '1px 4px' : '2px 8px', borderRadius: 3, fontWeight: 700, fontSize: isMobile ? 8 : 10, color: '#fff', background: getStatusBgColor(runner.status), lineHeight: 1.3 }}>
                                                                     {getStatusLabel(runner.status)}
                                                                 </span>
-                                                                <FollowHeartButton active={isFollowedRunner} dark={isDark} onClick={() => toggleRunnerFollow(runner)} />
+                                                                {canFollowRunner && <FollowHeartButton active={isFollowedRunner} dark={isDark} onClick={() => toggleRunnerFollow(runner)} />}
                                                             </div>
                                                             {isAdmin && !isMobile && (
                                                                 <button

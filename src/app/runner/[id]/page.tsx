@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
+import { isRunnerFollowed, loadFollowedRunners, saveFollowedRunners, subscribeFollowedRunners, toggleFollowedRunner, type FollowedRunner } from '@/lib/followed-runners';
 
 
 interface RunnerData {
@@ -178,6 +179,14 @@ function CheckpointCameraIcon({ onClick, size = 22 }: { onClick?: () => void; si
     );
 }
 
+function FollowHeartIcon({ filled, size = 16, color }: { filled: boolean; size?: number; color: string }) {
+    return (
+        <svg viewBox="0 0 24 24" aria-hidden="true" style={{ width: size, height: size, display: 'block' }}>
+            <path d="M12 21.35 10.55 20.03C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35Z" fill={filled ? color : 'none'} stroke={color} strokeWidth="2" strokeLinejoin="round" />
+        </svg>
+    );
+}
+
 /** Auto-shrink text to always fit one line within its container */
 function FitName({ children, className, style, maxSize = 28 }: { children: string; className?: string; style?: React.CSSProperties; maxSize?: number }) {
     const ref = useRef<HTMLDivElement>(null);
@@ -211,6 +220,8 @@ export default function RunnerProfilePage() {
     const [runnerHits, setRunnerHits] = useState<RunnerHit[]>([]);
     const [selectedCheckpointKey, setSelectedCheckpointKey] = useState('');
     const [preArrivalBufferSeconds, setPreArrivalBufferSeconds] = useState(5);
+    const [followedRunners, setFollowedRunners] = useState<FollowedRunner[]>([]);
+    const [selectedVideoIsPortrait, setSelectedVideoIsPortrait] = useState(false);
 
     useEffect(() => {
         if (!runnerId) return;
@@ -249,10 +260,16 @@ export default function RunnerProfilePage() {
     }, []);
 
     useEffect(() => {
+        setFollowedRunners(loadFollowedRunners());
+        return subscribeFollowedRunners(setFollowedRunners);
+    }, []);
+
+    useEffect(() => {
         setLookupLoaded(false);
         setLookupLoading(false);
         setRunnerHits([]);
         setSelectedCheckpointKey('');
+        setSelectedVideoIsPortrait(false);
     }, [runnerId]);
 
     useEffect(() => {
@@ -344,6 +361,26 @@ export default function RunnerProfilePage() {
     const sortedTimings = [...timings].sort((a, b) => (a.order || 0) - (b.order || 0));
     const runnerHitMap = new Map(runnerHits.map(hit => [normalizeCheckpoint(hit.checkpoint), hit]));
     const availableVideoCount = runnerHits.filter(hit => hit.recording).length;
+    const isFollowedRunner = isRunnerFollowed(followedRunners, runner._id);
+
+    const handleToggleFollow = () => {
+        const next = toggleFollowedRunner(followedRunners, {
+            runnerId: runner._id,
+            eventKey: campaign?.slug || campaign?._id || runnerId,
+            eventId: campaign?._id,
+            runnerName: displayName,
+            bib: runner.bib,
+            campaignName: campaign?.name,
+            category: runner.category,
+            ageGroup: runner.ageGroup,
+            gender: runner.gender,
+            latestCheckpoint: runner.latestCheckpoint,
+            followedAt: Date.now(),
+        });
+
+        setFollowedRunners(next);
+        saveFollowedRunners(next);
+    };
 
     // Build checkpoint rows from checkpoint mappings (fallback when no timing records)
     const checkpointRows = cpMappings
@@ -389,9 +426,14 @@ export default function RunnerProfilePage() {
         : '';
 
     const openCheckpointVideo = (checkpointKey: string) => {
+        setSelectedVideoIsPortrait(false);
         setSelectedCheckpointKey(checkpointKey);
     };
-    const closeCheckpointVideo = () => setSelectedCheckpointKey('');
+
+    const closeCheckpointVideo = () => {
+        setSelectedVideoIsPortrait(false);
+        setSelectedCheckpointKey('');
+    };
 
     return (
         <div style={{ minHeight: '100vh', background: '#f8fafc', fontFamily: "'Prompt', sans-serif", color: '#1e293b' }}>
@@ -450,12 +492,29 @@ export default function RunnerProfilePage() {
                     </div>
 
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                        <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', background: '#0f172a', color: '#fff', padding: '10px 24px', borderRadius: 12, minWidth: 240, minHeight: 44 }}>
-                            <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: 1.5, textTransform: 'uppercase', color: '#cbd5e1' }}>Checkpoint CCTV</div>
-                            <div style={{ marginTop: 4, fontSize: 12, color: '#cbd5e1', fontWeight: 700 }}>
-                                {lookupLoading ? 'กำลังค้นหาวิดีโอ CCTV...' : lookupLoaded ? `พบวิดีโอ ${availableVideoCount} จุด` : 'กำลังโหลดข้อมูลวิดีโอ'}
-                            </div>
-                        </div>
+                        <button
+                            type="button"
+                            onClick={handleToggleFollow}
+                            style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: 10,
+                                background: isFollowedRunner ? '#e11d48' : '#0f172a',
+                                color: '#fff',
+                                padding: '10px 24px',
+                                borderRadius: 12,
+                                minWidth: 240,
+                                minHeight: 44,
+                                border: 'none',
+                                cursor: 'pointer',
+                                fontWeight: 800,
+                                fontSize: 14,
+                            }}
+                        >
+                            <FollowHeartIcon filled={isFollowedRunner} size={16} color="#fff" />
+                            <span>{isFollowedRunner ? 'กำลังติดตามนักวิ่ง' : 'ติดตามนักวิ่ง'}</span>
+                        </button>
                         {isFinished ? (
                             <>
                                 <Link href={`/runner/${runnerId}/eslip`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, background: '#16a34a', color: '#fff', padding: '10px 24px', borderRadius: 12, fontWeight: 700, fontSize: 14, textDecoration: 'none', border: 'none', cursor: 'pointer' }}>
@@ -678,25 +737,18 @@ export default function RunnerProfilePage() {
                     >
                         <div
                             onClick={(event) => event.stopPropagation()}
-                            style={{ width: 'min(960px, 100%)', maxHeight: 'calc(100vh - 32px)', overflowY: 'auto', background: '#fff', borderRadius: 24, border: '1px solid rgba(226,232,240,0.9)', boxShadow: '0 24px 80px rgba(15,23,42,0.38)' }}
+                            style={{ width: 'min(1080px, 100%)', maxHeight: 'calc(100vh - 32px)', overflowY: 'auto', background: '#fff', borderRadius: 24, border: '1px solid rgba(226,232,240,0.9)', boxShadow: '0 24px 80px rgba(15,23,42,0.38)' }}
                         >
                             <div style={{ padding: '20px 24px', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16 }}>
                                 <div>
                                     <div style={{ fontSize: 11, fontWeight: 900, letterSpacing: 1.6, textTransform: 'uppercase', color: '#64748b' }}>Checkpoint CCTV</div>
                                     <h3 style={{ margin: '8px 0 0', fontSize: 26, fontWeight: 900, color: '#0f172a' }}>{selectedCheckpointName || 'Checkpoint Video'}</h3>
-                                    <p style={{ margin: '8px 0 0', fontSize: 13, color: '#64748b' }}>
-                                        {lookupLoading || !lookupLoaded
-                                            ? 'กำลังค้นหาวิดีโอ CCTV ที่ตรงกับเวลาผ่านจุดของนักวิ่ง...'
-                                            : selectedHit?.recording
-                                                ? `ระบบจะเริ่มวิดีโอก่อนเวลาผ่านจุดประมาณ ${preArrivalBufferSeconds} วินาที ตามค่าที่ตั้งในระบบ`
-                                                : 'Checkpoint ที่เลือกยังไม่พบวิดีโอที่ตรงกับช่วงเวลาของนักวิ่งคนนี้'}
-                                    </p>
                                 </div>
                                 <button
                                     type="button"
                                     onClick={closeCheckpointVideo}
                                     aria-label="ปิดหน้าต่างวิดีโอ CCTV"
-                                    style={{ border: 'none', background: '#e2e8f0', color: '#0f172a', width: 40, height: 40, borderRadius: 999, cursor: 'pointer', fontSize: 20, fontWeight: 700, lineHeight: 1 }}
+                                    style={{ border: 'none', background: '#fee2e2', color: '#dc2626', width: 42, height: 42, borderRadius: 999, cursor: 'pointer', fontSize: 54, fontWeight: 500, lineHeight: 0 }}
                                 >
                                     ×
                                 </button>
@@ -708,27 +760,21 @@ export default function RunnerProfilePage() {
                                 </div>
                             ) : selectedHit?.recording ? (
                                 <div style={{ padding: 24 }}>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap' }}>
-                                        <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 16, padding: '14px 18px', fontSize: 13, color: '#475569', minWidth: 240 }}>
-                                            <div>กล้อง: <strong style={{ color: '#0f172a' }}>{selectedHit.recording.cameraName}</strong></div>
-                                            <div style={{ marginTop: 6 }}>เวลาในระบบ: <strong style={{ color: '#0f172a' }}>{formatTimeOfDay(selectedHit.scanTime)}</strong></div>
-                                            <div style={{ marginTop: 6, fontSize: 12, color: '#64748b' }}>เริ่มไฟล์ {formatDateTime(selectedHit.recording.startTime)}</div>
-                                        </div>
-                                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '10px 14px', borderRadius: 999, background: selectedHit.recording.recordingStatus === 'recording' ? '#fee2e2' : '#dcfce7', color: selectedHit.recording.recordingStatus === 'recording' ? '#dc2626' : '#15803d', fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 1 }}>
-                                            <span style={{ width: 8, height: 8, borderRadius: 999, background: 'currentColor', opacity: 0.9 }} />
-                                            {selectedHit.recording.recordingStatus === 'recording' ? 'Live CCTV' : 'CCTV Replay'}
-                                        </div>
+                                    <div style={{ marginBottom: 16, fontSize: 13, color: '#475569', fontWeight: 600 }}>
+                                        กล้อง <strong style={{ color: '#0f172a' }}>{selectedHit.recording.cameraName}</strong> · เวลาในระบบ <strong style={{ color: '#0f172a' }}>{formatTimeOfDay(selectedHit.scanTime)}</strong> · เริ่มไฟล์ <strong style={{ color: '#0f172a' }}>{formatDateTime(selectedHit.recording.startTime)}</strong>
                                     </div>
 
-                                    <div style={{ marginTop: 20, overflow: 'hidden', borderRadius: 24, border: '1px solid #0f172a', background: '#020617', boxShadow: '0 20px 50px rgba(15,23,42,0.24)' }}>
+                                    <div style={{ marginTop: 8, display: 'flex', justifyContent: 'center' }}>
+                                        <div style={{ width: selectedVideoIsPortrait ? 'min(480px, 100%)' : '100%', overflow: 'hidden', borderRadius: 24, border: '1px solid #0f172a', background: '#020617', boxShadow: '0 20px 50px rgba(15,23,42,0.24)' }}>
                                         <video
                                             key={`${selectedHit.recording._id}-${videoSeekSeconds}`}
                                             src={streamUrl}
                                             controls
                                             preload="metadata"
-                                            style={{ width: '100%', aspectRatio: '16 / 9', background: '#000' }}
+                                            style={{ width: '100%', height: selectedVideoIsPortrait ? 'min(78vh, 860px)' : 'auto', maxHeight: selectedVideoIsPortrait ? '78vh' : 'none', aspectRatio: selectedVideoIsPortrait ? '9 / 16' : '16 / 9', background: '#000', objectFit: selectedVideoIsPortrait ? 'cover' : 'contain', display: 'block' }}
                                             onLoadedMetadata={(event) => {
                                                 const video = event.currentTarget;
+                                                setSelectedVideoIsPortrait(video.videoHeight > video.videoWidth);
                                                 if (Number.isFinite(videoSeekSeconds)) {
                                                     try {
                                                         video.currentTime = videoSeekSeconds;
@@ -739,15 +785,9 @@ export default function RunnerProfilePage() {
                                             }}
                                         />
                                     </div>
+                                    </div>
 
-                                    <div style={{ marginTop: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, flexWrap: 'wrap', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 18, padding: 16 }}>
-                                        <div style={{ fontSize: 13, color: '#475569' }}>
-                                            <div>เริ่มเล่นที่ตำแหน่ง <strong style={{ color: '#0f172a' }}>{formatTime(videoSeekSeconds * 1000)}</strong></div>
-                                            <div style={{ marginTop: 4 }}>ขนาดไฟล์ <strong style={{ color: '#0f172a' }}>{formatBytes(selectedHit.recording.fileSize)}</strong></div>
-                                            {selectedHit.recording.recordingStatus === 'recording' && (
-                                                <div style={{ marginTop: 4, color: '#dc2626', fontWeight: 700 }}>กำลังถ่ายทอดสดอยู่ สามารถกดดูหรือบันทึกได้ทันที</div>
-                                            )}
-                                        </div>
+                                    <div style={{ marginTop: 18, display: 'flex', justifyContent: 'center' }}>
                                         <a href={downloadUrl} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: '#16a34a', color: '#fff', padding: '10px 20px', borderRadius: 12, fontWeight: 700, fontSize: 14, textDecoration: 'none' }}>
                                             บันทึกวิดีโอจุดนี้
                                         </a>
