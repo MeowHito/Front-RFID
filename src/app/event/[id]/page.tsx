@@ -9,7 +9,7 @@ import { useTheme } from '@/lib/theme-context';
 import { useAuth } from '@/lib/auth-context';
 import { authHeaders } from '@/lib/authHeaders';
 import CutoffDateTimePicker from '@/components/CutoffDateTimePicker';
-import { getFollowedRunnersForEvent, isRunnerFollowed, loadFollowedRunners, saveFollowedRunners, subscribeFollowedRunners, toggleFollowedRunner, type FollowedRunner } from '@/lib/followed-runners';
+import { getFollowedRunnersForEvent, isRunnerFollowed, loadFollowedRunners, subscribeFollowedRunners, type FollowedRunner } from '@/lib/followed-runners';
 
 interface Campaign {
     _id: string;
@@ -131,20 +131,13 @@ interface CheckpointMapping {
     } | string;
 }
 
-interface RunnerCameraHit {
-    checkpoint?: string;
-    recording?: {
-        _id?: string;
-    } | null;
-}
-
 // Resolved checkpoint distance info per event
 interface CheckpointDistanceLookup {
     [eventId: string]: {
-        totalDistance: number;
-        totalCheckpoints: number;
         checkpoints: Record<string, number>;
         cpOrders: Record<string, number>;
+        totalDistance: number;
+        totalCheckpoints: number;
     };
 }
 
@@ -244,39 +237,6 @@ function FollowHeartIcon({ filled, size = 14, color }: { filled: boolean; size?:
     );
 }
 
-function FollowHeartButton({ active, dark, onClick }: { active: boolean; dark: boolean; onClick: () => void }) {
-    const borderColor = active ? '#fda4af' : (dark ? 'rgba(148,163,184,0.32)' : '#cbd5e1');
-    const background = active ? '#fff1f2' : (dark ? 'rgba(15,23,42,0.35)' : '#fff');
-    const color = active ? '#e11d48' : (dark ? '#cbd5e1' : '#64748b');
-
-    return (
-        <button
-            type="button"
-            aria-label={active ? 'เลิกติดตามนักกีฬา' : 'ติดตามนักกีฬา'}
-            title={active ? 'เลิกติดตามนักกีฬา' : 'ติดตามนักกีฬา'}
-            onClick={(event) => {
-                event.stopPropagation();
-                onClick();
-            }}
-            style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                width: 22,
-                height: 22,
-                borderRadius: 999,
-                border: `1px solid ${borderColor}`,
-                background,
-                flexShrink: 0,
-                cursor: 'pointer',
-                padding: 0,
-            }}
-        >
-            <FollowHeartIcon filled={active} size={12} color={color} />
-        </button>
-    );
-}
-
 export default function EventLivePage() {
     const { language } = useLanguage();
     const { theme } = useTheme();
@@ -307,11 +267,9 @@ export default function EventLivePage() {
     const [checkpointMappings, setCheckpointMappings] = useState<CheckpointMapping[]>([]);
     const [totalDistance, setTotalDistance] = useState<number>(0);
     const [cpDistanceLookup, setCpDistanceLookup] = useState<CheckpointDistanceLookup>({});
-    const [runnerCameraAvailability, setRunnerCameraAvailability] = useState<Record<string, Record<string, boolean>>>({});
     const [followedRunners, setFollowedRunners] = useState<FollowedRunner[]>([]);
     const [rankDeltas, setRankDeltas] = useState<Map<string, number>>(new Map());
     const prevRanksRef = useRef<Map<string, number>>(new Map());
-    const runnerCameraRequestKeyRef = useRef<Map<string, string>>(new Map());
 
     // Admin status edit modal
     const [editingRunner, setEditingRunner] = useState<Runner | null>(null);
@@ -427,11 +385,6 @@ export default function EventLivePage() {
         return () => clearInterval(refreshInterval);
     }, [campaign?._id, isRaceFinished]);
 
-    useEffect(() => {
-        setRunnerCameraAvailability({});
-        runnerCameraRequestKeyRef.current = new Map();
-    }, [campaign?._id]);
-
     async function fetchEventData() {
         try {
             setLoading(true);
@@ -484,11 +437,12 @@ export default function EventLivePage() {
                             String(c.eventId || '') === evId || String(c._id || '') === evId
                         );
                         const catDist = evCategory ? (parseDistanceValue(evCategory.distance || evCategory.name) || 0) : 0;
+                        const totalCheckpoints = Object.values(cpOrders).filter((order) => order > 0).length;
                         lookup[evId] = {
-                            totalDistance: maxDist > 0 ? maxDist : catDist,
-                            totalCheckpoints: mappings.length,
                             checkpoints: cpMap,
                             cpOrders,
+                            totalDistance: maxDist > 0 ? maxDist : catDist,
+                            totalCheckpoints,
                         };
                     } catch { /* skip */ }
                 }));
@@ -690,42 +644,12 @@ export default function EventLivePage() {
         [followedRunnersForEvent]
     );
 
-    const runnersWithVideo = useMemo(
-        () => new Set(Object.entries(runnerCameraAvailability)
-            .filter(([, checkpointMap]) => Object.values(checkpointMap || {}).some(Boolean))
-            .map(([runnerId]) => runnerId)),
-        [runnerCameraAvailability]
-    );
-
-    const toggleRunnerFollow = useCallback((runner: Runner) => {
-        const displayName = language === 'th' && runner.firstNameTh
-            ? `${runner.firstNameTh} ${runner.lastNameTh || ''}`.trim()
-            : `${runner.firstName} ${runner.lastName}`.trim();
-
-        const next = toggleFollowedRunner(followedRunners, {
-            runnerId: runner._id,
-            eventKey,
-            eventId: campaign?._id,
-            runnerName: displayName,
-            bib: runner.bib,
-            campaignName: campaign?.name,
-            category: runner.category,
-            ageGroup: runner.ageGroup,
-            gender: runner.gender,
-            latestCheckpoint: runner.latestCheckpoint,
-            followedAt: Date.now(),
-        });
-
-        setFollowedRunners(next);
-        saveFollowedRunners(next);
-    }, [followedRunners, eventKey, campaign?._id, campaign?.name, language]);
-
     const filteredRunners = useMemo(() => {
         return runners
             .filter(runner => {
                 const matchesSearch = !searchQuery || runner.firstName?.toLowerCase().includes(searchQuery.toLowerCase()) || runner.lastName?.toLowerCase().includes(searchQuery.toLowerCase()) || runner.bib?.includes(searchQuery);
                 const matchesGender = filterGender === 'ALL' || filterGender === 'FOLLOWED' || runner.gender === filterGender;
-                const matchesFollowed = filterGender !== 'FOLLOWED' || (followedRunnerIds.has(runner._id) && runnersWithVideo.has(runner._id));
+                const matchesFollowed = filterGender !== 'FOLLOWED' || followedRunnerIds.has(runner._id);
                 const matchesCategory = !filterCategory || resolveRunnerCategoryKey(runner) === filterCategory;
                 const matchesStatus = filterStatus === 'ALL' || runner.status === filterStatus;
                 return matchesSearch && matchesGender && matchesFollowed && matchesCategory && matchesStatus;
@@ -763,7 +687,7 @@ export default function EventLivePage() {
                 // Fallback: by BIB
                 return (a.bib || '').localeCompare(b.bib || '', undefined, { numeric: true });
             });
-    }, [runners, searchQuery, filterGender, followedRunnerIds, runnersWithVideo, filterCategory, filterStatus, resolveRunnerCategoryKey]);
+    }, [runners, searchQuery, filterGender, followedRunnerIds, filterCategory, filterStatus, resolveRunnerCategoryKey]);
 
     // Compute live gender and category ranks from sorted runners
     // These are computed AFTER sorting so rank=position within gender/category group
@@ -784,65 +708,6 @@ export default function EventLivePage() {
         }
         return ranks;
     }, [filteredRunners, resolveRunnerCategoryKey]);
-
-    useEffect(() => {
-        if (!campaign?._id || filteredRunners.length === 0) return;
-
-        let cancelled = false;
-        const runnersToLoad = filteredRunners.filter((runner) => {
-            if (!runner._id) return false;
-            if (!runner.scanTime && !runner.latestCheckpoint && !runner.statusCheckpoint) return false;
-
-            const requestKey = [runner.latestCheckpoint || '', runner.statusCheckpoint || '', runner.scanTime || ''].join('|');
-            if (runnerCameraRequestKeyRef.current.get(runner._id) === requestKey) return false;
-            runnerCameraRequestKeyRef.current.set(runner._id, requestKey);
-            return true;
-        });
-
-        if (runnersToLoad.length === 0) return;
-
-        (async () => {
-            const updates = await Promise.all(runnersToLoad.map(async (runner) => {
-                try {
-                    const res = await fetch(`/api/runner/${runner._id}/cctv`, { cache: 'no-store' });
-                    const payload = await res.json().catch(() => ({}));
-                    const hits: RunnerCameraHit[] = payload?.status?.code === '200' && Array.isArray(payload?.data?.hits)
-                        ? payload.data.hits
-                        : [];
-
-                    const checkpointMap: Record<string, boolean> = {};
-                    hits.forEach((hit) => {
-                        const key = normalizeComparableText(hit?.checkpoint);
-                        if (key && hit?.recording) checkpointMap[key] = true;
-                    });
-
-                    return { runnerId: runner._id, checkpointMap, shouldRetry: false };
-                } catch {
-                    return { runnerId: runner._id, checkpointMap: {}, shouldRetry: true };
-                }
-            }));
-
-            if (cancelled) return;
-
-            updates.forEach((update) => {
-                if (update.shouldRetry) {
-                    runnerCameraRequestKeyRef.current.delete(update.runnerId);
-                }
-            });
-
-            setRunnerCameraAvailability((prev) => {
-                const next = { ...prev };
-                updates.forEach((update) => {
-                    next[update.runnerId] = update.checkpointMap;
-                });
-                return next;
-            });
-        })();
-
-        return () => {
-            cancelled = true;
-        };
-    }, [campaign?._id, filteredRunners]);
 
     const handleViewRunner = (runner: Runner) => {
         router.push(`/runner/${runner._id}`);
@@ -1243,7 +1108,6 @@ export default function EventLivePage() {
                                         ? `${runner.firstNameTh} ${runner.lastNameTh || ''}`
                                         : `${runner.firstName} ${runner.lastName}`;
                                     const isFollowedRunner = isRunnerFollowed(followedRunnersForEvent, runner._id);
-                                    const canFollowRunner = runnersWithVideo.has(runner._id);
                                     const initials = getInitials(runner.firstName, runner.lastName);
                                     const avatarBg = getAvatarColor(runner.firstName + runner.lastName);
                                     // Calculate progress % based on RaceTiger checkpoint data
@@ -1398,7 +1262,11 @@ export default function EventLivePage() {
                                                                 <span style={{ display: 'inline-block', padding: isMobile ? '1px 4px' : '2px 8px', borderRadius: 3, fontWeight: 700, fontSize: isMobile ? 8 : 10, color: '#fff', background: getStatusBgColor(runner.status), lineHeight: 1.3 }}>
                                                                     {getStatusLabel(runner.status)}
                                                                 </span>
-                                                                {canFollowRunner && <FollowHeartButton active={isFollowedRunner} dark={isDark} onClick={() => toggleRunnerFollow(runner)} />}
+                                                                {isFollowedRunner && (
+                                                                    <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 24, height: 24, borderRadius: 999, border: `1px solid ${isDark ? '#fda4af' : '#fecdd3'}`, background: isDark ? 'rgba(225,29,72,0.18)' : '#fff1f2', flexShrink: 0 }} title={language === 'th' ? 'กำลังติดตามนักกีฬา' : 'Following runner'}>
+                                                                        <FollowHeartIcon filled={true} size={13} color="#e11d48" />
+                                                                    </span>
+                                                                )}
                                                             </div>
                                                             {isAdmin && !isMobile && (
                                                                 <button

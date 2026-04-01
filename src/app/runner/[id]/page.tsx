@@ -129,7 +129,13 @@ function formatDateTime(dateStr?: string | null): string {
     if (!dateStr) return '-';
     const d = new Date(dateStr);
     if (isNaN(d.getTime())) return '-';
-    return d.toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'medium' });
+    const day = d.getDate();
+    const month = d.getMonth() + 1;
+    const year = d.getFullYear() % 100;
+    const hours = d.getHours().toString().padStart(2, '0');
+    const minutes = d.getMinutes().toString().padStart(2, '0');
+    const seconds = d.getSeconds().toString().padStart(2, '0');
+    return `${day}/${month}/${year} ${hours}:${minutes}:${seconds}`;
 }
 
 function getStatusLabel(status: string): { text: string; bg: string; color: string } {
@@ -760,7 +766,7 @@ export default function RunnerProfilePage() {
                                 </div>
                             ) : selectedHit?.recording ? (
                                 <div style={{ padding: 24 }}>
-                                    <div style={{ marginBottom: 16, fontSize: 13, color: '#475569', fontWeight: 600 }}>
+                                    <div style={{ marginBottom: 16, fontSize: 12, color: '#475569', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                                         กล้อง <strong style={{ color: '#0f172a' }}>{selectedHit.recording.cameraName}</strong> · เวลาในระบบ <strong style={{ color: '#0f172a' }}>{formatTimeOfDay(selectedHit.scanTime)}</strong> · เริ่มไฟล์ <strong style={{ color: '#0f172a' }}>{formatDateTime(selectedHit.recording.startTime)}</strong>
                                     </div>
 
