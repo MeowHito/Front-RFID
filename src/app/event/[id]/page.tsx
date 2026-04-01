@@ -9,6 +9,7 @@ import { useTheme } from '@/lib/theme-context';
 import { useAuth } from '@/lib/auth-context';
 import { authHeaders } from '@/lib/authHeaders';
 import CutoffDateTimePicker from '@/components/CutoffDateTimePicker';
+import { getFollowedRunnersForEvent, isRunnerFollowed, loadFollowedRunners, saveFollowedRunners, subscribeFollowedRunners, toggleFollowedRunner, type FollowedRunner } from '@/lib/followed-runners';
 
 interface Campaign {
     _id: string;
@@ -108,23 +109,26 @@ interface Runner {
 interface TimingRecord {
     _id: string;
     runnerId: string;
-    checkpoint: string;
+    eventId: string;
     scanTime: string;
     splitTime?: number;
     elapsedTime?: number;
     distanceFromStart?: number;
     netTime?: number;
-    gunTime?: number;
-    order?: number;
+    // ... (rest of the properties remain the same)
 }
 
 interface CheckpointMapping {
     _id: string;
-    checkpointId: string | { _id: string; name: string; type: string; orderNum?: number; kmCumulative?: number };
     eventId: string;
-    orderNum: number;
+    orderNum?: number;
     distanceFromStart?: number;
-    checkpoint?: { name: string; type: string; kmCumulative?: number };
+    checkpointId?: {
+        _id?: string;
+        name?: string;
+        type?: string;
+        kmCumulative?: number;
+    } | string;
 }
 
 interface RunnerCameraHit {
@@ -139,12 +143,14 @@ interface CheckpointDistanceLookup {
     [eventId: string]: {
         totalDistance: number;
         totalCheckpoints: number;
-        checkpoints: { [cpName: string]: number }; // checkpointName → distanceFromStart (km)
-        cpOrders: { [cpName: string]: number }; // checkpointName → orderNum (1-based position)
+        checkpoints: Record<string, number>;
+        cpOrders: Record<string, number>;
     };
 }
 
-function normalizeComparableText(value: unknown): string {
+type RunnerFilterGender = 'ALL' | 'FOLLOWED' | 'M' | 'F';
+
+function normalizeComparableText(value?: string | null): string {
     return String(value || '').trim().toLowerCase().replace(/[^a-z0-9ก-๙]+/g, '');
 }
 
@@ -230,28 +236,44 @@ function getInitials(firstName: string, lastName: string): string {
     return ((firstName?.[0] || '') + (lastName?.[0] || '')).toUpperCase() || '?';
 }
 
-function CheckpointCameraIcon({ dark }: { dark: boolean }) {
+function FollowHeartIcon({ filled, size = 14, color }: { filled: boolean; size?: number; color: string }) {
     return (
-        <span
-            aria-label="มีวิดีโอ CCTV"
-            title="มีวิดีโอ CCTV"
+        <svg viewBox="0 0 24 24" aria-hidden="true" style={{ width: size, height: size, display: 'block' }}>
+            <path d="M12 21.35 10.55 20.03C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35Z" fill={filled ? color : 'none'} stroke={color} strokeWidth="2" strokeLinejoin="round" />
+        </svg>
+    );
+}
+
+function FollowHeartButton({ active, dark, onClick }: { active: boolean; dark: boolean; onClick: () => void }) {
+    const borderColor = active ? '#fda4af' : (dark ? 'rgba(148,163,184,0.32)' : '#cbd5e1');
+    const background = active ? '#fff1f2' : (dark ? 'rgba(15,23,42,0.35)' : '#fff');
+    const color = active ? '#e11d48' : (dark ? '#cbd5e1' : '#64748b');
+
+    return (
+        <button
+            type="button"
+            aria-label={active ? 'เลิกติดตามนักกีฬา' : 'ติดตามนักกีฬา'}
+            title={active ? 'เลิกติดตามนักกีฬา' : 'ติดตามนักกีฬา'}
+            onClick={(event) => {
+                event.stopPropagation();
+                onClick();
+            }}
             style={{
                 display: 'inline-flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                width: 12,
-                height: 12,
+                width: 22,
+                height: 22,
                 borderRadius: 999,
-                border: `1px solid ${dark ? 'rgba(96,165,250,0.28)' : '#bfdbfe'}`,
-                background: dark ? 'rgba(59,130,246,0.14)' : '#dbeafe',
-                color: dark ? '#bfdbfe' : '#1d4ed8',
+                border: `1px solid ${borderColor}`,
+                background,
                 flexShrink: 0,
+                cursor: 'pointer',
+                padding: 0,
             }}
         >
-            <svg viewBox="0 0 24 24" fill="currentColor" style={{ width: 7, height: 7 }}>
-                <path d="M4 7.75A2.75 2.75 0 0 1 6.75 5h6.5A2.75 2.75 0 0 1 16 7.75v.8l2.73-1.95A1.5 1.5 0 0 1 21 7.82v8.36a1.5 1.5 0 0 1-2.27 1.22L16 15.45v.8A2.75 2.75 0 0 1 13.25 19h-6.5A2.75 2.75 0 0 1 4 16.25v-8.5Z" />
-            </svg>
-        </span>
+            <FollowHeartIcon filled={active} size={12} color={color} />
+        </button>
     );
 }
 
@@ -269,7 +291,7 @@ export default function EventLivePage() {
     const [error, setError] = useState<string | null>(null);
 
     const [searchQuery, setSearchQuery] = useState('');
-    const [filterGender, setFilterGender] = useState('ALL');
+    const [filterGender, setFilterGender] = useState<RunnerFilterGender>('ALL');
     const [filterCategory, setFilterCategory] = useState('');
     const [filterStatus, setFilterStatus] = useState('ALL');
     // Runner detail is now handled by /runner/[id] page
@@ -285,7 +307,8 @@ export default function EventLivePage() {
     const [checkpointMappings, setCheckpointMappings] = useState<CheckpointMapping[]>([]);
     const [totalDistance, setTotalDistance] = useState<number>(0);
     const [cpDistanceLookup, setCpDistanceLookup] = useState<CheckpointDistanceLookup>({});
-    const [runnerCameraAvailability, setRunnerCameraAvailability] = useState<Record<string, Record<string, boolean>>>({});
+    const [, setRunnerCameraAvailability] = useState<Record<string, Record<string, boolean>>>({});
+    const [followedRunners, setFollowedRunners] = useState<FollowedRunner[]>([]);
     const [rankDeltas, setRankDeltas] = useState<Map<string, number>>(new Map());
     const prevRanksRef = useRef<Map<string, number>>(new Map());
     const runnerCameraRequestKeyRef = useRef<Map<string, string>>(new Map());
@@ -356,6 +379,11 @@ export default function EventLivePage() {
     useEffect(() => {
         const timer = setInterval(() => setCurrentTime(new Date()), 1000);
         return () => clearInterval(timer);
+    }, []);
+
+    useEffect(() => {
+        setFollowedRunners(loadFollowedRunners());
+        return subscribeFollowedRunners(setFollowedRunners);
     }, []);
 
     // Detect mobile viewport
@@ -652,14 +680,48 @@ export default function EventLivePage() {
         return counts;
     }, [runners, filterCategory, resolveRunnerCategoryKey]);
 
+    const followedRunnersForEvent = useMemo(
+        () => getFollowedRunnersForEvent(followedRunners, eventKey, campaign?._id),
+        [followedRunners, eventKey, campaign?._id]
+    );
+
+    const followedRunnerIds = useMemo(
+        () => new Set(followedRunnersForEvent.map((item) => item.runnerId)),
+        [followedRunnersForEvent]
+    );
+
+    const toggleRunnerFollow = useCallback((runner: Runner) => {
+        const displayName = language === 'th' && runner.firstNameTh
+            ? `${runner.firstNameTh} ${runner.lastNameTh || ''}`.trim()
+            : `${runner.firstName} ${runner.lastName}`.trim();
+
+        const next = toggleFollowedRunner(followedRunners, {
+            runnerId: runner._id,
+            eventKey,
+            eventId: campaign?._id,
+            runnerName: displayName,
+            bib: runner.bib,
+            campaignName: campaign?.name,
+            category: runner.category,
+            ageGroup: runner.ageGroup,
+            gender: runner.gender,
+            latestCheckpoint: runner.latestCheckpoint,
+            followedAt: Date.now(),
+        });
+
+        setFollowedRunners(next);
+        saveFollowedRunners(next);
+    }, [followedRunners, eventKey, campaign?._id, campaign?.name, language]);
+
     const filteredRunners = useMemo(() => {
         return runners
             .filter(runner => {
                 const matchesSearch = !searchQuery || runner.firstName?.toLowerCase().includes(searchQuery.toLowerCase()) || runner.lastName?.toLowerCase().includes(searchQuery.toLowerCase()) || runner.bib?.includes(searchQuery);
-                const matchesGender = filterGender === 'ALL' || runner.gender === filterGender;
+                const matchesGender = filterGender === 'ALL' || filterGender === 'FOLLOWED' || runner.gender === filterGender;
+                const matchesFollowed = filterGender !== 'FOLLOWED' || followedRunnerIds.has(runner._id);
                 const matchesCategory = !filterCategory || resolveRunnerCategoryKey(runner) === filterCategory;
                 const matchesStatus = filterStatus === 'ALL' || runner.status === filterStatus;
-                return matchesSearch && matchesGender && matchesCategory && matchesStatus;
+                return matchesSearch && matchesGender && matchesFollowed && matchesCategory && matchesStatus;
             })
             .sort((a, b) => {
                 // Group by status: finished FIRST, then in_progress, then DNF/DNS/DQ, then not_started
@@ -694,7 +756,7 @@ export default function EventLivePage() {
                 // Fallback: by BIB
                 return (a.bib || '').localeCompare(b.bib || '', undefined, { numeric: true });
             });
-    }, [runners, searchQuery, filterGender, filterCategory, filterStatus, resolveRunnerCategoryKey]);
+    }, [runners, searchQuery, filterGender, followedRunnerIds, filterCategory, filterStatus, resolveRunnerCategoryKey]);
 
     // Compute live gender and category ranks from sorted runners
     // These are computed AFTER sorting so rank=position within gender/category group
@@ -1062,18 +1124,20 @@ export default function EventLivePage() {
                         </div>
                         {/* Gender Filter */}
                         <div style={{ display: 'flex', background: themeStyles.inputBg, padding: 3, borderRadius: 8, flexShrink: 0 }}>
-                            {(['ALL', 'M', 'F'] as const).map(g => (
+                            {(['ALL', 'FOLLOWED', 'M', 'F'] as const).map(g => (
                                 <button
                                     key={g}
                                     onClick={() => setFilterGender(g)}
+                                    aria-label={g === 'FOLLOWED' ? (language === 'th' ? 'แสดงเฉพาะนักกีฬาที่ติดตาม' : 'Show followed runners only') : undefined}
+                                    title={g === 'FOLLOWED' ? (language === 'th' ? 'แสดงเฉพาะนักกีฬาที่ติดตาม' : 'Show followed runners only') : undefined}
                                     style={{
                                         padding: '4px 10px', fontSize: 10, fontWeight: 700, borderRadius: 6, border: 'none', cursor: 'pointer', transition: 'all 0.2s', whiteSpace: 'nowrap',
                                         ...(filterGender === g
-                                            ? { background: '#22c55e', color: '#fff' }
+                                            ? { background: g === 'FOLLOWED' ? '#e11d48' : '#22c55e', color: '#fff' }
                                             : { background: 'transparent', color: themeStyles.textMuted })
                                     }}
                                 >
-                                    {g === 'ALL' ? (language === 'th' ? 'ทั้งหมด' : 'All') : g === 'M' ? (language === 'th' ? 'ชาย' : 'Male') : (language === 'th' ? 'หญิง' : 'Female')}
+                                    {g === 'FOLLOWED' ? <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}><FollowHeartIcon filled={filterGender === g} size={12} color={filterGender === g ? '#fff' : '#e11d48'} /></span> : g === 'ALL' ? (language === 'th' ? 'ทั้งหมด' : 'All') : g === 'M' ? (language === 'th' ? 'ชาย' : 'Male') : (language === 'th' ? 'หญิง' : 'Female')}
                                 </button>
                             ))}
                         </div>
@@ -1085,18 +1149,20 @@ export default function EventLivePage() {
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                         {/* Gender Filter — desktop only */}
                         <div style={{ display: 'flex', background: themeStyles.inputBg, padding: 3, borderRadius: 8 }}>
-                            {(['ALL', 'M', 'F'] as const).map(g => (
+                            {(['ALL', 'FOLLOWED', 'M', 'F'] as const).map(g => (
                                 <button
                                     key={g}
                                     onClick={() => setFilterGender(g)}
+                                    aria-label={g === 'FOLLOWED' ? (language === 'th' ? 'แสดงเฉพาะนักกีฬาที่ติดตาม' : 'Show followed runners only') : undefined}
+                                    title={g === 'FOLLOWED' ? (language === 'th' ? 'แสดงเฉพาะนักกีฬาที่ติดตาม' : 'Show followed runners only') : undefined}
                                     style={{
                                         padding: '4px 12px', fontSize: 10, fontWeight: 700, borderRadius: 6, border: 'none', cursor: 'pointer', transition: 'all 0.2s', whiteSpace: 'nowrap',
                                         ...(filterGender === g
-                                            ? { background: '#22c55e', color: '#fff' }
+                                            ? { background: g === 'FOLLOWED' ? '#e11d48' : '#22c55e', color: '#fff' }
                                             : { background: 'transparent', color: themeStyles.textMuted })
                                     }}
                                 >
-                                    {g === 'ALL' ? (language === 'th' ? 'ทั้งหมด' : 'All') : g === 'M' ? (language === 'th' ? 'ชาย' : 'Male') : (language === 'th' ? 'หญิง' : 'Female')}
+                                    {g === 'FOLLOWED' ? <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}><FollowHeartIcon filled={filterGender === g} size={12} color={filterGender === g ? '#fff' : '#e11d48'} /></span> : g === 'ALL' ? (language === 'th' ? 'ทั้งหมด' : 'All') : g === 'M' ? (language === 'th' ? 'ชาย' : 'Male') : (language === 'th' ? 'หญิง' : 'Female')}
                                 </button>
                             ))}
                         </div>
@@ -1159,7 +1225,9 @@ export default function EventLivePage() {
                         <tbody>
                             {filteredRunners.length === 0 ? (
                                 <tr><td colSpan={visibleColumns.length} style={{ padding: '48px 16px', textAlign: 'center', color: '#94a3b8', fontSize: 14 }}>
-                                    {language === 'th' ? 'ไม่พบข้อมูลผู้เข้าแข่งขัน' : 'No participants found'}
+                                    {filterGender === 'FOLLOWED'
+                                        ? (language === 'th' ? 'ยังไม่มีนักกีฬาที่คุณติดตามในรายการนี้' : 'No followed runners in this event')
+                                        : (language === 'th' ? 'ไม่พบข้อมูลผู้เข้าแข่งขัน' : 'No participants found')}
                                 </td></tr>
                             ) : (
                                 filteredRunners.map((runner, idx) => {
@@ -1167,6 +1235,7 @@ export default function EventLivePage() {
                                     const displayName = language === 'th' && runner.firstNameTh
                                         ? `${runner.firstNameTh} ${runner.lastNameTh || ''}`
                                         : `${runner.firstName} ${runner.lastName}`;
+                                    const isFollowedRunner = isRunnerFollowed(followedRunnersForEvent, runner._id);
                                     const initials = getInitials(runner.firstName, runner.lastName);
                                     const avatarBg = getAvatarColor(runner.firstName + runner.lastName);
                                     // Calculate progress % based on RaceTiger checkpoint data
@@ -1240,8 +1309,6 @@ export default function EventLivePage() {
                                     }
 
                                     const statusCheckpointName = runner.statusCheckpoint || runner.latestCheckpoint || '';
-                                    const statusCheckpointKey = normalizeComparableText(statusCheckpointName);
-                                    const statusCheckpointHasCamera = !!statusCheckpointKey && !!runnerCameraAvailability[runner._id]?.[statusCheckpointKey];
                                     const statusScanTimeLabel = !isRaceFinished && runner.scanTime
                                         ? (() => {
                                             const d = new Date(runner.scanTime!);
@@ -1323,7 +1390,7 @@ export default function EventLivePage() {
                                                                 <span style={{ display: 'inline-block', padding: isMobile ? '1px 4px' : '2px 8px', borderRadius: 3, fontWeight: 700, fontSize: isMobile ? 8 : 10, color: '#fff', background: getStatusBgColor(runner.status), lineHeight: 1.3 }}>
                                                                     {getStatusLabel(runner.status)}
                                                                 </span>
-                                                                {statusCheckpointHasCamera && <CheckpointCameraIcon dark={isDark} />}
+                                                                <FollowHeartButton active={isFollowedRunner} dark={isDark} onClick={() => toggleRunnerFollow(runner)} />
                                                             </div>
                                                             {isAdmin && !isMobile && (
                                                                 <button

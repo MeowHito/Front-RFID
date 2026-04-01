@@ -149,28 +149,32 @@ function parseDistanceValue(value: unknown): number | null {
     return Number.isFinite(parsed) ? parsed : null;
 }
 
-function CheckpointCameraIcon() {
+function CheckpointCameraIcon({ onClick, size = 22 }: { onClick?: () => void; size?: number }) {
+    const icon = (
+        <Image src="/Camera.png" alt="มีวิดีโอ CCTV" width={size} height={size} style={{ width: size, height: size, display: 'block', flexShrink: 0, objectFit: 'contain' }} />
+    );
+
+    if (!onClick) {
+        return (
+            <span aria-label="มีวิดีโอ CCTV" title="มีวิดีโอ CCTV" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                {icon}
+            </span>
+        );
+    }
+
     return (
-        <span
-            aria-label="มีวิดีโอ CCTV"
-            title="มีวิดีโอ CCTV"
-            style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                width: 16,
-                height: 16,
-                borderRadius: 999,
-                border: '1px solid #bfdbfe',
-                background: '#dbeafe',
-                color: '#1d4ed8',
-                flexShrink: 0,
+        <button
+            type="button"
+            aria-label="เปิดวิดีโอ CCTV"
+            title="เปิดวิดีโอ CCTV"
+            onClick={(event) => {
+                event.stopPropagation();
+                onClick();
             }}
+            style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: 0, margin: 0, border: 'none', background: 'transparent', cursor: 'pointer', lineHeight: 0, flexShrink: 0 }}
         >
-            <svg viewBox="0 0 24 24" fill="currentColor" style={{ width: 9, height: 9 }}>
-                <path d="M4 7.75A2.75 2.75 0 0 1 6.75 5h6.5A2.75 2.75 0 0 1 16 7.75v.8l2.73-1.95A1.5 1.5 0 0 1 21 7.82v8.36a1.5 1.5 0 0 1-2.27 1.22L16 15.45v.8A2.75 2.75 0 0 1 13.25 19h-6.5A2.75 2.75 0 0 1 4 16.25v-8.5Z" />
-            </svg>
-        </span>
+            {icon}
+        </button>
     );
 }
 
@@ -207,7 +211,6 @@ export default function RunnerProfilePage() {
     const [runnerHits, setRunnerHits] = useState<RunnerHit[]>([]);
     const [selectedCheckpointKey, setSelectedCheckpointKey] = useState('');
     const [preArrivalBufferSeconds, setPreArrivalBufferSeconds] = useState(5);
-    const videoSectionRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
         if (!runnerId) return;
@@ -279,6 +282,25 @@ export default function RunnerProfilePage() {
             cancelled = true;
         };
     }, [runnerId]);
+
+    useEffect(() => {
+        if (!selectedCheckpointKey) return;
+
+        const previousOverflow = document.body.style.overflow;
+        const handleKeyDown = (event: KeyboardEvent) => {
+            if (event.key === 'Escape') {
+                setSelectedCheckpointKey('');
+            }
+        };
+
+        document.body.style.overflow = 'hidden';
+        window.addEventListener('keydown', handleKeyDown);
+
+        return () => {
+            document.body.style.overflow = previousOverflow;
+            window.removeEventListener('keydown', handleKeyDown);
+        };
+    }, [selectedCheckpointKey]);
 
     if (loading) {
         return (
@@ -368,10 +390,8 @@ export default function RunnerProfilePage() {
 
     const openCheckpointVideo = (checkpointKey: string) => {
         setSelectedCheckpointKey(checkpointKey);
-        window.setTimeout(() => {
-            videoSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        }, 80);
     };
+    const closeCheckpointVideo = () => setSelectedCheckpointKey('');
 
     return (
         <div style={{ minHeight: '100vh', background: '#f8fafc', fontFamily: "'Prompt', sans-serif", color: '#1e293b' }}>
@@ -579,7 +599,7 @@ export default function RunnerProfilePage() {
                                             <td style={{ padding: '16px 16px', fontWeight: 700, fontSize: 14, color: isFinishCp ? '#0f172a' : isCurrent ? '#16a34a' : isStartCp ? '#94a3b8' : '#16a34a', display: 'flex', alignItems: 'center', gap: 8 }}>
                                                 {isCurrent && <span style={{ fontSize: 10, background: '#16a34a', color: '#fff', padding: '1px 6px', borderRadius: 4 }}>Current</span>}
                                                 <span>{record.checkpoint}</span>
-                                                {rowHasVideo && <CheckpointCameraIcon />}
+                                                {rowHasVideo && <CheckpointCameraIcon onClick={() => openCheckpointVideo(rowKey)} size={24} />}
                                             </td>
                                             <td style={{ padding: '16px 8px', fontSize: 12, fontWeight: 700, color: '#64748b' }}>
                                                 {record.distanceFromStart != null ? `${record.distanceFromStart} KM` : '-'}
@@ -624,7 +644,7 @@ export default function RunnerProfilePage() {
                                                 {passed && !isCurrent && <span style={{ color: '#22c55e', fontSize: 14 }}>✓</span>}
                                                 {!passed && <span style={{ color: '#cbd5e1', fontSize: 14 }}>○</span>}
                                                 <span>{cp.name}</span>
-                                                {rowHasVideo && <CheckpointCameraIcon />}
+                                                {rowHasVideo && <CheckpointCameraIcon onClick={() => openCheckpointVideo(rowKey)} size={24} />}
                                             </td>
                                             <td style={{ padding: '16px 8px', fontSize: 12, fontWeight: 700, color: passed ? '#64748b' : '#cbd5e1' }}>
                                                 {cp.distanceFromStart != null ? `${cp.distanceFromStart} KM` : '-'}
@@ -651,93 +671,102 @@ export default function RunnerProfilePage() {
                     </div>
                 </div>}
 
-                {campaign?.displayMode !== 'lab' && <div ref={videoSectionRef} style={{ background: '#fff', borderRadius: 16, border: '1px solid #e2e8f0', overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.04)', marginTop: 24 }}>
-                    <div style={{ padding: '16px 24px', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-                        <div>
-                            <h3 style={{ fontWeight: 900, textTransform: 'uppercase', fontSize: 13, letterSpacing: 2, color: '#64748b', margin: 0 }}>Checkpoint CCTV</h3>
-                            <p style={{ margin: '6px 0 0', fontSize: 13, color: '#64748b' }}>กดที่ Checkpoint ที่มีรูปกล้องเพื่อเปิดวิดีโอของนักวิ่งคนนั้นและบันทึกไฟล์ได้ทันที</p>
-                        </div>
-                        <span style={{ fontSize: 12, fontWeight: 700, color: '#475569' }}>
-                            {lookupLoading || !lookupLoaded ? 'กำลังค้นหาวิดีโอ CCTV...' : selectedHit?.recording ? 'พร้อมดูและบันทึกวิดีโอ' : hasSelectedCheckpoint ? 'ยังไม่พบวิดีโอของ Checkpoint ที่เลือก' : availableVideoCount > 0 ? 'มีวิดีโอพร้อมให้เลือกตาม Checkpoint' : 'กดเลือก Checkpoint เพื่อดูรายละเอียด'}
-                        </span>
-                    </div>
-
-                    {lookupLoading || !lookupLoaded ? (
-                        <div style={{ padding: 32, textAlign: 'center', color: '#64748b', fontSize: 14 }}>
-                            กำลังค้นหาวิดีโอ CCTV ที่ตรงกับเวลาผ่านจุดของนักวิ่ง...
-                        </div>
-                    ) : selectedHit?.recording ? (
-                        <div style={{ padding: 24 }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap' }}>
+                {campaign?.displayMode !== 'lab' && hasSelectedCheckpoint && (
+                    <div
+                        onClick={closeCheckpointVideo}
+                        style={{ position: 'fixed', inset: 0, zIndex: 120, background: 'rgba(15,23,42,0.72)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
+                    >
+                        <div
+                            onClick={(event) => event.stopPropagation()}
+                            style={{ width: 'min(960px, 100%)', maxHeight: 'calc(100vh - 32px)', overflowY: 'auto', background: '#fff', borderRadius: 24, border: '1px solid rgba(226,232,240,0.9)', boxShadow: '0 24px 80px rgba(15,23,42,0.38)' }}
+                        >
+                            <div style={{ padding: '20px 24px', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16 }}>
                                 <div>
-                                    <h4 style={{ margin: 0, fontSize: 24, fontWeight: 900, color: '#0f172a' }}>{selectedCheckpointName}</h4>
-                                    <p style={{ margin: '8px 0 0', fontSize: 13, color: '#64748b' }}>ระบบจะเริ่มวิดีโอก่อนเวลาผ่านจุดประมาณ {preArrivalBufferSeconds} วินาที ตามค่าที่ตั้งในระบบ</p>
+                                    <div style={{ fontSize: 11, fontWeight: 900, letterSpacing: 1.6, textTransform: 'uppercase', color: '#64748b' }}>Checkpoint CCTV</div>
+                                    <h3 style={{ margin: '8px 0 0', fontSize: 26, fontWeight: 900, color: '#0f172a' }}>{selectedCheckpointName || 'Checkpoint Video'}</h3>
+                                    <p style={{ margin: '8px 0 0', fontSize: 13, color: '#64748b' }}>
+                                        {lookupLoading || !lookupLoaded
+                                            ? 'กำลังค้นหาวิดีโอ CCTV ที่ตรงกับเวลาผ่านจุดของนักวิ่ง...'
+                                            : selectedHit?.recording
+                                                ? `ระบบจะเริ่มวิดีโอก่อนเวลาผ่านจุดประมาณ ${preArrivalBufferSeconds} วินาที ตามค่าที่ตั้งในระบบ`
+                                                : 'Checkpoint ที่เลือกยังไม่พบวิดีโอที่ตรงกับช่วงเวลาของนักวิ่งคนนี้'}
+                                    </p>
                                 </div>
-                                <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 12, padding: '12px 16px', fontSize: 13, color: '#475569', minWidth: 240 }}>
-                                    <div>กล้อง: <strong style={{ color: '#0f172a' }}>{selectedHit.recording.cameraName}</strong></div>
-                                    <div style={{ marginTop: 4 }}>เวลาในระบบ: <strong style={{ color: '#0f172a' }}>{formatTimeOfDay(selectedHit.scanTime)}</strong></div>
-                                    <div style={{ marginTop: 4, fontSize: 12, color: '#64748b' }}>เริ่มไฟล์ {formatDateTime(selectedHit.recording.startTime)}</div>
-                                </div>
+                                <button
+                                    type="button"
+                                    onClick={closeCheckpointVideo}
+                                    aria-label="ปิดหน้าต่างวิดีโอ CCTV"
+                                    style={{ border: 'none', background: '#e2e8f0', color: '#0f172a', width: 40, height: 40, borderRadius: 999, cursor: 'pointer', fontSize: 20, fontWeight: 700, lineHeight: 1 }}
+                                >
+                                    ×
+                                </button>
                             </div>
 
-                            <div style={{ marginTop: 20, overflow: 'hidden', borderRadius: 20, border: '1px solid #e2e8f0', background: '#020617', boxShadow: '0 16px 40px rgba(15,23,42,0.18)' }}>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, padding: '12px 16px', borderBottom: '1px solid rgba(255,255,255,0.08)', color: '#cbd5e1', fontSize: 11, fontWeight: 800, letterSpacing: 1.5, textTransform: 'uppercase' }}>
-                                    <span>{selectedCheckpointName}</span>
-                                    <span style={{ color: selectedHit.recording.recordingStatus === 'recording' ? '#f87171' : '#4ade80' }}>
-                                        {selectedHit.recording.recordingStatus === 'recording' ? 'Live CCTV' : 'CCTV Replay'}
-                                    </span>
+                            {lookupLoading || !lookupLoaded ? (
+                                <div style={{ padding: '40px 24px', textAlign: 'center', color: '#64748b', fontSize: 14 }}>
+                                    กำลังค้นหาวิดีโอ CCTV ที่ตรงกับเวลาผ่านจุดของนักวิ่ง...
                                 </div>
-                                <video
-                                    key={`${selectedHit.recording._id}-${videoSeekSeconds}`}
-                                    src={streamUrl}
-                                    controls
-                                    preload="metadata"
-                                    style={{ width: '100%', aspectRatio: '16 / 9', background: '#000' }}
-                                    onLoadedMetadata={(event) => {
-                                        const video = event.currentTarget;
-                                        if (Number.isFinite(videoSeekSeconds)) {
-                                            try {
-                                                video.currentTime = videoSeekSeconds;
-                                            } catch {
-                                                return;
-                                            }
-                                        }
-                                    }}
-                                />
-                            </div>
+                            ) : selectedHit?.recording ? (
+                                <div style={{ padding: 24 }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap' }}>
+                                        <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 16, padding: '14px 18px', fontSize: 13, color: '#475569', minWidth: 240 }}>
+                                            <div>กล้อง: <strong style={{ color: '#0f172a' }}>{selectedHit.recording.cameraName}</strong></div>
+                                            <div style={{ marginTop: 6 }}>เวลาในระบบ: <strong style={{ color: '#0f172a' }}>{formatTimeOfDay(selectedHit.scanTime)}</strong></div>
+                                            <div style={{ marginTop: 6, fontSize: 12, color: '#64748b' }}>เริ่มไฟล์ {formatDateTime(selectedHit.recording.startTime)}</div>
+                                        </div>
+                                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '10px 14px', borderRadius: 999, background: selectedHit.recording.recordingStatus === 'recording' ? '#fee2e2' : '#dcfce7', color: selectedHit.recording.recordingStatus === 'recording' ? '#dc2626' : '#15803d', fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 1 }}>
+                                            <span style={{ width: 8, height: 8, borderRadius: 999, background: 'currentColor', opacity: 0.9 }} />
+                                            {selectedHit.recording.recordingStatus === 'recording' ? 'Live CCTV' : 'CCTV Replay'}
+                                        </div>
+                                    </div>
 
-                            <div style={{ marginTop: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, flexWrap: 'wrap', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 16, padding: 16 }}>
-                                <div style={{ fontSize: 13, color: '#475569' }}>
-                                    <div>เริ่มเล่นที่ตำแหน่ง <strong style={{ color: '#0f172a' }}>{formatTime(videoSeekSeconds * 1000)}</strong></div>
-                                    <div style={{ marginTop: 4 }}>ขนาดไฟล์ <strong style={{ color: '#0f172a' }}>{formatBytes(selectedHit.recording.fileSize)}</strong></div>
-                                    {selectedHit.recording.recordingStatus === 'recording' && (
-                                        <div style={{ marginTop: 4, color: '#dc2626', fontWeight: 700 }}>กำลังถ่ายทอดสดอยู่ สามารถกดดูหรือบันทึกได้ทันที</div>
-                                    )}
+                                    <div style={{ marginTop: 20, overflow: 'hidden', borderRadius: 24, border: '1px solid #0f172a', background: '#020617', boxShadow: '0 20px 50px rgba(15,23,42,0.24)' }}>
+                                        <video
+                                            key={`${selectedHit.recording._id}-${videoSeekSeconds}`}
+                                            src={streamUrl}
+                                            controls
+                                            preload="metadata"
+                                            style={{ width: '100%', aspectRatio: '16 / 9', background: '#000' }}
+                                            onLoadedMetadata={(event) => {
+                                                const video = event.currentTarget;
+                                                if (Number.isFinite(videoSeekSeconds)) {
+                                                    try {
+                                                        video.currentTime = videoSeekSeconds;
+                                                    } catch {
+                                                        return;
+                                                    }
+                                                }
+                                            }}
+                                        />
+                                    </div>
+
+                                    <div style={{ marginTop: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, flexWrap: 'wrap', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 18, padding: 16 }}>
+                                        <div style={{ fontSize: 13, color: '#475569' }}>
+                                            <div>เริ่มเล่นที่ตำแหน่ง <strong style={{ color: '#0f172a' }}>{formatTime(videoSeekSeconds * 1000)}</strong></div>
+                                            <div style={{ marginTop: 4 }}>ขนาดไฟล์ <strong style={{ color: '#0f172a' }}>{formatBytes(selectedHit.recording.fileSize)}</strong></div>
+                                            {selectedHit.recording.recordingStatus === 'recording' && (
+                                                <div style={{ marginTop: 4, color: '#dc2626', fontWeight: 700 }}>กำลังถ่ายทอดสดอยู่ สามารถกดดูหรือบันทึกได้ทันที</div>
+                                            )}
+                                        </div>
+                                        <a href={downloadUrl} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: '#16a34a', color: '#fff', padding: '10px 20px', borderRadius: 12, fontWeight: 700, fontSize: 14, textDecoration: 'none' }}>
+                                            บันทึกวิดีโอจุดนี้
+                                        </a>
+                                    </div>
                                 </div>
-                                <a href={downloadUrl} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: '#16a34a', color: '#fff', padding: '10px 20px', borderRadius: 12, fontWeight: 700, fontSize: 14, textDecoration: 'none' }}>
-                                    บันทึกวิดีโอจุดนี้
-                                </a>
-                            </div>
+                            ) : (
+                                <div style={{ padding: '40px 24px', textAlign: 'center' }}>
+                                    <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 16 }}>
+                                        <Image src="/Camera.png" alt="CCTV" width={56} height={56} style={{ width: 56, height: 56, objectFit: 'contain' }} />
+                                    </div>
+                                    <div style={{ fontSize: 22, fontWeight: 900, color: '#0f172a' }}>ยังไม่พบวิดีโอ CCTV ของนักวิ่งคนนี้</div>
+                                    <p style={{ margin: '10px auto 0', maxWidth: 520, fontSize: 14, color: '#64748b' }}>Checkpoint ที่คุณเลือกยังไม่มีไฟล์วิดีโอที่ตรงกับช่วงเวลาของนักวิ่งคนนี้ในตอนนี้</p>
+                                </div>
+                            )}
                         </div>
-                    ) : hasSelectedCheckpoint ? (
-                        <div style={{ padding: 32, textAlign: 'center' }}>
-                            <div style={{ fontSize: 44 }}>�</div>
-                            <h4 style={{ margin: '12px 0 0', fontSize: 22, fontWeight: 900, color: '#0f172a' }}>ยังไม่พบวิดีโอ CCTV ของนักวิ่งคนนี้</h4>
-                            <p style={{ margin: '8px auto 0', maxWidth: 560, fontSize: 14, color: '#64748b' }}>Checkpoint ที่คุณกดไม่มีวิดีโอที่ตรงกับช่วงเวลาของนักวิ่งคนนี้</p>
-                        </div>
-                    ) : availableVideoCount > 0 ? (
-                        <div style={{ padding: 32, textAlign: 'center' }}>
-                            <div style={{ fontSize: 44 }}>�</div>
-                            <h4 style={{ margin: '12px 0 0', fontSize: 22, fontWeight: 900, color: '#0f172a' }}>เลือก Checkpoint ที่มีรูปกล้องเพื่อดูวิดีโอ</h4>
-                            <p style={{ margin: '8px auto 0', maxWidth: 560, fontSize: 14, color: '#64748b' }}>ถ้า Checkpoint ไหนไม่มีรูปกล้อง แปลว่ายังไม่พบวิดีโอที่ตรงกับช่วงเวลาของนักวิ่งคนนั้น และกดแล้วจะไม่มีอะไรเกิดขึ้น</p>
-                        </div>
-                    ) : null
-                    }
-                </div>}
+                    </div>
+                )}
 
-                {/* LAP RESULTS TABLE — Lab mode only */}
                 {campaign?.displayMode === 'lab' && sortedTimings.length > 1 && (() => {
-                    // Calculate lap-level stats
                     const laps = sortedTimings.map((rec, i) => {
                         const lapNum = i;
                         const lapTimeMs = rec.splitTime || 0;
