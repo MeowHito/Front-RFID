@@ -448,10 +448,26 @@ export default function RunnerProfilePage() {
                 @keyframes pulseLive { 0% { transform: scale(0.9); opacity: 0.7; } 50% { transform: scale(1.2); opacity: 1; } 100% { transform: scale(0.9); opacity: 0.7; } }
                 .live-dot { width: 10px; height: 8px; border-radius: 50%; display: inline-block; animation: pulseLive 1.5s infinite; border: 1.5px solid white; }
                 .checkpoint-row:nth-child(even) { background-color: #f8fafc; }
+                @media (max-width: 640px) {
+                    .runner-header { padding: 6px 10px !important; }
+                    .runner-info-section { padding: 12px !important; gap: 12px !important; }
+                    .runner-avatar { width: 56px !important; height: 56px !important; font-size: 20px !important; border-radius: 12px !important; }
+                    .runner-bib-badge { font-size: 11px !important; padding: 1px 6px !important; bottom: -4px !important; right: -4px !important; }
+                    .runner-stats-grid { gap: 8px !important; margin-bottom: 12px !important; }
+                    .runner-stat-card { padding: 10px !important; border-radius: 10px !important; }
+                    .runner-stat-value { font-size: 18px !important; }
+                    .runner-stat-label { font-size: 9px !important; }
+                    .runner-main { padding: 10px 10px 24px !important; }
+                    .runner-progress-bar { padding: 14px !important; margin-bottom: 12px !important; }
+                    .runner-cp-table-header { padding: 10px 14px !important; }
+                    .runner-actions { gap: 6px !important; }
+                    .runner-action-btn { padding: 8px 14px !important; font-size: 12px !important; min-width: auto !important; min-height: 36px !important; border-radius: 10px !important; }
+                    .runner-footer { padding: 16px !important; margin-top: 16px !important; }
+                }
             `}</style>
 
             {/* HEADER */}
-            <header style={{ background: '#fff', borderBottom: '1px solid #e2e8f0', padding: '12px 16px', boxShadow: '0 1px 3px rgba(0,0,0,0.04)', position: 'sticky', top: 0, zIndex: 50 }}>
+            <header className="runner-header" style={{ background: '#fff', borderBottom: '1px solid #e2e8f0', padding: '10px 16px', boxShadow: '0 1px 3px rgba(0,0,0,0.04)', position: 'sticky', top: 0, zIndex: 50 }}>
                 <div style={{ maxWidth: 1024, margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                         <Link href="/" style={{ display: 'flex', alignItems: 'center', borderRight: '1px solid #e2e8f0', paddingRight: 12, textDecoration: 'none' }}>
@@ -467,14 +483,14 @@ export default function RunnerProfilePage() {
                 </div>
             </header>
 
-            <main style={{ maxWidth: 1024, margin: '0 auto', padding: '16px 16px 40px' }}>
+            <main className="runner-main" style={{ maxWidth: 1024, margin: '0 auto', padding: '12px 12px 32px' }}>
                 {/* RUNNER INFO SECTION */}
-                <section style={{ display: 'flex', flexWrap: 'wrap', gap: 24, alignItems: 'center', background: '#fff', padding: 24, borderRadius: 16, border: '1px solid #e2e8f0', boxShadow: '0 1px 3px rgba(0,0,0,0.04)', marginBottom: 24 }}>
+                <section className="runner-info-section" style={{ display: 'flex', flexWrap: 'wrap', gap: 16, alignItems: 'center', background: '#fff', padding: 20, borderRadius: 16, border: '1px solid #e2e8f0', boxShadow: '0 1px 3px rgba(0,0,0,0.04)', marginBottom: 16 }}>
                     <div style={{ position: 'relative' }}>
-                        <div style={{ width: 96, height: 96, borderRadius: 16, background: '#22c55e', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 32, fontWeight: 800, boxShadow: '0 4px 12px rgba(0,0,0,0.1)', border: '4px solid #fff' }}>
+                        <div className="runner-avatar" style={{ width: 72, height: 72, borderRadius: 14, background: '#22c55e', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 26, fontWeight: 800, boxShadow: '0 4px 12px rgba(0,0,0,0.1)', border: '3px solid #fff' }}>
                             {initials}
                         </div>
-                        <span style={{ position: 'absolute', bottom: -6, right: -6, background: '#0f172a', color: '#fff', padding: '2px 10px', borderRadius: 8, fontSize: 16, fontWeight: 800, border: '2px solid #fff', boxShadow: '0 0 0 1px #000, 0 4px 6px rgba(0,0,0,0.1)' }}>
+                        <span className="runner-bib-badge" style={{ position: 'absolute', bottom: -5, right: -5, background: '#0f172a', color: '#fff', padding: '1px 8px', borderRadius: 6, fontSize: 13, fontWeight: 800, border: '2px solid #fff', boxShadow: '0 0 0 1px #000, 0 4px 6px rgba(0,0,0,0.1)' }}>
                             {runner.bib}
                         </span>
                     </div>
@@ -497,7 +513,7 @@ export default function RunnerProfilePage() {
                         </div>
                     </div>
 
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    <div className="runner-actions" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                         <button
                             type="button"
                             onClick={handleToggleFollow}
@@ -505,17 +521,17 @@ export default function RunnerProfilePage() {
                                 display: 'flex',
                                 alignItems: 'center',
                                 justifyContent: 'center',
-                                gap: 10,
+                                gap: 8,
                                 background: isFollowedRunner ? '#e11d48' : '#0f172a',
                                 color: '#fff',
-                                padding: '10px 24px',
-                                borderRadius: 12,
-                                minWidth: 240,
-                                minHeight: 44,
+                                padding: '8px 18px',
+                                borderRadius: 10,
+                                minWidth: 200,
+                                minHeight: 38,
                                 border: 'none',
                                 cursor: 'pointer',
                                 fontWeight: 800,
-                                fontSize: 14,
+                                fontSize: 13,
                             }}
                         >
                             <FollowHeartIcon filled={isFollowedRunner} size={16} color="#fff" />
@@ -523,18 +539,18 @@ export default function RunnerProfilePage() {
                         </button>
                         {isFinished ? (
                             <>
-                                <Link href={`/runner/${runnerId}/eslip`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, background: '#16a34a', color: '#fff', padding: '10px 24px', borderRadius: 12, fontWeight: 700, fontSize: 14, textDecoration: 'none', border: 'none', cursor: 'pointer' }}>
+                                <Link href={`/runner/${runnerId}/eslip`} className="runner-action-btn" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, background: '#16a34a', color: '#fff', padding: '8px 18px', borderRadius: 10, fontWeight: 700, fontSize: 13, textDecoration: 'none', border: 'none', cursor: 'pointer' }}>
                                     ✅ Finished — ดู E-Slip
                                 </Link>
                                 {campaign?.isApproveCertificate && (
-                                    <Link href={`/runner/${runnerId}/certificate`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, background: '#2563eb', color: '#fff', padding: '10px 24px', borderRadius: 12, fontWeight: 700, fontSize: 14, textDecoration: 'none', border: 'none', cursor: 'pointer' }}>
+                                    <Link href={`/runner/${runnerId}/certificate`} className="runner-action-btn" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, background: '#2563eb', color: '#fff', padding: '8px 18px', borderRadius: 10, fontWeight: 700, fontSize: 13, textDecoration: 'none', border: 'none', cursor: 'pointer' }}>
                                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="12" y1="18" x2="12" y2="12" /><polyline points="9 15 12 18 15 15" /></svg>
                                         ดาวน์โหลดใบประกาศ
                                     </Link>
                                 )}
                             </>
                         ) : (
-                            <div style={{ background: '#f1f5f9', color: '#94a3b8', padding: '10px 24px', borderRadius: 12, fontWeight: 700, fontSize: 13, textAlign: 'center', border: '1px solid #e2e8f0' }}>
+                            <div className="runner-action-btn" style={{ background: '#f1f5f9', color: '#94a3b8', padding: '8px 14px', borderRadius: 10, fontWeight: 700, fontSize: 12, textAlign: 'center', border: '1px solid #e2e8f0' }}>
                                 ⏳ ยังวิ่งไม่จบ แต่ถ้ามีกล้องใน Checkpoint ก็เปิดดูได้ทันที
                             </div>
                         )}
@@ -542,22 +558,22 @@ export default function RunnerProfilePage() {
                 </section>
 
                 {/* STATS CARDS */}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 16, marginBottom: 24 }}>
-                    <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, padding: 16 }}>
-                        <p style={{ fontSize: 10, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', marginBottom: 4 }}>Overall Rank</p>
-                        <p style={{ fontSize: 24, fontWeight: 900, color: '#0f172a', margin: 0 }}>{runner.overallRank || '-'} {runner.totalFinishers ? <small style={{ fontSize: 12, color: '#94a3b8', fontWeight: 700 }}>/ {runner.totalFinishers}</small> : null}</p>
+                <div className="runner-stats-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10, marginBottom: 16 }}>
+                    <div className="runner-stat-card" style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, padding: 12 }}>
+                        <p className="runner-stat-label" style={{ fontSize: 9, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', marginBottom: 2 }}>Overall Rank</p>
+                        <p className="runner-stat-value" style={{ fontSize: 20, fontWeight: 900, color: '#0f172a', margin: 0 }}>{runner.overallRank || '-'} {runner.totalFinishers ? <small style={{ fontSize: 11, color: '#94a3b8', fontWeight: 700 }}>/ {runner.totalFinishers}</small> : null}</p>
                     </div>
-                    <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, padding: 16 }}>
-                        <p style={{ fontSize: 10, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', marginBottom: 4 }}>Gender Rank</p>
-                        <p style={{ fontSize: 24, fontWeight: 900, color: '#0f172a', margin: 0 }}>{runner.genderRank || runner.genderNetRank || '-'} {runner.genderFinishers ? <small style={{ fontSize: 12, color: '#94a3b8', fontWeight: 700 }}>/ {runner.genderFinishers}</small> : null}</p>
+                    <div className="runner-stat-card" style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, padding: 12 }}>
+                        <p className="runner-stat-label" style={{ fontSize: 9, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', marginBottom: 2 }}>Gender Rank</p>
+                        <p className="runner-stat-value" style={{ fontSize: 20, fontWeight: 900, color: '#0f172a', margin: 0 }}>{runner.genderRank || runner.genderNetRank || '-'} {runner.genderFinishers ? <small style={{ fontSize: 11, color: '#94a3b8', fontWeight: 700 }}>/ {runner.genderFinishers}</small> : null}</p>
                     </div>
-                    <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, padding: 16 }}>
-                        <p style={{ fontSize: 10, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', marginBottom: 4 }}>Category Rank</p>
-                        <p style={{ fontSize: 24, fontWeight: 900, color: '#0f172a', margin: 0 }}>{runner.categoryRank || runner.categoryNetRank || '-'}</p>
+                    <div className="runner-stat-card" style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, padding: 12 }}>
+                        <p className="runner-stat-label" style={{ fontSize: 9, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', marginBottom: 2 }}>Category Rank</p>
+                        <p className="runner-stat-value" style={{ fontSize: 20, fontWeight: 900, color: '#0f172a', margin: 0 }}>{runner.categoryRank || runner.categoryNetRank || '-'}</p>
                     </div>
-                    <div style={{ background: isFinished ? '#f0fdf4' : '#fff', border: `1px solid ${isFinished ? '#bbf7d0' : '#e2e8f0'}`, borderRadius: 12, padding: 16 }}>
-                        <p style={{ fontSize: 10, fontWeight: 700, color: isFinished ? '#16a34a' : '#94a3b8', textTransform: 'uppercase', marginBottom: 4 }}>{isFinished ? 'Finish Time' : 'Elapsed'}</p>
-                        <p style={{ fontSize: 24, fontWeight: 900, color: isFinished ? '#15803d' : '#0f172a', margin: 0 }}>{finishTimeStr}</p>
+                    <div className="runner-stat-card" style={{ background: isFinished ? '#f0fdf4' : '#fff', border: `1px solid ${isFinished ? '#bbf7d0' : '#e2e8f0'}`, borderRadius: 12, padding: 12 }}>
+                        <p className="runner-stat-label" style={{ fontSize: 9, fontWeight: 700, color: isFinished ? '#16a34a' : '#94a3b8', textTransform: 'uppercase', marginBottom: 2 }}>{isFinished ? 'Finish Time' : 'Elapsed'}</p>
+                        <p className="runner-stat-value" style={{ fontSize: 20, fontWeight: 900, color: isFinished ? '#15803d' : '#0f172a', margin: 0 }}>{finishTimeStr}</p>
                     </div>
                 </div>
 
@@ -570,7 +586,7 @@ export default function RunnerProfilePage() {
                         : 0;
                     const pct = isFinished ? 100 : (totalDist > 0 ? Math.min(99, Math.round((currentDist / totalDist) * 100)) : 0);
                     return (
-                        <div style={{ background: '#fff', borderRadius: 16, border: '1px solid #e2e8f0', padding: 24, marginBottom: 24, boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+                        <div className="runner-progress-bar" style={{ background: '#fff', borderRadius: 16, border: '1px solid #e2e8f0', padding: 18, marginBottom: 16, boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 12 }}>
                                 <h3 style={{ fontWeight: 900, textTransform: 'uppercase', fontSize: 13, letterSpacing: 2, color: '#64748b', margin: 0 }}>Distance Progress</h3>
                                 <span style={{ fontSize: 20, fontWeight: 900, color: isFinished ? '#16a34a' : '#0f172a' }}>
@@ -599,8 +615,8 @@ export default function RunnerProfilePage() {
 
                 {/* CHECKPOINT HISTORY TABLE — Marathon mode only */}
                 {campaign?.displayMode !== 'lab' && <div style={{ background: '#fff', borderRadius: 16, border: '1px solid #e2e8f0', overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
-                    <div style={{ padding: '16px 24px', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <h3 style={{ fontWeight: 900, textTransform: 'uppercase', fontSize: 13, letterSpacing: 2, color: '#64748b', margin: 0 }}>Checkpoint History</h3>
+                    <div className="runner-cp-table-header" style={{ padding: '12px 18px', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <h3 style={{ fontWeight: 900, textTransform: 'uppercase', fontSize: 12, letterSpacing: 2, color: '#64748b', margin: 0 }}>Checkpoint History</h3>
                         <span style={{ fontSize: 10, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', fontStyle: 'italic' }}>
                             {campaign?.name || 'Event'}
                         </span>
@@ -608,14 +624,14 @@ export default function RunnerProfilePage() {
                     <div style={{ overflowX: 'auto' }}>
                         <table style={{ width: '100%', textAlign: 'left', borderCollapse: 'collapse', minWidth: 600 }}>
                             <thead>
-                                <tr style={{ fontSize: 10, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '-0.02em', background: '#f8fafc' }}>
-                                    <th style={{ padding: '12px 16px', width: '60px' }}>Rank</th>
-                                    <th style={{ padding: '12px 16px' }}>Checkpoint</th>
-                                    <th style={{ padding: '12px 8px' }}>Distance</th>
-                                    <th style={{ padding: '12px 8px' }}>Time of Day</th>
-                                    <th style={{ padding: '12px 8px' }}>Net Time</th>
-                                    <th style={{ padding: '12px 8px' }}>Split</th>
-                                    <th style={{ padding: '12px 24px', textAlign: 'right' }}>Pace</th>
+                                <tr style={{ fontSize: 9, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '-0.02em', background: '#f8fafc' }}>
+                                    <th style={{ padding: '8px 12px', width: '50px' }}>Rank</th>
+                                    <th style={{ padding: '8px 12px' }}>Checkpoint</th>
+                                    <th style={{ padding: '8px 6px' }}>Dist.</th>
+                                    <th style={{ padding: '8px 6px' }}>Time</th>
+                                    <th style={{ padding: '8px 6px' }}>Net</th>
+                                    <th style={{ padding: '8px 6px' }}>Split</th>
+                                    <th style={{ padding: '8px 12px', textAlign: 'right' }}>Pace</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -653,32 +669,32 @@ export default function RunnerProfilePage() {
                                             title={rowHasVideo ? 'คลิกเพื่อดูวิดีโอ CCTV' : 'คลิกเพื่อดูรายละเอียด Checkpoint'}
                                             style={{ background: isSelected ? '#eff6ff' : isCurrent ? 'rgba(34,197,94,0.05)' : undefined, cursor: 'pointer' }}
                                         >
-                                            <td style={{ padding: '16px 16px', fontWeight: 800, fontSize: 16, color: '#0f172a', whiteSpace: 'nowrap' }}>
+                                            <td style={{ padding: '10px 12px', fontWeight: 800, fontSize: 13, color: '#0f172a', whiteSpace: 'nowrap' }}>
                                                 {isStartCp ? '-' : cpRank ?? '-'}
                                                 {rankDelta !== null && rankDelta !== 0 && (
-                                                    <span style={{ fontSize: 11, fontWeight: 700, marginLeft: 4, color: rankDelta > 0 ? '#16a34a' : '#dc2626' }}>
+                                                    <span style={{ fontSize: 10, fontWeight: 700, marginLeft: 3, color: rankDelta > 0 ? '#16a34a' : '#dc2626' }}>
                                                         {rankDelta > 0 ? `▲${rankDelta}` : `▼${Math.abs(rankDelta)}`}
                                                     </span>
                                                 )}
                                             </td>
-                                            <td style={{ padding: '16px 16px', fontWeight: 700, fontSize: 14, color: isFinishCp ? '#0f172a' : isCurrent ? '#16a34a' : isStartCp ? '#94a3b8' : '#16a34a', display: 'flex', alignItems: 'center', gap: 8 }}>
+                                            <td style={{ padding: '10px 12px', fontWeight: 700, fontSize: 12, color: isFinishCp ? '#0f172a' : isCurrent ? '#16a34a' : isStartCp ? '#94a3b8' : '#16a34a', display: 'flex', alignItems: 'center', gap: 6 }}>
                                                 {isCurrent && <span style={{ fontSize: 10, background: '#16a34a', color: '#fff', padding: '1px 6px', borderRadius: 4 }}>Current</span>}
                                                 <span>{record.checkpoint}</span>
                                                 {rowHasVideo && <CheckpointCameraIcon onClick={() => openCheckpointVideo(rowKey)} size={24} />}
                                             </td>
-                                            <td style={{ padding: '16px 8px', fontSize: 12, fontWeight: 700, color: '#64748b' }}>
+                                            <td style={{ padding: '10px 6px', fontSize: 11, fontWeight: 700, color: '#64748b' }}>
                                                 {record.distanceFromStart != null ? `${record.distanceFromStart} KM` : '-'}
                                             </td>
-                                            <td style={{ padding: '16px 8px', fontSize: 12, color: '#475569' }}>
+                                            <td style={{ padding: '10px 6px', fontSize: 11, color: '#475569' }}>
                                                 {formatTimeOfDay(record.scanTime)}
                                             </td>
-                                            <td style={{ padding: '16px 8px', fontSize: 12, fontWeight: 900, color: isFinishCp ? '#16a34a' : '#0f172a' }}>
+                                            <td style={{ padding: '10px 6px', fontSize: 11, fontWeight: 800, color: isFinishCp ? '#16a34a' : '#0f172a' }}>
                                                 {displayNetTime ? formatTime(displayNetTime) : (isStartCp ? '00:00:00' : '-')}
                                             </td>
-                                            <td style={{ padding: '16px 8px', fontSize: 12, fontWeight: 700, color: '#64748b' }}>
+                                            <td style={{ padding: '10px 6px', fontSize: 11, fontWeight: 700, color: '#64748b' }}>
                                                 {record.splitTime ? formatTime(record.splitTime) : '-'}
                                             </td>
-                                            <td style={{ padding: '16px 24px', textAlign: 'right', fontSize: 12, color: '#475569' }}>
+                                            <td style={{ padding: '10px 12px', textAlign: 'right', fontSize: 11, color: '#475569' }}>
                                                 {isStartCp ? '--' : segPace}
                                             </td>
                                         </tr>
@@ -701,25 +717,25 @@ export default function RunnerProfilePage() {
                                             title={rowHasVideo ? 'คลิกเพื่อดูวิดีโอ CCTV' : 'คลิกเพื่อดูรายละเอียด Checkpoint'}
                                             style={{ background: isSelected ? '#eff6ff' : isCurrent ? 'rgba(34,197,94,0.05)' : undefined, opacity: passed ? 1 : 0.4, cursor: 'pointer' }}
                                         >
-                                            <td style={{ padding: '16px 16px', fontWeight: 800, fontSize: 16, color: passed ? '#0f172a' : '#cbd5e1' }}>
+                                            <td style={{ padding: '10px 12px', fontWeight: 800, fontSize: 13, color: passed ? '#0f172a' : '#cbd5e1' }}>
                                                 {isStartCp ? '-' : (passed && cpRank ? cpRank : '-')}
                                             </td>
-                                            <td style={{ padding: '16px 16px', fontWeight: 700, fontSize: 14, display: 'flex', alignItems: 'center', gap: 8, color: passed ? (isFinishCp ? '#0f172a' : '#16a34a') : '#cbd5e1' }}>
+                                            <td style={{ padding: '10px 12px', fontWeight: 700, fontSize: 12, display: 'flex', alignItems: 'center', gap: 6, color: passed ? (isFinishCp ? '#0f172a' : '#16a34a') : '#cbd5e1' }}>
                                                 {isCurrent && <span style={{ fontSize: 10, background: '#16a34a', color: '#fff', padding: '1px 6px', borderRadius: 4 }}>Current</span>}
                                                 {passed && !isCurrent && <span style={{ color: '#22c55e', fontSize: 14 }}>✓</span>}
                                                 {!passed && <span style={{ color: '#cbd5e1', fontSize: 14 }}>○</span>}
                                                 <span>{cp.name}</span>
                                                 {rowHasVideo && <CheckpointCameraIcon onClick={() => openCheckpointVideo(rowKey)} size={24} />}
                                             </td>
-                                            <td style={{ padding: '16px 8px', fontSize: 12, fontWeight: 700, color: passed ? '#64748b' : '#cbd5e1' }}>
+                                            <td style={{ padding: '10px 6px', fontSize: 11, fontWeight: 700, color: passed ? '#64748b' : '#cbd5e1' }}>
                                                 {cp.distanceFromStart != null ? `${cp.distanceFromStart} KM` : '-'}
                                             </td>
-                                            <td style={{ padding: '16px 8px', fontSize: 12, color: '#cbd5e1' }}>-</td>
-                                            <td style={{ padding: '16px 8px', fontSize: 12, fontWeight: 900, color: passed && isFinishCp ? '#16a34a' : passed ? '#0f172a' : '#cbd5e1' }}>
+                                            <td style={{ padding: '10px 6px', fontSize: 11, color: '#cbd5e1' }}>-</td>
+                                            <td style={{ padding: '10px 6px', fontSize: 11, fontWeight: 800, color: passed && isFinishCp ? '#16a34a' : passed ? '#0f172a' : '#cbd5e1' }}>
                                                 {passed && isFinished && isFinishCp ? finishTimeStr : '-'}
                                             </td>
-                                            <td style={{ padding: '16px 8px', fontSize: 12, color: '#cbd5e1' }}>-</td>
-                                            <td style={{ padding: '16px 24px', textAlign: 'right', fontSize: 12, color: '#cbd5e1' }}>
+                                            <td style={{ padding: '10px 6px', fontSize: 11, color: '#cbd5e1' }}>-</td>
+                                            <td style={{ padding: '10px 12px', textAlign: 'right', fontSize: 11, color: '#cbd5e1' }}>
                                                 {isStartCp ? '--' : '-'}
                                             </td>
                                         </tr>
@@ -754,9 +770,9 @@ export default function RunnerProfilePage() {
                                     type="button"
                                     onClick={closeCheckpointVideo}
                                     aria-label="ปิดหน้าต่างวิดีโอ CCTV"
-                                    style={{ border: 'none', background: '#fee2e2', color: '#dc2626', width: 42, height: 42, borderRadius: 999, cursor: 'pointer', fontSize: 54, fontWeight: 500, lineHeight: 0 }}
+                                    style={{ border: 'none', background: 'transparent', color: '#0f172a', width: 36, height: 36, borderRadius: 999, cursor: 'pointer', fontSize: 28, fontWeight: 400, lineHeight: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}
                                 >
-                                    ×
+                                    ✕
                                 </button>
                             </div>
 
@@ -889,7 +905,7 @@ export default function RunnerProfilePage() {
                 })()}
             </main>
 
-            <footer style={{ padding: 32, textAlign: 'center', background: '#fff', borderTop: '1px solid #f1f5f9', marginTop: 40 }}>
+            <footer className="runner-footer" style={{ padding: 24, textAlign: 'center', background: '#fff', borderTop: '1px solid #f1f5f9', marginTop: 24 }}>
                 <p style={{ fontSize: 10, fontWeight: 700, color: '#cbd5e1', textTransform: 'uppercase', letterSpacing: 3 }}>ACTION TIMING © 2026</p>
             </footer>
         </div>
