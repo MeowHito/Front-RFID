@@ -9,7 +9,6 @@ import { useAuth } from '@/lib/auth-context';
 import CursorSpotlight from '@/components/CursorSpotlight';
 import ActivityCard from '@/components/ActivityCard';
 import ProfileDropdown from '@/components/ProfileDropdown';
-import { loadFollowedRunners, subscribeFollowedRunners, type FollowedRunner } from '@/lib/followed-runners';
 
 // Race category from backend
 interface RaceCategory {
@@ -47,13 +46,6 @@ interface Campaign {
   cardColor?: string;
 }
 
-function FollowHeartIcon({ filled = true, size = 16 }: { filled?: boolean; size?: number }) {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true" style={{ width: size, height: size, display: 'block' }}>
-      <path d="M12 21.35 10.55 20.03C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35Z" fill={filled ? '#e11d48' : 'none'} stroke="#e11d48" strokeWidth="2" strokeLinejoin="round" />
-    </svg>
-  );
-}
 
 export default function Home() {
   const { theme, toggleTheme } = useTheme();
@@ -61,7 +53,6 @@ export default function Home() {
   const { user, isAuthenticated, isAdmin, logout } = useAuth();
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [campaignImages, setCampaignImages] = useState<Record<string, string>>({});
-  const [followedRunners, setFollowedRunners] = useState<FollowedRunner[]>([]);
   const [loading, setLoading] = useState(true);
   // showUserMenu is now handled by ProfileDropdown component
 
@@ -69,10 +60,6 @@ export default function Home() {
     loadCampaigns();
   }, []);
 
-  useEffect(() => {
-    setFollowedRunners(loadFollowedRunners());
-    return subscribeFollowedRunners(setFollowedRunners);
-  }, []);
 
   // Lazy-load campaign images after campaigns are loaded
   useEffect(() => {
@@ -378,70 +365,6 @@ export default function Home() {
           </p>
         </div>
       </section>
-
-      {followedRunners.length > 0 && (
-        <section className="relative z-10 py-8 px-4 sm:px-6" style={{ background: 'var(--background)' }}>
-          <div className="max-w-6xl mx-auto">
-            <div className="flex items-center gap-3 mb-6">
-              <div className="w-11 h-11 rounded-2xl flex items-center justify-center" style={{ background: 'rgba(225, 29, 72, 0.12)' }}>
-                <FollowHeartIcon size={20} />
-              </div>
-              <div>
-                <h2 className="text-2xl font-bold" style={{ color: 'var(--foreground)' }}>
-                  {language === 'th' ? 'นักกีฬาที่ติดตาม' : 'Followed Runners'}
-                </h2>
-                <p className="text-sm" style={{ color: 'var(--muted-foreground)' }}>
-                  {language === 'th' ? 'แสดงเฉพาะนักกีฬาที่คุณกดหัวใจติดตามไว้' : 'Showing only the runners you marked with the heart button'}
-                </p>
-              </div>
-            </div>
-
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-              {[...followedRunners].sort((a, b) => b.followedAt - a.followedAt).map((runner) => (
-                <Link
-                  key={`${runner.eventKey}-${runner.runnerId}`}
-                  href={`/runner/${runner.runnerId}`}
-                  className="glass rounded-[28px] p-5 transition-transform duration-200 hover:-translate-y-1"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <div className="text-xs font-bold uppercase tracking-[0.22em]" style={{ color: 'var(--muted-foreground)' }}>
-                        {runner.campaignName || runner.eventKey}
-                      </div>
-                      <h3 className="mt-2 text-xl font-bold" style={{ color: 'var(--foreground)' }}>
-                        {runner.runnerName}
-                      </h3>
-                    </div>
-                    <span className="inline-flex items-center justify-center rounded-full px-3 py-1 text-sm font-black" style={{ background: '#fee2e2', color: '#be123c' }}>
-                      <FollowHeartIcon size={14} />
-                    </span>
-                  </div>
-
-                  <div className="mt-4 flex flex-wrap items-center gap-2 text-sm">
-                    <span className="rounded-lg px-2.5 py-1 font-black" style={{ background: 'var(--accent)', color: 'var(--accent-foreground)' }}>
-                      BIB {runner.bib}
-                    </span>
-                    {runner.category && (
-                      <span className="rounded-lg px-2.5 py-1 font-medium" style={{ background: 'var(--muted)', color: 'var(--foreground)' }}>
-                        {runner.category}
-                      </span>
-                    )}
-                    {runner.ageGroup && (
-                      <span className="rounded-lg px-2.5 py-1 font-medium" style={{ background: 'var(--muted)', color: 'var(--foreground)' }}>
-                        {runner.ageGroup}
-                      </span>
-                    )}
-                  </div>
-
-                  <div className="mt-4 text-sm" style={{ color: 'var(--muted-foreground)' }}>
-                    {language === 'th' ? 'จุดล่าสุด:' : 'Latest checkpoint:'} <span style={{ color: 'var(--foreground)' }}>{runner.latestCheckpoint || '-'}</span>
-                  </div>
-                </Link>
-              ))}
-            </div>
-          </div>
-        </section>
-      )}
 
       {/* Events Section - UTMB Style */}
       <section id="events" className="relative z-10 py-12 px-4 sm:px-6" style={{ background: 'var(--muted)' }}>
