@@ -251,7 +251,6 @@ export default function RunnerProfilePage() {
     const [preArrivalBufferSeconds, setPreArrivalBufferSeconds] = useState(5);
     const [followedRunners, setFollowedRunners] = useState<FollowedRunner[]>([]);
     const [selectedVideoIsPortrait, setSelectedVideoIsPortrait] = useState(false);
-    const [videoDownloadLoading, setVideoDownloadLoading] = useState(false);
 
     useEffect(() => {
         if (!runnerId) return;
@@ -465,40 +464,19 @@ export default function RunnerProfilePage() {
         setSelectedCheckpointKey('');
     };
 
-    const handleDownloadCheckpointVideo = async () => {
+    const handleDownloadCheckpointVideo = () => {
         if (!downloadUrl || !selectedHit?.recording) return;
-
-        try {
-            setVideoDownloadLoading(true);
-            const response = await fetch(downloadUrl, { cache: 'no-store' });
-            if (!response.ok) throw new Error('Failed to download video');
-
-            const blob = await response.blob();
-            const mimeType = response.headers.get('Content-Type') || blob.type || 'video/mp4';
-            const fallbackName = `runner-${runner.bib || runnerId}-${normalizeCheckpoint(selectedCheckpointName || 'checkpoint').replace(/\s+/g, '-')}.${getFileExtensionFromMimeType(mimeType)}`;
-            const fileName = getFileNameFromDisposition(response.headers.get('Content-Disposition')) || fallbackName;
-            const file = new File([blob], fileName, { type: mimeType });
-            const shareNavigator = navigator as Navigator & { canShare?: (data?: ShareData) => boolean };
-
-            if (typeof shareNavigator.share === 'function' && typeof shareNavigator.canShare === 'function' && shareNavigator.canShare({ files: [file] })) {
-                await shareNavigator.share({ files: [file], title: fileName });
-                return;
-            }
-
-            const objectUrl = URL.createObjectURL(blob);
-            const link = document.createElement('a');
-            link.href = objectUrl;
-            link.download = fileName;
-            link.rel = 'noopener';
-            document.body.appendChild(link);
-            link.click();
-            link.remove();
-            window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
-        } catch {
-            window.open(downloadUrl, '_blank', 'noopener,noreferrer');
-        } finally {
-            setVideoDownloadLoading(false);
-        }
+        // Use a direct <a> download link – the browser handles the download natively
+        // which is far more reliable on mobile than fetch+blob (no timeout/memory issues).
+        // Backend now serves mp4 for webm files, so iOS/Android can save to Photos/Gallery.
+        const link = document.createElement('a');
+        link.href = downloadUrl;
+        link.download = '';
+        link.rel = 'noopener';
+        link.style.display = 'none';
+        document.body.appendChild(link);
+        link.click();
+        setTimeout(() => link.remove(), 500);
     };
 
     return (
@@ -905,11 +883,10 @@ export default function RunnerProfilePage() {
                                         <button
                                             type="button"
                                             onClick={handleDownloadCheckpointVideo}
-                                            disabled={videoDownloadLoading}
                                             className="runner-modal-download"
-                                            style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: videoDownloadLoading ? '#86efac' : '#16a34a', color: '#fff', padding: '10px 20px', borderRadius: 12, fontWeight: 700, fontSize: 14, textDecoration: 'none', border: 'none', cursor: videoDownloadLoading ? 'wait' : 'pointer' }}
+                                            style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: '#16a34a', color: '#fff', padding: '10px 20px', borderRadius: 12, fontWeight: 700, fontSize: 14, textDecoration: 'none', border: 'none', cursor: 'pointer' }}
                                         >
-                                            {videoDownloadLoading ? 'กำลังเตรียมวิดีโอ...' : 'บันทึกวิดีโอจุดนี้'}
+                                            บันทึกวิดีโอจุดนี้
                                         </button>
                                     </div>
                                 </div>
