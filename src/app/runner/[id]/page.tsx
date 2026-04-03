@@ -452,12 +452,11 @@ export default function RunnerProfilePage() {
     const selectedHit = selectedCheckpointKey ? runnerHitMap.get(selectedCheckpointKey) || null : null;
     const hasSelectedCheckpoint = selectedCheckpointKey !== '';
     const selectedCheckpointName = selectedTiming?.checkpoint || selectedFallbackCheckpoint?.name || selectedHit?.checkpoint || '';
-    const videoSeekSeconds = Math.max(0, (selectedHit?.seekSeconds || 0) - clipBufferSeconds);
-    const streamUrl = selectedHit?.recording
-        ? `/api/runner/${runnerId}/cctv/${selectedHit.recording._id}/stream`
-        : '';
     const trimStart = Math.max(0, (selectedHit?.seekSeconds || 0) - clipBufferSeconds);
     const trimDuration = clipBufferSeconds * 2;
+    const streamUrl = selectedHit?.recording
+        ? `/api/runner/${runnerId}/cctv/${selectedHit.recording._id}/stream?ss=${trimStart}&t=${trimDuration}`
+        : '';
     const downloadUrl = selectedHit?.recording
         ? `/api/runner/${runnerId}/cctv/${selectedHit.recording._id}/stream?download=1&ss=${trimStart}&t=${trimDuration}`
         : '';
@@ -899,7 +898,7 @@ export default function RunnerProfilePage() {
                                     <div className="runner-modal-video-area">
                                         <div className={`runner-modal-video-shell ${selectedVideoIsPortrait ? 'portrait' : 'landscape'}`}>
                                         <video
-                                            key={`${selectedHit.recording._id}-${videoSeekSeconds}`}
+                                            key={`${selectedHit.recording._id}-${trimStart}-${trimDuration}`}
                                             src={streamUrl}
                                             controls
                                             preload="metadata"
@@ -907,21 +906,6 @@ export default function RunnerProfilePage() {
                                             onLoadedMetadata={(event) => {
                                                 const video = event.currentTarget;
                                                 setSelectedVideoIsPortrait(video.videoHeight > video.videoWidth);
-                                                if (Number.isFinite(videoSeekSeconds)) {
-                                                    try {
-                                                        video.currentTime = videoSeekSeconds;
-                                                    } catch {
-                                                        return;
-                                                    }
-                                                }
-                                            }}
-                                            onTimeUpdate={(event) => {
-                                                const video = event.currentTarget;
-                                                const maxTime = videoSeekSeconds + clipBufferSeconds * 2;
-                                                if (video.currentTime >= maxTime) {
-                                                    video.pause();
-                                                    video.currentTime = maxTime;
-                                                }
                                             }}
                                         />
                                         </div>
