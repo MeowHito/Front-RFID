@@ -25,6 +25,7 @@ interface PasstimeRunner {
     gunTime?: number;
     overallRank?: number;
     genderRank?: number;
+    ageGroupRank?: number;
     categoryRank?: number;
     latestCheckpoint?: string;
     passedCount?: number;
@@ -128,6 +129,12 @@ function compareNumberNullable(a?: number, b?: number): number {
     if (aValid) return -1;
     if (bValid) return 1;
     return 0;
+}
+
+function formatResultTime(ms?: number, raw?: string): string {
+    const formatted = formatTime(ms);
+    if (formatted !== '-') return formatted;
+    return raw && raw.trim() ? raw : '-';
 }
 
 export default function ResultsPage() {
@@ -329,7 +336,9 @@ export default function ResultsPage() {
                     result = (statusOrder[a.status] ?? 9) - (statusOrder[b.status] ?? 9);
                 } else if (sortBy === 'overallRank') result = compareNumberNullable(a.overallRank, b.overallRank);
                 else if (sortBy === 'genderRank') result = compareNumberNullable(a.genderRank, b.genderRank);
-                else if (sortBy === 'netTime') result = compareNumberNullable(a.netTime || a.gunTime, b.netTime || b.gunTime);
+                else if (sortBy === 'ageGroupRank') result = compareNumberNullable(a.ageGroupRank || a.categoryRank, b.ageGroupRank || b.categoryRank);
+                else if (sortBy === 'gunTime') result = compareNumberNullable(a.gunTime, b.gunTime);
+                else if (sortBy === 'chipTime' || sortBy === 'netTime') result = compareNumberNullable(a.netTime || a.gunTime, b.netTime || b.gunTime);
                 else if (sortBy.startsWith('cp:')) {
                     const cpName = sortBy.slice(3);
                     const aTiming = cpTimingMap[a.bib]?.[cpName];
@@ -653,7 +662,9 @@ export default function ResultsPage() {
                                             <th style={{ ...thStyle, minWidth: 50 }}>{renderSortableHeader(language === 'th' ? 'สถานะ' : 'Status', 'status')}</th>
                                             <th style={{ ...thStyle, minWidth: 36 }}>{renderSortableHeader(language === 'th' ? '#รวม' : '#OA', 'overallRank')}</th>
                                             <th style={{ ...thStyle, minWidth: 36 }}>{renderSortableHeader(language === 'th' ? '#เพศ' : '#G', 'genderRank')}</th>
-                                            <th style={{ ...thStyle, minWidth: 70 }}>{renderSortableHeader(language === 'th' ? 'เวลาสุทธิ' : 'Net Time', 'netTime')}</th>
+                                            <th style={{ ...thStyle, minWidth: 52 }}>{renderSortableHeader(language === 'th' ? '#อายุ' : 'AG Rank', 'ageGroupRank')}</th>
+                                            <th style={{ ...thStyle, minWidth: 78 }}>{renderSortableHeader('Gun Time', 'gunTime')}</th>
+                                            <th style={{ ...thStyle, minWidth: 78 }}>{renderSortableHeader('Chip Time', 'chipTime')}</th>
                                             {checkpoints.map(cp => (
                                                 <th key={cp._id} style={{ ...thStyle, minWidth: 80, background: '#eef2ff' }}>
                                                     {renderSortableHeader(cp.name, `cp:${cp.name}`)}
@@ -694,8 +705,12 @@ export default function ResultsPage() {
                                                     </td>
                                                     <td style={{ ...tdStyle, textAlign: 'center', fontWeight: 700, fontSize: 11 }}>{r.overallRank || '-'}</td>
                                                     <td style={{ ...tdStyle, textAlign: 'center', fontSize: 11 }}>{r.genderRank || '-'}</td>
+                                                    <td style={{ ...tdStyle, textAlign: 'center', fontSize: 11 }}>{r.ageGroupRank || r.categoryRank || '-'}</td>
+                                                    <td style={{ ...tdStyle, textAlign: 'center', fontFamily: 'monospace', fontWeight: 600, color: r.gunTime ? '#f59e0b' : '#aaa' }}>
+                                                        {formatResultTime(r.gunTime, r.gunTimeStr)}
+                                                    </td>
                                                     <td style={{ ...tdStyle, textAlign: 'center', fontFamily: 'monospace', fontWeight: 600, color: r.netTime ? '#16a34a' : '#aaa' }}>
-                                                        {formatTime(r.netTime || r.gunTime)}
+                                                        {formatResultTime(r.netTime, r.netTimeStr)}
                                                     </td>
                                                     {checkpoints.map(cp => {
                                                         const timing = bibTimings[cp.name];
