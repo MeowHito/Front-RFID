@@ -449,9 +449,10 @@ export default function RunnerProfilePage() {
                 .live-dot { width: 10px; height: 8px; border-radius: 50%; display: inline-block; animation: pulseLive 1.5s infinite; border: 1.5px solid white; }
                 .checkpoint-row:nth-child(even) { background-color: #f8fafc; }
                 .runner-modal { width: min(1120px, 100%); height: min(820px, calc(100vh - 32px)); max-height: calc(100vh - 32px); overflow: hidden; display: flex; flex-direction: column; }
+                .runner-modal.no-video { width: min(520px, 100%); height: auto; max-height: min(420px, calc(100vh - 32px)); }
                 .runner-modal-header { padding: 18px 24px; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
                 .runner-modal-title { margin: 8px 0 0; font-size: 26px; font-weight: 900; color: #0f172a; }
-                .runner-modal-body { flex: 1; min-height: 0; display: flex; flex-direction: column; justify-content: space-between; gap: 16px; padding: 20px 24px 22px; }
+                .runner-modal-body { flex: 1; min-height: 0; display: flex; flex-direction: column; justify-content: flex-start; gap: 10px; padding: 16px 24px 18px; }
                 .runner-modal-meta { margin-bottom: 0; font-size: 12px; color: #475569; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
                 .runner-modal-video-area { margin-top: 0; display: flex; justify-content: center; align-items: center; flex: 1; min-height: 0; }
                 .runner-modal-video-shell { width: 100%; overflow: hidden; display: flex; justify-content: center; align-items: center; border-radius: 24px; border: 1px solid #0f172a; background: #020617; box-shadow: 0 20px 50px rgba(15,23,42,0.24); }
@@ -460,6 +461,7 @@ export default function RunnerProfilePage() {
                 .runner-modal-video.portrait { width: auto; max-width: 100%; height: auto; max-height: min(58vh, 620px); aspect-ratio: auto; object-fit: contain; }
                 .runner-modal-video.landscape { height: auto; max-height: min(58vh, 540px); aspect-ratio: 16 / 9; object-fit: contain; }
                 .runner-modal-download-row { margin-top: 0; display: flex; justify-content: center; }
+                .runner-modal-empty { padding: 28px 24px 30px; text-align: center; }
                 @media (max-width: 640px) {
                     .runner-header { padding: 6px 10px !important; }
                     .runner-info-section { padding: 12px !important; gap: 12px !important; }
@@ -477,16 +479,18 @@ export default function RunnerProfilePage() {
                     .runner-footer { padding: 16px !important; margin-top: 16px !important; }
                     .runner-modal-overlay { padding: 8px !important; }
                     .runner-modal { width: 100% !important; height: calc(100vh - 16px) !important; max-height: calc(100vh - 16px) !important; border-radius: 20px !important; }
+                    .runner-modal.no-video { width: min(400px, 100%) !important; height: auto !important; max-height: none !important; }
                     .runner-modal-header { padding: 14px 16px !important; gap: 12px !important; }
                     .runner-modal-title { margin-top: 4px !important; font-size: 20px !important; line-height: 1.05 !important; }
                     .runner-modal-close { width: 30px !important; height: 30px !important; font-size: 24px !important; }
-                    .runner-modal-body { padding: 12px 14px 14px !important; gap: 10px !important; }
+                    .runner-modal-body { padding: 10px 14px 12px !important; gap: 6px !important; }
                     .runner-modal-meta { font-size: 11px !important; line-height: 1.35 !important; }
                     .runner-modal-video-shell { border-radius: 20px !important; }
                     .runner-modal-video-shell.portrait { width: fit-content !important; max-width: min(270px, calc(100vw - 72px)) !important; }
-                    .runner-modal-video.portrait { max-height: calc(100vh - 340px) !important; }
+                    .runner-modal-video.portrait { max-height: calc(100vh - 330px) !important; }
                     .runner-modal-video.landscape { max-height: calc(100vh - 320px) !important; }
                     .runner-modal-download { padding: 9px 18px !important; font-size: 13px !important; border-radius: 10px !important; }
+                    .runner-modal-empty { padding: 24px 18px 26px !important; }
                 }
             `}</style>
 
@@ -784,7 +788,7 @@ export default function RunnerProfilePage() {
                     >
                         <div
                             onClick={(event) => event.stopPropagation()}
-                            className="runner-modal"
+                            className={`runner-modal ${selectedHit?.recording ? 'has-video' : 'no-video'}`}
                             style={{ background: '#fff', borderRadius: 24, border: '1px solid rgba(226,232,240,0.9)', boxShadow: '0 24px 80px rgba(15,23,42,0.38)' }}
                         >
                             <div className="runner-modal-header">
@@ -843,7 +847,7 @@ export default function RunnerProfilePage() {
                                     </div>
                                 </div>
                             ) : (
-                                <div style={{ padding: '40px 24px', textAlign: 'center' }}>
+                                <div className="runner-modal-empty">
                                     <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 16 }}>
                                         <Image src="/Camera.png" alt="CCTV" width={56} height={56} style={{ width: 56, height: 56, objectFit: 'contain' }} />
                                     </div>
