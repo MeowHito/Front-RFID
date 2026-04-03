@@ -249,6 +249,7 @@ export default function RunnerProfilePage() {
     const [runnerHits, setRunnerHits] = useState<RunnerHit[]>([]);
     const [selectedCheckpointKey, setSelectedCheckpointKey] = useState('');
     const [preArrivalBufferSeconds, setPreArrivalBufferSeconds] = useState(5);
+    const [clipBufferSeconds, setClipBufferSeconds] = useState(10);
     const [followedRunners, setFollowedRunners] = useState<FollowedRunner[]>([]);
     const [selectedVideoIsPortrait, setSelectedVideoIsPortrait] = useState(false);
     const [videoDownloadLoading, setVideoDownloadLoading] = useState(false);
@@ -284,6 +285,10 @@ export default function RunnerProfilePage() {
                 const nextValue = Number(settings?.preArrivalBuffer);
                 if (Number.isFinite(nextValue) && nextValue >= 0) {
                     setPreArrivalBufferSeconds(nextValue);
+                }
+                const clipBuf = Number(settings?.clipBufferSeconds);
+                if (Number.isFinite(clipBuf) && clipBuf > 0) {
+                    setClipBufferSeconds(clipBuf);
                 }
             })
             .catch(() => {});
@@ -447,12 +452,14 @@ export default function RunnerProfilePage() {
     const selectedHit = selectedCheckpointKey ? runnerHitMap.get(selectedCheckpointKey) || null : null;
     const hasSelectedCheckpoint = selectedCheckpointKey !== '';
     const selectedCheckpointName = selectedTiming?.checkpoint || selectedFallbackCheckpoint?.name || selectedHit?.checkpoint || '';
-    const videoSeekSeconds = Math.max(0, (selectedHit?.seekSeconds || 0) - preArrivalBufferSeconds);
+    const videoSeekSeconds = Math.max(0, (selectedHit?.seekSeconds || 0) - clipBufferSeconds);
     const streamUrl = selectedHit?.recording
         ? `/api/runner/${runnerId}/cctv/${selectedHit.recording._id}/stream`
         : '';
+    const trimStart = Math.max(0, (selectedHit?.seekSeconds || 0) - clipBufferSeconds);
+    const trimDuration = clipBufferSeconds * 2;
     const downloadUrl = selectedHit?.recording
-        ? `/api/runner/${runnerId}/cctv/${selectedHit.recording._id}/stream?download=1`
+        ? `/api/runner/${runnerId}/cctv/${selectedHit.recording._id}/stream?download=1&ss=${trimStart}&t=${trimDuration}`
         : '';
 
     const openCheckpointVideo = (checkpointKey: string) => {
@@ -906,6 +913,14 @@ export default function RunnerProfilePage() {
                                                     } catch {
                                                         return;
                                                     }
+                                                }
+                                            }}
+                                            onTimeUpdate={(event) => {
+                                                const video = event.currentTarget;
+                                                const maxTime = videoSeekSeconds + clipBufferSeconds * 2;
+                                                if (video.currentTime >= maxTime) {
+                                                    video.pause();
+                                                    video.currentTime = maxTime;
                                                 }
                                             }}
                                         />

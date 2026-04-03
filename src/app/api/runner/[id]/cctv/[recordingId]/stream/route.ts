@@ -8,8 +8,14 @@ export async function GET(
     const { id, recordingId } = await params;
 
     try {
-        const download = request.nextUrl.searchParams.get('download') === '1' ? '?download=1' : '';
-        const backendRes = await fetch(`${BACKEND_URL}/public-api/runner/${id}/cctv/${recordingId}/stream${download}`, {
+        const qp = new URLSearchParams();
+        if (request.nextUrl.searchParams.get('download') === '1') qp.set('download', '1');
+        const ss = request.nextUrl.searchParams.get('ss');
+        if (ss) qp.set('ss', ss);
+        const t = request.nextUrl.searchParams.get('t');
+        if (t) qp.set('t', t);
+        const qs = qp.toString() ? `?${qp.toString()}` : '';
+        const backendRes = await fetch(`${BACKEND_URL}/public-api/runner/${id}/cctv/${recordingId}/stream${qs}`, {
             cache: 'no-store',
         });
 
