@@ -453,11 +453,11 @@ export default function RunnerProfilePage() {
                 .runner-modal-title { margin: 8px 0 0; font-size: 26px; font-weight: 900; color: #0f172a; }
                 .runner-modal-body { flex: 1; min-height: 0; display: flex; flex-direction: column; justify-content: space-between; gap: 16px; padding: 20px 24px 22px; }
                 .runner-modal-meta { margin-bottom: 0; font-size: 12px; color: #475569; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-                .runner-modal-video-area { margin-top: 0; display: flex; justify-content: center; flex: 1; min-height: 0; }
-                .runner-modal-video-shell { width: 100%; overflow: hidden; border-radius: 24px; border: 1px solid #0f172a; background: #020617; box-shadow: 0 20px 50px rgba(15,23,42,0.24); }
-                .runner-modal-video-shell.portrait { width: min(380px, 100%); }
+                .runner-modal-video-area { margin-top: 0; display: flex; justify-content: center; align-items: center; flex: 1; min-height: 0; }
+                .runner-modal-video-shell { width: 100%; overflow: hidden; display: flex; justify-content: center; align-items: center; border-radius: 24px; border: 1px solid #0f172a; background: #020617; box-shadow: 0 20px 50px rgba(15,23,42,0.24); }
+                .runner-modal-video-shell.portrait { width: fit-content; max-width: min(380px, 100%); background: transparent; }
                 .runner-modal-video { width: 100%; display: block; background: #000; }
-                .runner-modal-video.portrait { height: min(58vh, 620px); max-height: min(58vh, 620px); aspect-ratio: 9 / 16; object-fit: cover; }
+                .runner-modal-video.portrait { width: auto; max-width: 100%; height: auto; max-height: min(58vh, 620px); aspect-ratio: auto; object-fit: contain; }
                 .runner-modal-video.landscape { height: auto; max-height: min(58vh, 540px); aspect-ratio: 16 / 9; object-fit: contain; }
                 .runner-modal-download-row { margin-top: 0; display: flex; justify-content: center; }
                 @media (max-width: 640px) {
@@ -483,8 +483,8 @@ export default function RunnerProfilePage() {
                     .runner-modal-body { padding: 12px 14px 14px !important; gap: 10px !important; }
                     .runner-modal-meta { font-size: 11px !important; line-height: 1.35 !important; }
                     .runner-modal-video-shell { border-radius: 20px !important; }
-                    .runner-modal-video-shell.portrait { width: min(260px, calc(100vw - 72px)) !important; }
-                    .runner-modal-video.portrait { height: calc(100vh - 320px) !important; max-height: calc(100vh - 320px) !important; }
+                    .runner-modal-video-shell.portrait { width: fit-content !important; max-width: min(270px, calc(100vw - 72px)) !important; }
+                    .runner-modal-video.portrait { max-height: calc(100vh - 340px) !important; }
                     .runner-modal-video.landscape { max-height: calc(100vh - 320px) !important; }
                     .runner-modal-download { padding: 9px 18px !important; font-size: 13px !important; border-radius: 10px !important; }
                 }
