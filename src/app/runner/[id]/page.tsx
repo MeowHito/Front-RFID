@@ -512,15 +512,15 @@ export default function RunnerProfilePage() {
                 .runner-modal.no-video { width: min(520px, 100%); height: auto; max-height: min(420px, calc(100vh - 32px)); }
                 .runner-modal-header { padding: 18px 24px; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
                 .runner-modal-title { margin: 8px 0 0; font-size: 26px; font-weight: 900; color: #0f172a; }
-                .runner-modal-body { flex: 1; min-height: 0; display: flex; flex-direction: column; justify-content: flex-start; gap: 10px; padding: 16px 24px 18px; }
+                .runner-modal-body { flex: 1; min-height: 0; display: flex; flex-direction: column; justify-content: center; gap: 8px; padding: 12px 24px 14px; }
                 .runner-modal-meta { margin-bottom: 0; font-size: 12px; color: #475569; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-                .runner-modal-video-area { margin-top: 0; display: flex; justify-content: center; align-items: center; flex: 0 0 auto; min-height: 0; }
+                .runner-modal-video-area { margin-top: 0; display: flex; justify-content: center; align-items: center; flex: 1 1 auto; min-height: 0; }
                 .runner-modal-video-shell { width: 100%; overflow: hidden; display: flex; justify-content: center; align-items: center; border-radius: 24px; border: 1px solid #0f172a; background: #020617; box-shadow: 0 20px 50px rgba(15,23,42,0.24); }
                 .runner-modal-video-shell.portrait { width: fit-content; max-width: min(380px, 100%); background: transparent; }
                 .runner-modal-video { width: 100%; display: block; background: #000; }
-                .runner-modal-video.portrait { width: auto; max-width: 100%; height: auto; max-height: min(58vh, 620px); aspect-ratio: auto; object-fit: contain; }
+                .runner-modal-video.portrait { width: auto; max-width: 100%; height: 100%; max-height: min(62vh, 660px); aspect-ratio: auto; object-fit: contain; }
                 .runner-modal-video.landscape { height: auto; max-height: min(58vh, 540px); aspect-ratio: 16 / 9; object-fit: contain; }
-                .runner-modal-download-row { margin-top: 2px; display: flex; justify-content: center; }
+                .runner-modal-download-row { margin-top: 0; flex: 0 0 auto; display: flex; justify-content: center; }
                 .runner-modal-empty { padding: 28px 24px 30px; text-align: center; }
                 @media (max-width: 640px) {
                     .runner-header { padding: 6px 10px !important; }
@@ -543,13 +543,13 @@ export default function RunnerProfilePage() {
                     .runner-modal-header { padding: 14px 16px !important; gap: 12px !important; }
                     .runner-modal-title { margin-top: 4px !important; font-size: 20px !important; line-height: 1.05 !important; }
                     .runner-modal-close { width: 30px !important; height: 30px !important; font-size: 24px !important; }
-                    .runner-modal-body { padding: 8px 14px 10px !important; gap: 4px !important; }
+                    .runner-modal-body { padding: 6px 14px 8px !important; gap: 4px !important; }
                     .runner-modal-meta { font-size: 11px !important; line-height: 1.35 !important; }
                     .runner-modal-video-shell { border-radius: 20px !important; }
                     .runner-modal-video-shell.portrait { width: fit-content !important; max-width: min(270px, calc(100vw - 72px)) !important; }
-                    .runner-modal-video.portrait { max-height: calc(100vh - 330px) !important; }
-                    .runner-modal-video.landscape { max-height: calc(100vh - 320px) !important; }
-                    .runner-modal-download-row { margin-top: 0 !important; }
+                    .runner-modal-video.portrait { height: 100% !important; max-height: calc(100vh - 280px) !important; }
+                    .runner-modal-video.landscape { max-height: calc(100vh - 280px) !important; }
+                    .runner-modal-download-row { margin-top: 0 !important; padding-top: 2px !important; }
                     .runner-modal-download { padding: 9px 18px !important; font-size: 13px !important; border-radius: 10px !important; }
                     .runner-modal-empty { padding: 24px 18px 26px !important; }
                 }

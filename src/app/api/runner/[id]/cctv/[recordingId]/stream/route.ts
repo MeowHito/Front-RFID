@@ -18,15 +18,19 @@ export async function GET(
             return new NextResponse(text || 'Failed to stream video', { status: backendRes.status });
         }
 
+        const resHeaders: Record<string, string> = {
+            'Content-Type': backendRes.headers.get('Content-Type') || 'video/webm',
+            'Content-Disposition': backendRes.headers.get('Content-Disposition') || 'inline',
+            'Cache-Control': 'no-store',
+        };
+        const contentLength = backendRes.headers.get('Content-Length');
+        if (contentLength) resHeaders['Content-Length'] = contentLength;
+        const acceptRanges = backendRes.headers.get('Accept-Ranges');
+        if (acceptRanges) resHeaders['Accept-Ranges'] = acceptRanges;
+
         return new NextResponse(backendRes.body, {
             status: backendRes.status,
-            headers: {
-                'Content-Type': backendRes.headers.get('Content-Type') || 'video/webm',
-                'Content-Length': backendRes.headers.get('Content-Length') || '',
-                'Content-Disposition': backendRes.headers.get('Content-Disposition') || 'inline',
-                'Accept-Ranges': backendRes.headers.get('Accept-Ranges') || 'bytes',
-                'Cache-Control': 'no-store',
-            },
+            headers: resHeaders,
         });
     } catch (error: any) {
         return NextResponse.json(
