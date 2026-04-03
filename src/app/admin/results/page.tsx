@@ -2,11 +2,12 @@
 
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { useLanguage } from '@/lib/language-context';
+import { authHeaders } from '@/lib/authHeaders';
 import AdminLayout from '../AdminLayout';
 import '../admin.css';
 
 interface RaceCategory { name: string; distance?: string; }
-interface Campaign { _id: string; name: string; categories?: RaceCategory[]; }
+interface Campaign { _id: string; name: string; categories?: RaceCategory[]; raceFinished?: boolean; }
 
 interface PasstimeRunner {
     _id: string;
@@ -34,6 +35,9 @@ interface PasstimeRunner {
     gunPace?: string;
     statusCheckpoint?: string;
     statusNote?: string;
+    eventId?: string;
+    elapsedTime?: number;
+    statusChangedAt?: string;
 }
 
 interface Checkpoint {
@@ -41,6 +45,19 @@ interface Checkpoint {
     name: string;
     orderNum?: number;
     type?: string;
+}
+
+interface EditCheckpoint {
+    name: string;
+    orderNum: number;
+    type: string;
+}
+
+interface EditTimingRecord {
+    _id?: string;
+    checkpoint: string;
+    scanTime: string;
+    order?: number;
 }
 
 // Per-bib checkpoint scan times: bib → checkpoint → scanTime (ISO)
@@ -71,9 +88,47 @@ const STATUS_LABELS: Record<string, { th: string; en: string; color: string; ico
     finished: { th: 'เข้าเส้นชัย', en: 'Finished', color: '#22c55e', icon: '🏆' },
     dnf: { th: 'ไม่จบ', en: 'DNF', color: '#ef4444', icon: '❌' },
     dns: { th: 'ไม่ออกวิ่ง', en: 'DNS', color: '#6b7280', icon: '🚫' },
+    dq: { th: 'ตัดสิทธิ์', en: 'DQ', color: '#7c2d12', icon: '⛔' },
 };
 
 const AUTO_REFRESH_INTERVAL = 15_000;
+
+function deriveEffectiveStatus(runner: PasstimeRunner): PasstimeRunner {
+    if (['finished', 'dq', 'dnf', 'dns'].includes(runner.status)) return runner;
+
+    const hasGunTime = (runner.gunTime && runner.gunTime > 0) || !!runner.gunTimeStr;
+    const hasNetTime = (runner.netTime && runner.netTime > 0) || !!runner.netTimeStr;
+    const hasCheckpoint = !!runner.latestCheckpoint && runner.latestCheckpoint.toLowerCase() !== 'start';
+    const hasPassedCount = (runner.passedCount ?? 0) > 0;
+    const hasElapsed = (runner.elapsedTime && runner.elapsedTime > 0);
+
+    if (hasGunTime || hasNetTime || hasCheckpoint || hasPassedCount || hasElapsed) {
+        return { ...runner, status: 'in_progress' };
+    }
+
+    return runner;
+}
+
+function toDatetimeLocalValue(iso?: string): string {
+    if (!iso) return '';
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return '';
+    const pad2 = (n: number) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}T${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+}
+
+function compareString(a?: string, b?: string): number {
+    return (a || '').localeCompare(b || '', undefined, { numeric: true, sensitivity: 'base' });
+}
+
+function compareNumberNullable(a?: number, b?: number): number {
+    const aValid = typeof a === 'number' && a > 0;
+    const bValid = typeof b === 'number' && b > 0;
+    if (aValid && bValid) return (a as number) - (b as number);
+    if (aValid) return -1;
+    if (bValid) return 1;
+    return 0;
+}
 
 export default function ResultsPage() {
     const { language } = useLanguage();
@@ -93,6 +148,27 @@ export default function ResultsPage() {
     const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
     const [autoRefresh, setAutoRefresh] = useState(true);
     const refreshTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+    const [editingRunner, setEditingRunner] = useState<PasstimeRunner | null>(null);
+    const [editStatus, setEditStatus] = useState('');
+    const [editCheckpoint, setEditCheckpoint] = useState('');
+    const [editNote, setEditNote] = useState('');
+    const [editSaveError, setEditSaveError] = useState<string | null>(null);
+    const [editSaving, setEditSaving] = useState(false);
+    const [editTimingChanges, setEditTimingChanges] = useState<Record<string, string>>({});
+    const [editTimingLoading, setEditTimingLoading] = useState(false);
+    const [editTimingSaving, setEditTimingSaving] = useState(false);
+    const [editTimingSaveMsg, setEditTimingSaveMsg] = useState<string | null>(null);
+    const [editCheckpoints, setEditCheckpoints] = useState<EditCheckpoint[]>([]);
+    const [editTimingRecords, setEditTimingRecords] = useState<EditTimingRecord[]>([]);
+
+    const [sortBy, setSortBy] = useState('default');
+    const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+
+    const isRaceFinished = campaign?.raceFinished ?? false;
+    const runnersApiUrl = isRaceFinished
+        ? `/api/runners?id=${campaign?._id}`
+        : `/api/runners/passtime?id=${campaign?._id}`;
 
     // ── Load featured campaign ──
     useEffect(() => {
@@ -126,13 +202,9 @@ export default function ResultsPage() {
         if (!campaign?._id) return;
         if (!silent) setRunnersLoading(true);
         try {
-            // 1) Fetch runners from passtime API
-            const runnersRes = await fetch(`/api/runners/passtime?id=${campaign._id}`, { cache: 'no-store' });
+            const runnersRes = await fetch(runnersApiUrl, { cache: 'no-store' });
             let runnersPayload: any = {};
             try { runnersPayload = await runnersRes.json(); } catch { runnersPayload = {}; }
-            // DEBUG: log actual response shape
-            console.log('[admin/results] passtime response status:', runnersRes.status, 'payload keys:', runnersPayload ? Object.keys(runnersPayload) : 'null', 'data type:', typeof runnersPayload?.data, 'data.data type:', typeof runnersPayload?.data?.data, 'isArray(data.data):', Array.isArray(runnersPayload?.data?.data), 'isArray(data):', Array.isArray(runnersPayload?.data));
-            // Backend successResponse wraps as { status, data: { data: [...], total } }
             let runnerList: PasstimeRunner[] = [];
             if (Array.isArray(runnersPayload)) {
                 runnerList = runnersPayload;
@@ -141,9 +213,8 @@ export default function ResultsPage() {
             } else if (Array.isArray(runnersPayload?.data)) {
                 runnerList = runnersPayload.data;
             }
-            setRunners(runnerList);
+            setRunners((Array.isArray(runnerList) ? runnerList : []).map(deriveEffectiveStatus));
 
-            // 2) Fetch timing per checkpoint (parallel)
             if (checkpoints.length > 0) {
                 const cpResults = await Promise.all(
                     checkpoints.map(async (cp) => {
@@ -178,7 +249,7 @@ export default function ResultsPage() {
         } finally {
             if (!silent) setRunnersLoading(false);
         }
-    }, [campaign?._id, checkpoints]);
+    }, [campaign?._id, checkpoints, runnersApiUrl]);
 
     // ── Initial load + refresh when deps change ──
     useEffect(() => {
@@ -189,12 +260,11 @@ export default function ResultsPage() {
     useEffect(() => {
         if (refreshTimerRef.current) clearInterval(refreshTimerRef.current);
         if (autoRefresh && campaign?._id) {
-            refreshTimerRef.current = setInterval(() => fetchAllData(true), AUTO_REFRESH_INTERVAL);
+            refreshTimerRef.current = setInterval(() => fetchAllData(true), isRaceFinished ? AUTO_REFRESH_INTERVAL : 10_000);
         }
         return () => { if (refreshTimerRef.current) clearInterval(refreshTimerRef.current); };
-    }, [autoRefresh, fetchAllData, campaign?._id]);
+    }, [autoRefresh, fetchAllData, campaign?._id, isRaceFinished]);
 
-    // ── Debounce search ──
     useEffect(() => {
         if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
         searchTimerRef.current = setTimeout(() => setDebouncedSearch(search), 250);
@@ -228,29 +298,53 @@ export default function ResultsPage() {
             );
         }
 
-        // Sort: finished first (by netTime/gunTime), then in_progress (by passedCount desc), then rest
-        list.sort((a, b) => {
-            const statusOrder: Record<string, number> = { finished: 0, in_progress: 1, not_started: 2, dnf: 3, dns: 4, dq: 5 };
-            const aOrd = statusOrder[a.status] ?? 9;
-            const bOrd = statusOrder[b.status] ?? 9;
-            if (aOrd !== bOrd) return aOrd - bOrd;
-            if (a.status === 'finished' && b.status === 'finished') {
-                const aT = a.netTime || a.gunTime || 0;
-                const bT = b.netTime || b.gunTime || 0;
-                if (aT > 0 && bT > 0) return aT - bT;
-                if (aT > 0) return -1;
-                if (bT > 0) return 1;
-            }
-            if (a.status === 'in_progress' && b.status === 'in_progress') {
-                const aPassed = a.passedCount ?? 0;
-                const bPassed = b.passedCount ?? 0;
-                if (aPassed !== bPassed) return bPassed - aPassed;
-            }
-            return 0;
-        });
+        if (sortBy === 'default') {
+            list.sort((a, b) => {
+                const statusOrder: Record<string, number> = { finished: 0, in_progress: 1, dnf: 2, dns: 3, dq: 4, not_started: 5 };
+                const aOrd = statusOrder[a.status] ?? 9;
+                const bOrd = statusOrder[b.status] ?? 9;
+                if (aOrd !== bOrd) return aOrd - bOrd;
+                if (a.status === 'finished' && b.status === 'finished') {
+                    const timeCompare = compareNumberNullable(a.netTime || a.gunTime, b.netTime || b.gunTime);
+                    if (timeCompare !== 0) return timeCompare;
+                }
+                if (a.status === 'in_progress' && b.status === 'in_progress') {
+                    const aPassed = a.passedCount ?? 0;
+                    const bPassed = b.passedCount ?? 0;
+                    if (aPassed !== bPassed) return bPassed - aPassed;
+                    const liveTimeCompare = compareNumberNullable(a.netTime || a.gunTime || a.elapsedTime, b.netTime || b.gunTime || b.elapsedTime);
+                    if (liveTimeCompare !== 0) return liveTimeCompare;
+                }
+                return compareString(a.bib, b.bib);
+            });
+        } else {
+            list.sort((a, b) => {
+                let result = 0;
+                if (sortBy === 'bib') result = compareString(a.bib, b.bib);
+                else if (sortBy === 'name') result = compareString(`${a.firstName} ${a.lastName}`, `${b.firstName} ${b.lastName}`);
+                else if (sortBy === 'gender') result = compareString(a.gender, b.gender);
+                else if (sortBy === 'category') result = compareString(a.category, b.category);
+                else if (sortBy === 'status') {
+                    const statusOrder: Record<string, number> = { finished: 0, in_progress: 1, dnf: 2, dns: 3, dq: 4, not_started: 5 };
+                    result = (statusOrder[a.status] ?? 9) - (statusOrder[b.status] ?? 9);
+                } else if (sortBy === 'overallRank') result = compareNumberNullable(a.overallRank, b.overallRank);
+                else if (sortBy === 'genderRank') result = compareNumberNullable(a.genderRank, b.genderRank);
+                else if (sortBy === 'netTime') result = compareNumberNullable(a.netTime || a.gunTime, b.netTime || b.gunTime);
+                else if (sortBy.startsWith('cp:')) {
+                    const cpName = sortBy.slice(3);
+                    const aTiming = cpTimingMap[a.bib]?.[cpName];
+                    const bTiming = cpTimingMap[b.bib]?.[cpName];
+                    const aValue = aTiming?.elapsedTime || (aTiming?.scanTime ? new Date(aTiming.scanTime).getTime() : undefined);
+                    const bValue = bTiming?.elapsedTime || (bTiming?.scanTime ? new Date(bTiming.scanTime).getTime() : undefined);
+                    result = compareNumberNullable(aValue, bValue);
+                }
+                if (result === 0) result = compareString(a.bib, b.bib);
+                return sortDirection === 'asc' ? result : -result;
+            });
+        }
 
         return list;
-    }, [runners, selectedCategory, genderFilter, statusFilter, debouncedSearch]);
+    }, [runners, selectedCategory, genderFilter, statusFilter, debouncedSearch, sortBy, sortDirection, cpTimingMap]);
 
     // ── Status counts from runner list ──
     const statusCounts = useMemo(() => {
@@ -269,6 +363,181 @@ export default function ResultsPage() {
         safe.forEach(r => { if (r.category) cats.add(r.category); });
         return Array.from(cats).sort();
     }, [runners]);
+
+    const setColumnSort = useCallback((column: string, direction: 'asc' | 'desc') => {
+        setSortBy(column);
+        setSortDirection(direction);
+    }, []);
+
+    const renderSortableHeader = useCallback((label: string, column: string, extraStyle: Record<string, unknown> = {}) => (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, ...extraStyle }}>
+            <span>{label}</span>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
+                <button
+                    type="button"
+                    onClick={() => setColumnSort(column, 'asc')}
+                    style={{
+                        border: 'none',
+                        background: 'transparent',
+                        padding: 0,
+                        cursor: 'pointer',
+                        color: sortBy === column && sortDirection === 'asc' ? '#dc2626' : '#cbd5e1',
+                        fontSize: 11,
+                        lineHeight: 1,
+                        fontWeight: 900,
+                    }}
+                    aria-label={`Sort ${label} ascending`}
+                >
+                    ▲
+                </button>
+                <button
+                    type="button"
+                    onClick={() => setColumnSort(column, 'desc')}
+                    style={{
+                        border: 'none',
+                        background: 'transparent',
+                        padding: 0,
+                        cursor: 'pointer',
+                        color: sortBy === column && sortDirection === 'desc' ? '#2563eb' : '#cbd5e1',
+                        fontSize: 11,
+                        lineHeight: 1,
+                        fontWeight: 900,
+                    }}
+                    aria-label={`Sort ${label} descending`}
+                >
+                    ▼
+                </button>
+            </span>
+        </div>
+    ), [setColumnSort, sortBy, sortDirection]);
+
+    const loadEditData = useCallback(async (runner: PasstimeRunner) => {
+        setEditingRunner(runner);
+        setEditStatus(runner.status);
+        setEditCheckpoint(runner.statusCheckpoint || runner.latestCheckpoint || '');
+        setEditNote(runner.statusNote || '');
+        setEditSaveError(null);
+        setEditTimingChanges({});
+        setEditTimingSaveMsg(null);
+
+        if (!campaign?._id || !runner.eventId) {
+            setEditCheckpoints([]);
+            setEditTimingRecords([]);
+            return;
+        }
+
+        setEditTimingLoading(true);
+        try {
+            const [cpRes, trRes] = await Promise.all([
+                fetch(`/api/checkpoints/campaign/${campaign._id}`, { cache: 'no-store' }),
+                fetch(`/api/timing/runner/${runner.eventId}/${runner._id}`, { cache: 'no-store' }),
+            ]);
+
+            if (cpRes.ok) {
+                const cpData = await cpRes.json();
+                const cps = (Array.isArray(cpData) ? cpData : cpData?.data || []).map((cp: any) => ({
+                    name: cp.name || '',
+                    orderNum: cp.orderNum ?? 0,
+                    type: cp.type || 'checkpoint',
+                })).sort((a: EditCheckpoint, b: EditCheckpoint) => a.orderNum - b.orderNum);
+                setEditCheckpoints(cps);
+            } else {
+                setEditCheckpoints([]);
+            }
+
+            if (trRes.ok) {
+                const trData = await trRes.json();
+                const records = (Array.isArray(trData) ? trData : trData?.data || []).map((r: any) => ({
+                    _id: r._id,
+                    checkpoint: r.checkpoint || '',
+                    scanTime: r.scanTime || '',
+                    order: r.order,
+                }));
+                setEditTimingRecords(records);
+            } else {
+                setEditTimingRecords([]);
+            }
+        } catch {
+            setEditCheckpoints([]);
+            setEditTimingRecords([]);
+        } finally {
+            setEditTimingLoading(false);
+        }
+    }, [campaign?._id]);
+
+    const handleStatusUpdate = useCallback(async () => {
+        if (!editingRunner) return;
+        setEditSaving(true);
+        setEditSaveError(null);
+        try {
+            const res = await fetch(`/api/runners/${editingRunner._id}/status`, {
+                method: 'PUT',
+                headers: authHeaders(),
+                body: JSON.stringify({
+                    status: editStatus,
+                    statusCheckpoint: editCheckpoint || undefined,
+                    statusNote: editNote || undefined,
+                    changedBy: 'admin',
+                }),
+            });
+            if (!res.ok) {
+                const payload = await res.json().catch(() => ({}));
+                throw new Error(payload?.message || payload?.error || (language === 'th' ? 'บันทึกข้อมูลไม่สำเร็จ' : 'Failed to save runner status'));
+            }
+            setRunners(prev => prev.map(r => r._id === editingRunner._id
+                ? { ...r, status: editStatus, statusCheckpoint: editCheckpoint, statusNote: editNote, statusChangedAt: new Date().toISOString() }
+                : r));
+            await fetchAllData(true);
+            setEditingRunner(null);
+        } catch (err: any) {
+            setEditSaveError(err?.message || (language === 'th' ? 'บันทึกข้อมูลไม่สำเร็จ' : 'Failed to save runner status'));
+        } finally {
+            setEditSaving(false);
+        }
+    }, [editingRunner, editStatus, editCheckpoint, editNote, language, fetchAllData]);
+
+    const handleTimingSave = useCallback(async () => {
+        if (!editingRunner) return;
+        setEditTimingSaving(true);
+        setEditTimingSaveMsg(null);
+        try {
+            let savedCount = 0;
+            for (const [cpName, localValue] of Object.entries(editTimingChanges)) {
+                if (!localValue.trim()) continue;
+                const isoDate = new Date(localValue).toISOString();
+                const matchedRecord = editTimingRecords.find(r => r.checkpoint.toUpperCase() === cpName.toUpperCase());
+                if (matchedRecord?._id) {
+                    const res = await fetch(`/api/timing/${matchedRecord._id}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ scanTime: isoDate }),
+                    });
+                    if (res.ok) savedCount++;
+                } else if (editingRunner.eventId) {
+                    const res = await fetch('/api/timing/scan', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            eventId: editingRunner.eventId,
+                            bib: editingRunner.bib,
+                            checkpoint: cpName,
+                            scanTime: isoDate,
+                            note: 'Admin manual entry',
+                        }),
+                    });
+                    if (res.ok) savedCount++;
+                }
+            }
+
+            setEditTimingChanges({});
+            setEditTimingSaveMsg(language === 'th' ? `บันทึกเวลา ${savedCount} จุด เรียบร้อย` : `Saved ${savedCount} checkpoint time(s)`);
+            await loadEditData(editingRunner);
+            await fetchAllData(true);
+            setTimeout(() => setEditTimingSaveMsg(null), 3000);
+        } finally {
+            setEditTimingSaving(false);
+        }
+    }, [editingRunner, editTimingChanges, editTimingRecords, language, loadEditData, fetchAllData]);
 
     const thStyle = { padding: '8px 10px', textAlign: 'center' as const, fontWeight: 700, fontSize: 11, color: '#555', borderBottom: '2px solid #e5e7eb', whiteSpace: 'nowrap' as const };
     const tdStyle = { padding: '6px 10px', borderBottom: '1px solid #f3f4f6', fontSize: 12 };
@@ -376,20 +645,21 @@ export default function ResultsPage() {
                                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                                     <thead>
                                         <tr style={{ background: '#f8fafc' }}>
-                                            <th style={{ ...thStyle, minWidth: 36, position: 'sticky', left: 0, background: '#f8fafc', zIndex: 2 }}>#</th>
-                                            <th style={{ ...thStyle, minWidth: 54, position: 'sticky', left: 36, background: '#f8fafc', zIndex: 2, textAlign: 'left' }}>BIB</th>
-                                            <th style={{ ...thStyle, minWidth: 140, textAlign: 'left' }}>{language === 'th' ? 'ชื่อ' : 'Name'}</th>
-                                            <th style={{ ...thStyle, minWidth: 36 }}>{language === 'th' ? 'เพศ' : 'G'}</th>
-                                            <th style={{ ...thStyle, minWidth: 70 }}>{language === 'th' ? 'ประเภท' : 'Cat'}</th>
-                                            <th style={{ ...thStyle, minWidth: 50 }}>{language === 'th' ? 'สถานะ' : 'Status'}</th>
-                                            <th style={{ ...thStyle, minWidth: 36 }}>{language === 'th' ? '#รวม' : '#OA'}</th>
-                                            <th style={{ ...thStyle, minWidth: 36 }}>{language === 'th' ? '#เพศ' : '#G'}</th>
-                                            <th style={{ ...thStyle, minWidth: 70 }}>{language === 'th' ? 'เวลาสุทธิ' : 'Net Time'}</th>
+                                            <th style={{ ...thStyle, minWidth: 36, position: 'sticky', left: 0, background: '#f8fafc', zIndex: 2 }}>{renderSortableHeader('#', 'default')}</th>
+                                            <th style={{ ...thStyle, minWidth: 54, position: 'sticky', left: 36, background: '#f8fafc', zIndex: 2, textAlign: 'left' }}>{renderSortableHeader('BIB', 'bib', { justifyContent: 'flex-start' })}</th>
+                                            <th style={{ ...thStyle, minWidth: 140, textAlign: 'left' }}>{renderSortableHeader(language === 'th' ? 'ชื่อ' : 'Name', 'name', { justifyContent: 'flex-start' })}</th>
+                                            <th style={{ ...thStyle, minWidth: 36 }}>{renderSortableHeader(language === 'th' ? 'เพศ' : 'G', 'gender')}</th>
+                                            <th style={{ ...thStyle, minWidth: 70 }}>{renderSortableHeader(language === 'th' ? 'ประเภท' : 'Cat', 'category')}</th>
+                                            <th style={{ ...thStyle, minWidth: 50 }}>{renderSortableHeader(language === 'th' ? 'สถานะ' : 'Status', 'status')}</th>
+                                            <th style={{ ...thStyle, minWidth: 36 }}>{renderSortableHeader(language === 'th' ? '#รวม' : '#OA', 'overallRank')}</th>
+                                            <th style={{ ...thStyle, minWidth: 36 }}>{renderSortableHeader(language === 'th' ? '#เพศ' : '#G', 'genderRank')}</th>
+                                            <th style={{ ...thStyle, minWidth: 70 }}>{renderSortableHeader(language === 'th' ? 'เวลาสุทธิ' : 'Net Time', 'netTime')}</th>
                                             {checkpoints.map(cp => (
                                                 <th key={cp._id} style={{ ...thStyle, minWidth: 80, background: '#eef2ff' }}>
-                                                    {cp.name}
+                                                    {renderSortableHeader(cp.name, `cp:${cp.name}`)}
                                                 </th>
                                             ))}
+                                            <th style={{ ...thStyle, minWidth: 70 }}>{renderSortableHeader(language === 'th' ? 'จัดการ' : 'Edit', 'default')}</th>
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -453,6 +723,12 @@ export default function ResultsPage() {
                                                             </td>
                                                         );
                                                     })}
+                                                    <td style={{ ...tdStyle, textAlign: 'center' }}>
+                                                        <button onClick={() => loadEditData(r)}
+                                                            style={{ padding: '4px 10px', borderRadius: 4, border: '1px solid #d1d5db', background: '#fff', fontSize: 11, cursor: 'pointer', fontWeight: 600, color: '#3b82f6' }}>
+                                                            ✏️
+                                                        </button>
+                                                    </td>
                                                 </tr>
                                             );
                                         })}
@@ -477,6 +753,159 @@ export default function ResultsPage() {
                             </span>
                         </div>
                     </div>
+
+                    {editingRunner && (
+                        <div
+                            onClick={() => setEditingRunner(null)}
+                            style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                        >
+                            <div
+                                onClick={e => e.stopPropagation()}
+                                style={{ background: '#fff', borderRadius: 12, padding: 24, width: 560, maxWidth: '95vw', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}
+                            >
+                                <div style={{ marginBottom: 16 }}>
+                                    <h3 style={{ margin: '0 0 8px', fontSize: 14, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                                        {language === 'th' ? 'แก้ไขข้อมูล Runner' : 'Edit Runner'}
+                                    </h3>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 12px', borderRadius: 6, background: '#2563eb', color: '#fff', fontSize: 13, fontWeight: 800, fontFamily: 'monospace', letterSpacing: '0.05em', flexShrink: 0 }}>
+                                            BIB {editingRunner.bib}
+                                        </span>
+                                        <span style={{ fontSize: 16, fontWeight: 700, color: '#0f172a', lineHeight: 1.3 }}>
+                                            {language === 'th' && editingRunner.firstNameTh
+                                                ? `${editingRunner.firstNameTh} ${editingRunner.lastNameTh || ''}`
+                                                : `${editingRunner.firstName} ${editingRunner.lastName}`}
+                                        </span>
+                                    </div>
+                                </div>
+
+                                <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#64748b', marginBottom: 4, textTransform: 'uppercase' }}>
+                                    {language === 'th' ? 'สถานะ' : 'Status'}
+                                </label>
+                                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 14 }}>
+                                    {[
+                                        { value: 'not_started', label: 'Not Started', color: '#94a3b8' },
+                                        { value: 'in_progress', label: 'Running', color: '#f97316' },
+                                        { value: 'finished', label: 'Finish', color: '#22c55e' },
+                                        { value: 'dnf', label: 'DNF', color: '#dc2626' },
+                                        { value: 'dns', label: 'DNS', color: '#6b7280' },
+                                        { value: 'dq', label: 'DQ', color: '#7c2d12' },
+                                    ].map(opt => (
+                                        <button
+                                            key={opt.value}
+                                            type="button"
+                                            onClick={() => setEditStatus(opt.value)}
+                                            style={{
+                                                padding: '6px 14px', borderRadius: 6, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                                                border: editStatus === opt.value ? `2px solid ${opt.color}` : '2px solid transparent',
+                                                background: editStatus === opt.value ? opt.color : '#f1f5f9',
+                                                color: editStatus === opt.value ? '#fff' : '#0f172a', transition: 'all 0.15s',
+                                            }}
+                                        >
+                                            {opt.label}
+                                        </button>
+                                    ))}
+                                </div>
+
+                                <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#64748b', marginBottom: 4, textTransform: 'uppercase' }}>
+                                    {language === 'th' ? 'จุด Checkpoint' : 'Checkpoint'}
+                                </label>
+                                <input
+                                    value={editCheckpoint}
+                                    onChange={e => setEditCheckpoint(e.target.value)}
+                                    placeholder={language === 'th' ? 'เช่น CP3, FINISH' : 'e.g. CP3, FINISH'}
+                                    style={{ width: '100%', padding: '8px 12px', borderRadius: 6, border: '1px solid #cbd5e1', background: '#fff', color: '#0f172a', fontSize: 13, marginBottom: 14, boxSizing: 'border-box' }}
+                                />
+
+                                <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#64748b', marginBottom: 4, textTransform: 'uppercase' }}>
+                                    {language === 'th' ? 'หมายเหตุ' : 'Note'}
+                                </label>
+                                <input
+                                    value={editNote}
+                                    onChange={e => setEditNote(e.target.value)}
+                                    placeholder={language === 'th' ? 'เช่น ขาเจ็บ, หลงทาง' : 'e.g. injury, lost route'}
+                                    style={{ width: '100%', padding: '8px 12px', borderRadius: 6, border: '1px solid #cbd5e1', background: '#fff', color: '#0f172a', fontSize: 13, marginBottom: 14, boxSizing: 'border-box' }}
+                                />
+
+                                <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: 14, marginBottom: 14 }}>
+                                    <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#64748b', marginBottom: 8, textTransform: 'uppercase' }}>
+                                        {language === 'th' ? 'เวลาเข้าจุด Checkpoint' : 'Checkpoint Times'}
+                                    </label>
+                                    {editTimingLoading ? (
+                                        <div style={{ textAlign: 'center', padding: 16, color: '#64748b', fontSize: 12 }}>
+                                            {language === 'th' ? 'กำลังโหลด...' : 'Loading...'}
+                                        </div>
+                                    ) : editCheckpoints.length === 0 ? (
+                                        <div style={{ textAlign: 'center', padding: 12, color: '#64748b', fontSize: 12, background: '#f8fafc', borderRadius: 6 }}>
+                                            {language === 'th' ? 'ไม่พบข้อมูล Checkpoint' : 'No checkpoints found'}
+                                        </div>
+                                    ) : (
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                                            {editCheckpoints.map((cp) => {
+                                                const matchedRecord = editTimingRecords.find(r => r.checkpoint.toUpperCase() === cp.name.toUpperCase());
+                                                const currentValue = editTimingChanges[cp.name] !== undefined
+                                                    ? editTimingChanges[cp.name]
+                                                    : toDatetimeLocalValue(matchedRecord?.scanTime);
+                                                const cpColor = cp.type === 'start' ? '#3b82f6' : cp.type === 'finish' ? '#22c55e' : '#8b5cf6';
+                                                return (
+                                                    <div key={cp.name} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                                        <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 4, fontSize: 10, fontWeight: 700, color: '#fff', background: cpColor, minWidth: 68, textAlign: 'center', whiteSpace: 'nowrap' }}>
+                                                            {cp.name}
+                                                        </span>
+                                                        <input
+                                                            type="datetime-local"
+                                                            value={currentValue}
+                                                            onChange={e => setEditTimingChanges(prev => ({ ...prev, [cp.name]: e.target.value }))}
+                                                            style={{ flex: 1, padding: '6px 10px', borderRadius: 6, border: '1px solid #cbd5e1', background: '#fff', color: '#0f172a', fontSize: 12, fontFamily: 'monospace', boxSizing: 'border-box' }}
+                                                        />
+                                                    </div>
+                                                );
+                                            })}
+                                            {Object.keys(editTimingChanges).length > 0 && (
+                                                <button
+                                                    type="button"
+                                                    onClick={handleTimingSave}
+                                                    disabled={editTimingSaving}
+                                                    style={{ padding: '6px 16px', borderRadius: 6, border: 'none', background: '#8b5cf6', color: '#fff', fontSize: 12, fontWeight: 700, cursor: editTimingSaving ? 'not-allowed' : 'pointer', alignSelf: 'flex-end', marginTop: 4, opacity: editTimingSaving ? 0.6 : 1 }}
+                                                >
+                                                    {editTimingSaving ? (language === 'th' ? 'กำลังบันทึก...' : 'Saving...') : (language === 'th' ? 'บันทึกเวลา Checkpoint' : 'Save Checkpoint Times')}
+                                                </button>
+                                            )}
+                                            {editTimingSaveMsg && (
+                                                <span style={{ fontSize: 11, fontWeight: 600, color: '#22c55e', alignSelf: 'flex-end' }}>
+                                                    ✓ {editTimingSaveMsg}
+                                                </span>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+
+                                {editSaveError && (
+                                    <div style={{ marginBottom: 12, borderRadius: 8, border: '1px solid #fecaca', background: '#fef2f2', padding: '10px 12px', fontSize: 12, fontWeight: 600, color: '#b91c1c' }}>
+                                        {editSaveError}
+                                    </div>
+                                )}
+
+                                <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                                    <button
+                                        type="button"
+                                        onClick={() => setEditingRunner(null)}
+                                        style={{ padding: '8px 20px', borderRadius: 6, border: '1px solid #cbd5e1', background: 'transparent', color: '#0f172a', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
+                                    >
+                                        {language === 'th' ? 'ยกเลิก' : 'Cancel'}
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={handleStatusUpdate}
+                                        disabled={editSaving}
+                                        style={{ padding: '8px 24px', borderRadius: 6, border: 'none', background: '#2563eb', color: '#fff', fontSize: 13, fontWeight: 700, cursor: editSaving ? 'not-allowed' : 'pointer', opacity: editSaving ? 0.6 : 1 }}
+                                    >
+                                        {editSaving ? (language === 'th' ? 'กำลังบันทึก...' : 'Saving...') : (language === 'th' ? 'บันทึกสถานะ' : 'Save Status')}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
                 </>
             )}
         </AdminLayout>
