@@ -442,12 +442,24 @@ export default function RunnerProfilePage() {
     };
 
     return (
-        <div style={{ minHeight: '100vh', background: '#f8fafc', fontFamily: "'Prompt', sans-serif", color: '#1e293b' }}>
+        <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', background: '#f8fafc', fontFamily: "'Prompt', sans-serif", color: '#1e293b' }}>
             <style>{`
                 @import url('https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700;800;900&display=swap');
                 @keyframes pulseLive { 0% { transform: scale(0.9); opacity: 0.7; } 50% { transform: scale(1.2); opacity: 1; } 100% { transform: scale(0.9); opacity: 0.7; } }
                 .live-dot { width: 10px; height: 8px; border-radius: 50%; display: inline-block; animation: pulseLive 1.5s infinite; border: 1.5px solid white; }
                 .checkpoint-row:nth-child(even) { background-color: #f8fafc; }
+                .runner-modal { width: min(1120px, 100%); height: min(820px, calc(100vh - 32px)); max-height: calc(100vh - 32px); overflow: hidden; display: flex; flex-direction: column; }
+                .runner-modal-header { padding: 18px 24px; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
+                .runner-modal-title { margin: 8px 0 0; font-size: 26px; font-weight: 900; color: #0f172a; }
+                .runner-modal-body { flex: 1; min-height: 0; display: flex; flex-direction: column; justify-content: space-between; gap: 16px; padding: 20px 24px 22px; }
+                .runner-modal-meta { margin-bottom: 0; font-size: 12px; color: #475569; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+                .runner-modal-video-area { margin-top: 0; display: flex; justify-content: center; flex: 1; min-height: 0; }
+                .runner-modal-video-shell { width: 100%; overflow: hidden; border-radius: 24px; border: 1px solid #0f172a; background: #020617; box-shadow: 0 20px 50px rgba(15,23,42,0.24); }
+                .runner-modal-video-shell.portrait { width: min(380px, 100%); }
+                .runner-modal-video { width: 100%; display: block; background: #000; }
+                .runner-modal-video.portrait { height: min(58vh, 620px); max-height: min(58vh, 620px); aspect-ratio: 9 / 16; object-fit: cover; }
+                .runner-modal-video.landscape { height: auto; max-height: min(58vh, 540px); aspect-ratio: 16 / 9; object-fit: contain; }
+                .runner-modal-download-row { margin-top: 0; display: flex; justify-content: center; }
                 @media (max-width: 640px) {
                     .runner-header { padding: 6px 10px !important; }
                     .runner-info-section { padding: 12px !important; gap: 12px !important; }
@@ -463,12 +475,24 @@ export default function RunnerProfilePage() {
                     .runner-actions { gap: 6px !important; }
                     .runner-action-btn { padding: 8px 14px !important; font-size: 12px !important; min-width: auto !important; min-height: 36px !important; border-radius: 10px !important; }
                     .runner-footer { padding: 16px !important; margin-top: 16px !important; }
+                    .runner-modal-overlay { padding: 8px !important; }
+                    .runner-modal { width: 100% !important; height: calc(100vh - 16px) !important; max-height: calc(100vh - 16px) !important; border-radius: 20px !important; }
+                    .runner-modal-header { padding: 14px 16px !important; gap: 12px !important; }
+                    .runner-modal-title { margin-top: 4px !important; font-size: 20px !important; line-height: 1.05 !important; }
+                    .runner-modal-close { width: 30px !important; height: 30px !important; font-size: 24px !important; }
+                    .runner-modal-body { padding: 12px 14px 14px !important; gap: 10px !important; }
+                    .runner-modal-meta { font-size: 11px !important; line-height: 1.35 !important; }
+                    .runner-modal-video-shell { border-radius: 20px !important; }
+                    .runner-modal-video-shell.portrait { width: min(260px, calc(100vw - 72px)) !important; }
+                    .runner-modal-video.portrait { height: calc(100vh - 320px) !important; max-height: calc(100vh - 320px) !important; }
+                    .runner-modal-video.landscape { max-height: calc(100vh - 320px) !important; }
+                    .runner-modal-download { padding: 9px 18px !important; font-size: 13px !important; border-radius: 10px !important; }
                 }
             `}</style>
 
             {/* HEADER */}
             <header className="runner-header" style={{ background: '#fff', borderBottom: '1px solid #e2e8f0', padding: '10px 16px', boxShadow: '0 1px 3px rgba(0,0,0,0.04)', position: 'sticky', top: 0, zIndex: 50 }}>
-                <div style={{ maxWidth: 1024, margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div style={{ maxWidth: 1120, margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                         <Link href="/" style={{ display: 'flex', alignItems: 'center', borderRight: '1px solid #e2e8f0', paddingRight: 12, textDecoration: 'none' }}>
                             <Image src="/logo-black.png" alt="ACTION" width={80} height={26} style={{ objectFit: 'contain' }} />
@@ -483,7 +507,7 @@ export default function RunnerProfilePage() {
                 </div>
             </header>
 
-            <main className="runner-main" style={{ maxWidth: 1024, margin: '0 auto', padding: '12px 12px 32px' }}>
+            <main className="runner-main" style={{ flex: '1 0 auto', width: '100%', maxWidth: 1120, margin: '0 auto', padding: '16px 16px 32px' }}>
                 {/* RUNNER INFO SECTION */}
                 <section className="runner-info-section" style={{ display: 'flex', flexWrap: 'wrap', gap: 16, alignItems: 'center', background: '#fff', padding: 20, borderRadius: 16, border: '1px solid #e2e8f0', boxShadow: '0 1px 3px rgba(0,0,0,0.04)', marginBottom: 16 }}>
                     <div style={{ position: 'relative' }}>
@@ -755,21 +779,24 @@ export default function RunnerProfilePage() {
                 {campaign?.displayMode !== 'lab' && hasSelectedCheckpoint && (
                     <div
                         onClick={closeCheckpointVideo}
+                        className="runner-modal-overlay"
                         style={{ position: 'fixed', inset: 0, zIndex: 120, background: 'rgba(15,23,42,0.72)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
                     >
                         <div
                             onClick={(event) => event.stopPropagation()}
-                            style={{ width: 'min(1080px, 100%)', maxHeight: 'calc(100vh - 32px)', overflowY: 'auto', background: '#fff', borderRadius: 24, border: '1px solid rgba(226,232,240,0.9)', boxShadow: '0 24px 80px rgba(15,23,42,0.38)' }}
+                            className="runner-modal"
+                            style={{ background: '#fff', borderRadius: 24, border: '1px solid rgba(226,232,240,0.9)', boxShadow: '0 24px 80px rgba(15,23,42,0.38)' }}
                         >
-                            <div style={{ padding: '20px 24px', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16 }}>
+                            <div className="runner-modal-header">
                                 <div>
                                     <div style={{ fontSize: 11, fontWeight: 900, letterSpacing: 1.6, textTransform: 'uppercase', color: '#64748b' }}>Checkpoint CCTV</div>
-                                    <h3 style={{ margin: '8px 0 0', fontSize: 26, fontWeight: 900, color: '#0f172a' }}>{selectedCheckpointName || 'Checkpoint Video'}</h3>
+                                    <h3 className="runner-modal-title">{selectedCheckpointName || 'Checkpoint Video'}</h3>
                                 </div>
                                 <button
                                     type="button"
                                     onClick={closeCheckpointVideo}
                                     aria-label="ปิดหน้าต่างวิดีโอ CCTV"
+                                    className="runner-modal-close"
                                     style={{ border: 'none', background: 'transparent', color: '#0f172a', width: 36, height: 36, borderRadius: 999, cursor: 'pointer', fontSize: 28, fontWeight: 400, lineHeight: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}
                                 >
                                     ✕
@@ -781,19 +808,19 @@ export default function RunnerProfilePage() {
                                     กำลังค้นหาวิดีโอ CCTV ที่ตรงกับเวลาผ่านจุดของนักวิ่ง...
                                 </div>
                             ) : selectedHit?.recording ? (
-                                <div style={{ padding: 24 }}>
-                                    <div style={{ marginBottom: 16, fontSize: 12, color: '#475569', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                <div className="runner-modal-body">
+                                    <div className="runner-modal-meta">
                                         กล้อง <strong style={{ color: '#0f172a' }}>{selectedHit.recording.cameraName}</strong> · เวลาในระบบ <strong style={{ color: '#0f172a' }}>{formatTimeOfDay(selectedHit.scanTime)}</strong> · เริ่มไฟล์ <strong style={{ color: '#0f172a' }}>{formatDateTime(selectedHit.recording.startTime)}</strong>
                                     </div>
 
-                                    <div style={{ marginTop: 8, display: 'flex', justifyContent: 'center' }}>
-                                        <div style={{ width: selectedVideoIsPortrait ? 'min(480px, 100%)' : '100%', overflow: 'hidden', borderRadius: 24, border: '1px solid #0f172a', background: '#020617', boxShadow: '0 20px 50px rgba(15,23,42,0.24)' }}>
+                                    <div className="runner-modal-video-area">
+                                        <div className={`runner-modal-video-shell ${selectedVideoIsPortrait ? 'portrait' : 'landscape'}`}>
                                         <video
                                             key={`${selectedHit.recording._id}-${videoSeekSeconds}`}
                                             src={streamUrl}
                                             controls
                                             preload="metadata"
-                                            style={{ width: '100%', height: selectedVideoIsPortrait ? 'min(78vh, 860px)' : 'auto', maxHeight: selectedVideoIsPortrait ? '78vh' : 'none', aspectRatio: selectedVideoIsPortrait ? '9 / 16' : '16 / 9', background: '#000', objectFit: selectedVideoIsPortrait ? 'cover' : 'contain', display: 'block' }}
+                                            className={`runner-modal-video ${selectedVideoIsPortrait ? 'portrait' : 'landscape'}`}
                                             onLoadedMetadata={(event) => {
                                                 const video = event.currentTarget;
                                                 setSelectedVideoIsPortrait(video.videoHeight > video.videoWidth);
@@ -806,11 +833,11 @@ export default function RunnerProfilePage() {
                                                 }
                                             }}
                                         />
-                                    </div>
+                                        </div>
                                     </div>
 
-                                    <div style={{ marginTop: 18, display: 'flex', justifyContent: 'center' }}>
-                                        <a href={downloadUrl} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: '#16a34a', color: '#fff', padding: '10px 20px', borderRadius: 12, fontWeight: 700, fontSize: 14, textDecoration: 'none' }}>
+                                    <div className="runner-modal-download-row">
+                                        <a href={downloadUrl} className="runner-modal-download" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: '#16a34a', color: '#fff', padding: '10px 20px', borderRadius: 12, fontWeight: 700, fontSize: 14, textDecoration: 'none' }}>
                                             บันทึกวิดีโอจุดนี้
                                         </a>
                                     </div>
@@ -905,7 +932,7 @@ export default function RunnerProfilePage() {
                 })()}
             </main>
 
-            <footer className="runner-footer" style={{ padding: 24, textAlign: 'center', background: '#fff', borderTop: '1px solid #f1f5f9', marginTop: 24 }}>
+            <footer className="runner-footer" style={{ padding: 24, textAlign: 'center', background: '#fff', borderTop: '1px solid #f1f5f9', marginTop: 0 }}>
                 <p style={{ fontSize: 10, fontWeight: 700, color: '#cbd5e1', textTransform: 'uppercase', letterSpacing: 3 }}>ACTION TIMING © 2026</p>
             </footer>
         </div>
