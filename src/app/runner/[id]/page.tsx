@@ -251,6 +251,7 @@ export default function RunnerProfilePage() {
     const [preArrivalBufferSeconds, setPreArrivalBufferSeconds] = useState(5);
     const [followedRunners, setFollowedRunners] = useState<FollowedRunner[]>([]);
     const [selectedVideoIsPortrait, setSelectedVideoIsPortrait] = useState(false);
+    const [videoDownloadLoading, setVideoDownloadLoading] = useState(false);
 
     useEffect(() => {
         if (!runnerId) return;
@@ -464,19 +465,51 @@ export default function RunnerProfilePage() {
         setSelectedCheckpointKey('');
     };
 
-    const handleDownloadCheckpointVideo = () => {
+    const handleDownloadCheckpointVideo = async () => {
         if (!downloadUrl || !selectedHit?.recording) return;
-        // Use a direct <a> download link – the browser handles the download natively
-        // which is far more reliable on mobile than fetch+blob (no timeout/memory issues).
-        // Backend now serves mp4 for webm files, so iOS/Android can save to Photos/Gallery.
-        const link = document.createElement('a');
-        link.href = downloadUrl;
-        link.download = '';
-        link.rel = 'noopener';
-        link.style.display = 'none';
-        document.body.appendChild(link);
-        link.click();
-        setTimeout(() => link.remove(), 500);
+        try {
+            setVideoDownloadLoading(true);
+            const response = await fetch(downloadUrl, { cache: 'no-store' });
+            if (!response.ok) throw new Error('Download failed');
+
+            const blob = await response.blob();
+            const contentType = response.headers.get('Content-Type') || blob.type || 'video/mp4';
+            const ext = contentType.includes('mp4') ? 'mp4' : contentType.includes('webm') ? 'webm' : 'mp4';
+            const dispName = getFileNameFromDisposition(response.headers.get('Content-Disposition'));
+            const fallbackName = `runner-${runner?.bib || runnerId}-${normalizeCheckpoint(selectedCheckpointName || 'checkpoint').replace(/\s+/g, '-')}.${ext}`;
+            const fileName = dispName || fallbackName;
+
+            // Try Web Share API (mobile: offers "Save to Photos")
+            const file = new File([blob], fileName, { type: contentType });
+            const nav = navigator as Navigator & { canShare?: (d?: ShareData) => boolean };
+            if (typeof nav.share === 'function' && typeof nav.canShare === 'function' && nav.canShare({ files: [file] })) {
+                await nav.share({ files: [file], title: fileName });
+                return;
+            }
+
+            // Fallback: create download link
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = fileName;
+            a.style.display = 'none';
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
+        } catch {
+            // Final fallback: direct browser download
+            const a = document.createElement('a');
+            a.href = downloadUrl;
+            a.download = '';
+            a.rel = 'noopener';
+            a.style.display = 'none';
+            document.body.appendChild(a);
+            a.click();
+            setTimeout(() => a.remove(), 500);
+        } finally {
+            setVideoDownloadLoading(false);
+        }
     };
 
     return (
@@ -883,10 +916,11 @@ export default function RunnerProfilePage() {
                                         <button
                                             type="button"
                                             onClick={handleDownloadCheckpointVideo}
+                                            disabled={videoDownloadLoading}
                                             className="runner-modal-download"
-                                            style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: '#16a34a', color: '#fff', padding: '10px 20px', borderRadius: 12, fontWeight: 700, fontSize: 14, textDecoration: 'none', border: 'none', cursor: 'pointer' }}
+                                            style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: videoDownloadLoading ? '#86efac' : '#16a34a', color: '#fff', padding: '10px 20px', borderRadius: 12, fontWeight: 700, fontSize: 14, textDecoration: 'none', border: 'none', cursor: videoDownloadLoading ? 'wait' : 'pointer' }}
                                         >
-                                            บันทึกวิดีโอจุดนี้
+                                            {videoDownloadLoading ? 'กำลังเตรียมวิดีโอ...' : 'บันทึกวิดีโอจุดนี้'}
                                         </button>
                                     </div>
                                 </div>
