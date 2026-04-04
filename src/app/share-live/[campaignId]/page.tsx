@@ -120,6 +120,16 @@ export default function ShareLiveMonitorPage() {
     const intervalRef = useRef<NodeJS.Timeout | null>(null);
     const prevRanksRef = useRef<Map<string, number>>(new Map());
 
+    // ===== TTS Announcer State =====
+    const [soundEnabled, setSoundEnabled] = useState(false);
+    const [isSpeaking, setIsSpeaking] = useState(false);
+    const announcedBibsRef = useRef<Set<string>>(new Set());
+    const ttsQueueRef = useRef<string[]>([]);
+    const ttsSpeakingRef = useRef(false);
+    const ttsAudioRef = useRef<HTMLAudioElement | null>(null);
+    const prevRunnerBibsRef = useRef<Set<string>>(new Set());
+    const isFirstLoadRef = useRef(true);
+
     // Load campaign info
     useEffect(() => {
         if (!campaignId) return;
@@ -200,6 +210,148 @@ export default function ShareLiveMonitorPage() {
         const t = setInterval(() => setCurrentTime(new Date()), 1000);
         return () => clearInterval(t);
     }, []);
+
+    // ===== TTS: Speak text via Gemini API with browser fallback =====
+    const speakText = useCallback((text: string): Promise<void> => {
+        return new Promise<void>(async (resolve) => {
+            setIsSpeaking(true);
+            ttsSpeakingRef.current = true;
+            try {
+                const res = await fetch('/api/tts/speak', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text, voice: 'Kore' }),
+                });
+                if (!res.ok) throw new Error('TTS API failed');
+                const data = await res.json();
+                if (!data.audio) throw new Error('No audio data');
+                const audioSrc = `data:${data.mimeType || 'audio/mp3'};base64,${data.audio}`;
+                const audio = new Audio(audioSrc);
+                audio.volume = 1.0;
+                ttsAudioRef.current = audio;
+                audio.onended = () => { setIsSpeaking(false); ttsSpeakingRef.current = false; ttsAudioRef.current = null; resolve(); };
+                audio.onerror = () => { setIsSpeaking(false); ttsSpeakingRef.current = false; ttsAudioRef.current = null; resolve(); };
+                audio.play().catch(() => { setIsSpeaking(false); ttsSpeakingRef.current = false; ttsAudioRef.current = null; resolve(); });
+            } catch {
+                // Fallback to browser SpeechSynthesis
+                try {
+                    const utterance = new SpeechSynthesisUtterance(text);
+                    const voices = window.speechSynthesis?.getVoices?.() || [];
+                    const thVoice = voices.find(v => v.lang.startsWith('th'));
+                    if (thVoice) utterance.voice = thVoice;
+                    utterance.lang = 'th-TH';
+                    utterance.rate = 1.0;
+                    utterance.onend = () => { setIsSpeaking(false); ttsSpeakingRef.current = false; resolve(); };
+                    utterance.onerror = () => { setIsSpeaking(false); ttsSpeakingRef.current = false; resolve(); };
+                    window.speechSynthesis.speak(utterance);
+                } catch {
+                    setIsSpeaking(false); ttsSpeakingRef.current = false; resolve();
+                }
+            }
+        });
+    }, []);
+
+    // ===== TTS: Process queue =====
+    const processQueue = useCallback(async () => {
+        if (ttsSpeakingRef.current || ttsQueueRef.current.length === 0) return;
+        const text = ttsQueueRef.current.shift()!;
+        await speakText(text);
+        if (ttsQueueRef.current.length > 0) {
+            setTimeout(() => processQueue(), 300);
+        }
+    }, [speakText]);
+
+    // ===== TTS: Detect new runners and announce =====
+    useEffect(() => {
+        if (!soundEnabled) return;
+
+        // Get bibs of runners who have scanTime (actually passed this checkpoint)
+        const currentBibs = new Set(
+            runners
+                .filter(r => r.scanTime && r.bib)
+                .map(r => r.bib)
+        );
+
+        // On first load, just record the bibs without announcing
+        if (isFirstLoadRef.current) {
+            isFirstLoadRef.current = false;
+            prevRunnerBibsRef.current = currentBibs;
+            announcedBibsRef.current = new Set(currentBibs);
+            return;
+        }
+
+        // Find newly arrived runners (bibs in current but not previously announced)
+        const newArrivals = runners.filter(r => {
+            if (!r.scanTime || !r.bib) return false;
+            return !announcedBibsRef.current.has(r.bib);
+        });
+
+        if (newArrivals.length === 0) return;
+
+        // Mark as announced and queue speech
+        const updatedAnnounced = new Set(announcedBibsRef.current);
+        for (const runner of newArrivals) {
+            updatedAnnounced.add(runner.bib);
+            const name = `${runner.firstNameTh || runner.firstName || ''} ${runner.lastNameTh || runner.lastName || ''}`.trim();
+            const displayName = name || `BIB ${runner.bib}`;
+            const cpName = selectedCp || 'checkpoint';
+            const isFinish = cpName.toUpperCase() === 'FINISH';
+
+            let announcement: string;
+            if (isFinish) {
+                announcement = `หมายเลข ${runner.bib} คุณ${displayName} เข้าเส้นชัยแล้วครับ`;
+            } else {
+                announcement = `หมายเลข ${runner.bib} คุณ${displayName} ผ่านจุด ${cpName} แล้วครับ`;
+            }
+
+            ttsQueueRef.current.push(announcement);
+        }
+        announcedBibsRef.current = updatedAnnounced;
+        prevRunnerBibsRef.current = currentBibs;
+        processQueue();
+    }, [runners, soundEnabled, selectedCp, processQueue]);
+
+    // ===== TTS: Reset announced bibs when checkpoint changes =====
+    useEffect(() => {
+        announcedBibsRef.current = new Set();
+        prevRunnerBibsRef.current = new Set();
+        isFirstLoadRef.current = true;
+        ttsQueueRef.current = [];
+        if (ttsAudioRef.current) {
+            ttsAudioRef.current.pause();
+            ttsAudioRef.current = null;
+        }
+        setIsSpeaking(false);
+        ttsSpeakingRef.current = false;
+    }, [selectedCp]);
+
+    // ===== TTS: Toggle sound =====
+    const toggleSound = useCallback(() => {
+        setSoundEnabled(prev => {
+            if (prev) {
+                // Turning off — stop everything
+                ttsQueueRef.current = [];
+                if (ttsAudioRef.current) {
+                    ttsAudioRef.current.pause();
+                    ttsAudioRef.current = null;
+                }
+                window.speechSynthesis?.cancel?.();
+                setIsSpeaking(false);
+                ttsSpeakingRef.current = false;
+            } else {
+                // Turning on — mark current runners as already announced so we only announce NEW ones
+                const currentBibs = new Set(
+                    runners
+                        .filter(r => r.scanTime && r.bib)
+                        .map(r => r.bib)
+                );
+                announcedBibsRef.current = new Set(currentBibs);
+                prevRunnerBibsRef.current = new Set(currentBibs);
+                isFirstLoadRef.current = false;
+            }
+            return !prev;
+        });
+    }, [runners]);
 
     const filteredRunners = runners.filter(r => {
         const runnerStatus = normalizeRunnerStatus(r.status);
@@ -436,6 +588,53 @@ export default function ShareLiveMonitorPage() {
                     Powered by RFID Timing System • 
                 </div>
             </div>
+
+            {/* ===== Floating Speaker Toggle Button ===== */}
+            <button
+                onClick={toggleSound}
+                title={soundEnabled ? 'ปิดเสียงประกาศ' : 'เปิดเสียงประกาศ'}
+                className="fixed bottom-6 right-6 z-50 w-14 h-14 rounded-full shadow-xl flex items-center justify-center transition-all duration-300 border-2 cursor-pointer"
+                style={{
+                    background: soundEnabled
+                        ? 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)'
+                        : 'linear-gradient(135deg, #64748b 0%, #475569 100%)',
+                    borderColor: soundEnabled ? '#15803d' : '#334155',
+                    boxShadow: soundEnabled
+                        ? '0 4px 20px rgba(34, 197, 94, 0.4)'
+                        : '0 4px 15px rgba(0,0,0,0.2)',
+                }}
+            >
+                {soundEnabled ? (
+                    /* Speaker ON icon */
+                    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" fill="white" />
+                        <path d="M15.54 8.46a5 5 0 010 7.07" />
+                        <path d="M19.07 4.93a10 10 0 010 14.14" />
+                    </svg>
+                ) : (
+                    /* Speaker OFF icon with red strikethrough */
+                    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" fill="white" stroke="white" />
+                        <line x1="23" y1="9" x2="17" y2="15" stroke="#ef4444" strokeWidth="2.5" />
+                        <line x1="17" y1="9" x2="23" y2="15" stroke="#ef4444" strokeWidth="2.5" />
+                    </svg>
+                )}
+                {/* Speaking pulse indicator */}
+                {isSpeaking && soundEnabled && (
+                    <span
+                        className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-yellow-400 border-2 border-white"
+                        style={{ animation: 'pulse 1s infinite' }}
+                    />
+                )}
+            </button>
+
+            {/* Pulse animation keyframes */}
+            <style dangerouslySetInnerHTML={{ __html: `
+                @keyframes pulse {
+                    0%, 100% { transform: scale(1); opacity: 1; }
+                    50% { transform: scale(1.3); opacity: 0.7; }
+                }
+            `}} />
         </div>
     );
 }

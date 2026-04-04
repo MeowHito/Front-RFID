@@ -46,6 +46,7 @@ interface Checkpoint {
     name: string;
     orderNum?: number;
     type?: string;
+    distanceMappings?: string[];
 }
 
 interface EditCheckpoint {
@@ -306,14 +307,26 @@ export default function ResultsPage() {
         }
 
         if (sortBy === 'default') {
+            // Default sort: by passtime order matching RaceTiger
+            // 1. Finished runners sorted by netTime/gunTime (fastest first)
+            // 2. In-progress runners sorted by checkpoint progress (most checkpoints passed first), then by elapsed time
+            // 3. DNF/DNS/DQ at the end
             list.sort((a, b) => {
                 const statusOrder: Record<string, number> = { finished: 0, in_progress: 1, dnf: 2, dns: 3, dq: 4, not_started: 5 };
                 const aOrd = statusOrder[a.status] ?? 9;
                 const bOrd = statusOrder[b.status] ?? 9;
                 if (aOrd !== bOrd) return aOrd - bOrd;
                 if (a.status === 'finished' && b.status === 'finished') {
-                    const timeCompare = compareNumberNullable(a.netTime || a.gunTime, b.netTime || b.gunTime);
-                    if (timeCompare !== 0) return timeCompare;
+                    // Sort by net time (chip time) ascending — fastest finisher first
+                    const aNet = a.netTime || a.gunTime || 0;
+                    const bNet = b.netTime || b.gunTime || 0;
+                    if (aNet > 0 && bNet > 0 && aNet !== bNet) return aNet - bNet;
+                    if (aNet > 0 && bNet <= 0) return -1;
+                    if (aNet <= 0 && bNet > 0) return 1;
+                    // If both have same time, use scanTime as tiebreaker (earlier finish = better)
+                    const aScan = a.scanTime ? new Date(a.scanTime).getTime() : 0;
+                    const bScan = b.scanTime ? new Date(b.scanTime).getTime() : 0;
+                    if (aScan > 0 && bScan > 0 && aScan !== bScan) return aScan - bScan;
                 }
                 if (a.status === 'in_progress' && b.status === 'in_progress') {
                     const aPassed = a.passedCount ?? 0;
@@ -372,6 +385,16 @@ export default function ResultsPage() {
         safe.forEach(r => { if (r.category) cats.add(r.category); });
         return Array.from(cats).sort();
     }, [runners]);
+
+    // ── Filter checkpoints by selected category's distanceMappings ──
+    const filteredCheckpoints = useMemo(() => {
+        if (selectedCategory === 'all') return checkpoints;
+        return checkpoints.filter(cp => {
+            // If no distanceMappings defined, show for all categories
+            if (!cp.distanceMappings || cp.distanceMappings.length === 0) return true;
+            return cp.distanceMappings.includes(selectedCategory);
+        });
+    }, [checkpoints, selectedCategory]);
 
     const setColumnSort = useCallback((column: string, direction: 'asc' | 'desc') => {
         setSortBy(column);
@@ -665,7 +688,7 @@ export default function ResultsPage() {
                                             <th style={{ ...thStyle, minWidth: 52 }}>{renderSortableHeader(language === 'th' ? '#อายุ' : 'AG Rank', 'ageGroupRank')}</th>
                                             <th style={{ ...thStyle, minWidth: 78 }}>{renderSortableHeader('Gun Time', 'gunTime')}</th>
                                             <th style={{ ...thStyle, minWidth: 78 }}>{renderSortableHeader('Chip Time', 'chipTime')}</th>
-                                            {checkpoints.map(cp => (
+                                            {filteredCheckpoints.map(cp => (
                                                 <th key={cp._id} style={{ ...thStyle, minWidth: 80, background: '#eef2ff' }}>
                                                     {renderSortableHeader(cp.name, `cp:${cp.name}`)}
                                                 </th>
@@ -712,7 +735,7 @@ export default function ResultsPage() {
                                                     <td style={{ ...tdStyle, textAlign: 'center', fontFamily: 'monospace', fontWeight: 600, color: r.netTime ? '#16a34a' : '#aaa' }}>
                                                         {formatResultTime(r.netTime, r.netTimeStr)}
                                                     </td>
-                                                    {checkpoints.map(cp => {
+                                                    {filteredCheckpoints.map(cp => {
                                                         const timing = bibTimings[cp.name];
                                                         const hasTiming = Boolean(timing?.scanTime);
                                                         return (
@@ -760,10 +783,10 @@ export default function ResultsPage() {
                                     : `Showing ${filteredRunners.length} of ${totalRunners} runners`}
                             </span>
                             <span>
-                                {checkpoints.length > 0 && (
+                                {filteredCheckpoints.length > 0 && (
                                     language === 'th'
-                                        ? `${checkpoints.length} Checkpoint`
-                                        : `${checkpoints.length} Checkpoints`
+                                        ? `${filteredCheckpoints.length} Checkpoint`
+                                        : `${filteredCheckpoints.length} Checkpoints`
                                 )}
                             </span>
                         </div>
