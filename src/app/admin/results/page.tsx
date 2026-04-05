@@ -173,6 +173,14 @@ export default function ResultsPage() {
     const [sortBy, setSortBy] = useState('default');
     const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
 
+    // ── Bulk selection state ──
+    const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+    const [bulkMode, setBulkMode] = useState<'none' | 'guntime' | 'status'>('none');
+    const [bulkGunTime, setBulkGunTime] = useState('');
+    const [bulkStatus, setBulkStatus] = useState('dns');
+    const [bulkSaving, setBulkSaving] = useState(false);
+    const [bulkMsg, setBulkMsg] = useState<string | null>(null);
+
     const isRaceFinished = campaign?.raceFinished ?? false;
     const runnersApiUrl = isRaceFinished
         ? `/api/runners?id=${campaign?._id}`
@@ -571,6 +579,95 @@ export default function ResultsPage() {
         }
     }, [editingRunner, editTimingChanges, editTimingRecords, language, loadEditData, fetchAllData]);
 
+    // ── Bulk Actions ──
+    const toggleSelectAll = useCallback(() => {
+        if (selectedIds.size === filteredRunners.length) {
+            setSelectedIds(new Set());
+        } else {
+            setSelectedIds(new Set(filteredRunners.map(r => r._id)));
+        }
+    }, [filteredRunners, selectedIds.size]);
+
+    const toggleSelect = useCallback((id: string) => {
+        setSelectedIds(prev => {
+            const next = new Set(prev);
+            if (next.has(id)) next.delete(id); else next.add(id);
+            return next;
+        });
+    }, []);
+
+    const handleBulkSetGunTime = useCallback(async () => {
+        if (!bulkGunTime || selectedIds.size === 0) return;
+        setBulkSaving(true);
+        setBulkMsg(null);
+        try {
+            const isoDate = new Date(bulkGunTime).toISOString();
+            const selected = filteredRunners.filter(r => selectedIds.has(r._id));
+            let savedCount = 0;
+
+            // Create START timing records for each selected runner
+            for (const runner of selected) {
+                if (!runner.eventId) continue;
+                try {
+                    const res = await fetch('/api/timing/scan', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            eventId: runner.eventId,
+                            bib: runner.bib,
+                            checkpoint: 'START',
+                            scanTime: isoDate,
+                            note: 'Admin bulk gun time',
+                        }),
+                    });
+                    if (res.ok) savedCount++;
+                } catch { /* continue with next runner */ }
+            }
+
+            setBulkMsg(language === 'th' ? `ตั้ง Gun Time ${savedCount} คน เรียบร้อย` : `Set gun time for ${savedCount} runner(s)`);
+            setBulkMode('none');
+            setBulkGunTime('');
+            setSelectedIds(new Set());
+            await fetchAllData(true);
+            setTimeout(() => setBulkMsg(null), 4000);
+        } finally {
+            setBulkSaving(false);
+        }
+    }, [bulkGunTime, selectedIds, filteredRunners, language, fetchAllData]);
+
+    const handleBulkSetStatus = useCallback(async () => {
+        if (selectedIds.size === 0) return;
+        setBulkSaving(true);
+        setBulkMsg(null);
+        try {
+            const updates = Array.from(selectedIds).map(id => ({
+                id,
+                status: bulkStatus,
+                changedBy: 'admin',
+            }));
+            const res = await fetch('/api/runners/bulk-status', {
+                method: 'PUT',
+                headers: authHeaders(),
+                body: JSON.stringify({ runners: updates }),
+            });
+            if (!res.ok) throw new Error('Failed');
+            const result = await res.json();
+            const count = result?.updated || selectedIds.size;
+            const statusLabel = STATUS_LABELS[bulkStatus];
+            const label = language === 'th' ? statusLabel?.th : statusLabel?.en;
+            setBulkMsg(language === 'th' ? `อัปเดตสถานะ ${count} คน เป็น ${label}` : `Updated ${count} runner(s) to ${label}`);
+            setBulkMode('none');
+            setSelectedIds(new Set());
+            await fetchAllData(true);
+            setTimeout(() => setBulkMsg(null), 4000);
+        } catch {
+            setBulkMsg(language === 'th' ? 'เกิดข้อผิดพลาดในการอัปเดต' : 'Error updating statuses');
+            setTimeout(() => setBulkMsg(null), 4000);
+        } finally {
+            setBulkSaving(false);
+        }
+    }, [selectedIds, bulkStatus, language, fetchAllData]);
+
     const thStyle = { padding: '8px 10px', textAlign: 'center' as const, fontWeight: 700, fontSize: 11, color: '#555', borderBottom: '2px solid #e5e7eb', whiteSpace: 'nowrap' as const };
     const tdStyle = { padding: '6px 10px', borderBottom: '1px solid #f3f4f6', fontSize: 12 };
 
@@ -677,8 +774,11 @@ export default function ResultsPage() {
                                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                                     <thead>
                                         <tr style={{ background: '#f8fafc' }}>
-                                            <th style={{ ...thStyle, minWidth: 36, position: 'sticky', left: 0, background: '#f8fafc', zIndex: 2 }}>{renderSortableHeader('#', 'default')}</th>
-                                            <th style={{ ...thStyle, minWidth: 54, position: 'sticky', left: 36, background: '#f8fafc', zIndex: 2, textAlign: 'left' }}>{renderSortableHeader('BIB', 'bib', { justifyContent: 'flex-start' })}</th>
+                                            <th style={{ ...thStyle, minWidth: 32, position: 'sticky', left: 0, background: '#f8fafc', zIndex: 2 }}>
+                                                <input type="checkbox" checked={selectedIds.size > 0 && selectedIds.size === filteredRunners.length} onChange={toggleSelectAll} style={{ accentColor: '#3b82f6', cursor: 'pointer', width: 15, height: 15 }} />
+                                            </th>
+                                            <th style={{ ...thStyle, minWidth: 36, position: 'sticky', left: 32, background: '#f8fafc', zIndex: 2 }}>{renderSortableHeader('#', 'default')}</th>
+                                            <th style={{ ...thStyle, minWidth: 54, position: 'sticky', left: 68, background: '#f8fafc', zIndex: 2, textAlign: 'left' }}>{renderSortableHeader('BIB', 'bib', { justifyContent: 'flex-start' })}</th>
                                             <th style={{ ...thStyle, minWidth: 140, textAlign: 'left' }}>{renderSortableHeader(language === 'th' ? 'ชื่อ' : 'Name', 'name', { justifyContent: 'flex-start' })}</th>
                                             <th style={{ ...thStyle, minWidth: 36 }}>{renderSortableHeader(language === 'th' ? 'เพศ' : 'G', 'gender')}</th>
                                             <th style={{ ...thStyle, minWidth: 70 }}>{renderSortableHeader(language === 'th' ? 'ประเภท' : 'Cat', 'category')}</th>
@@ -700,14 +800,18 @@ export default function ResultsPage() {
                                         {filteredRunners.map((r, idx) => {
                                             const st = STATUS_LABELS[r.status] || STATUS_LABELS.not_started;
                                             const bibTimings = cpTimingMap[r.bib] || {};
+                                            const isSelected = selectedIds.has(r._id);
                                             return (
                                                 <tr key={r._id || `${r.bib}-${idx}`}
-                                                    style={{ borderBottom: '1px solid #f3f4f6', transition: 'background .12s' }}
-                                                    onMouseOver={e => (e.currentTarget.style.background = '#f8fafc')}
-                                                    onMouseOut={e => (e.currentTarget.style.background = 'transparent')}
+                                                    style={{ borderBottom: '1px solid #f3f4f6', transition: 'background .12s', background: isSelected ? '#eff6ff' : undefined }}
+                                                    onMouseOver={e => { if (!isSelected) e.currentTarget.style.background = '#f8fafc'; }}
+                                                    onMouseOut={e => { if (!isSelected) e.currentTarget.style.background = 'transparent'; }}
                                                 >
-                                                    <td style={{ ...tdStyle, textAlign: 'center', color: '#aaa', fontSize: 11, position: 'sticky', left: 0, background: '#fff', zIndex: 1 }}>{idx + 1}</td>
-                                                    <td style={{ ...tdStyle, fontWeight: 700, position: 'sticky', left: 36, background: '#fff', zIndex: 1 }}>{r.bib}</td>
+                                                    <td style={{ ...tdStyle, textAlign: 'center', position: 'sticky', left: 0, background: isSelected ? '#eff6ff' : '#fff', zIndex: 1 }}>
+                                                        <input type="checkbox" checked={isSelected} onChange={() => toggleSelect(r._id)} style={{ accentColor: '#3b82f6', cursor: 'pointer', width: 14, height: 14 }} />
+                                                    </td>
+                                                    <td style={{ ...tdStyle, textAlign: 'center', color: '#aaa', fontSize: 11, position: 'sticky', left: 32, background: isSelected ? '#eff6ff' : '#fff', zIndex: 1 }}>{idx + 1}</td>
+                                                    <td style={{ ...tdStyle, fontWeight: 700, position: 'sticky', left: 68, background: isSelected ? '#eff6ff' : '#fff', zIndex: 1 }}>{r.bib}</td>
                                                     <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
                                                         {language === 'th' && r.firstNameTh ? `${r.firstNameTh} ${r.lastNameTh || ''}` : `${r.firstName} ${r.lastName}`}
                                                     </td>
@@ -781,6 +885,11 @@ export default function ResultsPage() {
                                 {language === 'th'
                                     ? `แสดง ${filteredRunners.length} จาก ${totalRunners} คน`
                                     : `Showing ${filteredRunners.length} of ${totalRunners} runners`}
+                                {selectedIds.size > 0 && (
+                                    <span style={{ fontWeight: 700, color: '#2563eb', marginLeft: 8 }}>
+                                        ({language === 'th' ? `เลือก ${selectedIds.size} คน` : `${selectedIds.size} selected`})
+                                    </span>
+                                )}
                             </span>
                             <span>
                                 {filteredCheckpoints.length > 0 && (
@@ -791,6 +900,118 @@ export default function ResultsPage() {
                             </span>
                         </div>
                     </div>
+
+                    {/* ═══ Bulk Action Toolbar ═══ */}
+                    {selectedIds.size > 0 && (
+                        <div style={{
+                            position: 'sticky', bottom: 0, zIndex: 100,
+                            background: 'linear-gradient(135deg, #1e293b 0%, #334155 100%)',
+                            borderRadius: 12, padding: '12px 18px', marginTop: 12,
+                            boxShadow: '0 -4px 20px rgba(0,0,0,0.15)',
+                            display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
+                        }}>
+                            <span style={{ color: '#fff', fontSize: 13, fontWeight: 700, marginRight: 4 }}>
+                                ✅ {language === 'th' ? `เลือก ${selectedIds.size} คน` : `${selectedIds.size} selected`}
+                            </span>
+
+                            {bulkMode === 'none' && (
+                                <>
+                                    <button onClick={() => setBulkMode('guntime')}
+                                        style={{ padding: '6px 14px', borderRadius: 6, border: 'none', background: '#f59e0b', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+                                        ⏱ {language === 'th' ? 'ตั้ง Gun Time (START)' : 'Set Gun Time (START)'}
+                                    </button>
+                                    <button onClick={() => setBulkMode('status')}
+                                        style={{ padding: '6px 14px', borderRadius: 6, border: 'none', background: '#8b5cf6', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+                                        🏷 {language === 'th' ? 'ตั้งสถานะ' : 'Set Status'}
+                                    </button>
+                                    <button onClick={() => setSelectedIds(new Set())}
+                                        style={{ padding: '6px 14px', borderRadius: 6, border: '1px solid #64748b', background: 'transparent', color: '#94a3b8', fontSize: 12, fontWeight: 600, cursor: 'pointer', marginLeft: 'auto' }}>
+                                        ✕ {language === 'th' ? 'ยกเลิกเลือก' : 'Deselect'}
+                                    </button>
+                                </>
+                            )}
+
+                            {bulkMode === 'guntime' && (
+                                <>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#1e293b', borderRadius: 8, padding: '4px 10px', border: '1px solid #475569' }}>
+                                        <label style={{ color: '#f59e0b', fontSize: 11, fontWeight: 700, whiteSpace: 'nowrap' }}>
+                                            {language === 'th' ? 'เวลา Gun (START):' : 'Gun Time (START):'}
+                                        </label>
+                                        <input
+                                            type="datetime-local"
+                                            step="1"
+                                            value={bulkGunTime}
+                                            onChange={e => setBulkGunTime(e.target.value)}
+                                            style={{ padding: '4px 8px', borderRadius: 4, border: '1px solid #475569', background: '#0f172a', color: '#fff', fontSize: 12, fontFamily: 'monospace' }}
+                                        />
+                                    </div>
+                                    <button
+                                        onClick={handleBulkSetGunTime}
+                                        disabled={!bulkGunTime || bulkSaving}
+                                        style={{ padding: '6px 16px', borderRadius: 6, border: 'none', background: bulkGunTime ? '#22c55e' : '#475569', color: '#fff', fontSize: 12, fontWeight: 700, cursor: bulkGunTime && !bulkSaving ? 'pointer' : 'not-allowed', opacity: bulkSaving ? 0.6 : 1 }}>
+                                        {bulkSaving ? '...' : (language === 'th' ? '✓ บันทึก' : '✓ Save')}
+                                    </button>
+                                    <button onClick={() => { setBulkMode('none'); setBulkGunTime(''); }}
+                                        style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid #64748b', background: 'transparent', color: '#94a3b8', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+                                        {language === 'th' ? 'ยกเลิก' : 'Cancel'}
+                                    </button>
+                                </>
+                            )}
+
+                            {bulkMode === 'status' && (
+                                <>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                                        {[
+                                            { value: 'not_started', label: 'Not Started', color: '#94a3b8' },
+                                            { value: 'in_progress', label: 'Running', color: '#f97316' },
+                                            { value: 'finished', label: 'Finish', color: '#22c55e' },
+                                            { value: 'dnf', label: 'DNF', color: '#dc2626' },
+                                            { value: 'dns', label: 'DNS', color: '#6b7280' },
+                                            { value: 'dq', label: 'DQ', color: '#7c2d12' },
+                                        ].map(opt => (
+                                            <button
+                                                key={opt.value}
+                                                type="button"
+                                                onClick={() => setBulkStatus(opt.value)}
+                                                style={{
+                                                    padding: '5px 12px', borderRadius: 5, fontSize: 11, fontWeight: 700, cursor: 'pointer',
+                                                    border: bulkStatus === opt.value ? `2px solid ${opt.color}` : '2px solid transparent',
+                                                    background: bulkStatus === opt.value ? opt.color : '#334155',
+                                                    color: '#fff', transition: 'all 0.15s',
+                                                }}
+                                            >
+                                                {opt.label}
+                                            </button>
+                                        ))}
+                                    </div>
+                                    <button
+                                        onClick={handleBulkSetStatus}
+                                        disabled={bulkSaving}
+                                        style={{ padding: '6px 16px', borderRadius: 6, border: 'none', background: '#22c55e', color: '#fff', fontSize: 12, fontWeight: 700, cursor: bulkSaving ? 'not-allowed' : 'pointer', opacity: bulkSaving ? 0.6 : 1 }}>
+                                        {bulkSaving ? '...' : (language === 'th' ? '✓ บันทึก' : '✓ Save')}
+                                    </button>
+                                    <button onClick={() => setBulkMode('none')}
+                                        style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid #64748b', background: 'transparent', color: '#94a3b8', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+                                        {language === 'th' ? 'ยกเลิก' : 'Cancel'}
+                                    </button>
+                                </>
+                            )}
+                        </div>
+                    )}
+
+                    {/* Bulk action success/error toast */}
+                    {bulkMsg && (
+                        <div style={{
+                            position: 'fixed', bottom: 24, right: 24, zIndex: 10000,
+                            padding: '12px 20px', borderRadius: 10,
+                            background: bulkMsg.includes('ผิดพลาด') || bulkMsg.includes('Error') ? '#dc2626' : '#22c55e',
+                            color: '#fff', fontSize: 13, fontWeight: 700,
+                            boxShadow: '0 8px 24px rgba(0,0,0,0.2)',
+                            animation: 'fadeIn 0.3s ease-out',
+                        }}>
+                            {bulkMsg.includes('ผิดพลาด') || bulkMsg.includes('Error') ? '❌' : '✅'} {bulkMsg}
+                        </div>
+                    )}
 
                     {editingRunner && (
                         <div

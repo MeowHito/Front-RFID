@@ -3,6 +3,7 @@
 import { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useLanguage } from '@/lib/language-context';
+import { authHeaders } from '@/lib/authHeaders';
 import ImageCropModal from '@/components/ImageCropModal';
 import AdminLayout from '../../AdminLayout';
 
@@ -368,7 +369,7 @@ function CreateEventForm() {
             const method = isEdit ? 'PUT' : 'POST';
             const res = await fetch(url, {
                 method,
-                headers: { 'Content-Type': 'application/json' },
+                headers: authHeaders(),
                 body: JSON.stringify(payload),
             });
             if (!res.ok) {
