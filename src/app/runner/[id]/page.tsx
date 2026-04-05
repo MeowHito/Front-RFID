@@ -478,8 +478,20 @@ export default function RunnerProfilePage() {
     const selectedHit = selectedCheckpointKey ? runnerHitMap.get(selectedCheckpointKey) || null : null;
     const hasSelectedCheckpoint = selectedCheckpointKey !== '';
     const selectedCheckpointName = selectedTiming?.checkpoint || selectedFallbackCheckpoint?.name || selectedHit?.checkpoint || '';
-    const trimStart = Math.max(0, (selectedHit?.seekSeconds || 0) - clipBufferSeconds);
-    const trimDuration = clipBufferSeconds * 2;
+    // Smart trim: ensure full clip duration even when recording is short
+    const seekSec = selectedHit?.seekSeconds || 0;
+    const recDuration = selectedHit?.recording?.duration || 0;
+    const postBuffer = 5; // seconds of video after the scan time
+    let clipStart = Math.max(0, seekSec - clipBufferSeconds);
+    let clipEnd = seekSec + postBuffer;
+    // If clip extends past recording end, shift start earlier to keep full length
+    if (recDuration > 0 && clipEnd > recDuration) {
+        const overflow = clipEnd - recDuration;
+        clipStart = Math.max(0, clipStart - overflow);
+        clipEnd = Math.min(recDuration, clipEnd);
+    }
+    const trimStart = clipStart;
+    const trimDuration = Math.max(1, clipEnd - clipStart);
     const streamUrl = selectedHit?.recording
         ? `/api/runner/${runnerId}/cctv/${selectedHit.recording._id}/stream?ss=${trimStart}&t=${trimDuration}`
         : '';

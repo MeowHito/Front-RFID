@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
+import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { useLanguage } from '@/lib/language-context';
 import { authHeaders } from '@/lib/authHeaders';
 import AdminLayout from '../AdminLayout';
@@ -202,6 +202,13 @@ export default function ResultsPage() {
 
     const [sortBy, setSortBy] = useState('default');
     const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+
+    // ── Column drag-and-drop reorder state ──
+    const [columnOrder, setColumnOrder] = useState<string[]>([]);
+    const [dragColKey, setDragColKey] = useState<string | null>(null);
+    const [dragOverColKey, setDragOverColKey] = useState<string | null>(null);
+    const [dragDirection, setDragDirection] = useState<'left' | 'right' | null>(null);
+    const dragStartXRef = useRef(0);
 
     // ── Bulk selection state ──
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -765,6 +772,163 @@ export default function ResultsPage() {
     const thStyle = { padding: '8px 10px', textAlign: 'center' as const, fontWeight: 700, fontSize: 11, color: '#555', borderBottom: '2px solid #e5e7eb', whiteSpace: 'nowrap' as const };
     const tdStyle = { padding: '6px 10px', borderBottom: '1px solid #f3f4f6', fontSize: 12 };
 
+    // ── Column definitions (draggable columns only — checkbox/#/BIB are pinned) ──
+    const allColumnDefs = useMemo(() => {
+        const cols: Array<{
+            key: string;
+            label: string;
+            sortKey: string;
+            minWidth: number;
+            thBg?: string;
+            renderHeader: () => React.ReactNode;
+            renderCell: (r: PasstimeRunner, bibTimings: Record<string, { scanTime: string; elapsedTime?: number; splitTime?: number; netTime?: number }>) => React.ReactNode;
+        }> = [
+            {
+                key: 'name', label: language === 'th' ? 'ชื่อ' : 'Name', sortKey: 'name', minWidth: 140,
+                renderHeader: () => renderSortableHeader(language === 'th' ? 'ชื่อ' : 'Name', 'name', { justifyContent: 'flex-start' }),
+                renderCell: (r) => <span style={{ whiteSpace: 'nowrap' }}>{language === 'th' && r.firstNameTh ? `${r.firstNameTh} ${r.lastNameTh || ''}` : `${r.firstName} ${r.lastName}`}</span>,
+            },
+            {
+                key: 'gender', label: language === 'th' ? 'เพศ' : 'G', sortKey: 'gender', minWidth: 36,
+                renderHeader: () => renderSortableHeader(language === 'th' ? 'เพศ' : 'G', 'gender'),
+                renderCell: (r) => <span style={{ color: r.gender === 'M' ? '#2563eb' : '#db2777', fontWeight: 700, fontSize: 13 }}>{r.gender === 'F' ? '♀' : '♂'}</span>,
+            },
+            {
+                key: 'category', label: language === 'th' ? 'ประเภท' : 'Cat', sortKey: 'category', minWidth: 70,
+                renderHeader: () => renderSortableHeader(language === 'th' ? 'ประเภท' : 'Cat', 'category'),
+                renderCell: (r) => <span style={{ fontSize: 11 }}>{r.category || '-'}</span>,
+            },
+            {
+                key: 'status', label: language === 'th' ? 'สถานะ' : 'Status', sortKey: 'status', minWidth: 50,
+                renderHeader: () => renderSortableHeader(language === 'th' ? 'สถานะ' : 'Status', 'status'),
+                renderCell: (r) => { const st = STATUS_LABELS[r.status] || STATUS_LABELS.not_started; return <span style={{ display: 'inline-block', padding: '2px 6px', borderRadius: 4, fontSize: 10, fontWeight: 700, color: '#fff', background: st.color, lineHeight: 1.3 }}>{language === 'th' ? st.th : st.en}</span>; },
+            },
+            {
+                key: 'overallRank', label: '#OA', sortKey: 'overallRank', minWidth: 36,
+                renderHeader: () => renderSortableHeader(language === 'th' ? '#รวม' : '#OA', 'overallRank'),
+                renderCell: (r) => <span style={{ fontWeight: 700, fontSize: 11 }}>{r.overallRank || '-'}</span>,
+            },
+            {
+                key: 'genderRank', label: '#G', sortKey: 'genderRank', minWidth: 36,
+                renderHeader: () => renderSortableHeader(language === 'th' ? '#เพศ' : '#G', 'genderRank'),
+                renderCell: (r) => <span style={{ fontSize: 11 }}>{r.genderRank || '-'}</span>,
+            },
+            {
+                key: 'ageGroupRank', label: 'AG', sortKey: 'ageGroupRank', minWidth: 52,
+                renderHeader: () => renderSortableHeader(language === 'th' ? '#อายุ' : 'AG Rank', 'ageGroupRank'),
+                renderCell: (r) => <span style={{ fontSize: 11 }}>{r.ageGroupRank || r.categoryRank || '-'}</span>,
+            },
+            {
+                key: 'gunTime', label: 'Gun Time', sortKey: 'gunTime', minWidth: 78,
+                renderHeader: () => renderSortableHeader('Gun Time', 'gunTime'),
+                renderCell: (r) => <span style={{ fontFamily: 'monospace', fontWeight: 600, color: r.gunTime ? '#f59e0b' : '#aaa', cursor: 'pointer' }} onClick={() => loadEditData(r)} title={language === 'th' ? 'คลิกเพื่อแก้ไข' : 'Click to edit'}>{formatResultTime(r.gunTime, r.gunTimeStr)}</span>,
+            },
+            {
+                key: 'chipTime', label: 'Chip Time', sortKey: 'chipTime', minWidth: 78,
+                renderHeader: () => renderSortableHeader('Chip Time', 'chipTime'),
+                renderCell: (r) => <span style={{ fontFamily: 'monospace', fontWeight: 600, color: r.netTime ? '#16a34a' : '#aaa', cursor: 'pointer' }} onClick={() => loadEditData(r)} title={language === 'th' ? 'คลิกเพื่อแก้ไข' : 'Click to edit'}>{formatResultTime(r.netTime, r.netTimeStr)}</span>,
+            },
+            ...filteredCheckpoints.map(cp => ({
+                key: `cp:${cp.name}`, label: cp.name, sortKey: `cp:${cp.name}`, minWidth: 80, thBg: '#eef2ff',
+                renderHeader: () => renderSortableHeader(cp.name, `cp:${cp.name}`),
+                renderCell: (_r: PasstimeRunner, bibTimings: Record<string, any>) => {
+                    const timing = bibTimings[cp.name];
+                    const hasTiming = Boolean(timing?.scanTime);
+                    return hasTiming ? (
+                        <div style={{ fontFamily: 'monospace', fontSize: 11, color: '#0f172a' }}>
+                            <div style={{ fontWeight: 600 }}>{formatClockTime(timing!.scanTime)}</div>
+                            {timing!.elapsedTime && timing!.elapsedTime > 0 && (
+                                <div style={{ fontSize: 9, color: '#64748b', marginTop: 1 }}>{formatTime(timing!.elapsedTime)}</div>
+                            )}
+                        </div>
+                    ) : <span style={{ color: '#d1d5db' }}>-</span>;
+                },
+            })),
+            {
+                key: 'edit', label: language === 'th' ? 'จัดการ' : 'Edit', sortKey: 'default', minWidth: 70,
+                renderHeader: () => renderSortableHeader(language === 'th' ? 'จัดการ' : 'Edit', 'default'),
+                renderCell: (r) => <button onClick={() => loadEditData(r)} style={{ padding: '4px 10px', borderRadius: 4, border: '1px solid #d1d5db', background: '#fff', fontSize: 11, cursor: 'pointer', fontWeight: 600, color: '#3b82f6' }}>✏️</button>,
+            },
+        ];
+        return cols;
+    }, [language, filteredCheckpoints, renderSortableHeader, loadEditData]);
+
+    // Initialize/sync column order when column defs change
+    useEffect(() => {
+        const defKeys = allColumnDefs.map(c => c.key);
+        setColumnOrder(prev => {
+            // Preserve user's ordering for columns that still exist
+            const existing = prev.filter(k => defKeys.includes(k));
+            const newOnes = defKeys.filter(k => !existing.includes(k));
+            // Insert new checkpoint columns before 'edit'
+            const editIdx = existing.indexOf('edit');
+            if (newOnes.length > 0 && editIdx >= 0) {
+                return [...existing.slice(0, editIdx), ...newOnes, ...existing.slice(editIdx)];
+            }
+            return [...existing, ...newOnes];
+        });
+    }, [allColumnDefs]);
+
+    // Ordered column defs based on user's drag order
+    const orderedColumns = useMemo(() => {
+        const colMap = new Map(allColumnDefs.map(c => [c.key, c]));
+        const ordered = columnOrder.map(k => colMap.get(k)).filter(Boolean) as typeof allColumnDefs;
+        // Append any not in order yet
+        const inOrder = new Set(columnOrder);
+        allColumnDefs.forEach(c => { if (!inOrder.has(c.key)) ordered.push(c); });
+        return ordered;
+    }, [allColumnDefs, columnOrder]);
+
+    // ── Drag handlers ──
+    const handleDragStart = useCallback((e: React.DragEvent, colKey: string) => {
+        setDragColKey(colKey);
+        dragStartXRef.current = e.clientX;
+        e.dataTransfer.effectAllowed = 'move';
+        // Create a minimal drag image
+        const el = e.currentTarget as HTMLElement;
+        const ghost = el.cloneNode(true) as HTMLElement;
+        ghost.style.cssText = 'position:absolute;top:-9999px;background:#dbeafe;border-radius:6px;padding:6px 12px;font-size:11px;font-weight:700;opacity:0.9;box-shadow:0 4px 12px rgba(0,0,0,0.15);';
+        document.body.appendChild(ghost);
+        e.dataTransfer.setDragImage(ghost, 40, 16);
+        requestAnimationFrame(() => document.body.removeChild(ghost));
+    }, []);
+
+    const handleDragOver = useCallback((e: React.DragEvent, colKey: string) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        if (colKey !== dragColKey) {
+            setDragOverColKey(colKey);
+            setDragDirection(e.clientX > dragStartXRef.current ? 'right' : 'left');
+        }
+    }, [dragColKey]);
+
+    const handleDrop = useCallback((e: React.DragEvent, targetKey: string) => {
+        e.preventDefault();
+        if (!dragColKey || dragColKey === targetKey) {
+            setDragColKey(null);
+            setDragOverColKey(null);
+            setDragDirection(null);
+            return;
+        }
+        setColumnOrder(prev => {
+            const newOrder = prev.filter(k => k !== dragColKey);
+            const targetIdx = newOrder.indexOf(targetKey);
+            if (targetIdx >= 0) {
+                newOrder.splice(targetIdx + (dragDirection === 'right' ? 1 : 0), 0, dragColKey);
+            }
+            return newOrder;
+        });
+        setDragColKey(null);
+        setDragOverColKey(null);
+        setDragDirection(null);
+    }, [dragColKey, dragDirection]);
+
+    const handleDragEnd = useCallback(() => {
+        setDragColKey(null);
+        setDragOverColKey(null);
+        setDragDirection(null);
+    }, []);
+
     return (
         <AdminLayout breadcrumbItems={[{ label: 'ผลการแข่งขัน', labelEn: 'Results' }]}>
             {loading ? (
@@ -865,34 +1029,55 @@ export default function ResultsPage() {
                             </div>
                         ) : (
                             <div style={{ overflowX: 'auto' }}>
+                                <style>{`
+                                    .drag-col-over-left { box-shadow: inset 3px 0 0 0 #3b82f6 !important; }
+                                    .drag-col-over-right { box-shadow: inset -3px 0 0 0 #3b82f6 !important; }
+                                    .drag-col-active { opacity: 0.4; background: #dbeafe !important; }
+                                    th[draggable="true"] { cursor: grab; }
+                                    th[draggable="true"]:active { cursor: grabbing; }
+                                `}</style>
                                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                                     <thead>
                                         <tr style={{ background: '#f8fafc' }}>
+                                            {/* Pinned columns */}
                                             <th style={{ ...thStyle, minWidth: 32, position: 'sticky', left: 0, background: '#f8fafc', zIndex: 2 }}>
                                                 <input type="checkbox" checked={selectedIds.size > 0 && selectedIds.size === filteredRunners.length} onChange={toggleSelectAll} style={{ accentColor: '#3b82f6', cursor: 'pointer', width: 15, height: 15 }} />
                                             </th>
                                             <th style={{ ...thStyle, minWidth: 36, position: 'sticky', left: 32, background: '#f8fafc', zIndex: 2 }}>{renderSortableHeader('#', 'default')}</th>
                                             <th style={{ ...thStyle, minWidth: 54, position: 'sticky', left: 68, background: '#f8fafc', zIndex: 2, textAlign: 'left' }}>{renderSortableHeader('BIB', 'bib', { justifyContent: 'flex-start' })}</th>
-                                            <th style={{ ...thStyle, minWidth: 140, textAlign: 'left' }}>{renderSortableHeader(language === 'th' ? 'ชื่อ' : 'Name', 'name', { justifyContent: 'flex-start' })}</th>
-                                            <th style={{ ...thStyle, minWidth: 36 }}>{renderSortableHeader(language === 'th' ? 'เพศ' : 'G', 'gender')}</th>
-                                            <th style={{ ...thStyle, minWidth: 70 }}>{renderSortableHeader(language === 'th' ? 'ประเภท' : 'Cat', 'category')}</th>
-                                            <th style={{ ...thStyle, minWidth: 50 }}>{renderSortableHeader(language === 'th' ? 'สถานะ' : 'Status', 'status')}</th>
-                                            <th style={{ ...thStyle, minWidth: 36 }}>{renderSortableHeader(language === 'th' ? '#รวม' : '#OA', 'overallRank')}</th>
-                                            <th style={{ ...thStyle, minWidth: 36 }}>{renderSortableHeader(language === 'th' ? '#เพศ' : '#G', 'genderRank')}</th>
-                                            <th style={{ ...thStyle, minWidth: 52 }}>{renderSortableHeader(language === 'th' ? '#อายุ' : 'AG Rank', 'ageGroupRank')}</th>
-                                            <th style={{ ...thStyle, minWidth: 78 }}>{renderSortableHeader('Gun Time', 'gunTime')}</th>
-                                            <th style={{ ...thStyle, minWidth: 78 }}>{renderSortableHeader('Chip Time', 'chipTime')}</th>
-                                            {filteredCheckpoints.map(cp => (
-                                                <th key={cp._id} style={{ ...thStyle, minWidth: 80, background: '#eef2ff' }}>
-                                                    {renderSortableHeader(cp.name, `cp:${cp.name}`)}
-                                                </th>
-                                            ))}
-                                            <th style={{ ...thStyle, minWidth: 70 }}>{renderSortableHeader(language === 'th' ? 'จัดการ' : 'Edit', 'default')}</th>
+                                            {/* Draggable columns */}
+                                            {orderedColumns.map(col => {
+                                                const isDragging = dragColKey === col.key;
+                                                const isOver = dragOverColKey === col.key;
+                                                const overClass = isOver ? (dragDirection === 'left' ? 'drag-col-over-left' : 'drag-col-over-right') : '';
+                                                return (
+                                                    <th
+                                                        key={col.key}
+                                                        draggable
+                                                        onDragStart={e => handleDragStart(e, col.key)}
+                                                        onDragOver={e => handleDragOver(e, col.key)}
+                                                        onDrop={e => handleDrop(e, col.key)}
+                                                        onDragEnd={handleDragEnd}
+                                                        onDragLeave={() => { if (dragOverColKey === col.key) setDragOverColKey(null); }}
+                                                        className={`${isDragging ? 'drag-col-active' : ''} ${overClass}`}
+                                                        style={{
+                                                            ...thStyle,
+                                                            minWidth: col.minWidth,
+                                                            background: col.thBg || '#f8fafc',
+                                                            textAlign: col.key === 'name' ? 'left' as const : 'center' as const,
+                                                            transition: 'box-shadow 0.15s ease, opacity 0.15s ease',
+                                                            userSelect: 'none',
+                                                        }}
+                                                        title={language === 'th' ? 'ลากเพื่อย้ายคอลัมน์' : 'Drag to reorder'}
+                                                    >
+                                                        {col.renderHeader()}
+                                                    </th>
+                                                );
+                                            })}
                                         </tr>
                                     </thead>
                                     <tbody>
                                         {filteredRunners.map((r, idx) => {
-                                            const st = STATUS_LABELS[r.status] || STATUS_LABELS.not_started;
                                             const bibTimings = cpTimingMap[r.bib] || {};
                                             const isSelected = selectedIds.has(r._id);
                                             return (
@@ -901,74 +1086,30 @@ export default function ResultsPage() {
                                                     onMouseOver={e => { if (!isSelected) e.currentTarget.style.background = '#f8fafc'; }}
                                                     onMouseOut={e => { if (!isSelected) e.currentTarget.style.background = 'transparent'; }}
                                                 >
+                                                    {/* Pinned cells */}
                                                     <td style={{ ...tdStyle, textAlign: 'center', position: 'sticky', left: 0, background: isSelected ? '#eff6ff' : '#fff', zIndex: 1 }}>
                                                         <input type="checkbox" checked={isSelected} onChange={() => toggleSelect(r._id)} style={{ accentColor: '#3b82f6', cursor: 'pointer', width: 14, height: 14 }} />
                                                     </td>
                                                     <td style={{ ...tdStyle, textAlign: 'center', color: '#aaa', fontSize: 11, position: 'sticky', left: 32, background: isSelected ? '#eff6ff' : '#fff', zIndex: 1 }}>{idx + 1}</td>
                                                     <td style={{ ...tdStyle, fontWeight: 700, position: 'sticky', left: 68, background: isSelected ? '#eff6ff' : '#fff', zIndex: 1 }}>{r.bib}</td>
-                                                    <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
-                                                        {language === 'th' && r.firstNameTh ? `${r.firstNameTh} ${r.lastNameTh || ''}` : `${r.firstName} ${r.lastName}`}
-                                                    </td>
-                                                    <td style={{ ...tdStyle, textAlign: 'center' }}>
-                                                        <span style={{ color: r.gender === 'M' ? '#2563eb' : '#db2777', fontWeight: 700, fontSize: 13 }}>
-                                                            {r.gender === 'F' ? '♀' : '♂'}
-                                                        </span>
-                                                    </td>
-                                                    <td style={{ ...tdStyle, textAlign: 'center', fontSize: 11 }}>{r.category || '-'}</td>
-                                                    <td style={{ ...tdStyle, textAlign: 'center' }}>
-                                                        <span style={{
-                                                            display: 'inline-block',
-                                                            padding: '2px 6px', borderRadius: 4, fontSize: 10, fontWeight: 700,
-                                                            color: '#fff', background: st.color, lineHeight: 1.3,
-                                                        }}>
-                                                            {language === 'th' ? st.th : st.en}
-                                                        </span>
-                                                    </td>
-                                                    <td style={{ ...tdStyle, textAlign: 'center', fontWeight: 700, fontSize: 11 }}>{r.overallRank || '-'}</td>
-                                                    <td style={{ ...tdStyle, textAlign: 'center', fontSize: 11 }}>{r.genderRank || '-'}</td>
-                                                    <td style={{ ...tdStyle, textAlign: 'center', fontSize: 11 }}>{r.ageGroupRank || r.categoryRank || '-'}</td>
-                                                    <td style={{ ...tdStyle, textAlign: 'center', fontFamily: 'monospace', fontWeight: 600, color: r.gunTime ? '#f59e0b' : '#aaa', cursor: 'pointer' }}
-                                                        onClick={() => loadEditData(r)}
-                                                        title={language === 'th' ? 'คลิกเพื่อแก้ไข' : 'Click to edit'}>
-                                                        {formatResultTime(r.gunTime, r.gunTimeStr)}
-                                                    </td>
-                                                    <td style={{ ...tdStyle, textAlign: 'center', fontFamily: 'monospace', fontWeight: 600, color: r.netTime ? '#16a34a' : '#aaa', cursor: 'pointer' }}
-                                                        onClick={() => loadEditData(r)}
-                                                        title={language === 'th' ? 'คลิกเพื่อแก้ไข' : 'Click to edit'}>
-                                                        {formatResultTime(r.netTime, r.netTimeStr)}
-                                                    </td>
-                                                    {filteredCheckpoints.map(cp => {
-                                                        const timing = bibTimings[cp.name];
-                                                        const hasTiming = Boolean(timing?.scanTime);
+                                                    {/* Draggable cells in same order */}
+                                                    {orderedColumns.map(col => {
+                                                        const isDragging = dragColKey === col.key;
+                                                        const cpTiming = col.key.startsWith('cp:') ? bibTimings : {};
+                                                        const hasCpTiming = col.key.startsWith('cp:') && Boolean(cpTiming[col.key.slice(3)]?.scanTime);
                                                         return (
-                                                            <td key={cp._id} style={{
+                                                            <td key={col.key} style={{
                                                                 ...tdStyle,
-                                                                textAlign: 'center',
-                                                                fontFamily: 'monospace',
-                                                                fontSize: 11,
-                                                                color: hasTiming ? '#0f172a' : '#d1d5db',
-                                                                background: hasTiming ? '#f0fdf4' : 'transparent',
-                                                                whiteSpace: 'nowrap',
+                                                                textAlign: col.key === 'name' ? undefined : 'center',
+                                                                whiteSpace: col.key === 'name' || col.key.startsWith('cp:') ? 'nowrap' : undefined,
+                                                                background: hasCpTiming ? '#f0fdf4' : isDragging ? '#dbeafe22' : undefined,
+                                                                opacity: isDragging ? 0.4 : 1,
+                                                                transition: 'opacity 0.15s ease',
                                                             }}>
-                                                                {hasTiming ? (
-                                                                    <div>
-                                                                        <div style={{ fontWeight: 600 }}>{formatClockTime(timing!.scanTime)}</div>
-                                                                        {timing!.elapsedTime && timing!.elapsedTime > 0 && (
-                                                                            <div style={{ fontSize: 9, color: '#64748b', marginTop: 1 }}>
-                                                                                {formatTime(timing!.elapsedTime)}
-                                                                            </div>
-                                                                        )}
-                                                                    </div>
-                                                                ) : '-'}
+                                                                {col.renderCell(r, bibTimings)}
                                                             </td>
                                                         );
                                                     })}
-                                                    <td style={{ ...tdStyle, textAlign: 'center' }}>
-                                                        <button onClick={() => loadEditData(r)}
-                                                            style={{ padding: '4px 10px', borderRadius: 4, border: '1px solid #d1d5db', background: '#fff', fontSize: 11, cursor: 'pointer', fontWeight: 600, color: '#3b82f6' }}>
-                                                            ✏️
-                                                        </button>
-                                                    </td>
                                                 </tr>
                                             );
                                         })}
