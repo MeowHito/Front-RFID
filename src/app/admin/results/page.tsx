@@ -74,6 +74,32 @@ function formatTime(ms?: number): string {
     return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
 }
 
+function parseTimeToMs(str: string): number | null {
+    if (!str || !str.trim()) return null;
+    const parts = str.trim().split(':');
+    if (parts.length === 3) {
+        const h = parseInt(parts[0], 10);
+        const m = parseInt(parts[1], 10);
+        const s = parseInt(parts[2], 10);
+        if (!isNaN(h) && !isNaN(m) && !isNaN(s)) return (h * 3600 + m * 60 + s) * 1000;
+    }
+    if (parts.length === 2) {
+        const m = parseInt(parts[0], 10);
+        const s = parseInt(parts[1], 10);
+        if (!isNaN(m) && !isNaN(s)) return (m * 60 + s) * 1000;
+    }
+    return null;
+}
+
+function msToTimeInput(ms?: number): string {
+    if (!ms || ms <= 0) return '';
+    const totalSec = Math.floor(ms / 1000);
+    const h = Math.floor(totalSec / 3600);
+    const m = Math.floor((totalSec % 3600) / 60);
+    const s = totalSec % 60;
+    return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+}
+
 function formatClockTime(iso?: string): string {
     if (!iso) return '-';
     const d = new Date(iso);
@@ -169,6 +195,10 @@ export default function ResultsPage() {
     const [editTimingSaveMsg, setEditTimingSaveMsg] = useState<string | null>(null);
     const [editCheckpoints, setEditCheckpoints] = useState<EditCheckpoint[]>([]);
     const [editTimingRecords, setEditTimingRecords] = useState<EditTimingRecord[]>([]);
+
+    // Gun/Chip time edit state (in the single-runner edit modal)
+    const [editGunTime, setEditGunTime] = useState('');
+    const [editChipTime, setEditChipTime] = useState('');
 
     const [sortBy, setSortBy] = useState('default');
     const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
@@ -459,6 +489,9 @@ export default function ResultsPage() {
         setEditSaveError(null);
         setEditTimingChanges({});
         setEditTimingSaveMsg(null);
+        // Initialize gun/chip time from runner data
+        setEditGunTime(msToTimeInput(runner.gunTime) || runner.gunTimeStr || '');
+        setEditChipTime(msToTimeInput(runner.netTime) || runner.netTimeStr || '');
 
         if (!campaign?._id || !runner.eventId) {
             setEditCheckpoints([]);
@@ -510,6 +543,7 @@ export default function ResultsPage() {
         setEditSaving(true);
         setEditSaveError(null);
         try {
+            // 1. Save status change
             const res = await fetch(`/api/runners/${editingRunner._id}/status`, {
                 method: 'PUT',
                 headers: authHeaders(),
@@ -523,6 +557,66 @@ export default function ResultsPage() {
             if (!res.ok) {
                 const payload = await res.json().catch(() => ({}));
                 throw new Error(payload?.message || payload?.error || (language === 'th' ? 'บันทึกข้อมูลไม่สำเร็จ' : 'Failed to save runner status'));
+            }
+
+            // 2. Save gun/chip time changes
+            const gunMs = parseTimeToMs(editGunTime);
+            const chipMs = parseTimeToMs(editChipTime);
+            const originalGunMs = editingRunner.gunTime || 0;
+            const originalChipMs = editingRunner.netTime || 0;
+            const gunChanged = gunMs !== null && gunMs !== originalGunMs;
+            const chipChanged = chipMs !== null && chipMs !== originalChipMs;
+            const gunCleared = editGunTime.trim() === '' && originalGunMs > 0;
+            const chipCleared = editChipTime.trim() === '' && originalChipMs > 0;
+
+            if (gunChanged || chipChanged || gunCleared || chipCleared) {
+                const updateData: Record<string, unknown> = {};
+                if (gunChanged) {
+                    updateData.gunTime = gunMs;
+                    updateData.gunTimeStr = editGunTime.trim();
+                } else if (gunCleared) {
+                    updateData.gunTime = 0;
+                    updateData.gunTimeStr = '';
+                }
+                if (chipChanged) {
+                    updateData.netTime = chipMs;
+                    updateData.netTimeStr = editChipTime.trim();
+                } else if (chipCleared) {
+                    updateData.netTime = 0;
+                    updateData.netTimeStr = '';
+                }
+
+                await fetch(`/api/runners/${editingRunner._id}`, {
+                    method: 'PUT',
+                    headers: authHeaders(),
+                    body: JSON.stringify(updateData),
+                });
+
+                // Also create/update START timing record if gunTime was set
+                if (gunChanged && gunMs && gunMs > 0 && editingRunner.eventId) {
+                    const startRecord = editTimingRecords.find(r => r.checkpoint.toUpperCase() === 'START');
+                    // Calculate a scan time from event date + gun time offset
+                    if (startRecord?._id) {
+                        // Update existing START timing record with the new scanTime
+                        // Note: We don't change scanTime here since gunTime is a duration, not a timestamp
+                    } else {
+                        // Create new START timing record using existing /api/timing/scan
+                        // Only if there's no START record yet
+                        try {
+                            await fetch('/api/timing/scan', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                    eventId: editingRunner.eventId,
+                                    bib: editingRunner.bib,
+                                    checkpoint: 'START',
+                                    scanTime: new Date().toISOString(),
+                                    note: 'Admin manual gun time entry',
+                                }),
+                            });
+                        } catch { /* non-critical */ }
+                    }
+                }
             }
             setRunners(prev => prev.map(r => r._id === editingRunner._id
                 ? { ...r, status: editStatus, statusCheckpoint: editCheckpoint, statusNote: editNote, statusChangedAt: new Date().toISOString() }
@@ -833,10 +927,14 @@ export default function ResultsPage() {
                                                     <td style={{ ...tdStyle, textAlign: 'center', fontWeight: 700, fontSize: 11 }}>{r.overallRank || '-'}</td>
                                                     <td style={{ ...tdStyle, textAlign: 'center', fontSize: 11 }}>{r.genderRank || '-'}</td>
                                                     <td style={{ ...tdStyle, textAlign: 'center', fontSize: 11 }}>{r.ageGroupRank || r.categoryRank || '-'}</td>
-                                                    <td style={{ ...tdStyle, textAlign: 'center', fontFamily: 'monospace', fontWeight: 600, color: r.gunTime ? '#f59e0b' : '#aaa' }}>
+                                                    <td style={{ ...tdStyle, textAlign: 'center', fontFamily: 'monospace', fontWeight: 600, color: r.gunTime ? '#f59e0b' : '#aaa', cursor: 'pointer' }}
+                                                        onClick={() => loadEditData(r)}
+                                                        title={language === 'th' ? 'คลิกเพื่อแก้ไข' : 'Click to edit'}>
                                                         {formatResultTime(r.gunTime, r.gunTimeStr)}
                                                     </td>
-                                                    <td style={{ ...tdStyle, textAlign: 'center', fontFamily: 'monospace', fontWeight: 600, color: r.netTime ? '#16a34a' : '#aaa' }}>
+                                                    <td style={{ ...tdStyle, textAlign: 'center', fontFamily: 'monospace', fontWeight: 600, color: r.netTime ? '#16a34a' : '#aaa', cursor: 'pointer' }}
+                                                        onClick={() => loadEditData(r)}
+                                                        title={language === 'th' ? 'คลิกเพื่อแก้ไข' : 'Click to edit'}>
                                                         {formatResultTime(r.netTime, r.netTimeStr)}
                                                     </td>
                                                     {filteredCheckpoints.map(cp => {
@@ -1038,6 +1136,44 @@ export default function ResultsPage() {
                                     </div>
                                 </div>
 
+                                {/* Gun Time / Chip Time Edit */}
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16, padding: 14, background: '#fffbeb', borderRadius: 8, border: '1px solid #fde68a' }}>
+                                    <div>
+                                        <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#b45309', marginBottom: 4, textTransform: 'uppercase' }}>
+                                            ⏱ Gun Time
+                                        </label>
+                                        <input
+                                            type="text"
+                                            value={editGunTime}
+                                            onChange={e => setEditGunTime(e.target.value)}
+                                            placeholder="HH:MM:SS"
+                                            style={{ width: '100%', padding: '8px 12px', borderRadius: 6, border: '1px solid #fbbf24', background: '#fff', color: '#0f172a', fontSize: 14, fontFamily: 'monospace', fontWeight: 700, boxSizing: 'border-box' }}
+                                        />
+                                        <div style={{ fontSize: 10, color: '#92400e', marginTop: 3 }}>
+                                            {editGunTime && parseTimeToMs(editGunTime) !== null
+                                                ? `= ${(parseTimeToMs(editGunTime)! / 1000).toLocaleString()} sec`
+                                                : (language === 'th' ? 'รูปแบบ: HH:MM:SS เช่น 01:30:00' : 'Format: HH:MM:SS e.g. 01:30:00')}
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#15803d', marginBottom: 4, textTransform: 'uppercase' }}>
+                                            🏃 Chip Time (Net)
+                                        </label>
+                                        <input
+                                            type="text"
+                                            value={editChipTime}
+                                            onChange={e => setEditChipTime(e.target.value)}
+                                            placeholder="HH:MM:SS"
+                                            style={{ width: '100%', padding: '8px 12px', borderRadius: 6, border: '1px solid #86efac', background: '#fff', color: '#0f172a', fontSize: 14, fontFamily: 'monospace', fontWeight: 700, boxSizing: 'border-box' }}
+                                        />
+                                        <div style={{ fontSize: 10, color: '#166534', marginTop: 3 }}>
+                                            {editChipTime && parseTimeToMs(editChipTime) !== null
+                                                ? `= ${(parseTimeToMs(editChipTime)! / 1000).toLocaleString()} sec`
+                                                : (language === 'th' ? 'รูปแบบ: HH:MM:SS เช่น 01:28:30' : 'Format: HH:MM:SS e.g. 01:28:30')}
+                                        </div>
+                                    </div>
+                                </div>
+
                                 <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#64748b', marginBottom: 4, textTransform: 'uppercase' }}>
                                     {language === 'th' ? 'สถานะ' : 'Status'}
                                 </label>
@@ -1159,7 +1295,7 @@ export default function ResultsPage() {
                                         disabled={editSaving}
                                         style={{ padding: '8px 24px', borderRadius: 6, border: 'none', background: '#2563eb', color: '#fff', fontSize: 13, fontWeight: 700, cursor: editSaving ? 'not-allowed' : 'pointer', opacity: editSaving ? 0.6 : 1 }}
                                     >
-                                        {editSaving ? (language === 'th' ? 'กำลังบันทึก...' : 'Saving...') : (language === 'th' ? 'บันทึกสถานะ' : 'Save Status')}
+                                        {editSaving ? (language === 'th' ? 'กำลังบันทึก...' : 'Saving...') : (language === 'th' ? '💾 บันทึกทั้งหมด' : '💾 Save All')}
                                     </button>
                                 </div>
                             </div>
