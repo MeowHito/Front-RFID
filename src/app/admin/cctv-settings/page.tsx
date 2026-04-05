@@ -92,6 +92,10 @@ export default function CctvSettingsPage() {
                     videoBitrateKbps,
                 }),
             });
+            if (res.status === 401) {
+                setToast({ msg: th ? 'เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่' : 'Session expired, please login again', type: 'error' });
+                return;
+            }
             if (!res.ok) throw new Error('API error');
             setToast({ msg: th ? 'บันทึกการตั้งค่าแล้ว' : 'Settings saved', type: 'success' });
         } catch {

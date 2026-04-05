@@ -63,6 +63,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const storedUser = localStorage.getItem('auth_user');
 
         if (storedToken && storedUser) {
+            // Check if token is expired by decoding JWT payload
+            try {
+                const parts = storedToken.split('.');
+                if (parts.length === 3) {
+                    const payload = JSON.parse(atob(parts[1]));
+                    if (payload.exp && payload.exp * 1000 < Date.now()) {
+                        // Token expired — clear and redirect
+                        localStorage.removeItem('auth_token');
+                        localStorage.removeItem('auth_user');
+                        console.warn('Auth token expired, clearing session');
+                        setIsLoading(false);
+                        return;
+                    }
+                }
+            } catch {
+                // Invalid token format — clear it
+                localStorage.removeItem('auth_token');
+                localStorage.removeItem('auth_user');
+                setIsLoading(false);
+                return;
+            }
+
             setToken(storedToken);
             setUser(JSON.parse(storedUser));
             api.defaults.headers.common['Authorization'] = `Bearer ${storedToken}`;
