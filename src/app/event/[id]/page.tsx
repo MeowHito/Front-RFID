@@ -862,6 +862,20 @@ export default function EventLivePage() {
             <header style={{ background: themeStyles.cardBg, borderBottom: `1px solid ${themeStyles.border}`, padding: '8px 16px', boxShadow: isDark ? '0 1px 3px rgba(0,0,0,0.2)' : '0 1px 3px rgba(0,0,0,0.04)', position: 'relative', zIndex: 30 }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', maxWidth: '100%', overflow: 'hidden' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0, flex: 1 }}>
+                        <button
+                            onClick={() => router.back()}
+                            title={language === 'th' ? 'ย้อนกลับ' : 'Go back'}
+                            style={{
+                                display: 'flex', alignItems: 'center', gap: 4, padding: '4px 10px', borderRadius: 6,
+                                border: `1px solid ${themeStyles.border}`, background: 'transparent', color: themeStyles.textMuted,
+                                fontSize: 11, fontWeight: 600, cursor: 'pointer', flexShrink: 0, transition: 'all 0.2s',
+                            }}
+                            onMouseEnter={e => { e.currentTarget.style.background = themeStyles.hoverBg; e.currentTarget.style.color = themeStyles.text; }}
+                            onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = themeStyles.textMuted; }}
+                        >
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg>
+                            {!isMobile && <span>{language === 'th' ? 'ย้อนกลับ' : 'Back'}</span>}
+                        </button>
                         <Link href="/" style={{ display: 'flex', alignItems: 'center', gap: 8, textDecoration: 'none', flexShrink: 0 }}>
                             <Image
                                 src={theme === 'dark' ? '/logo-white.png' : '/logo-black.png'}

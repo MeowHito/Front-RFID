@@ -1,7 +1,9 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { useParams, useSearchParams } from 'next/navigation';
+import { useParams, useSearchParams, useRouter } from 'next/navigation';
+import Link from 'next/link';
+import Image from 'next/image';
 
 interface Campaign { _id: string; name: string; slug?: string; nameTh?: string; nameEn?: string; categories?: { name: string; distance?: string }[]; }
 interface Checkpoint { _id: string; name: string; kmCumulative?: number; }
@@ -101,6 +103,7 @@ function dedupeRunners(items: RunnerAtCheckpoint[]): RunnerAtCheckpoint[] {
 export default function ShareLiveMonitorPage() {
     const params = useParams();
     const searchParams = useSearchParams();
+    const router = useRouter();
     const campaignId = params.campaignId as string;
     const cpParam = searchParams.get('cp') || '';
 
@@ -420,15 +423,37 @@ export default function ShareLiveMonitorPage() {
     return (
         <div className="min-h-screen bg-slate-50">
             {/* Top Banner */}
-            <div className="bg-gradient-to-r from-green-700 to-emerald-600 text-white px-5 py-4 shadow-lg">
+            <div className="bg-gradient-to-r from-green-700 to-emerald-600 text-white px-5 py-3 shadow-lg">
                 <div className="max-w-6xl mx-auto flex items-center justify-between gap-4 flex-wrap">
-                    <div>
-                        <h1 className="text-xl font-extrabold m-0 flex items-center gap-2">
-                            Live Checkpoint Monitor
-                        </h1>
-                        <p className="text-green-100 text-sm mt-0.5 font-medium">
-                            {campaign.nameTh || campaign.nameEn || campaign.name}
-                        </p>
+                    <div className="flex items-center gap-3">
+                        {/* Back button */}
+                        <button
+                            onClick={() => router.back()}
+                            title="ย้อนกลับ"
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-white/30 bg-white/10 text-white/90 text-xs font-semibold cursor-pointer transition-all hover:bg-white/20 hover:text-white hover:border-white/50 flex-shrink-0"
+                        >
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg>
+                            <span>ย้อนกลับ</span>
+                        </button>
+                        {/* Logo */}
+                        <Link href="/" className="flex-shrink-0" title="กลับหน้าแรก">
+                            <Image
+                                src="/logo-white.png"
+                                alt="ACTION"
+                                width={80}
+                                height={26}
+                                style={{ objectFit: 'contain' }}
+                            />
+                        </Link>
+                        {/* Title */}
+                        <div className="border-l border-white/30 pl-3">
+                            <h1 className="text-lg font-extrabold m-0 flex items-center gap-2">
+                                Live Checkpoint Monitor
+                            </h1>
+                            <p className="text-green-100 text-sm mt-0.5 font-medium">
+                                {campaign.nameTh || campaign.nameEn || campaign.name}
+                            </p>
+                        </div>
                     </div>
                     <div className="flex items-center gap-2">
                         <span className="text-sm font-bold text-green-100">Checkpoint:</span>
