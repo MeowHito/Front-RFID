@@ -259,16 +259,39 @@ export default function RunnerProfilePage() {
         (async () => {
             try {
                 setLoading(true);
-                const res = await fetch(`/api/runner/${runnerId}`);
-                const json = await res.json();
-                if (json.status?.code === '200' && json.data) {
-                    setRunner(json.data.runner);
-                    setTimings(json.data.timingRecords || []);
-                    setCampaign(json.data.campaign || null);
-                    setCpMappings(json.data.checkpointMappings || []);
-                    setCheckpointRanks(json.data.checkpointRanks || {});
+                // Fetch runner profile and CCTV settings in parallel
+                const [runnerRes, settingsRes] = await Promise.allSettled([
+                    fetch(`/api/runner/${runnerId}`).then(r => r.json()),
+                    fetch('/api/cctv-settings', { cache: 'no-store' }).then(r => r.json()),
+                ]);
+
+                // Process runner data
+                if (runnerRes.status === 'fulfilled') {
+                    const json = runnerRes.value;
+                    if (json.status?.code === '200' && json.data) {
+                        setRunner(json.data.runner);
+                        setTimings(json.data.timingRecords || []);
+                        setCampaign(json.data.campaign || null);
+                        setCpMappings(json.data.checkpointMappings || []);
+                        setCheckpointRanks(json.data.checkpointRanks || {});
+                    } else {
+                        setError(json.status?.description || 'Runner not found');
+                    }
                 } else {
-                    setError(json.status?.description || 'Runner not found');
+                    setError('Failed to load runner');
+                }
+
+                // Process CCTV settings
+                if (settingsRes.status === 'fulfilled') {
+                    const settings = settingsRes.value;
+                    const nextValue = Number(settings?.preArrivalBuffer);
+                    if (Number.isFinite(nextValue) && nextValue >= 0) {
+                        setPreArrivalBufferSeconds(nextValue);
+                    }
+                    const clipBuf = Number(settings?.clipBufferSeconds);
+                    if (Number.isFinite(clipBuf) && clipBuf > 0) {
+                        setClipBufferSeconds(clipBuf);
+                    }
                 }
             } catch (err: any) {
                 setError(err.message || 'Failed to load runner');
@@ -277,22 +300,6 @@ export default function RunnerProfilePage() {
             }
         })();
     }, [runnerId]);
-
-    useEffect(() => {
-        fetch('/api/cctv-settings', { cache: 'no-store' })
-            .then((response) => response.json())
-            .then((settings) => {
-                const nextValue = Number(settings?.preArrivalBuffer);
-                if (Number.isFinite(nextValue) && nextValue >= 0) {
-                    setPreArrivalBufferSeconds(nextValue);
-                }
-                const clipBuf = Number(settings?.clipBufferSeconds);
-                if (Number.isFinite(clipBuf) && clipBuf > 0) {
-                    setClipBufferSeconds(clipBuf);
-                }
-            })
-            .catch(() => {});
-    }, []);
 
     useEffect(() => {
         setFollowedRunners(loadFollowedRunners());

@@ -21,7 +21,11 @@ export async function GET(request: NextRequest) {
         }
 
         const data = await res.json();
-        return NextResponse.json(data);
+        return NextResponse.json(data, {
+            headers: {
+                'Cache-Control': 'public, max-age=5, stale-while-revalidate=10',
+            },
+        });
     } catch (error) {
         console.error('Error fetching pass time:', error);
         return NextResponse.json({ error: 'Internal server error' }, { status: 500 });

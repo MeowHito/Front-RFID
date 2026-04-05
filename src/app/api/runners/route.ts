@@ -35,7 +35,11 @@ export async function GET(request: NextRequest) {
         }
 
         const data = await res.json();
-        return NextResponse.json(data);
+        return NextResponse.json(data, {
+            headers: {
+                'Cache-Control': 'public, max-age=5, stale-while-revalidate=15',
+            },
+        });
     } catch (error) {
         console.error('Error fetching runners:', error);
         return NextResponse.json(

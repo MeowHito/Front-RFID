@@ -21,7 +21,11 @@ export async function GET(
         }
 
         const data = await res.json();
-        return NextResponse.json(data);
+        return NextResponse.json(data, {
+            headers: {
+                'Cache-Control': 'public, max-age=3, stale-while-revalidate=5',
+            },
+        });
     } catch (error) {
         console.error('Error fetching runner profile:', error);
         return NextResponse.json(

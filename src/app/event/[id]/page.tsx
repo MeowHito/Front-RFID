@@ -131,12 +131,6 @@ interface CheckpointMapping {
     } | string;
 }
 
-interface RunnerCameraHit {
-    recording?: {
-        _id?: string;
-    } | null;
-}
-
 // Resolved checkpoint distance info per event
 interface CheckpointDistanceLookup {
     [eventId: string]: {
@@ -273,11 +267,9 @@ export default function EventLivePage() {
     const [checkpointMappings, setCheckpointMappings] = useState<CheckpointMapping[]>([]);
     const [totalDistance, setTotalDistance] = useState<number>(0);
     const [cpDistanceLookup, setCpDistanceLookup] = useState<CheckpointDistanceLookup>({});
-    const [runnerCameraAvailability, setRunnerCameraAvailability] = useState<Record<string, boolean>>({});
     const [followedRunners, setFollowedRunners] = useState<FollowedRunner[]>([]);
     const [rankDeltas, setRankDeltas] = useState<Map<string, number>>(new Map());
     const prevRanksRef = useRef<Map<string, number>>(new Map());
-    const runnerCameraRequestKeyRef = useRef<Map<string, string>>(new Map());
 
     // Admin status edit modal
     const [editingRunner, setEditingRunner] = useState<Runner | null>(null);
@@ -351,11 +343,6 @@ export default function EventLivePage() {
         setFollowedRunners(loadFollowedRunners());
         return subscribeFollowedRunners(setFollowedRunners);
     }, []);
-
-    useEffect(() => {
-        setRunnerCameraAvailability({});
-        runnerCameraRequestKeyRef.current = new Map();
-    }, [campaign?._id]);
 
     // Detect mobile viewport
     useEffect(() => {
@@ -722,66 +709,7 @@ export default function EventLivePage() {
         return ranks;
     }, [filteredRunners, resolveRunnerCategoryKey]);
 
-    useEffect(() => {
-        if (filteredRunners.length === 0) return;
 
-        let cancelled = false;
-        const runnersToLoad = filteredRunners.filter((runner) => {
-            if (!runner._id) return false;
-            if (!runner.scanTime && !runner.latestCheckpoint && !runner.statusCheckpoint) return false;
-
-            const requestKey = [runner.latestCheckpoint || '', runner.statusCheckpoint || '', runner.scanTime || ''].join('|');
-            if (runnerCameraRequestKeyRef.current.get(runner._id) === requestKey) return false;
-            runnerCameraRequestKeyRef.current.set(runner._id, requestKey);
-            return true;
-        });
-
-        if (runnersToLoad.length === 0) return;
-
-        (async () => {
-            const updates = await Promise.all(runnersToLoad.map(async (runner) => {
-                try {
-                    const res = await fetch(`/api/runner/${runner._id}/cctv`, { cache: 'no-store' });
-                    const payload = await res.json().catch(() => ({}));
-                    const hits: RunnerCameraHit[] = payload?.status?.code === '200' && Array.isArray(payload?.data?.hits)
-                        ? payload.data.hits
-                        : [];
-
-                    return {
-                        runnerId: runner._id,
-                        hasVideo: hits.some((hit) => Boolean(hit?.recording?._id)),
-                        shouldRetry: false,
-                    };
-                } catch {
-                    return {
-                        runnerId: runner._id,
-                        hasVideo: false,
-                        shouldRetry: true,
-                    };
-                }
-            }));
-
-            if (cancelled) return;
-
-            updates.forEach((update) => {
-                if (update.shouldRetry) {
-                    runnerCameraRequestKeyRef.current.delete(update.runnerId);
-                }
-            });
-
-            setRunnerCameraAvailability((prev) => {
-                const next = { ...prev };
-                updates.forEach((update) => {
-                    next[update.runnerId] = update.hasVideo;
-                });
-                return next;
-            });
-        })();
-
-        return () => {
-            cancelled = true;
-        };
-    }, [filteredRunners]);
 
     const handleViewRunner = (runner: Runner) => {
         router.push(`/runner/${runner._id}`);
@@ -1181,7 +1109,7 @@ export default function EventLivePage() {
                                     const displayName = language === 'th' && runner.firstNameTh
                                         ? `${runner.firstNameTh} ${runner.lastNameTh || ''}`
                                         : `${runner.firstName} ${runner.lastName}`;
-                                    const hasRunnerVideo = runnerCameraAvailability[runner._id] === true;
+
                                     const isFollowedRunner = isRunnerFollowed(followedRunnersForEvent, runner._id);
                                     const initials = getInitials(runner.firstName, runner.lastName);
                                     const avatarBg = getAvatarColor(runner.firstName + runner.lastName);
@@ -1337,11 +1265,7 @@ export default function EventLivePage() {
                                                                 <span style={{ display: 'inline-block', padding: isMobile ? '1px 4px' : '2px 8px', borderRadius: 3, fontWeight: 700, fontSize: isMobile ? 8 : 10, color: '#fff', background: getStatusBgColor(runner.status), lineHeight: 1.3 }}>
                                                                     {getStatusLabel(runner.status)}
                                                                 </span>
-                                                                {hasRunnerVideo && (
-                                                                    <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: isMobile ? 12 : 14, height: isMobile ? 12 : 14, flexShrink: 0 }} title={language === 'th' ? 'มีวิดีโอ CCTV' : 'CCTV video available'}>
-                                                                        <Image src="/Camera.png" alt="Camera" width={isMobile ? 12 : 14} height={isMobile ? 12 : 14} style={{ width: isMobile ? 12 : 14, height: isMobile ? 12 : 14, objectFit: 'contain', display: 'block' }} />
-                                                                    </span>
-                                                                )}
+
                                                                 {isFollowedRunner && (
                                                                     <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: isMobile ? 16 : 18, height: isMobile ? 16 : 18, borderRadius: 999, border: `1px solid ${isDark ? '#fda4af' : '#fecdd3'}`, background: isDark ? 'rgba(225,29,72,0.18)' : '#fff1f2', flexShrink: 0 }} title={language === 'th' ? 'กำลังติดตามนักกีฬา' : 'Following runner'}>
                                                                         <FollowHeartIcon filled={true} size={isMobile ? 9 : 10} color="#e11d48" />
