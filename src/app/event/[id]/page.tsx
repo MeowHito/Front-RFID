@@ -289,26 +289,69 @@ export default function EventLivePage() {
 
     const toApiData = (payload: any) => payload?.data ?? payload;
 
-    // Compute rank deltas: compare current overallRank vs previous refresh
-    // Deltas are "sticky" — once set, they persist and don't get overwritten
+    // Compute rank deltas: compare current overall rank vs previous refresh
+    // Deltas are truly persistent — they stay until rank changes again
     function updateRankDeltas(newRunners: Runner[]) {
-        const prev = prevRanksRef.current;
-        const newRanksMap = new Map<string, number>();
-        const newDeltas = new Map<string, number>(rankDeltas); // preserve existing deltas
-        newRunners.forEach(r => {
-            if (r.bib && r.overallRank && r.overallRank > 0) {
-                newRanksMap.set(r.bib, r.overallRank);
-                if (!newDeltas.has(r.bib)) {
-                    const prevRank = prev.get(r.bib);
-                    if (prevRank !== undefined && prevRank > 0) {
-                        const delta = prevRank - r.overallRank;
-                        if (delta !== 0) newDeltas.set(r.bib, delta);
-                    }
+        // Compute live overall rank from runners (same sort logic as filteredRunners but unfiltered)
+        const ranked = [...newRunners]
+            .filter(r => {
+                // Only rank active runners (finished, in_progress, or DNF with progress)
+                if (r.status === 'not_started' || r.status === 'dns' || r.status === 'dq') return false;
+                if (r.status === 'dnf' && !((r.passedCount ?? 0) > 0)) return false;
+                return true;
+            })
+            .sort((a, b) => {
+                const statusOrder: Record<string, number> = { 'finished': 0, 'in_progress': 1, 'dnf': 2 };
+                const statusDiff = (statusOrder[a.status] ?? 3) - (statusOrder[b.status] ?? 3);
+                if (statusDiff !== 0) return statusDiff;
+                if (a.status === 'finished' && b.status === 'finished') {
+                    const aNet = a.netTime || a.gunTime || 0;
+                    const bNet = b.netTime || b.gunTime || 0;
+                    if (aNet > 0 && bNet > 0) return aNet - bNet;
+                    if (aNet > 0 && bNet <= 0) return -1;
+                    if (aNet <= 0 && bNet > 0) return 1;
+                    return 0;
                 }
-            }
+                if (a.status === 'in_progress' && b.status === 'in_progress') {
+                    const aPassed = a.passedCount ?? 0;
+                    const bPassed = b.passedCount ?? 0;
+                    if (aPassed !== bPassed) return bPassed - aPassed;
+                    const aTime = a.netTime || a.gunTime || a.elapsedTime || 0;
+                    const bTime = b.netTime || b.gunTime || b.elapsedTime || 0;
+                    if (aTime > 0 && bTime > 0) return aTime - bTime;
+                    if (aTime > 0 && bTime <= 0) return -1;
+                    if (aTime <= 0 && bTime > 0) return 1;
+                }
+                return (a.bib || '').localeCompare(b.bib || '', undefined, { numeric: true });
+            });
+
+        // Build current rank map (bib → position)
+        const currentRanks = new Map<string, number>();
+        ranked.forEach((r, idx) => {
+            if (r.bib) currentRanks.set(r.bib, idx + 1);
         });
-        prevRanksRef.current = newRanksMap;
-        setRankDeltas(newDeltas);
+
+        const prev = prevRanksRef.current;
+        if (prev.size > 0) {
+            // Compare with previous ranks — update deltas
+            setRankDeltas(existing => {
+                const updated = new Map<string, number>(existing);
+                currentRanks.forEach((currentRank, bib) => {
+                    const prevRank = prev.get(bib);
+                    if (prevRank !== undefined && prevRank > 0) {
+                        const delta = prevRank - currentRank;
+                        if (delta !== 0) {
+                            // Rank changed → update delta
+                            updated.set(bib, delta);
+                        }
+                        // If delta === 0 (rank same as prev), keep the EXISTING delta
+                        // This makes the arrow persist until rank changes again
+                    }
+                });
+                return updated;
+            });
+        }
+        prevRanksRef.current = currentRanks;
     }
 
     // Derive effective status from actual RaceTiger timing data

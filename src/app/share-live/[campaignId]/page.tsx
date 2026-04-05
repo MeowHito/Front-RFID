@@ -170,30 +170,49 @@ export default function ShareLiveMonitorPage() {
             if (!res.ok) throw new Error();
             const data = await res.json();
             const newRunners = Array.isArray(data) ? dedupeRunners(data) : [];
-            // Compute rank deltas: compare current overallRank vs previous refresh
-            // Deltas are "sticky" — once set, they persist and don't get overwritten
-            const prev = prevRanksRef.current;
-            const newRanksMap = new Map<string, number>();
-            newRunners.forEach(r => {
-                if (r.bib && r.overallRank && r.overallRank > 0) {
-                    newRanksMap.set(r.bib, r.overallRank);
-                }
-            });
-            setRankDeltas(existing => {
-                const merged = new Map<string, number>(existing);
-                newRunners.forEach(r => {
-                    if (r.bib && r.overallRank && r.overallRank > 0 && !merged.has(r.bib)) {
-                        const prevRank = prev.get(r.bib);
-                        if (prevRank !== undefined && prevRank > 0) {
-                            const delta = prevRank - r.overallRank;
-                            if (delta !== 0) merged.set(r.bib, delta);
-                        }
-                    }
+
+            // Compute live ranks from runners sorted by netTime (fastest first)
+            const rankedRunners = newRunners
+                .filter(r => !!r.scanTime && !['dnf', 'dns', 'dq'].includes((r.status || '').toLowerCase()))
+                .sort((a, b) => {
+                    const aTime = a.netTime || a.elapsedTime || a.gunTime || 0;
+                    const bTime = b.netTime || b.elapsedTime || b.gunTime || 0;
+                    if (aTime > 0 && bTime > 0) return aTime - bTime;
+                    if (aTime > 0 && bTime <= 0) return -1;
+                    if (aTime <= 0 && bTime > 0) return 1;
+                    return new Date(a.scanTime || 0).getTime() - new Date(b.scanTime || 0).getTime();
                 });
-                return merged;
+            const currentRanks = new Map<string, number>();
+            rankedRunners.forEach((r, idx) => {
+                if (r.bib) currentRanks.set(r.bib, idx + 1);
             });
-            prevRanksRef.current = newRanksMap;
-            setRunners(newRunners);
+
+            // Update rank deltas — persistent until rank changes again
+            const prev = prevRanksRef.current;
+            if (prev.size > 0) {
+                setRankDeltas(existing => {
+                    const updated = new Map<string, number>(existing);
+                    currentRanks.forEach((currentRank, bib) => {
+                        const prevRank = prev.get(bib);
+                        if (prevRank !== undefined && prevRank > 0) {
+                            const delta = prevRank - currentRank;
+                            if (delta !== 0) {
+                                updated.set(bib, delta);
+                            }
+                            // delta === 0 → keep existing delta (persistent)
+                        }
+                    });
+                    return updated;
+                });
+            }
+            prevRanksRef.current = currentRanks;
+
+            // Inject live rank into runners for display
+            const runnersWithLiveRank = newRunners.map(r => ({
+                ...r,
+                overallRank: currentRanks.get(r.bib) || r.overallRank || 0,
+            }));
+            setRunners(runnersWithLiveRank);
         } catch { setRunners([]); }
         finally { setDataLoading(false); setLastRefresh(new Date()); }
     }, [campaignId, selectedCp]);

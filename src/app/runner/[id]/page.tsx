@@ -391,16 +391,35 @@ export default function RunnerProfilePage() {
     const statusInfo = getStatusLabel(runner.status);
     const genderLabel = runner.gender === 'M' ? 'Male' : runner.gender === 'F' ? 'Female' : runner.gender;
     const distanceVal = parseDistanceValue(runner.category);
-    const finishTime = runner.netTime || runner.gunTime || runner.elapsedTime;
-    const finishTimeStr = runner.netTimeStr || runner.gunTimeStr || formatTime(finishTime);
-    const pace = runner.netPace || runner.gunPace || '-';
     const displayName = `${runner.firstName} ${runner.lastName}`.trim();
     const initials = ((runner.firstName?.[0] || '') + (runner.lastName?.[0] || '')).toUpperCase() || '?';
 
     const isFinished = runner.status === 'finished';
 
-    // Sort timings by order
+    // Sort timings by order (needed below for fallback computations)
     const sortedTimings = [...timings].sort((a, b) => (a.order || 0) - (b.order || 0));
+
+    // Derive stat values: use runner document fields, fallback to timing records
+    const finishTiming = sortedTimings.find(t => t.checkpoint?.toLowerCase().includes('finish'));
+    const lastTiming = sortedTimings.length > 0 ? sortedTimings[sortedTimings.length - 1] : null;
+
+    // Finish time: prefer runner fields, fallback to FINISH checkpoint timing
+    const finishTime = runner.netTime || runner.gunTime || runner.elapsedTime
+        || (finishTiming?.netTime || finishTiming?.elapsedTime || finishTiming?.gunTime)
+        || (isFinished && lastTiming ? (lastTiming.netTime || lastTiming.elapsedTime || lastTiming.gunTime) : undefined);
+    const finishTimeStr = runner.netTimeStr || runner.gunTimeStr || formatTime(finishTime);
+    const pace = runner.netPace || runner.gunPace || '-';
+
+    // Overall rank: prefer runner field, fallback to FINISH checkpoint rank
+    const overallRank = runner.overallRank
+        || (finishTiming ? checkpointRanks[finishTiming.checkpoint] : undefined)
+        || (isFinished && lastTiming ? checkpointRanks[lastTiming.checkpoint] : undefined)
+        || 0;
+
+    // Gender/Category rank: use runner fields (no per-checkpoint gender rank available)
+    const genderRank = runner.genderRank || runner.genderNetRank || 0;
+    const categoryRank = runner.categoryRank || runner.categoryNetRank || 0;
+
     const runnerHitMap = new Map(runnerHits.map(hit => [normalizeCheckpoint(hit.checkpoint), hit]));
     const availableVideoCount = runnerHits.filter(hit => hit.recording).length;
     const isFollowedRunner = isRunnerFollowed(followedRunners, runner._id);
@@ -674,15 +693,15 @@ export default function RunnerProfilePage() {
                 <div className="runner-stats-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10, marginBottom: 16 }}>
                     <div className="runner-stat-card" style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, padding: 12 }}>
                         <p className="runner-stat-label" style={{ fontSize: 9, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', marginBottom: 2 }}>Overall Rank</p>
-                        <p className="runner-stat-value" style={{ fontSize: 20, fontWeight: 900, color: '#0f172a', margin: 0 }}>{runner.overallRank || '-'} {runner.totalFinishers ? <small style={{ fontSize: 11, color: '#94a3b8', fontWeight: 700 }}>/ {runner.totalFinishers}</small> : null}</p>
+                        <p className="runner-stat-value" style={{ fontSize: 20, fontWeight: 900, color: '#0f172a', margin: 0 }}>{overallRank || '-'} {runner.totalFinishers ? <small style={{ fontSize: 11, color: '#94a3b8', fontWeight: 700 }}>/ {runner.totalFinishers}</small> : null}</p>
                     </div>
                     <div className="runner-stat-card" style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, padding: 12 }}>
                         <p className="runner-stat-label" style={{ fontSize: 9, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', marginBottom: 2 }}>Gender Rank</p>
-                        <p className="runner-stat-value" style={{ fontSize: 20, fontWeight: 900, color: '#0f172a', margin: 0 }}>{runner.genderRank || runner.genderNetRank || '-'} {runner.genderFinishers ? <small style={{ fontSize: 11, color: '#94a3b8', fontWeight: 700 }}>/ {runner.genderFinishers}</small> : null}</p>
+                        <p className="runner-stat-value" style={{ fontSize: 20, fontWeight: 900, color: '#0f172a', margin: 0 }}>{genderRank || '-'} {runner.genderFinishers ? <small style={{ fontSize: 11, color: '#94a3b8', fontWeight: 700 }}>/ {runner.genderFinishers}</small> : null}</p>
                     </div>
                     <div className="runner-stat-card" style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, padding: 12 }}>
                         <p className="runner-stat-label" style={{ fontSize: 9, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', marginBottom: 2 }}>Category Rank</p>
-                        <p className="runner-stat-value" style={{ fontSize: 20, fontWeight: 900, color: '#0f172a', margin: 0 }}>{runner.categoryRank || runner.categoryNetRank || '-'}</p>
+                        <p className="runner-stat-value" style={{ fontSize: 20, fontWeight: 900, color: '#0f172a', margin: 0 }}>{categoryRank || '-'}</p>
                     </div>
                     <div className="runner-stat-card" style={{ background: isFinished ? '#f0fdf4' : '#fff', border: `1px solid ${isFinished ? '#bbf7d0' : '#e2e8f0'}`, borderRadius: 12, padding: 12 }}>
                         <p className="runner-stat-label" style={{ fontSize: 9, fontWeight: 700, color: isFinished ? '#16a34a' : '#94a3b8', textTransform: 'uppercase', marginBottom: 2 }}>{isFinished ? 'Finish Time' : 'Elapsed'}</p>
