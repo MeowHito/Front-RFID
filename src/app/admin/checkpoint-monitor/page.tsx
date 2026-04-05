@@ -181,6 +181,31 @@ export default function CheckpointMonitorPage() {
     }, [campaign?._id]);
 
     // Fetch runners who arrived at selected checkpoint (via timing records)
+    // Compute live ranks from runners sorted by netTime (fastest first)
+    // This works even when runner.overallRank from DB is 0 (common during live races)
+    const computeLiveRanks = useCallback((runnerList: RunnerAtCheckpoint[]): Map<string, number> => {
+        const rankMap = new Map<string, number>();
+        // Only rank runners who actually passed this checkpoint (have scanTime)
+        const rankedRunners = runnerList
+            .filter(r => {
+                const status = normalizeRunnerStatus(r.status);
+                return !!r.scanTime && !['dnf', 'dns', 'dq'].includes(status);
+            })
+            .sort((a, b) => {
+                const aTime = a.netTime || a.elapsedTime || a.gunTime || 0;
+                const bTime = b.netTime || b.elapsedTime || b.gunTime || 0;
+                if (aTime > 0 && bTime > 0) return aTime - bTime;
+                if (aTime > 0 && bTime <= 0) return -1;
+                if (aTime <= 0 && bTime > 0) return 1;
+                // Fallback to scanTime (arrival order)
+                return new Date(a.scanTime || 0).getTime() - new Date(b.scanTime || 0).getTime();
+            });
+        rankedRunners.forEach((r, idx) => {
+            if (r.bib) rankMap.set(r.bib, idx + 1);
+        });
+        return rankMap;
+    }, []);
+
     const fetchRunners = useCallback(async () => {
         if (!campaign?._id || !selectedCp) return;
         setDataLoading(true);
@@ -189,38 +214,50 @@ export default function CheckpointMonitorPage() {
             if (!res.ok) throw new Error();
             const data = await res.json();
             const newRunners = Array.isArray(data) ? dedupeCheckpointRunners(data) : [];
-            // Compute rank deltas: compare current overallRank vs previous refresh
-            // Deltas are "sticky" — once set, they persist and don't get overwritten
+
+            // Compute live ranks based on fastest time at this checkpoint
+            const liveRanksMap = computeLiveRanks(newRunners);
+
+            // Inject live rank into runners
+            const runnersWithLiveRank = newRunners.map(r => ({
+                ...r,
+                overallRank: liveRanksMap.get(r.bib) || r.overallRank || 0,
+            }));
+
+            // Compute rank deltas: compare current vs previous refresh
             const prev = prevRanksRef.current;
-            const newRanksMap = new Map<string, number>();
-            newRunners.forEach(r => {
-                if (r.bib && r.overallRank && r.overallRank > 0) {
-                    newRanksMap.set(r.bib, r.overallRank);
-                }
-            });
-            setRankDeltas(existing => {
-                const merged = new Map<string, number>(existing);
-                newRunners.forEach(r => {
-                    if (r.bib && r.overallRank && r.overallRank > 0 && !merged.has(r.bib)) {
+            if (prev.size > 0) {
+                // Only compute deltas if we had previous data
+                const newDeltas = new Map<string, number>();
+                runnersWithLiveRank.forEach(r => {
+                    if (r.bib && r.overallRank > 0) {
                         const prevRank = prev.get(r.bib);
                         if (prevRank !== undefined && prevRank > 0) {
                             const delta = prevRank - r.overallRank;
-                            if (delta !== 0) merged.set(r.bib, delta);
+                            if (delta !== 0) newDeltas.set(r.bib, delta);
                         }
                     }
                 });
-                return merged;
-            });
-            prevRanksRef.current = newRanksMap;
-            setRunners(newRunners);
+                setRankDeltas(newDeltas);
+            }
+            // Save current ranks for next comparison
+            prevRanksRef.current = liveRanksMap;
+
+            setRunners(runnersWithLiveRank);
         } catch { setRunners([]); }
         finally {
             setDataLoading(false);
             setLastRefresh(new Date());
         }
-    }, [campaign?._id, selectedCp]);
+    }, [campaign?._id, selectedCp, computeLiveRanks]);
 
     useEffect(() => { if (campaign?._id && selectedCp) fetchRunners(); }, [campaign?._id, selectedCp, fetchRunners]);
+
+    // Reset rank deltas when checkpoint changes
+    useEffect(() => {
+        setRankDeltas(new Map());
+        prevRanksRef.current = new Map();
+    }, [selectedCp]);
 
     // Auto-refresh every 10s (always on)
     useEffect(() => {
