@@ -392,7 +392,6 @@ export default function RunnerProfilePage() {
     const genderLabel = runner.gender === 'M' ? 'Male' : runner.gender === 'F' ? 'Female' : runner.gender;
     const distanceVal = parseDistanceValue(runner.category);
     const displayName = `${runner.firstName} ${runner.lastName}`.trim();
-    const initials = ((runner.firstName?.[0] || '') + (runner.lastName?.[0] || '')).toUpperCase() || '?';
 
     const isFinished = runner.status === 'finished';
 
@@ -578,8 +577,9 @@ export default function RunnerProfilePage() {
                 @media (max-width: 640px) {
                     .runner-header { padding: 6px 10px !important; }
                     .runner-info-section { padding: 12px !important; gap: 12px !important; }
-                    .runner-avatar { width: 56px !important; height: 56px !important; font-size: 20px !important; border-radius: 12px !important; }
-                    .runner-bib-badge { font-size: 11px !important; padding: 1px 6px !important; bottom: -4px !important; right: -4px !important; }
+                    .runner-bib-panel { min-width: 84px !important; padding: 10px 12px !important; border-radius: 12px !important; }
+                    .runner-bib-label { font-size: 10px !important; }
+                    .runner-bib-value { font-size: 20px !important; }
                     .runner-stats-grid { gap: 8px !important; margin-bottom: 12px !important; }
                     .runner-stat-card { padding: 10px !important; border-radius: 10px !important; }
                     .runner-stat-value { font-size: 18px !important; }
@@ -587,7 +587,7 @@ export default function RunnerProfilePage() {
                     .runner-main { padding: 10px 10px 24px !important; }
                     .runner-progress-bar { padding: 14px !important; margin-bottom: 12px !important; }
                     .runner-cp-table-header { padding: 10px 14px !important; }
-                    .runner-actions { gap: 6px !important; }
+                    .runner-actions { gap: 6px !important; margin-left: auto !important; align-items: flex-end !important; width: 100% !important; }
                     .runner-action-btn { padding: 8px 14px !important; font-size: 12px !important; min-width: auto !important; min-height: 36px !important; border-radius: 10px !important; }
                     .runner-footer { padding: 16px !important; margin-top: 16px !important; }
                     .runner-modal-overlay { padding: 8px !important; }
@@ -628,11 +628,11 @@ export default function RunnerProfilePage() {
             <main className="runner-main" style={{ flex: '1 0 auto', width: '100%', maxWidth: 1120, margin: '0 auto', padding: '16px 16px 32px' }}>
                 {/* RUNNER INFO SECTION */}
                 <section className="runner-info-section" style={{ display: 'flex', flexWrap: 'wrap', gap: 16, alignItems: 'center', background: '#fff', padding: 20, borderRadius: 16, border: '1px solid #e2e8f0', boxShadow: '0 1px 3px rgba(0,0,0,0.04)', marginBottom: 16 }}>
-                    <div style={{ position: 'relative' }}>
-                        <div className="runner-avatar" style={{ width: 72, height: 72, borderRadius: 14, background: '#22c55e', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 26, fontWeight: 800, boxShadow: '0 4px 12px rgba(0,0,0,0.1)', border: '3px solid #fff' }}>
-                            {initials}
-                        </div>
-                        <span className="runner-bib-badge" style={{ position: 'absolute', bottom: -5, right: -5, background: '#0f172a', color: '#fff', padding: '1px 8px', borderRadius: 6, fontSize: 13, fontWeight: 800, border: '2px solid #fff', boxShadow: '0 0 0 1px #000, 0 4px 6px rgba(0,0,0,0.1)' }}>
+                    <div className="runner-bib-panel" style={{ minWidth: 96, alignSelf: 'stretch', display: 'flex', flexDirection: 'column', justifyContent: 'center', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 14, padding: '12px 14px' }}>
+                        <span className="runner-bib-label" style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#94a3b8', marginBottom: 4 }}>
+                            BIB Number
+                        </span>
+                        <span className="runner-bib-value" style={{ fontSize: 24, fontWeight: 900, color: '#0f172a', lineHeight: 1, fontFamily: 'monospace' }}>
                             {runner.bib}
                         </span>
                     </div>
@@ -655,7 +655,7 @@ export default function RunnerProfilePage() {
                         </div>
                     </div>
 
-                    <div className="runner-actions" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    <div className="runner-actions" style={{ display: 'flex', flexDirection: 'column', gap: 6, marginLeft: 'auto', alignItems: 'flex-end' }}>
                         <button
                             type="button"
                             onClick={handleToggleFollow}

@@ -194,8 +194,9 @@ const COL_DEFS: ColDef[] = [
     { key: 'progress', label: 'Progress', w: '8%', mw: '8%', align: 'right', fixed: true, desktopOnly: true },
 ];
 const TOGGLEABLE_KEYS = COL_DEFS.filter(c => !c.fixed).map(c => c.key);
+const MARATHON_PUBLIC_DEFAULT_KEYS = ['genRank', 'catRank', 'sex', 'gunTime', 'netTime', 'distFromStart'];
 // Default visible toggleable columns (only columns that typically have data from RaceTiger)
-const DEFAULT_VISIBLE_KEYS = ['genRank', 'catRank', 'sex', 'gunTime', 'netTime', 'netPace', 'splitTime', 'splitPace', 'distFromStart', 'legTime', 'legPace'];
+const DEFAULT_VISIBLE_KEYS = MARATHON_PUBLIC_DEFAULT_KEYS;
 
 // Lab (lap-based) column definitions
 const LAB_COL_DEFS: ColDef[] = [
@@ -214,19 +215,44 @@ const LAB_COL_DEFS: ColDef[] = [
 ];
 const LAB_TOGGLEABLE_KEYS = LAB_COL_DEFS.filter(c => !c.fixed).map(c => c.key);
 
-const AVATAR_COLORS = [
-    '#ef4444', '#f97316', '#eab308', '#22c55e', '#06b6d4',
-    '#3b82f6', '#8b5cf6', '#ec4899', '#f43f5e', '#14b8a6',
-];
-
-function getAvatarColor(name: string): string {
-    let hash = 0;
-    for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
-    return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
+function formatTime(ms: number | undefined | null): string {
+    if (ms === undefined || ms === null || ms < 0) return '-';
+    if (ms === 0) return '0:00:00';
+    const hours = Math.floor(ms / 3600000);
+    const minutes = Math.floor((ms % 3600000) / 60000);
+    const seconds = Math.floor((ms % 60000) / 1000);
+    return `${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
 }
 
-function getInitials(firstName: string, lastName: string): string {
-    return ((firstName?.[0] || '') + (lastName?.[0] || '')).toUpperCase() || '?';
+function formatDisplayTimeString(value?: string | null, showMilliseconds = false): string {
+    const trimmed = String(value || '').trim();
+    if (!trimmed) return '';
+    return showMilliseconds ? trimmed : trimmed.replace(/(\.\d{1,3})$/, '');
+}
+
+function formatStatusScanTime(dateString: string | undefined, showMilliseconds = false): string {
+    if (!dateString) return '';
+    const d = new Date(dateString);
+    if (Number.isNaN(d.getTime())) return '';
+    const baseTime = `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}:${d.getSeconds().toString().padStart(2, '0')}`;
+    return formatDisplayTimeString(`${baseTime}.${d.getMilliseconds().toString().padStart(3, '0')}`, showMilliseconds);
+}
+
+function formatDate(dateString: string, locale: string = 'en-US'): string {
+    const date = new Date(dateString);
+    return date.toLocaleDateString(locale, { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+function getStatusLabel(status: string): string {
+    switch (status) {
+        case 'finished': return 'FINISH';
+        case 'in_progress': return 'Running';
+        case 'dnf': return 'DNF';
+        case 'dns': return 'DNS';
+        case 'dq': return 'DQ';
+        case 'not_started': return 'DNS';
+        default: return status?.toUpperCase() || '-';
+    }
 }
 
 function FollowHeartIcon({ filled, size = 14, color }: { filled: boolean; size?: number; color: string }) {
@@ -240,12 +266,13 @@ function FollowHeartIcon({ filled, size = 14, color }: { filled: boolean; size?:
 export default function EventLivePage() {
     const { language } = useLanguage();
     const { theme } = useTheme();
-    const { isAdmin } = useAuth();
+    const { isAdmin, isAuthenticated } = useAuth();
     const params = useParams();
     const router = useRouter();
     const eventKey = params.id as string;
 
     const [campaign, setCampaign] = useState<Campaign | null>(null);
+    // ... (rest of the code remains the same)
     const [runners, setRunners] = useState<Runner[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -310,7 +337,7 @@ export default function EventLivePage() {
                     if (aNet > 0 && bNet > 0) return aNet - bNet;
                     if (aNet > 0 && bNet <= 0) return -1;
                     if (aNet <= 0 && bNet > 0) return 1;
-                    return 0;
+                    return compareStableBibOrder(a, b);
                 }
                 if (a.status === 'in_progress' && b.status === 'in_progress') {
                     const aPassed = a.passedCount ?? 0;
@@ -321,8 +348,9 @@ export default function EventLivePage() {
                     if (aTime > 0 && bTime > 0) return aTime - bTime;
                     if (aTime > 0 && bTime <= 0) return -1;
                     if (aTime <= 0 && bTime > 0) return 1;
+                    return compareStableBibOrder(a, b);
                 }
-                return (a.bib || '').localeCompare(b.bib || '', undefined, { numeric: true });
+                return compareStableBibOrder(a, b);
             });
 
         // Build current rank map (bib → position)
@@ -354,6 +382,15 @@ export default function EventLivePage() {
         prevRanksRef.current = currentRanks;
     }
 
+    function compareStableBibOrder(a: Runner, b: Runner) {
+        const aPrevRank = a.bib ? prevRanksRef.current.get(a.bib) : undefined;
+        const bPrevRank = b.bib ? prevRanksRef.current.get(b.bib) : undefined;
+        if (aPrevRank !== undefined && bPrevRank !== undefined && aPrevRank !== bPrevRank) {
+            return aPrevRank - bPrevRank;
+        }
+        return (a.bib || '').localeCompare(b.bib || '', undefined, { numeric: true });
+    }
+
     // Derive effective status from actual RaceTiger timing data
     function deriveEffectiveStatus(runner: Runner): Runner {
         // Preserve explicit statuses from backend (finished/dq/dnf/dns)
@@ -375,6 +412,54 @@ export default function EventLivePage() {
 
         // No timing data at all → keep original (not_started = DNS)
         return runner;
+    }
+
+    function isFinishCheckpointName(value?: string | null): boolean {
+        const upper = String(value || '').trim().toUpperCase();
+        return upper.includes('FINISH') || upper === 'FIN';
+    }
+
+    function resolveCheckpointMatch(eventId: string | undefined, checkpointName: string | undefined) {
+        const evLookup = eventId ? cpDistanceLookup[eventId] : null;
+        if (!evLookup || !checkpointName) return { key: '', order: 0 };
+        const rawKey = checkpointName.trim().toLowerCase();
+        if (evLookup.checkpoints[rawKey] !== undefined || evLookup.cpOrders[rawKey] !== undefined) {
+            return { key: rawKey, order: evLookup.cpOrders[rawKey] ?? 0 };
+        }
+        const normalized = normalizeComparableText(checkpointName);
+        if (!normalized) return { key: '', order: 0 };
+        for (const key of Object.keys(evLookup.cpOrders)) {
+            if (normalizeComparableText(key) === normalized) {
+                return { key, order: evLookup.cpOrders[key] ?? 0 };
+            }
+        }
+        return { key: '', order: 0 };
+    }
+
+    function getRunnerCheckpointMeta(runner: Runner) {
+        const evLookup = runner.eventId ? cpDistanceLookup[runner.eventId] : null;
+        const latestMatch = resolveCheckpointMatch(runner.eventId, runner.latestCheckpoint);
+        const splitMatch = resolveCheckpointMatch(runner.eventId, runner.splitDesc);
+        const latestOrder = latestMatch.order || 0;
+        const splitOrder = Math.max(splitMatch.order || 0, runner.splitNo || 0);
+        const useSplitCheckpoint = !!runner.splitDesc && splitOrder >= latestOrder;
+        const checkpointName = useSplitCheckpoint
+            ? (runner.splitDesc || runner.latestCheckpoint || runner.statusCheckpoint || '')
+            : (runner.latestCheckpoint || runner.splitDesc || runner.statusCheckpoint || '');
+        const checkpointKey = useSplitCheckpoint ? splitMatch.key : latestMatch.key;
+        const checkpointOrder = useSplitCheckpoint ? splitOrder : latestOrder;
+        const totalCheckpoints = evLookup?.totalCheckpoints || 0;
+        const completedCpCountRaw = (runner.passedCount ?? 0) > 0 ? (runner.passedCount ?? 0) : checkpointOrder;
+        const completedCpCount = totalCheckpoints > 0 ? Math.min(completedCpCountRaw, totalCheckpoints) : completedCpCountRaw;
+        return {
+            evLookup,
+            checkpointName,
+            checkpointKey,
+            checkpointOrder,
+            totalCheckpoints,
+            completedCpCount,
+            isFinishLike: runner.status === 'finished' || isFinishCheckpointName(checkpointName) || (checkpointKey ? isFinishCheckpointName(checkpointKey) : false),
+        };
     }
 
     useEffect(() => {
@@ -507,6 +592,14 @@ export default function EventLivePage() {
         return `${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
     }
 
+    function formatStatusScanTime(dateString: string | undefined): string {
+        if (!dateString) return '';
+        const d = new Date(dateString);
+        if (Number.isNaN(d.getTime())) return '';
+        const baseTime = `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}:${d.getSeconds().toString().padStart(2, '0')}`;
+        return isAdmin ? `${baseTime}.${d.getMilliseconds().toString().padStart(3, '0')}` : baseTime;
+    }
+
     function formatDate(dateString: string) {
         const date = new Date(dateString);
         return date.toLocaleDateString(language === 'th' ? 'th-TH' : 'en-US', { day: '2-digit', month: 'short', year: 'numeric' });
@@ -607,12 +700,18 @@ export default function EventLivePage() {
     const visibleColumns = useMemo(() => {
         const adminCols = isLabMode ? campaign?.displayColumnsLab : campaign?.displayColumns;
         const hasSavedAdminCols = Array.isArray(adminCols) && adminCols.length > 0;
+        const defaultToggleKeys = isLabMode ? activeToggleableKeys : DEFAULT_VISIBLE_KEYS;
+        const configuredToggleKeys = hasSavedAdminCols
+            ? adminCols.filter((key: string) => activeToggleableKeys.includes(key))
+            : defaultToggleKeys;
+        const publicToggleKeys = isLabMode ? configuredToggleKeys : MARATHON_PUBLIC_DEFAULT_KEYS;
+        const allowedToggleKeys = isAuthenticated ? configuredToggleKeys : publicToggleKeys;
         // Rebuild full column order from admin settings
         let fullOrder: string[];
-        if (hasSavedAdminCols) {
+        if (configuredToggleKeys.length > 0) {
             const toggleOrdered = [
-                ...adminCols.filter((k: string) => activeToggleableKeys.includes(k)),
-                ...activeToggleableKeys.filter(k => !adminCols.includes(k)),
+                ...configuredToggleKeys,
+                ...activeToggleableKeys.filter(k => !configuredToggleKeys.includes(k)),
             ];
             fullOrder = [];
             let tIdx = 0;
@@ -631,21 +730,19 @@ export default function EventLivePage() {
         return fullOrder.filter(key => {
             const def = activeColDefs.find(c => c.key === key)!;
             if (!def) return false;
-            if (def.desktopOnly && isMobile) return false;
+            if (key === 'progress' && !isAdmin) return false;
             if (def.fixed) return true;
+            if (!allowedToggleKeys.includes(key)) return false;
             if (!isLabMode) {
                 if (key === 'genRank' && !showGenRank) return false;
                 if (key === 'catRank' && !showCatRank) return false;
             }
-            if (hasSavedAdminCols && !adminCols.includes(key)) return false;
-            // When no admin columns configured, use sensible defaults instead of showing all 30+ columns
-            if (!hasSavedAdminCols && !DEFAULT_VISIBLE_KEYS.includes(key)) return false;
             if (isMobile && !showAllColumns) {
                 return isLabMode ? ['laps'].includes(key) : ['gunTime'].includes(key);
             }
             return true;
         });
-    }, [isMobile, showAllColumns, campaign?.displayColumns, campaign?.displayColumnsLab, campaign?.displayMode, showGenRank, showCatRank, isLabMode, activeColDefs, activeToggleableKeys]);
+    }, [isAdmin, isAuthenticated, isMobile, showAllColumns, campaign?.displayColumns, campaign?.displayColumnsLab, campaign?.displayMode, showGenRank, showCatRank, isLabMode, activeColDefs, activeToggleableKeys]);
 
     // Compute median finish time per category for real progress estimation
     const categoryMedianTime = useMemo(() => {
@@ -710,7 +807,7 @@ export default function EventLivePage() {
                     if (aNet > 0 && bNet > 0) return aNet - bNet;
                     if (aNet > 0 && bNet <= 0) return -1;
                     if (aNet <= 0 && bNet > 0) return 1;
-                    return 0;
+                    return compareStableBibOrder(a, b);
                 }
 
                 // Within in_progress group: sort by checkpoint closest to finish DESC, then fastest time ASC
@@ -725,10 +822,11 @@ export default function EventLivePage() {
                     if (aTime > 0 && bTime > 0) return aTime - bTime;
                     if (aTime > 0 && bTime <= 0) return -1;
                     if (aTime <= 0 && bTime > 0) return 1;
+                    return compareStableBibOrder(a, b);
                 }
 
                 // Fallback: by BIB
-                return (a.bib || '').localeCompare(b.bib || '', undefined, { numeric: true });
+                return compareStableBibOrder(a, b);
             });
     }, [runners, searchQuery, filterGender, followedRunnerIds, filterCategory, filterStatus, resolveRunnerCategoryKey]);
 
@@ -1064,11 +1162,11 @@ export default function EventLivePage() {
                                     style={{
                                         padding: '4px 10px', fontSize: 10, fontWeight: 700, borderRadius: 6, border: 'none', cursor: 'pointer', transition: 'all 0.2s', whiteSpace: 'nowrap',
                                         ...(filterGender === g
-                                            ? { background: g === 'FOLLOWED' ? '#e11d48' : '#22c55e', color: '#fff' }
+                                            ? { background: g === 'FOLLOWED' ? (isDark ? 'rgba(225,29,72,0.18)' : '#fff1f2') : '#22c55e', color: g === 'FOLLOWED' ? '#e11d48' : '#fff' }
                                             : { background: 'transparent', color: themeStyles.textMuted })
                                     }}
                                 >
-                                    {g === 'FOLLOWED' ? <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}><FollowHeartIcon filled={filterGender === g} size={12} color={filterGender === g ? '#fff' : '#e11d48'} /></span> : g === 'ALL' ? (language === 'th' ? 'ทั้งหมด' : 'All') : g === 'M' ? (language === 'th' ? 'ชาย' : 'Male') : (language === 'th' ? 'หญิง' : 'Female')}
+                                    {g === 'FOLLOWED' ? <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}><FollowHeartIcon filled={filterGender === g} size={12} color="#e11d48" /></span> : g === 'ALL' ? (language === 'th' ? 'ทั้งหมด' : 'All') : g === 'M' ? (language === 'th' ? 'ชาย' : 'Male') : (language === 'th' ? 'หญิง' : 'Female')}
                                 </button>
                             ))}
                         </div>
@@ -1089,11 +1187,11 @@ export default function EventLivePage() {
                                     style={{
                                         padding: '4px 12px', fontSize: 10, fontWeight: 700, borderRadius: 6, border: 'none', cursor: 'pointer', transition: 'all 0.2s', whiteSpace: 'nowrap',
                                         ...(filterGender === g
-                                            ? { background: g === 'FOLLOWED' ? '#e11d48' : '#22c55e', color: '#fff' }
+                                            ? { background: g === 'FOLLOWED' ? (isDark ? 'rgba(225,29,72,0.18)' : '#fff1f2') : '#22c55e', color: g === 'FOLLOWED' ? '#e11d48' : '#fff' }
                                             : { background: 'transparent', color: themeStyles.textMuted })
                                     }}
                                 >
-                                    {g === 'FOLLOWED' ? <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}><FollowHeartIcon filled={filterGender === g} size={12} color={filterGender === g ? '#fff' : '#e11d48'} /></span> : g === 'ALL' ? (language === 'th' ? 'ทั้งหมด' : 'All') : g === 'M' ? (language === 'th' ? 'ชาย' : 'Male') : (language === 'th' ? 'หญิง' : 'Female')}
+                                    {g === 'FOLLOWED' ? <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}><FollowHeartIcon filled={filterGender === g} size={12} color="#e11d48" /></span> : g === 'ALL' ? (language === 'th' ? 'ทั้งหมด' : 'All') : g === 'M' ? (language === 'th' ? 'ชาย' : 'Male') : (language === 'th' ? 'หญิง' : 'Female')}
                                 </button>
                             ))}
                         </div>
@@ -1163,40 +1261,30 @@ export default function EventLivePage() {
                             ) : (
                                 filteredRunners.map((runner, idx) => {
                                     const rank = idx + 1;
-                                    const displayName = language === 'th' && runner.firstNameTh
-                                        ? `${runner.firstNameTh} ${runner.lastNameTh || ''}`
-                                        : `${runner.firstName} ${runner.lastName}`;
-
                                     const isFollowedRunner = isRunnerFollowed(followedRunnersForEvent, runner._id);
-                                    const initials = getInitials(runner.firstName, runner.lastName);
-                                    const avatarBg = getAvatarColor(runner.firstName + runner.lastName);
+                                    const checkpointMeta = getRunnerCheckpointMeta(runner);
+                                    const statusCheckpointName = checkpointMeta.checkpointName;
+                                    const checkpointKey = checkpointMeta.checkpointKey;
+                                    const checkpointOrder = checkpointMeta.checkpointOrder;
+                                    const totalCps = checkpointMeta.totalCheckpoints;
+                                    const completedCpCount = checkpointMeta.completedCpCount;
                                     // Calculate progress % based on RaceTiger checkpoint data
                                     let progressPct = 0;
                                     let progressDistKm = 0;
                                     let eventTotalKm = 0;
                                     let progressLabel = '';
-                                    const isFinishCp = (runner.latestCheckpoint || '').toUpperCase().includes('FINISH') || (runner.latestCheckpoint || '').toUpperCase() === 'FIN';
+                                    const isFinishCp = checkpointMeta.isFinishLike;
                                     if (runner.status === 'finished' || isFinishCp) {
                                         progressPct = 100;
+                                        if (totalCps > 0 && completedCpCount > 0) {
+                                            progressLabel = `${completedCpCount}/${totalCps} CP`;
+                                        }
                                     } else {
                                         // Calculate progress for ALL non-finished statuses
-                                        const evLookup = runner.eventId ? cpDistanceLookup[runner.eventId] : null;
-                                        const totalCps = evLookup?.totalCheckpoints || 0;
+                                        const evLookup = checkpointMeta.evLookup;
 
                                         // Helper: try matching latestCheckpoint name to checkpoint mappings (exact + normalized)
-                                        const cpKey = runner.latestCheckpoint?.trim().toLowerCase() || '';
-                                        const cpKeyNorm = normalizeComparableText(runner.latestCheckpoint);
-                                        let matchedCpKey = '';
-                                        if (cpKey && evLookup) {
-                                            if (evLookup.checkpoints[cpKey] !== undefined) {
-                                                matchedCpKey = cpKey;
-                                            } else if (cpKeyNorm) {
-                                                // Fuzzy match: compare normalized names
-                                                for (const k of Object.keys(evLookup.checkpoints)) {
-                                                    if (normalizeComparableText(k) === cpKeyNorm) { matchedCpKey = k; break; }
-                                                }
-                                            }
-                                        }
+                                        const matchedCpKey = checkpointKey;
 
                                         // Method 1: passedCount / totalCheckpoints (from RaceTiger sync)
                                         if ((runner.passedCount ?? 0) > 0 && totalCps > 0) {
@@ -1217,8 +1305,8 @@ export default function EventLivePage() {
                                         }
 
                                         // Method 2.5: order-based from checkpoint mapping (fallback when distance is 0)
-                                        if (progressPct === 0 && evLookup && matchedCpKey && totalCps > 0) {
-                                            const cpOrder = evLookup.cpOrders[matchedCpKey] ?? 0;
+                                        if (progressPct === 0 && totalCps > 0 && checkpointOrder > 0) {
+                                            const cpOrder = Math.min(checkpointOrder, totalCps);
                                             if (cpOrder > 0) {
                                                 progressPct = Math.min(99, Math.round((cpOrder / totalCps) * 100));
                                                 progressLabel = `${cpOrder}/${totalCps} CP`;
@@ -1232,7 +1320,7 @@ export default function EventLivePage() {
                                             if (elapsed > 0 && median > 0) {
                                                 const maxPct = runner.status === 'dnf' ? 90 : runner.status === 'dns' ? 0 : 95;
                                                 progressPct = Math.min(maxPct, Math.round((elapsed / median) * 100));
-                                            } else if (runner.latestCheckpoint) {
+                                            } else if (statusCheckpointName) {
                                                 progressPct = runner.status === 'in_progress' ? 50 : 40;
                                             } else if (runner.isStarted || runner.status === 'in_progress') {
                                                 progressPct = 5;
@@ -1240,12 +1328,9 @@ export default function EventLivePage() {
                                         }
                                     }
 
-                                    const statusCheckpointName = runner.statusCheckpoint || runner.latestCheckpoint || '';
+                                    const showProgressAlert = progressPct >= 100 && totalCps > 0 && completedCpCount > 0 && completedCpCount < totalCps;
                                     const statusScanTimeLabel = !isRaceFinished && runner.scanTime
-                                        ? (() => {
-                                            const d = new Date(runner.scanTime!);
-                                            return `${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')}:${d.getSeconds().toString().padStart(2,'0')}.${d.getMilliseconds().toString().padStart(3,'0')}`;
-                                        })()
+                                        ? formatStatusScanTime(runner.scanTime)
                                         : '';
 
                                     // Render cell content per column key
@@ -1282,85 +1367,88 @@ export default function EventLivePage() {
                                             case 'runner':
                                                 return (
                                                     <td key={key} style={{ padding: isMobile ? '4px 4px' : '6px 8px', overflow: 'hidden' }}>
-                                                        <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 6 : 10 }}>
-                                                            {!isMobile && (
-                                                                <div style={{ position: 'relative', flexShrink: 0 }}>
-                                                                    <div style={{ width: 32, height: 32, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 700, fontSize: 12, background: avatarBg }}>
-                                                                        {initials}
-                                                                    </div>
-                                                                    {runner.status === 'in_progress' && (
-                                                                        <span className="live-dot" style={{ background: '#22c55e', position: 'absolute', bottom: -1, right: -1 }} />
-                                                                    )}
-                                                                </div>
-                                                            )}
-                                                            <div style={{ overflow: 'hidden' }}>
-                                                                <span style={{ display: 'block', fontWeight: 700, fontSize: isMobile ? 11 : 13, color: themeStyles.text, lineHeight: 1, textTransform: 'uppercase', marginBottom: 3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                                                    {displayName.trim()}
+                                                        <div style={{ overflow: 'hidden', display: 'grid', gridTemplateRows: 'auto auto', rowGap: 3, minHeight: isMobile ? 28 : 32 }}>
+                                                            <span style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 4 : 6, minWidth: 0 }}>
+                                                                <span style={{ display: 'block', minWidth: 0, flex: '1 1 auto', fontWeight: 700, fontSize: isMobile ? 11 : 13, color: themeStyles.text, lineHeight: 1.15, textTransform: 'uppercase', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                                                    {runner.firstName} {runner.lastName}
                                                                 </span>
-                                                                <span style={{ fontSize: isMobile ? 9 : 10, color: themeStyles.textSecondary, fontWeight: 500, display: 'flex', alignItems: 'center', gap: isMobile ? 4 : 6, whiteSpace: 'nowrap' }}>
-                                                                    <span style={{ background: '#dc2626', color: '#fff', padding: '1px 6px', borderRadius: 4, fontSize: isMobile ? 9 : 10, fontWeight: 800, letterSpacing: '0.05em', border: '1px solid #dc2626' }}>
-                                                                        {runner.bib}
-                                                                    </span>
-                                                                    {(() => { const d = rankDeltas.get(runner.bib); if (!d) return null; return <span style={{ fontSize: isMobile ? 8 : 9, fontWeight: 800, color: d > 0 ? '#16a34a' : '#dc2626' }}>{d > 0 ? `▲${d}` : `▼${Math.abs(d)}`}</span>; })()}
-                                                                    {runner.nationality ? `${runner.nationality} | ` : ''}{runner.ageGroup || runner.category}
+                                                                {runner.status === 'in_progress' && (
+                                                                    <span className="live-dot" style={{ background: '#22c55e', position: 'static', flexShrink: 0 }} />
+                                                                )}
+                                                            </span>
+                                                            <span style={{ fontSize: isMobile ? 9 : 10, color: themeStyles.textSecondary, fontWeight: 500, lineHeight: 1.15, display: 'flex', alignItems: 'center', gap: isMobile ? 4 : 6, whiteSpace: 'nowrap' }}>
+                                                                <span style={{ background: '#666666', color: '#fff', padding: '1px 6px', borderRadius: 4, fontSize: isMobile ? 9 : 10, fontWeight: 800, letterSpacing: '0.05em', border: '0px solid #6b7280' }}>
+                                                                    BIB {runner.bib}
                                                                 </span>
-                                                            </div>
+                                                                {(() => { const d = rankDeltas.get(runner.bib); if (!d) return null; return <span style={{ fontSize: isMobile ? 8 : 9, fontWeight: 800, color: d > 0 ? '#16a34a' : '#dc2626' }}>{d > 0 ? `▲${d}` : `▼${Math.abs(d)}`}</span>; })()}
+                                                                {runner.nationality ? `${runner.nationality} | ` : ''}{runner.ageGroup || runner.category}
+                                                            </span>
                                                         </div>
                                                     </td>
                                                 );
                                             case 'sex':
                                                 return (
                                                     <td key={key} style={{ padding: '6px 6px', textAlign: 'center', fontSize: 22, fontWeight: 900, color: runner.gender === 'M' ? '#3b82f6' : '#ec4899' }}>
-    {runner.gender === 'F' ? '♀' : '♂'}
-</td>
+                                                        {runner.gender === 'F' ? '♀' : '♂'}
+                                                    </td>
                                                 );
-                                            case 'status':
+                                            case 'status': {
+                                                const showStatusBadge = !['finished', 'in_progress'].includes(runner.status);
+                                                const showFinishCheckpointBadge = !!statusCheckpointName && isFinishCp;
+                                                const showInProgressCheckpointBadge = !!statusCheckpointName && runner.status === 'in_progress' && !isFinishCp;
+                                                const showCheckpointChip = showFinishCheckpointBadge || showInProgressCheckpointBadge;
+                                                const statusNameColor = showFinishCheckpointBadge
+                                                    ? '#166534'
+                                                    : showInProgressCheckpointBadge
+                                                        ? '#92400e'
+                                                        : runner.statusCheckpoint ? '#dc2626' : themeStyles.text;
+                                                const statusTimeColor = runner.statusCheckpoint ? '#dc2626' : themeStyles.textSecondary;
                                                 return (
-                                                    <td key={key} style={{ padding: isMobile ? '4px 2px' : '6px 6px' }}>
-                                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6, minWidth: 0 }}>
-                                                            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 3, minWidth: 0, maxWidth: '100%', overflow: 'hidden' }}>
-                                                                <span style={{ display: 'inline-block', padding: isMobile ? '1px 4px' : '2px 8px', borderRadius: 3, fontWeight: 700, fontSize: isMobile ? 8 : 10, color: '#fff', background: getStatusBgColor(runner.status), lineHeight: 1.3 }}>
-                                                                    {getStatusLabel(runner.status)}
-                                                                </span>
-
+                                                    <td key={key} style={{ padding: isMobile ? '4px 2px' : '6px 6px', verticalAlign: 'top' }}>
+                                                        <div style={{ display: 'grid', gridTemplateRows: statusScanTimeLabel ? 'auto auto' : 'auto', rowGap: 3, minWidth: 0, minHeight: isMobile ? 28 : 32, position: 'relative', paddingRight: isAdmin && !isMobile ? 18 : 0 }}>
+                                                            <div style={{ display: 'flex', alignItems: 'center', gap: 4, minWidth: 0, width: '100%' }}>
+                                                                {showStatusBadge && (
+                                                                    <span style={{ display: 'inline-block', padding: isMobile ? '1px 4px' : '2px 8px', borderRadius: 3, fontWeight: 700, fontSize: isMobile ? 8 : 10, color: '#fff', background: getStatusBgColor(runner.status), lineHeight: 1.3, flexShrink: 0 }}>
+                                                                        {getStatusLabel(runner.status)}
+                                                                    </span>
+                                                                )}
                                                                 {isFollowedRunner && (
-                                                                    <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: isMobile ? 16 : 18, height: isMobile ? 16 : 18, borderRadius: 999, border: `1px solid ${isDark ? '#fda4af' : '#fecdd3'}`, background: isDark ? 'rgba(225,29,72,0.18)' : '#fff1f2', flexShrink: 0 }} title={language === 'th' ? 'กำลังติดตามนักกีฬา' : 'Following runner'}>
+                                                                    <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: isMobile ? 16 : 18, height: isMobile ? 16 : 18, borderRadius: 999, flexShrink: 0 }} title={language === 'th' ? 'กำลังติดตามนักกีฬา' : 'Following runner'}>
                                                                         <FollowHeartIcon filled={true} size={isMobile ? 9 : 10} color="#e11d48" />
                                                                     </span>
                                                                 )}
+                                                                {statusCheckpointName ? (
+                                                                    <span style={{ display: showCheckpointChip ? 'inline-block' : 'block', minWidth: 0, maxWidth: showCheckpointChip ? 'calc(100% - 4px)' : '100%', flex: showCheckpointChip ? '0 1 auto' : '1 1 auto', fontSize: isMobile ? 9 : 11, color: statusNameColor, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.15, background: showFinishCheckpointBadge ? '#dcfce7' : showInProgressCheckpointBadge ? '#fef3c7' : 'transparent', border: 'none', borderRadius: showCheckpointChip ? 999 : 0, padding: showCheckpointChip ? (isMobile ? '2px 8px' : '3px 10px') : 0 }}>
+                                                                        {statusCheckpointName}
+                                                                        {runner.statusNote ? ` · ${runner.statusNote}` : ''}
+                                                                    </span>
+                                                                ) : null}
                                                             </div>
                                                             {isAdmin && !isMobile && (
                                                                 <button
                                                                     onClick={(e) => openStatusEdit(runner, e)}
                                                                     title="Edit status"
-                                                                    style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2, fontSize: 15, color: themeStyles.textSecondary, opacity: 0.5, lineHeight: 0.8 }}
+                                                                    style={{ position: 'absolute', top: 0, right: 0, background: 'none', border: 'none', cursor: 'pointer', padding: 2, fontSize: 15, color: themeStyles.textSecondary, opacity: 0.5, lineHeight: 0.8 }}
                                                                     onMouseEnter={e => (e.currentTarget.style.opacity = '1')}
                                                                     onMouseLeave={e => (e.currentTarget.style.opacity = '0.5')}
                                                                 >
                                                                     ✏️
                                                                 </button>
                                                             )}
-                                                        </div>
-                                                        {statusCheckpointName && (
-                                                            <div style={{ marginTop: 2, minWidth: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 1 }}>
-                                                                <span style={{ display: 'block', maxWidth: '100%', minWidth: 0, fontSize: isMobile ? 8 : 9, color: runner.statusCheckpoint ? '#dc2626' : '#1e293b', textTransform: 'uppercase', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', verticalAlign: 'top' }}>
-                                                                    {statusCheckpointName}
-                                                                    {runner.statusNote ? ` · ${runner.statusNote}` : ''}
+                                                            {statusScanTimeLabel && (
+                                                                <span style={{ display: 'block', maxWidth: '100%', fontSize: isMobile ? 9 : 10, color: statusTimeColor, fontWeight: 400, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.15 }}>
+                                                                    {statusScanTimeLabel}
                                                                 </span>
-                                                                {statusScanTimeLabel && (
-                                                                    <span style={{ display: 'block', maxWidth: '100%', fontSize: isMobile ? 8 : 9, color: runner.statusCheckpoint ? '#dc2626' : '#1e293b', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                                                        · {statusScanTimeLabel}
-                                                                    </span>
-                                                                )}
-                                                            </div>
-                                                        )}
+                                                            )}
+                                                        </div>
                                                     </td>
                                                 );
+                                            }
                                             case 'gunTime':
                                                 return (
                                                     <td key={key} style={{ padding: isMobile ? '4px 2px' : '6px 6px', textAlign: 'center' }}>
                                                         <span style={{ fontSize: isMobile ? 11 : 12, fontWeight: 700, color: themeStyles.text, fontFamily: 'monospace' }}>
-                                                            {runner.gunTimeStr || formatTime(runner.gunTime || runner.elapsedTime)}
+                                                            {formatDisplayTimeString(runner.gunTimeStr, isAdmin) || formatTime(runner.gunTime || runner.elapsedTime)}
                                                         </span>
                                                     </td>
                                                 );
@@ -1368,7 +1456,7 @@ export default function EventLivePage() {
                                                 return (
                                                     <td key={key} style={{ padding: '6px 6px', textAlign: 'center' }}>
                                                         <span style={{ fontSize: 12, fontWeight: 700, color: (runner.netTimeStr || runner.netTime) ? '#22c55e' : themeStyles.textSecondary, fontFamily: 'monospace' }}>
-                                                            {runner.netTimeStr || formatTime(runner.netTime)}
+                                                            {formatDisplayTimeString(runner.netTimeStr, isAdmin) || formatTime(runner.netTime)}
                                                         </span>
                                                     </td>
                                                 );
@@ -1526,18 +1614,10 @@ export default function EventLivePage() {
 
                                                 // For finished events — ETA is meaningless, show static info only
                                                 if (isRaceFinished) {
-                                                    const evLookupFin = runner.eventId ? cpDistanceLookup[runner.eventId] : null;
+                                                    const evLookupFin = checkpointMeta.evLookup;
                                                     let nextLabel = '';
-                                                    if (evLookupFin) {
-                                                        const cpKeyFin = runner.latestCheckpoint?.trim().toLowerCase() || '';
-                                                        const cpKeyNormFin = normalizeComparableText(runner.latestCheckpoint);
-                                                        let matchedKeyFin = '';
-                                                        if (cpKeyFin && evLookupFin.checkpoints[cpKeyFin] !== undefined) matchedKeyFin = cpKeyFin;
-                                                        else if (cpKeyNormFin) {
-                                                            for (const k of Object.keys(evLookupFin.checkpoints)) {
-                                                                if (normalizeComparableText(k) === cpKeyNormFin) { matchedKeyFin = k; break; }
-                                                            }
-                                                        }
+                                                    const matchedKeyFin = checkpointKey;
+                                                    if (evLookupFin && matchedKeyFin) {
                                                         if (matchedKeyFin) {
                                                             const curOrd = evLookupFin.cpOrders[matchedKeyFin] ?? 0;
                                                             let bestKey = '';
@@ -1566,22 +1646,13 @@ export default function EventLivePage() {
                                                     );
                                                 }
 
-                                                const evLookupEta = runner.eventId ? cpDistanceLookup[runner.eventId] : null;
+                                                const evLookupEta = checkpointMeta.evLookup;
                                                 let nextCpName = '';
                                                 let etaRemainingSec = -1;
                                                 let isPastDue = false;
 
                                                 if (evLookupEta) {
-                                                    const cpKeyEta = runner.latestCheckpoint?.trim().toLowerCase() || '';
-                                                    const cpKeyNormEta = normalizeComparableText(runner.latestCheckpoint);
-                                                    let matchedKey = '';
-                                                    if (cpKeyEta && evLookupEta.checkpoints[cpKeyEta] !== undefined) {
-                                                        matchedKey = cpKeyEta;
-                                                    } else if (cpKeyNormEta) {
-                                                        for (const k of Object.keys(evLookupEta.checkpoints)) {
-                                                            if (normalizeComparableText(k) === cpKeyNormEta) { matchedKey = k; break; }
-                                                        }
-                                                    }
+                                                    const matchedKey = checkpointKey;
 
                                                     if (matchedKey) {
                                                         const currentCpDist = evLookupEta.checkpoints[matchedKey] ?? 0;
@@ -1657,7 +1728,7 @@ export default function EventLivePage() {
                                                                 etaRemainingSec = Math.round(adjustedEtaMs / 1000);
                                                             }
                                                         }
-                                                    } else if (!runner.latestCheckpoint || runner.latestCheckpoint.toLowerCase() === 'start') {
+                                                    } else if (!statusCheckpointName || statusCheckpointName.toLowerCase() === 'start') {
                                                         let firstCpKey = '';
                                                         let firstOrder = Infinity;
                                                         for (const [k, ord] of Object.entries(evLookupEta.cpOrders)) {
@@ -1692,7 +1763,7 @@ export default function EventLivePage() {
                                                                         style={{ color: isPastDue ? undefined : themeStyles.text }}>
                                                                         {isPastDue ? etaDisplay : `≈${etaDisplay}`}
                                                                     </div>
-                                                                ) : runner.latestCheckpoint ? (
+                                                                ) : statusCheckpointName ? (
                                                                     <div className="mt-px text-[8px]" style={{ color: themeStyles.textSecondary }}>...</div>
                                                                 ) : null}
                                                             </div>
@@ -1720,22 +1791,29 @@ export default function EventLivePage() {
                                                                     </span>
                                                                 ) : null}
                                                             </div>
-                                                            <div style={{ width: '100%', maxWidth: 80, height: 6, borderRadius: 3, background: isDark ? 'rgba(255,255,255,0.1)' : '#f1f5f9', overflow: 'hidden' }}>
-                                                                <div style={{
-                                                                    height: '100%',
-                                                                    width: `${progressPct}%`,
-                                                                    borderRadius: 3,
-                                                                    background: progressPct >= 100
-                                                                        ? '#22c55e'
-                                                                        : progressPct > 75
-                                                                            ? 'linear-gradient(90deg, #334155 0%, #ef4444 33%, #eab308 66%, #22c55e 100%)'
-                                                                            : progressPct > 50
-                                                                                ? 'linear-gradient(90deg, #334155 0%, #ef4444 50%, #eab308 100%)'
-                                                                                : progressPct > 25
-                                                                                    ? 'linear-gradient(90deg, #334155 0%, #ef4444 100%)'
-                                                                                    : '#334155',
-                                                                    transition: 'width 0.5s ease',
-                                                                }} />
+                                                            <div style={{ display: 'flex', alignItems: 'center', gap: 4, width: '100%', justifyContent: 'flex-end' }}>
+                                                                {showProgressAlert && (
+                                                                    <span style={{ color: '#f59e0b', fontSize: 12, lineHeight: 1 }} title={language === 'th' ? 'จำนวน checkpoint ที่ผ่านยังไม่ครบ' : 'Checkpoint count is incomplete'}>
+                                                                        ⚠
+                                                                    </span>
+                                                                )}
+                                                                <div style={{ width: '100%', maxWidth: 80, height: 6, borderRadius: 3, background: isDark ? 'rgba(255,255,255,0.1)' : '#f1f5f9', overflow: 'hidden' }}>
+                                                                    <div style={{
+                                                                        height: '100%',
+                                                                        width: `${progressPct}%`,
+                                                                        borderRadius: 3,
+                                                                        background: progressPct >= 100
+                                                                            ? '#22c55e'
+                                                                            : progressPct > 75
+                                                                                ? 'linear-gradient(90deg, #334155 0%, #ef4444 33%, #eab308 66%, #22c55e 100%)'
+                                                                                : progressPct > 50
+                                                                                    ? 'linear-gradient(90deg, #334155 0%, #ef4444 50%, #eab308 100%)'
+                                                                                    : progressPct > 25
+                                                                                        ? 'linear-gradient(90deg, #334155 0%, #ef4444 100%)'
+                                                                                        : '#334155',
+                                                                        transition: 'width 0.5s ease',
+                                                                    }} />
+                                                                </div>
                                                             </div>
                                                         </div>
                                                     </td>

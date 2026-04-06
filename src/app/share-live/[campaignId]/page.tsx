@@ -503,7 +503,7 @@ export default function ShareLiveMonitorPage() {
                         ].map(item => (
                             <button key={item.key ?? 'all'}
                                 onClick={() => setStatusFilter(prev => prev === item.key ? null : item.key)}
-                                className={`px-1.5 py-0.5 rounded text-[10px] font-bold cursor-pointer border-none transition-all ${
+                                className={`min-h-[34px] px-3 py-1.5 rounded-lg text-[12px] font-bold cursor-pointer border-none transition-all ${
                                     statusFilter === item.key ? item.bgActive : item.bg
                                 } hover:opacity-80`}
                             >
@@ -583,20 +583,24 @@ export default function ShareLiveMonitorPage() {
                                                 {r.bib}
                                             </td>
                                             <td className="p-2">
-                                                <div className={`font-semibold text-[13px] ${isStopped ? 'text-red-600' : 'text-slate-900'} flex items-center gap-1`}>
+                                                <div className={`font-semibold text-[13px] ${isStopped ? 'text-red-600' : 'text-slate-900'} flex items-center gap-1 flex-wrap`}>
                                                     <span style={{ color: r.gender === 'F' ? '#ec4899' : '#3b82f6', fontSize: 14 }}>{r.gender === 'F' ? '♀' : '♂'}</span>
-                                                    {r.firstName} {r.lastName}
-                                                </div>
-                                                <div className={`text-[11px] mt-0.5 ${isStopped ? 'text-red-300' : 'text-slate-400'}`}>
-                                                    <span style={{ color: isStopped ? '#86efac' : '#166534', fontWeight: 600 }}>Ovr:</span>{' '}
-                                                    <span style={{ color: isStopped ? '#4ade80' : '#15803d', fontWeight: 700 }}>{r.overallRank || '-'}</span>
-                                                    {(() => { const d = rankDeltas.get(r.bib); if (d === undefined || d === 0) return r.bib && rankDeltas.size > 0 ? <span style={{color:'#94a3b8'}} className="ml-0.5">(—)</span> : null; return d > 0 ? <span style={{color:'#16a34a',fontWeight:700}} className="ml-0.5">(-{d})</span> : <span style={{color:'#dc2626',fontWeight:700}} className="ml-0.5">(+{Math.abs(d)})</span>; })()}
-                                                    <span className="mx-1">|</span>
-                                                    <span style={{ color: isStopped ? '#c4b5fd' : '#7c3aed', fontWeight: 600 }}>Gen:</span>{' '}
-                                                    <span style={{ color: isStopped ? '#a78bfa' : '#6d28d9', fontWeight: 700 }}>{r.genderRank || '-'}</span>
-                                                    <span className="mx-1">|</span>
-                                                    <span style={{ color: isStopped ? '#93c5fd' : '#2563eb', fontWeight: 600 }}>Cat:</span>{' '}
-                                                    <span style={{ color: isStopped ? '#60a5fa' : '#1d4ed8', fontWeight: 700 }}>{r.categoryRank || '-'}</span>
+                                                    <span>{r.firstName} {r.lastName}</span>
+                                                    <span className="inline-flex flex-wrap items-center gap-1.5 ml-1">
+                                                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '2px 8px', borderRadius: 999, background: '#dcfce7' }}>
+                                                            <span style={{ fontSize: 10, fontWeight: 700, color: '#166534' }}>Ovr</span>
+                                                            <span style={{ color: '#15803d', fontWeight: 800 }}>{r.overallRank || '-'}</span>
+                                                            {(() => { const d = rankDeltas.get(r.bib); if (d === undefined || d === 0) return null; return d > 0 ? <span style={{color:'#16a34a',fontWeight:800,fontSize:10}}>▲{d}</span> : <span style={{color:'#dc2626',fontWeight:800,fontSize:10}}>▼{Math.abs(d)}</span>; })()}
+                                                        </span>
+                                                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '2px 8px', borderRadius: 999, background: '#f3e8ff' }}>
+                                                            <span style={{ fontSize: 10, fontWeight: 700, color: '#7c3aed' }}>Gen</span>
+                                                            <span style={{ color: '#6d28d9', fontWeight: 800 }}>{r.genderRank || '-'}</span>
+                                                        </span>
+                                                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '2px 8px', borderRadius: 999, background: '#dbeafe' }}>
+                                                            <span style={{ fontSize: 10, fontWeight: 700, color: '#2563eb' }}>Cat</span>
+                                                            <span style={{ color: '#1d4ed8', fontWeight: 800 }}>{r.categoryRank || '-'}</span>
+                                                        </span>
+                                                    </span>
                                                 </div>
                                             </td>
                                             <td className="p-2.5 text-center text-[11px] font-medium text-slate-500">

@@ -52,6 +52,8 @@ const LAB_COLUMNS: ColDef[] = [
 const MARATHON_TOGGLEABLE = MARATHON_COLUMNS.filter(c => !c.fixed).map(c => c.key);
 const LAB_TOGGLEABLE = LAB_COLUMNS.filter(c => !c.fixed).map(c => c.key);
 
+const MARATHON_PUBLIC_DEFAULT_KEYS = ['genRank', 'catRank', 'sex', 'gunTime', 'netTime', 'distFromStart'];
+
 type DisplayMode = 'marathon' | 'lab';
 
 export default function DisplaySettingsPage() {
@@ -99,8 +101,9 @@ export default function DisplaySettingsPage() {
             if (res.ok) {
                 const data = await res.json();
                 setCampaign(data);
-                // Use saved columns exactly as stored; only default to all when field is truly absent
-                const saved: string[] = Array.isArray(data.displayColumns) ? data.displayColumns : MARATHON_TOGGLEABLE;
+                const saved: string[] = Array.isArray(data.displayColumns) && data.displayColumns.length > 0
+                    ? data.displayColumns
+                    : MARATHON_PUBLIC_DEFAULT_KEYS;
                 setSelectedCols(saved);
                 rebuildOrder(saved, MARATHON_COLUMNS, MARATHON_TOGGLEABLE, setColOrder);
                 // Lab — same treatment
@@ -227,6 +230,8 @@ export default function DisplaySettingsPage() {
         const isActive = displayMode === mode;
         const columns = mode === 'marathon' ? MARATHON_COLUMNS : LAB_COLUMNS;
         const toggleableKeys = mode === 'marathon' ? MARATHON_TOGGLEABLE : LAB_TOGGLEABLE;
+        const quickDefaultKeys = mode === 'marathon' ? MARATHON_PUBLIC_DEFAULT_KEYS.filter(key => toggleableKeys.includes(key)) : [];
+        const dropdownKeys = mode === 'marathon' ? toggleableKeys.filter(key => !quickDefaultKeys.includes(key)) : toggleableKeys;
         const currentOrder = mode === 'marathon' ? colOrder : colOrderLab;
         const currentSelected = mode === 'marathon' ? selectedCols : selectedColsLab;
         const sampleData = mode === 'marathon' ? marathonSample : labSample;
@@ -241,7 +246,7 @@ export default function DisplaySettingsPage() {
             return col.fixed || currentSelected.includes(key);
         });
 
-        const enabledCount = currentSelected.filter(k => toggleableKeys.includes(k)).length;
+        const enabledCount = currentSelected.filter(k => dropdownKeys.includes(k)).length;
 
         return (
             <div style={{
@@ -314,17 +319,17 @@ export default function DisplaySettingsPage() {
                                         {language === 'th' ? 'คอลัมน์ที่แสดง' : 'Visible Columns'}
                                     </span>
                                     <div style={{ display: 'flex', gap: 6 }}>
-                                        <button onClick={() => selectAll(mode)} style={{ fontSize: 10, padding: '2px 8px', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 4, cursor: 'pointer', color: '#2563eb', fontWeight: 600 }}>
+                                        <button onClick={() => mode === 'marathon' ? setSelectedCols(prev => Array.from(new Set([...prev, ...dropdownKeys]))) : setSelectedColsLab([...dropdownKeys])} style={{ fontSize: 10, padding: '2px 8px', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 4, cursor: 'pointer', color: '#2563eb', fontWeight: 600 }}>
                                             {language === 'th' ? 'เลือกทั้งหมด' : 'All'}
                                         </button>
-                                        <button onClick={() => selectNone(mode)} style={{ fontSize: 10, padding: '2px 8px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 4, cursor: 'pointer', color: '#64748b', fontWeight: 600 }}>
+                                        <button onClick={() => mode === 'marathon' ? setSelectedCols(prev => prev.filter(k => !dropdownKeys.includes(k))) : setSelectedColsLab(prev => prev.filter(k => !dropdownKeys.includes(k)))} style={{ fontSize: 10, padding: '2px 8px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 4, cursor: 'pointer', color: '#64748b', fontWeight: 600 }}>
                                             {language === 'th' ? 'ยกเลิก' : 'None'}
                                         </button>
                                     </div>
                                 </div>
                                 {/* Column items */}
                                 <div style={{ padding: '4px 0' }}>
-                                    {toggleableKeys.map(key => {
+                                    {dropdownKeys.map(key => {
                                         const col = colDef(key);
                                         const isOn = currentSelected.includes(key);
                                         return (
@@ -482,6 +487,47 @@ export default function DisplaySettingsPage() {
                                 <i className="fas fa-star" style={{ color: '#f59e0b', fontSize: 12 }} />
                                 <span style={{ fontSize: 12, fontWeight: 700, color: '#1e40af' }}>{campaign.name}</span>
                             </div>
+                        </div>
+
+                        <div style={{ marginBottom: 16, padding: '12px 14px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 10 }}>
+                            <div style={{ fontSize: 12, fontWeight: 800, color: '#0f172a', marginBottom: 8 }}>
+                                {language === 'th' ? 'คอลัมน์เริ่มต้นสำหรับผู้ชมทั่วไป (ไม่ต้อง Login)' : 'Default public columns (visible without login)'}
+                            </div>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                                {MARATHON_PUBLIC_DEFAULT_KEYS.map((key) => {
+                                    const col = MARATHON_COLUMNS.find(item => item.key === key);
+                                    if (!col) return null;
+                                    const isOn = selectedCols.includes(key);
+                                    return (
+                                        <button
+                                            key={key}
+                                            type="button"
+                                            onClick={() => toggleColumn(key, 'marathon')}
+                                            style={{
+                                                display: 'inline-flex',
+                                                alignItems: 'center',
+                                                gap: 6,
+                                                padding: '8px 12px',
+                                                borderRadius: 999,
+                                                border: `1px solid ${isOn ? '#22c55e' : '#cbd5e1'}`,
+                                                background: isOn ? '#dcfce7' : '#fff',
+                                                color: isOn ? '#166534' : '#475569',
+                                                fontSize: 12,
+                                                fontWeight: 700,
+                                                cursor: 'pointer',
+                                            }}
+                                        >
+                                            <span style={{ width: 16, height: 16, borderRadius: 999, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: isOn ? '#22c55e' : '#e2e8f0', color: isOn ? '#fff' : '#64748b', fontSize: 10, fontWeight: 800 }}>
+                                                {isOn ? '✓' : '+'}
+                                            </span>
+                                            {language === 'th' ? col.thLabelTh : col.thLabel}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                            <p style={{ fontSize: 11, color: '#64748b', margin: '8px 0 0' }}>
+                                {language === 'th' ? 'คอลัมน์อื่นนอกเหนือจากนี้ จะแสดงเฉพาะผู้ใช้ที่ Login แล้วเท่านั้น' : 'Any extra columns beyond these will be shown only to logged-in users.'}
+                            </p>
                         </div>
 
                         {/* Marathon Box */}
