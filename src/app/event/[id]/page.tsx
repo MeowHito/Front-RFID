@@ -164,7 +164,7 @@ const COL_DEFS: ColDef[] = [
     { key: 'catRank', label: 'Cat', w: '3%', mw: '4%', align: 'center' },
     { key: 'runner', label: 'Runner', w: '15%', mw: '22%', align: 'left', fixed: true },
     { key: 'sex', label: 'Sex', w: '3%', mw: '5%', align: 'center' },
-    { key: 'status', label: 'Status', w: '8%', mw: '8%', align: 'left', fixed: true },
+    { key: 'status', label: 'Status', w: '8%', mw: '14%', align: 'left', fixed: true },
     { key: 'gunTime', label: 'Gun Time', w: '7%', mw: '10%', align: 'center' },
     { key: 'netTime', label: 'Net Time', w: '7%', mw: '10%', align: 'center' },
     { key: 'genNet', label: 'Gen Net', w: '4%', mw: '5%', align: 'center' },
@@ -1397,6 +1397,9 @@ export default function EventLivePage() {
                                                 const showFinishCheckpointBadge = !!statusCheckpointName && isFinishCp;
                                                 const showInProgressCheckpointBadge = !!statusCheckpointName && runner.status === 'in_progress' && !isFinishCp;
                                                 const showCheckpointChip = showFinishCheckpointBadge || showInProgressCheckpointBadge;
+                                                const hideCheckpointText = runner.status === 'dns' || runner.status === 'not_started';
+                                                const showCheckpointBelow = runner.status === 'dnf' && !!statusCheckpointName;
+                                                const inlineStatusCheckpoint = !hideCheckpointText && !showCheckpointBelow ? statusCheckpointName : '';
                                                 const statusNameColor = showFinishCheckpointBadge
                                                     ? '#166534'
                                                     : showInProgressCheckpointBadge
@@ -1405,25 +1408,30 @@ export default function EventLivePage() {
                                                 const statusTimeColor = runner.statusCheckpoint ? '#dc2626' : themeStyles.textSecondary;
                                                 return (
                                                     <td key={key} style={{ padding: isMobile ? '4px 2px' : '6px 6px', verticalAlign: 'top' }}>
-                                                        <div style={{ display: 'grid', gridTemplateRows: statusScanTimeLabel ? 'auto auto' : 'auto', rowGap: 3, minWidth: 0, minHeight: isMobile ? 28 : 32, position: 'relative', paddingRight: isAdmin && !isMobile ? 18 : 0 }}>
+                                                        <div style={{ display: 'grid', gridTemplateRows: showCheckpointBelow ? (statusScanTimeLabel ? 'auto auto auto' : 'auto auto') : (statusScanTimeLabel ? 'auto auto' : 'auto'), rowGap: 3, minWidth: 0, minHeight: isMobile ? 28 : 32, position: 'relative', paddingRight: isAdmin && !isMobile ? 18 : 0 }}>
                                                             <div style={{ display: 'flex', alignItems: 'center', gap: 4, minWidth: 0, width: '100%' }}>
                                                                 {showStatusBadge && (
                                                                     <span style={{ display: 'inline-block', padding: isMobile ? '1px 4px' : '2px 8px', borderRadius: 3, fontWeight: 700, fontSize: isMobile ? 8 : 10, color: '#fff', background: getStatusBgColor(runner.status), lineHeight: 1.3, flexShrink: 0 }}>
                                                                         {getStatusLabel(runner.status)}
                                                                     </span>
                                                                 )}
+                                                                {inlineStatusCheckpoint ? (
+                                                                    <span style={{ display: showCheckpointChip ? 'inline-block' : 'block', minWidth: 0, maxWidth: showCheckpointChip ? '100%' : '100%', flex: showCheckpointChip ? '0 0 auto' : '1 1 auto', fontSize: isMobile ? 9 : 11, color: statusNameColor, fontWeight: 700, whiteSpace: 'nowrap', overflow: showCheckpointChip ? 'visible' : 'hidden', textOverflow: showCheckpointChip ? 'clip' : 'ellipsis', lineHeight: 1.15, background: showFinishCheckpointBadge ? '#dcfce7' : showInProgressCheckpointBadge ? '#fef3c7' : 'transparent', border: 'none', borderRadius: showCheckpointChip ? 999 : 0, padding: showCheckpointChip ? (isMobile ? '2px 7px' : '3px 10px') : 0 }}>
+                                                                        {inlineStatusCheckpoint}
+                                                                        {runner.statusNote ? ` · ${runner.statusNote}` : ''}
+                                                                    </span>
+                                                                ) : null}
                                                                 {isFollowedRunner && (
                                                                     <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: isMobile ? 16 : 18, height: isMobile ? 16 : 18, borderRadius: 999, flexShrink: 0 }} title={language === 'th' ? 'กำลังติดตามนักกีฬา' : 'Following runner'}>
                                                                         <FollowHeartIcon filled={true} size={isMobile ? 9 : 10} color="#e11d48" />
                                                                     </span>
                                                                 )}
-                                                                {statusCheckpointName ? (
-                                                                    <span style={{ display: showCheckpointChip ? 'inline-block' : 'block', minWidth: 0, maxWidth: showCheckpointChip ? 'calc(100% - 4px)' : '100%', flex: showCheckpointChip ? '0 1 auto' : '1 1 auto', fontSize: isMobile ? 9 : 11, color: statusNameColor, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.15, background: showFinishCheckpointBadge ? '#dcfce7' : showInProgressCheckpointBadge ? '#fef3c7' : 'transparent', border: 'none', borderRadius: showCheckpointChip ? 999 : 0, padding: showCheckpointChip ? (isMobile ? '2px 8px' : '3px 10px') : 0 }}>
-                                                                        {statusCheckpointName}
-                                                                        {runner.statusNote ? ` · ${runner.statusNote}` : ''}
-                                                                    </span>
-                                                                ) : null}
                                                             </div>
+                                                            {showCheckpointBelow && statusCheckpointName ? (
+                                                                <span style={{ display: 'block', maxWidth: '100%', fontSize: isMobile ? 9 : 10, color: '#dc2626', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.15 }}>
+                                                                    {statusCheckpointName}
+                                                                </span>
+                                                            ) : null}
                                                             {isAdmin && !isMobile && (
                                                                 <button
                                                                     onClick={(e) => openStatusEdit(runner, e)}
