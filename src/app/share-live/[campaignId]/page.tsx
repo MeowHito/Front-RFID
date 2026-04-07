@@ -433,7 +433,7 @@ export default function ShareLiveMonitorPage() {
                             title="ย้อนกลับ"
                             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-white/30 bg-white/10 text-white/90 text-xs font-semibold cursor-pointer transition-all hover:bg-white/20 hover:text-white hover:border-white/50 flex-shrink-0"
                         >
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M19 12H5" /><path d="M12 19l-7-7 7-7" /></svg>
                             <span>ย้อนกลับ</span>
                         </button>
                         {/* Logo */}
@@ -477,17 +477,16 @@ export default function ShareLiveMonitorPage() {
                     <div className="flex items-center gap-1.5 flex-wrap">
                         <span className="text-[11px] font-bold text-slate-400">สรุป:</span>
                         {[
-                            { key: 'passed', label: 'ผ่าน', count: runners.filter(r => { const s = normalizeRunnerStatus(r.status); return !['dnf','dns','dq'].includes(s) && !!r.scanTime; }).length, bg: 'text-green-700 border-b-2 border-green-500 bg-green-200', bgActive: 'bg-green-600 text-white border-b-0' },
-                            { key: 'coming', label: 'มา', count: runners.filter(r => { const s = normalizeRunnerStatus(r.status); return !['dnf','dns','dq','finished'].includes(s) && !r.scanTime; }).length, bg: 'text-amber-800 bg-amber-200', bgActive: 'bg-amber-500 text-white' },
+                            { key: 'passed', label: 'ผ่าน', count: runners.filter(r => { const s = normalizeRunnerStatus(r.status); return !['dnf', 'dns', 'dq'].includes(s) && !!r.scanTime; }).length, bg: 'text-green-700 border-b-2 border-green-500 bg-green-200', bgActive: 'bg-green-600 text-white border-b-0' },
+                            { key: 'coming', label: 'มา', count: runners.filter(r => { const s = normalizeRunnerStatus(r.status); return !['dnf', 'dns', 'dq', 'finished'].includes(s) && !r.scanTime; }).length, bg: 'text-amber-800 bg-amber-200', bgActive: 'bg-amber-500 text-white' },
                             { key: 'dns', label: 'DNS', count: runners.filter(r => normalizeRunnerStatus(r.status) === 'dns').length, bg: 'text-red-800 bg-red-200', bgActive: 'bg-red-600 text-white' },
                             { key: 'dnf', label: 'DNF', count: runners.filter(r => normalizeRunnerStatus(r.status) === 'dnf').length, bg: 'text-red-800 bg-red-200', bgActive: 'bg-red-600 text-white' },
                             { key: 'dq', label: 'DQ', count: runners.filter(r => normalizeRunnerStatus(r.status) === 'dq').length, bg: 'text-pink-800 bg-pink-200', bgActive: 'bg-pink-600 text-white' },
                         ].map(item => (
                             <button key={item.key ?? 'all'}
                                 onClick={() => setStatusFilter(prev => prev === item.key ? null : item.key)}
-                                className={`min-h-[34px] px-3 py-1.5 rounded-lg text-[12px] font-bold cursor-pointer border-none transition-all ${
-                                    statusFilter === item.key ? item.bgActive : item.bg
-                                } hover:opacity-80`}
+                                className={`min-h-[34px] px-3 py-1.5 rounded-lg text-[12px] font-bold cursor-pointer border-none transition-all ${statusFilter === item.key ? item.bgActive : item.bg
+                                    } hover:opacity-80`}
                             >
                                 {item.label} {item.count}
                             </button>
@@ -531,7 +530,7 @@ export default function ShareLiveMonitorPage() {
                                     <th className="pl-0.5 pr-0.5 py-3 text-center font-bold text-slate-600 w-[40px]">Rank</th>
                                     <th className="pl-0.5 pr-0.5 py-3 text-center font-bold text-slate-600 w-[40px]">Gen</th>
                                     <th className="pl-0.5 pr-0.5 py-3 text-center font-bold text-slate-600 w-[40px]">Cat</th>
-                                    <th className="px-1 py-3 text-center font-bold text-slate-600 w-[50px]">Cat.</th>
+                                    <th className="px-1 py-3 text-center font-bold text-slate-600 w-[50px]">ประเภท</th>
                                     <th className="px-1 py-3 text-center font-bold text-slate-600 w-[85px]">
                                         <button onClick={() => toggleSort('arrival')}
                                             className={`bg-transparent border-none cursor-pointer font-bold text-xs inline-flex items-center ${sortBy === 'arrival' ? 'text-green-600' : 'text-slate-600'}`}>
@@ -588,9 +587,9 @@ export default function ShareLiveMonitorPage() {
                                             <td className="p-2.5 text-center text-[11px] font-medium text-slate-500">
                                                 {r.category || '-'}
                                             </td>
-                                            <td className="p-2.5 text-center text-[13px] font-bold text-black"> 
+                                            <td className="p-2.5 text-center text-[13px] font-bold text-black">
                                                 {r.scanTime
-                                                    ? (() => { const d = new Date(r.scanTime); const hh = d.getHours().toString().padStart(2,'0'); const mm = d.getMinutes().toString().padStart(2,'0'); const ss = d.getSeconds().toString().padStart(2,'0'); const ms = d.getMilliseconds().toString().padStart(3,'0'); return `${hh}:${mm}:${ss}.${ms}`; })()
+                                                    ? (() => { const d = new Date(r.scanTime); const hh = d.getHours().toString().padStart(2, '0'); const mm = d.getMinutes().toString().padStart(2, '0'); const ss = d.getSeconds().toString().padStart(2, '0'); const ms = d.getMilliseconds().toString().padStart(3, '0'); return `${hh}:${mm}:${ss}.${ms}`; })()
                                                     : (!isStopped && r.statusCheckpoint)
                                                         ? <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-amber-50 text-amber-700 text-[10px] font-bold border border-amber-200">⏳ จาก {r.statusCheckpoint}</span>
                                                         : '-'}
@@ -615,7 +614,7 @@ export default function ShareLiveMonitorPage() {
 
                 {/* Footer */}
                 <div className="mt-4 text-center text-xs text-slate-400">
-                    Powered by RFID Timing System • 
+                    Powered by RFID Timing System •
                 </div>
             </div>
 
@@ -659,7 +658,8 @@ export default function ShareLiveMonitorPage() {
             </button>
 
             {/* Pulse animation keyframes */}
-            <style dangerouslySetInnerHTML={{ __html: `
+            <style dangerouslySetInnerHTML={{
+                __html: `
                 @keyframes pulse {
                     0%, 100% { transform: scale(1); opacity: 1; }
                     50% { transform: scale(1.3); opacity: 0.7; }

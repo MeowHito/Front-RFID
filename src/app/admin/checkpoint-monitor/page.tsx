@@ -391,17 +391,16 @@ export default function CheckpointMonitorPage() {
                     <div className="flex items-center gap-1.5 flex-wrap">
                         <span className="text-[11px] font-bold text-slate-400">{th ? 'สรุป:' : 'Sum:'}</span>
                         {[
-                            { key: 'passed', label: th ? 'ผ่าน' : 'Pass', count: runners.filter(r => { const s = normalizeRunnerStatus(r.status); return !['dnf','dns','dq'].includes(s) && !!r.scanTime; }).length, bg: 'text-green-700 border-b-2 border-green-500 bg-green-200 ', bgActive: 'bg-green-600 text-white border-b-0' },
-                            { key: 'coming', label: th ? 'มา' : 'Go', count: runners.filter(r => { const s = normalizeRunnerStatus(r.status); return !['dnf','dns','dq','finished'].includes(s) && !r.scanTime; }).length, bg: 'text-amber-800 bg-amber-200', bgActive: 'bg-amber-500 text-white' },
+                            { key: 'passed', label: th ? 'ผ่าน' : 'Pass', count: runners.filter(r => { const s = normalizeRunnerStatus(r.status); return !['dnf', 'dns', 'dq'].includes(s) && !!r.scanTime; }).length, bg: 'text-green-700 border-b-2 border-green-500 bg-green-200 ', bgActive: 'bg-green-600 text-white border-b-0' },
+                            { key: 'coming', label: th ? 'มา' : 'Go', count: runners.filter(r => { const s = normalizeRunnerStatus(r.status); return !['dnf', 'dns', 'dq', 'finished'].includes(s) && !r.scanTime; }).length, bg: 'text-amber-800 bg-amber-200', bgActive: 'bg-amber-500 text-white' },
                             { key: 'dns', label: 'DNS', count: runners.filter(r => normalizeRunnerStatus(r.status) === 'dns').length, bg: 'text-red-800 bg-red-200', bgActive: 'bg-red-600 text-white' },
                             { key: 'dnf', label: 'DNF', count: runners.filter(r => normalizeRunnerStatus(r.status) === 'dnf').length, bg: 'text-red-800 bg-red-200', bgActive: 'bg-red-600 text-white' },
                             { key: 'dq', label: 'DQ', count: runners.filter(r => normalizeRunnerStatus(r.status) === 'dq').length, bg: 'text-pink-800 bg-pink-200', bgActive: 'bg-pink-600 text-white' },
                         ].map(item => (
                             <button key={item.key ?? 'all'}
                                 onClick={() => setStatusFilter(prev => prev === item.key ? null : item.key)}
-                                className={`min-h-[34px] px-3 py-1.5 rounded-lg text-[12px] font-bold cursor-pointer border-none transition-all ${
-                                    statusFilter === item.key ? item.bgActive : item.bg
-                                } hover:opacity-80`}
+                                className={`min-h-[34px] px-3 py-1.5 rounded-lg text-[12px] font-bold cursor-pointer border-none transition-all ${statusFilter === item.key ? item.bgActive : item.bg
+                                    } hover:opacity-80`}
                             >
                                 {item.label} {item.count}
                             </button>
@@ -444,7 +443,7 @@ export default function CheckpointMonitorPage() {
                                 <th className="pl-0.5 pr-0.5 py-3 text-center font-bold text-slate-600 w-[40px]">Rank</th>
                                 <th className="pl-0.5 pr-0.5 py-3 text-center font-bold text-slate-600 w-[40px]">Gen</th>
                                 <th className="pl-0.5 pr-0.5 py-3 text-center font-bold text-slate-600 w-[40px]">Cat</th>
-                                <th className="px-1 py-3 text-center font-bold text-slate-600 w-[50px]">Cat.</th>
+                                <th className="px-1 py-3 text-center font-bold text-slate-600 w-[50px]">ประเภท</th>
                                 <th className="px-1 py-3 text-center font-bold text-slate-600 w-[85px]">
                                     <button onClick={() => toggleSort('arrival')}
                                         className={`bg-transparent border-none cursor-pointer font-bold text-xs inline-flex items-center ${sortBy === 'arrival' ? 'text-green-600' : 'text-slate-600'}`}>
@@ -473,7 +472,8 @@ export default function CheckpointMonitorPage() {
                                 <tr><td colSpan={10} className="p-10 text-center text-slate-400">{th ? 'กำลังโหลด...' : 'Loading...'}</td></tr>
                             ) : sortedRunners.length === 0 ? (
                                 <tr><td colSpan={10} className="p-10 text-center text-slate-400">{th ? 'ยังไม่มีนักกีฬาถึงจุดนี้' : 'No runners arrived at this checkpoint yet'}</td></tr>
-                            ) : sortedRunners.map((r, idx) => { const rowKey = r._id ? `${r._id}-${idx}` : `row-${idx}`;
+                            ) : sortedRunners.map((r, idx) => {
+                                const rowKey = r._id ? `${r._id}-${idx}` : `row-${idx}`;
                                 const runnerStatus = normalizeRunnerStatus(r.status);
                                 const isStopped = ['dnf', 'dns', 'dq'].includes(runnerStatus);
                                 const statusOpt = getStatusOpt(runnerStatus);
@@ -506,7 +506,7 @@ export default function CheckpointMonitorPage() {
                                         </td>
                                         <td className="p-2.5 text-center text-[13px] font-bold text-slate-600">
                                             {r.scanTime
-                                                ? (() => { const d = new Date(r.scanTime); const hh = d.getHours().toString().padStart(2,'0'); const mm = d.getMinutes().toString().padStart(2,'0'); const ss = d.getSeconds().toString().padStart(2,'0'); const ms = d.getMilliseconds().toString().padStart(3,'0'); return `${hh}:${mm}:${ss}.${ms}`; })()
+                                                ? (() => { const d = new Date(r.scanTime); const hh = d.getHours().toString().padStart(2, '0'); const mm = d.getMinutes().toString().padStart(2, '0'); const ss = d.getSeconds().toString().padStart(2, '0'); const ms = d.getMilliseconds().toString().padStart(3, '0'); return `${hh}:${mm}:${ss}.${ms}`; })()
                                                 : (!isStopped && r.statusCheckpoint)
                                                     ? <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-amber-50 text-amber-700 text-[10px] font-bold border border-amber-200">⏳ {th ? 'จาก' : 'from'} {r.statusCheckpoint}</span>
                                                     : '-'}
@@ -554,10 +554,9 @@ export default function CheckpointMonitorPage() {
                         onClick={e => e.stopPropagation()}
                     >
                         {/* Icon */}
-                        <div className={`w-12 h-12 rounded-full flex items-center justify-center mx-auto text-2xl ${
-                            confirmModal.newStatus === 'dnf' ? 'bg-red-100' :
-                            confirmModal.newStatus === 'dq' ? 'bg-pink-100' : 'bg-green-100'
-                        }`}>
+                        <div className={`w-12 h-12 rounded-full flex items-center justify-center mx-auto text-2xl ${confirmModal.newStatus === 'dnf' ? 'bg-red-100' :
+                                confirmModal.newStatus === 'dq' ? 'bg-pink-100' : 'bg-green-100'
+                            }`}>
                             {confirmModal.newStatus === 'dnf' ? '🚫' : confirmModal.newStatus === 'dq' ? '⛔' : '✅'}
                         </div>
                         {/* Text */}
@@ -571,10 +570,9 @@ export default function CheckpointMonitorPage() {
                             </p>
                             <p className="mt-2 text-sm text-slate-500">
                                 {th ? 'เปลี่ยนเป็น' : 'Change to'}{' '}
-                                <span className={`font-extrabold text-lg ${
-                                    confirmModal.newStatus === 'dnf' ? 'text-red-600' :
-                                    confirmModal.newStatus === 'dq' ? 'text-pink-600' : 'text-green-600'
-                                }`}>
+                                <span className={`font-extrabold text-lg ${confirmModal.newStatus === 'dnf' ? 'text-red-600' :
+                                        confirmModal.newStatus === 'dq' ? 'text-pink-600' : 'text-green-600'
+                                    }`}>
                                     {confirmModal.label}
                                 </span>
                             </p>
@@ -589,11 +587,10 @@ export default function CheckpointMonitorPage() {
                             </button>
                             <button
                                 onClick={confirmStatusChange}
-                                className={`flex-1 py-2.5 rounded-xl text-white font-bold text-sm transition-colors cursor-pointer border-none ${
-                                    confirmModal.newStatus === 'dnf' ? 'bg-red-600 hover:bg-red-700' :
-                                    confirmModal.newStatus === 'dq' ? 'bg-pink-600 hover:bg-pink-700' :
-                                    'bg-green-600 hover:bg-green-700'
-                                }`}
+                                className={`flex-1 py-2.5 rounded-xl text-white font-bold text-sm transition-colors cursor-pointer border-none ${confirmModal.newStatus === 'dnf' ? 'bg-red-600 hover:bg-red-700' :
+                                        confirmModal.newStatus === 'dq' ? 'bg-pink-600 hover:bg-pink-700' :
+                                            'bg-green-600 hover:bg-green-700'
+                                    }`}
                             >
                                 {th ? 'ยืนยัน' : 'Confirm'}
                             </button>
@@ -604,9 +601,8 @@ export default function CheckpointMonitorPage() {
 
             {/* Toast */}
             {toast && (
-                <div className={`fixed bottom-6 right-6 z-[10000] px-6 py-3.5 rounded-[14px] text-white font-bold text-sm shadow-[0_10px_25px_rgba(0,0,0,0.2)] animate-[slideUp_0.3s_ease-out] ${
-                    toast.type === 'success' ? 'bg-green-600' : 'bg-red-600'
-                }`}>
+                <div className={`fixed bottom-6 right-6 z-[10000] px-6 py-3.5 rounded-[14px] text-white font-bold text-sm shadow-[0_10px_25px_rgba(0,0,0,0.2)] animate-[slideUp_0.3s_ease-out] ${toast.type === 'success' ? 'bg-green-600' : 'bg-red-600'
+                    }`}>
                     {toast.type === 'success' ? '✅' : '❌'} {toast.msg}
                 </div>
             )}
