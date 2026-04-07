@@ -641,12 +641,12 @@ export default function EventLivePage() {
         return `${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
     }
 
-    function formatStatusScanTime(dateString: string | undefined): string {
+    function formatStatusScanTime(dateString: string | undefined, showMilliseconds = isAdmin): string {
         if (!dateString) return '';
         const d = new Date(dateString);
         if (Number.isNaN(d.getTime())) return '';
         const baseTime = `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}:${d.getSeconds().toString().padStart(2, '0')}`;
-        return isAdmin ? `${baseTime}.${d.getMilliseconds().toString().padStart(3, '0')}` : baseTime;
+        return showMilliseconds ? `${baseTime}.${d.getMilliseconds().toString().padStart(3, '0')}` : baseTime;
     }
 
     function formatDate(dateString: string) {
@@ -1356,15 +1356,9 @@ export default function EventLivePage() {
                                     }
 
                                     const showProgressAlert = progressPct >= 100 && totalCps > 0 && completedCpCount > 0 && completedCpCount < totalCps;
-                                    const finishElapsedMs = runner.gunTime || runner.elapsedTime || runner.netTime || parseElapsedTimeToMs(runner.gunTimeStr);
-                                    const currentCheckpointElapsedMs = checkpointMeta.useSplitCheckpoint
-                                        ? (runner.splitTime || finishElapsedMs)
-                                        : (isFinishCp ? finishElapsedMs : 0);
-                                    const currentCheckpointTime = !isRaceFinished && runnerStartDate && currentCheckpointElapsedMs > 0
-                                        ? new Date(runnerStartDate.getTime() + currentCheckpointElapsedMs).toISOString()
-                                        : (runner.lastPassTime || runner.scanTime);
-                                    const statusScanTimeLabel = !isRaceFinished && currentCheckpointTime
-                                        ? formatStatusScanTime(currentCheckpointTime)
+                                    const currentCheckpointTime = String(runner.lastPassTime || runner.scanTime || '').trim();
+                                    const statusScanTimeLabel = currentCheckpointTime
+                                        ? formatStatusScanTime(currentCheckpointTime, true)
                                         : '';
 
                                     // Render cell content per column key

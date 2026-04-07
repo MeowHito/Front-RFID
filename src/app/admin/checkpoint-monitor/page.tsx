@@ -180,32 +180,6 @@ export default function CheckpointMonitorPage() {
             .catch(() => setCheckpoints([]));
     }, [campaign?._id]);
 
-    // Fetch runners who arrived at selected checkpoint (via timing records)
-    // Compute live ranks from runners sorted by netTime (fastest first)
-    // This works even when runner.overallRank from DB is 0 (common during live races)
-    const computeLiveRanks = useCallback((runnerList: RunnerAtCheckpoint[]): Map<string, number> => {
-        const rankMap = new Map<string, number>();
-        // Only rank runners who actually passed this checkpoint (have scanTime)
-        const rankedRunners = runnerList
-            .filter(r => {
-                const status = normalizeRunnerStatus(r.status);
-                return !!r.scanTime && !['dnf', 'dns', 'dq'].includes(status);
-            })
-            .sort((a, b) => {
-                const aTime = a.netTime || a.elapsedTime || a.gunTime || 0;
-                const bTime = b.netTime || b.elapsedTime || b.gunTime || 0;
-                if (aTime > 0 && bTime > 0) return aTime - bTime;
-                if (aTime > 0 && bTime <= 0) return -1;
-                if (aTime <= 0 && bTime > 0) return 1;
-                // Fallback to scanTime (arrival order)
-                return new Date(a.scanTime || 0).getTime() - new Date(b.scanTime || 0).getTime();
-            });
-        rankedRunners.forEach((r, idx) => {
-            if (r.bib) rankMap.set(r.bib, idx + 1);
-        });
-        return rankMap;
-    }, []);
-
     const fetchRunners = useCallback(async () => {
         if (!campaign?._id || !selectedCp) return;
         setDataLoading(true);
@@ -213,23 +187,18 @@ export default function CheckpointMonitorPage() {
             const res = await fetch(`/api/timing/checkpoint-by-campaign/${campaign._id}?cp=${encodeURIComponent(selectedCp)}`, { cache: 'no-store' });
             if (!res.ok) throw new Error();
             const data = await res.json();
-            const newRunners = Array.isArray(data) ? dedupeCheckpointRunners(data) : [];
-
-            // Compute live ranks based on fastest time at this checkpoint
-            const liveRanksMap = computeLiveRanks(newRunners);
-
-            // Inject live rank into runners
-            const runnersWithLiveRank = newRunners.map(r => ({
-                ...r,
-                overallRank: liveRanksMap.get(r.bib) || r.overallRank || 0,
-            }));
+            const runnersFromApi = Array.isArray(data) ? dedupeCheckpointRunners(data) : [];
+            const currentRanks = new Map<string, number>();
+            runnersFromApi.forEach(r => {
+                if (r.bib && r.overallRank > 0) currentRanks.set(r.bib, r.overallRank);
+            });
 
             // Compute rank deltas: compare current vs previous refresh
             const prev = prevRanksRef.current;
             if (prev.size > 0) {
                 // Only compute deltas if we had previous data
                 const newDeltas = new Map<string, number>();
-                runnersWithLiveRank.forEach(r => {
+                runnersFromApi.forEach(r => {
                     if (r.bib && r.overallRank > 0) {
                         const prevRank = prev.get(r.bib);
                         if (prevRank !== undefined && prevRank > 0) {
@@ -241,15 +210,15 @@ export default function CheckpointMonitorPage() {
                 setRankDeltas(newDeltas);
             }
             // Save current ranks for next comparison
-            prevRanksRef.current = liveRanksMap;
+            prevRanksRef.current = currentRanks;
 
-            setRunners(runnersWithLiveRank);
+            setRunners(runnersFromApi);
         } catch { setRunners([]); }
         finally {
             setDataLoading(false);
             setLastRefresh(new Date());
         }
-    }, [campaign?._id, selectedCp, computeLiveRanks]);
+    }, [campaign?._id, selectedCp]);
 
     useEffect(() => { if (campaign?._id && selectedCp) fetchRunners(); }, [campaign?._id, selectedCp, fetchRunners]);
 
@@ -381,17 +350,6 @@ export default function CheckpointMonitorPage() {
         }
         return STATUS_OPTIONS.find(s => s.value === 'dnf')!;
     };
-    const getRankLabelColor = (kind: 'overall' | 'gender' | 'category', isStopped: boolean) => {
-        if (kind === 'overall') return isStopped ? '#86efac' : '#166534';
-        if (kind === 'gender') return isStopped ? '#c4b5fd' : '#7c3aed';
-        return isStopped ? '#93c5fd' : '#2563eb';
-    };
-    const getRankValueColor = (kind: 'overall' | 'gender' | 'category', isStopped: boolean) => {
-        if (kind === 'overall') return isStopped ? '#4ade80' : '#15803d';
-        if (kind === 'gender') return isStopped ? '#a78bfa' : '#6d28d9';
-        return isStopped ? '#60a5fa' : '#1d4ed8';
-    };
-
     if (loading) {
         return (
             <AdminLayout breadcrumbItems={[{ label: 'Checkpoint Monitor', labelEn: 'Checkpoint Monitor' }]}>
@@ -477,12 +435,15 @@ export default function CheckpointMonitorPage() {
                                         BIB{sortArrow('bib')}
                                     </button>
                                 </th>
-                                <th className="px-2 py-3 text-left font-bold text-slate-600">
+                                <th className="pl-2 pr-0.5 py-3 text-left font-bold text-slate-600">
                                     <button onClick={() => toggleSort('name')}
                                         className={`bg-transparent border-none cursor-pointer font-bold text-xs inline-flex items-center ${sortBy === 'name' ? 'text-green-600' : 'text-slate-600'}`}>
-                                        {th ? 'นักกีฬา & Rankings' : 'Athlete & Rankings'}{sortArrow('name')}
+                                        {th ? 'นักกีฬา' : 'Athlete'}{sortArrow('name')}
                                     </button>
                                 </th>
+                                <th className="pl-0.5 pr-0.5 py-3 text-center font-bold text-slate-600 w-[40px]">Rank</th>
+                                <th className="pl-0.5 pr-0.5 py-3 text-center font-bold text-slate-600 w-[40px]">Gen</th>
+                                <th className="pl-0.5 pr-0.5 py-3 text-center font-bold text-slate-600 w-[40px]">Cat</th>
                                 <th className="px-1 py-3 text-center font-bold text-slate-600 w-[50px]">Cat.</th>
                                 <th className="px-1 py-3 text-center font-bold text-slate-600 w-[85px]">
                                     <button onClick={() => toggleSort('arrival')}
@@ -509,9 +470,9 @@ export default function CheckpointMonitorPage() {
                         </thead>
                         <tbody>
                             {dataLoading && sortedRunners.length === 0 ? (
-                                <tr><td colSpan={9} className="p-10 text-center text-slate-400">{th ? 'กำลังโหลด...' : 'Loading...'}</td></tr>
+                                <tr><td colSpan={10} className="p-10 text-center text-slate-400">{th ? 'กำลังโหลด...' : 'Loading...'}</td></tr>
                             ) : sortedRunners.length === 0 ? (
-                                <tr><td colSpan={9} className="p-10 text-center text-slate-400">{th ? 'ยังไม่มีนักกีฬาถึงจุดนี้' : 'No runners arrived at this checkpoint yet'}</td></tr>
+                                <tr><td colSpan={10} className="p-10 text-center text-slate-400">{th ? 'ยังไม่มีนักกีฬาถึงจุดนี้' : 'No runners arrived at this checkpoint yet'}</td></tr>
                             ) : sortedRunners.map((r, idx) => { const rowKey = r._id ? `${r._id}-${idx}` : `row-${idx}`;
                                 const runnerStatus = normalizeRunnerStatus(r.status);
                                 const isStopped = ['dnf', 'dns', 'dq'].includes(runnerStatus);
@@ -522,26 +483,23 @@ export default function CheckpointMonitorPage() {
                                         <td className={`p-2.5 text-center font-bold ${isStopped ? 'text-slate-400' : 'text-slate-700'}`}>
                                             {r.bib}
                                         </td>
-                                        <td className="p-2">
+                                        <td className="pl-2 pr-0.5 py-2">
                                             <div className={`font-semibold text-[13px] ${isStopped ? 'text-red-600' : 'text-slate-900'} flex items-center gap-1 flex-wrap`}>
                                                 <span style={{ color: r.gender === 'F' ? '#ec4899' : '#3b82f6', fontSize: 14 }}>{r.gender === 'F' ? '♀' : '♂'}</span>
                                                 <span>{r.firstName} {r.lastName}</span>
-                                                <span className="inline-flex flex-wrap items-center gap-1.5 ml-1">
-                                                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '2px 8px', borderRadius: 999, background: '#dcfce7' }}>
-                                                        <span style={{ fontSize: 10, fontWeight: 700, color: '#166534' }}>Ovr</span>
-                                                        <span style={{ color: '#15803d', fontWeight: 800 }}>{r.overallRank || '-'}</span>
-                                                        {(() => { const d = rankDeltas.get(r.bib); if (d === undefined || d === 0) return null; return d > 0 ? <span style={{color:'#16a34a',fontWeight:800,fontSize:10}}>▲{d}</span> : <span style={{color:'#dc2626',fontWeight:800,fontSize:10}}>▼{Math.abs(d)}</span>; })()}
-                                                    </span>
-                                                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '2px 8px', borderRadius: 999, background: '#f3e8ff' }}>
-                                                        <span style={{ fontSize: 10, fontWeight: 700, color: '#7c3aed' }}>Gen</span>
-                                                        <span style={{ color: '#6d28d9', fontWeight: 800 }}>{r.genderRank || '-'}</span>
-                                                    </span>
-                                                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '2px 8px', borderRadius: 999, background: '#dbeafe' }}>
-                                                        <span style={{ fontSize: 10, fontWeight: 700, color: '#2563eb' }}>Cat</span>
-                                                        <span style={{ color: '#1d4ed8', fontWeight: 800 }}>{r.categoryRank || '-'}</span>
-                                                    </span>
-                                                </span>
                                             </div>
+                                        </td>
+                                        <td className="pl-0.5 pr-0.5 py-2.5 text-center">
+                                            <div className="inline-flex flex-col items-center leading-tight">
+                                                <span className={`text-sm font-black ${isStopped ? 'text-slate-400' : 'text-emerald-700'}`}>{r.overallRank || '-'}</span>
+                                                {(() => { const d = rankDeltas.get(r.bib); if (d === undefined || d === 0) return null; return <span className={`text-[10px] font-extrabold ${d > 0 ? 'text-green-600' : 'text-red-600'}`}>{d > 0 ? `▲${d}` : `▼${Math.abs(d)}`}</span>; })()}
+                                            </div>
+                                        </td>
+                                        <td className={`pl-0.5 pr-0.5 py-2.5 text-center text-xs font-bold ${isStopped ? 'text-slate-400' : 'text-violet-700'}`}>
+                                            {r.genderRank || '-'}
+                                        </td>
+                                        <td className={`pl-0.5 pr-0.5 py-2.5 text-center text-xs font-bold ${isStopped ? 'text-slate-400' : 'text-blue-700'}`}>
+                                            {r.categoryRank || '-'}
                                         </td>
                                         <td className="p-2.5 text-center text-[11px] font-medium text-slate-500">
                                             {r.category || '-'}

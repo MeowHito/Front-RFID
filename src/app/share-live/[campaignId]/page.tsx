@@ -170,21 +170,9 @@ export default function ShareLiveMonitorPage() {
             if (!res.ok) throw new Error();
             const data = await res.json();
             const newRunners = Array.isArray(data) ? dedupeRunners(data) : [];
-
-            // Compute live ranks from runners sorted by netTime (fastest first)
-            const rankedRunners = newRunners
-                .filter(r => !!r.scanTime && !['dnf', 'dns', 'dq'].includes((r.status || '').toLowerCase()))
-                .sort((a, b) => {
-                    const aTime = a.netTime || a.elapsedTime || a.gunTime || 0;
-                    const bTime = b.netTime || b.elapsedTime || b.gunTime || 0;
-                    if (aTime > 0 && bTime > 0) return aTime - bTime;
-                    if (aTime > 0 && bTime <= 0) return -1;
-                    if (aTime <= 0 && bTime > 0) return 1;
-                    return new Date(a.scanTime || 0).getTime() - new Date(b.scanTime || 0).getTime();
-                });
             const currentRanks = new Map<string, number>();
-            rankedRunners.forEach((r, idx) => {
-                if (r.bib) currentRanks.set(r.bib, idx + 1);
+            newRunners.forEach((r) => {
+                if (r.bib && r.overallRank > 0) currentRanks.set(r.bib, r.overallRank);
             });
 
             // Update rank deltas — persistent until rank changes again
@@ -206,13 +194,7 @@ export default function ShareLiveMonitorPage() {
                 });
             }
             prevRanksRef.current = currentRanks;
-
-            // Inject live rank into runners for display
-            const runnersWithLiveRank = newRunners.map(r => ({
-                ...r,
-                overallRank: currentRanks.get(r.bib) || r.overallRank || 0,
-            }));
-            setRunners(runnersWithLiveRank);
+            setRunners(newRunners);
         } catch { setRunners([]); }
         finally { setDataLoading(false); setLastRefresh(new Date()); }
     }, [campaignId, selectedCp]);
@@ -540,12 +522,15 @@ export default function ShareLiveMonitorPage() {
                                             BIB{sortArrow('bib')}
                                         </button>
                                     </th>
-                                    <th className="px-2 py-3 text-left font-bold text-slate-600">
+                                    <th className="pl-2 pr-0.5 py-3 text-left font-bold text-slate-600">
                                         <button onClick={() => toggleSort('name')}
                                             className={`bg-transparent border-none cursor-pointer font-bold text-xs inline-flex items-center ${sortBy === 'name' ? 'text-green-600' : 'text-slate-600'}`}>
-                                            นักกีฬา & Rankings{sortArrow('name')}
+                                            นักกีฬา{sortArrow('name')}
                                         </button>
                                     </th>
+                                    <th className="pl-0.5 pr-0.5 py-3 text-center font-bold text-slate-600 w-[40px]">Rank</th>
+                                    <th className="pl-0.5 pr-0.5 py-3 text-center font-bold text-slate-600 w-[40px]">Gen</th>
+                                    <th className="pl-0.5 pr-0.5 py-3 text-center font-bold text-slate-600 w-[40px]">Cat</th>
                                     <th className="px-1 py-3 text-center font-bold text-slate-600 w-[50px]">Cat.</th>
                                     <th className="px-1 py-3 text-center font-bold text-slate-600 w-[85px]">
                                         <button onClick={() => toggleSort('arrival')}
@@ -569,9 +554,9 @@ export default function ShareLiveMonitorPage() {
                             </thead>
                             <tbody>
                                 {dataLoading && sortedRunners.length === 0 ? (
-                                    <tr><td colSpan={8} className="p-10 text-center text-slate-400">กำลังโหลด...</td></tr>
+                                    <tr><td colSpan={9} className="p-10 text-center text-slate-400">กำลังโหลด...</td></tr>
                                 ) : sortedRunners.length === 0 ? (
-                                    <tr><td colSpan={8} className="p-10 text-center text-slate-400">ยังไม่มีนักกีฬาถึงจุดนี้</td></tr>
+                                    <tr><td colSpan={9} className="p-10 text-center text-slate-400">ยังไม่มีนักกีฬาถึงจุดนี้</td></tr>
                                 ) : sortedRunners.map((r, idx) => {
                                     const rowKey = r._id ? `${r._id}-${idx}` : `row-${idx}`;
                                     const runnerStatus = normalizeRunnerStatus(r.status);
@@ -582,26 +567,23 @@ export default function ShareLiveMonitorPage() {
                                             <td className={`p-2.5 text-center font-bold ${isStopped ? 'text-slate-400' : 'text-slate-700'}`}>
                                                 {r.bib}
                                             </td>
-                                            <td className="p-2">
+                                            <td className="pl-2 pr-0.5 py-2">
                                                 <div className={`font-semibold text-[13px] ${isStopped ? 'text-red-600' : 'text-slate-900'} flex items-center gap-1 flex-wrap`}>
                                                     <span style={{ color: r.gender === 'F' ? '#ec4899' : '#3b82f6', fontSize: 14 }}>{r.gender === 'F' ? '♀' : '♂'}</span>
                                                     <span>{r.firstName} {r.lastName}</span>
-                                                    <span className="inline-flex flex-wrap items-center gap-1.5 ml-1">
-                                                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '2px 8px', borderRadius: 999, background: '#dcfce7' }}>
-                                                            <span style={{ fontSize: 10, fontWeight: 700, color: '#166534' }}>Ovr</span>
-                                                            <span style={{ color: '#15803d', fontWeight: 800 }}>{r.overallRank || '-'}</span>
-                                                            {(() => { const d = rankDeltas.get(r.bib); if (d === undefined || d === 0) return null; return d > 0 ? <span style={{color:'#16a34a',fontWeight:800,fontSize:10}}>▲{d}</span> : <span style={{color:'#dc2626',fontWeight:800,fontSize:10}}>▼{Math.abs(d)}</span>; })()}
-                                                        </span>
-                                                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '2px 8px', borderRadius: 999, background: '#f3e8ff' }}>
-                                                            <span style={{ fontSize: 10, fontWeight: 700, color: '#7c3aed' }}>Gen</span>
-                                                            <span style={{ color: '#6d28d9', fontWeight: 800 }}>{r.genderRank || '-'}</span>
-                                                        </span>
-                                                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '2px 8px', borderRadius: 999, background: '#dbeafe' }}>
-                                                            <span style={{ fontSize: 10, fontWeight: 700, color: '#2563eb' }}>Cat</span>
-                                                            <span style={{ color: '#1d4ed8', fontWeight: 800 }}>{r.categoryRank || '-'}</span>
-                                                        </span>
-                                                    </span>
                                                 </div>
+                                            </td>
+                                            <td className="pl-0.5 pr-0.5 py-2.5 text-center">
+                                                <div className="inline-flex flex-col items-center leading-tight">
+                                                    <span className={`text-sm font-black ${isStopped ? 'text-slate-400' : 'text-emerald-700'}`}>{r.overallRank || '-'}</span>
+                                                    {(() => { const d = rankDeltas.get(r.bib); if (d === undefined || d === 0) return null; return <span className={`text-[10px] font-extrabold ${d > 0 ? 'text-green-600' : 'text-red-600'}`}>{d > 0 ? `▲${d}` : `▼${Math.abs(d)}`}</span>; })()}
+                                                </div>
+                                            </td>
+                                            <td className={`pl-0.5 pr-0.5 py-2.5 text-center text-xs font-bold ${isStopped ? 'text-slate-400' : 'text-violet-700'}`}>
+                                                {r.genderRank || '-'}
+                                            </td>
+                                            <td className={`pl-0.5 pr-0.5 py-2.5 text-center text-xs font-bold ${isStopped ? 'text-slate-400' : 'text-blue-700'}`}>
+                                                {r.categoryRank || '-'}
                                             </td>
                                             <td className="p-2.5 text-center text-[11px] font-medium text-slate-500">
                                                 {r.category || '-'}
