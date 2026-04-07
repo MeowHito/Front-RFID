@@ -40,6 +40,7 @@ export const ROUTE_TO_MODULE: Record<string, string> = {
     '/admin/chip-mapping': 'rfidCheckin',
     '/admin/raw-data': 'rfidCheckin',
     '/admin/results': 'results',
+    '/admin/general-chart': 'results',
     '/admin/display': 'results',
     '/admin/age-group-ranking': 'results',
     '/admin/certificates': 'certificates',
