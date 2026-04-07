@@ -583,6 +583,62 @@ export default function GeneralChartPage() {
         [ageGroupData]
     );
 
+    // ── Runner count by status (Starters / Finishers / DNF / DNS / DQ) ──
+    const statusChartData = useMemo(() => {
+        const startBibs = cpTimingMap['START'] || cpTimingMap['Start'] || new Set<string>();
+        const starters = runners.filter(r => startBibs.has(r.bib) || r.status === 'in_progress' || r.status === 'finished' || r.status === 'dnf');
+        const finishers = runners.filter(r => r.status === 'finished');
+        const dnfRunners = runners.filter(r => r.status === 'dnf');
+        const dnsRunners = runners.filter(r => r.status === 'dns');
+        const dqRunners = runners.filter(r => r.status === 'dq');
+        return [
+            { name: th ? 'ปล่อยตัว' : 'Starters', male: starters.filter(r => r.gender === 'M').length, female: starters.filter(r => r.gender === 'F').length, total: starters.length },
+            { name: th ? 'จบ' : 'Finishers', male: finishers.filter(r => r.gender === 'M').length, female: finishers.filter(r => r.gender === 'F').length, total: finishers.length },
+            { name: 'DNF', male: dnfRunners.filter(r => r.gender === 'M').length, female: dnfRunners.filter(r => r.gender === 'F').length, total: dnfRunners.length },
+            { name: 'DNS', male: dnsRunners.filter(r => r.gender === 'M').length, female: dnsRunners.filter(r => r.gender === 'F').length, total: dnsRunners.length },
+            { name: 'DQ', male: dqRunners.filter(r => r.gender === 'M').length, female: dqRunners.filter(r => r.gender === 'F').length, total: dqRunners.length },
+        ];
+    }, [runners, cpTimingMap, th]);
+
+    // ── Starters by age group ──
+    const startersByAgeData = useMemo(() => {
+        const startBibs = cpTimingMap['START'] || cpTimingMap['Start'] || new Set<string>();
+        const starters = runners.filter(r => startBibs.has(r.bib) || r.status === 'in_progress' || r.status === 'finished' || r.status === 'dnf');
+        const groups: Record<string, { male: number; female: number }> = {};
+        starters.forEach(r => {
+            const ag = r.ageGroup || 'N/A';
+            if (!groups[ag]) groups[ag] = { male: 0, female: 0 };
+            if (r.gender === 'M') groups[ag].male++;
+            else if (r.gender === 'F') groups[ag].female++;
+        });
+        return Object.keys(groups).sort((a, b) => {
+            const numA = parseInt(a); const numB = parseInt(b);
+            if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
+            return a.localeCompare(b);
+        }).map(ag => ({ ageGroup: ag, male: groups[ag].male, female: groups[ag].female, total: groups[ag].male + groups[ag].female }));
+    }, [runners, cpTimingMap]);
+
+    // ── Chart data per category — PASSED THROUGH (cumulative) ──
+    const chartDataByCategoryPassedThrough = useMemo(() => {
+        const result: Record<string, { cpName: string; count: number; total: number }[]> = {};
+        for (const cat of categories) {
+            const catRunners = runners.filter(r => r.category === cat);
+            const catCps = checkpoints.filter(cp => {
+                if (!cp.distanceMappings || cp.distanceMappings.length === 0) return true;
+                return cp.distanceMappings.includes(cat);
+            });
+            if (catCps.length === 0) continue;
+            const data: { cpName: string; count: number; total: number }[] = [];
+            for (const cp of catCps) {
+                const cpBibs = cpTimingMap[cp.name] || new Set<string>();
+                const count = catRunners.filter(r => cpBibs.has(r.bib)).length;
+                data.push({ cpName: cp.name, count, total: catRunners.length });
+            }
+            result[cat] = data;
+        }
+        return result;
+    }, [categories, runners, checkpoints, cpTimingMap]);
+
     if (loading) {
         return (
             <AdminLayout breadcrumbItems={[{ label: 'General Chart', labelEn: 'General Chart' }]}>
@@ -698,87 +754,162 @@ export default function GeneralChartPage() {
                     ))}
                 </div>
 
-                {/* ─── Distribution Charts per Category ─── */}
+                {/* ─── Runner Count by Status ─── */}
                 <div style={styles.distGrid} className="gc-dist-grid">
-                    {categories.map(cat => {
-                        const data = chartDataByCategory[cat];
-                        const cs = catSummary[cat];
-                        if (!data || data.length === 0) return null;
-                        const maxVal = Math.max(...data.map(d => d.count), 1);
+                    {/* Status Chart: Starters / Finishers / DNF / DNS / DQ */}
+                    <div style={styles.distCard}>
+                        <div style={styles.distHeader}>
+                            <div>
+                                <h3 style={styles.distTitle}>{th ? 'สถานะนักวิ่ง' : 'Runner Count by Status'}</h3>
+                                <p style={styles.distSub}>{th ? 'จำนวนผู้เข้าแข่งขันแยกตามสถานะ และเพศ' : 'Participant counts by status, split by gender'}</p>
+                            </div>
+                        </div>
+                        <div style={{ padding: '8px 4px 16px 0' }}>
+                            <ResponsiveContainer width="100%" height={280}>
+                                <BarChart data={statusChartData} margin={{ top: 20, right: 16, left: 4, bottom: 5 }} barCategoryGap="25%">
+                                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                                    <XAxis dataKey="name" tick={{ fill: '#64748b', fontSize: 11, fontWeight: 700 }} axisLine={{ stroke: '#e2e8f0' }} tickLine={false} />
+                                    <YAxis tick={{ fill: '#cbd5e1', fontSize: 10 }} axisLine={false} tickLine={false} width={40} />
+                                    <Tooltip content={<ChartTooltip th={th} />} cursor={{ fill: 'rgba(59,130,246,0.04)' }} />
+                                    <Legend wrapperStyle={{ fontSize: 11, fontWeight: 700 }} />
+                                    <Bar dataKey="male" name={th ? 'ชาย (MALE)' : 'MALE'} stackId="a" fill="#3b82f6" radius={[0, 0, 0, 0]}>
+                                        <LabelList dataKey="male" position="inside" style={{ fill: '#fff', fontWeight: 800, fontSize: 11 }} formatter={(v: any) => v > 0 ? v : ''} />
+                                    </Bar>
+                                    <Bar dataKey="female" name={th ? 'หญิง (FEMALE)' : 'FEMALE'} stackId="a" fill="#22c55e" radius={[4, 4, 0, 0]}>
+                                        <LabelList dataKey="total" position="top" style={{ fill: '#0f172a', fontWeight: 900, fontSize: 12 }} />
+                                        <LabelList dataKey="female" position="inside" style={{ fill: '#fff', fontWeight: 800, fontSize: 11 }} formatter={(v: any) => v > 0 ? v : ''} />
+                                    </Bar>
+                                </BarChart>
+                            </ResponsiveContainer>
+                        </div>
+                    </div>
 
-                        return (
-                            <div key={cat} style={styles.distCard}>
-                                <div style={styles.distHeader}>
-                                    <div>
-                                        <h3 style={styles.distTitle}>{cat} Runner Distribution</h3>
-                                        <p style={styles.distSub}>
-                                            {th
-                                                ? 'จำนวนนักวิ่งที่อยู่ ณ แต่ละจุด'
-                                                : 'Number of runners currently at each checkpoint.'}
-                                        </p>
-                                    </div>
-                                    <div style={styles.distBadge}>
-                                        <div style={styles.distBadgeLabel}>TOTAL</div>
-                                        <div style={styles.distBadgeValue}>{cs?.total?.toLocaleString() || 0}</div>
-                                    </div>
+                    {/* Starters by Age Group */}
+                    <div style={styles.distCard}>
+                        <div style={styles.distHeader}>
+                            <div>
+                                <h3 style={styles.distTitle}>{th ? 'ผู้เข้าแข่งขันแยกตามกลุ่มอายุ' : 'Starters by Age'}</h3>
+                                <p style={styles.distSub}>{th ? 'จำนวนผู้ออกวิ่งแยกตามช่วงอายุ และเพศ' : 'Starters broken down by age group and gender'}</p>
+                            </div>
+                        </div>
+                        <div style={{ padding: '8px 4px 16px 0' }}>
+                            <ResponsiveContainer width="100%" height={280}>
+                                <BarChart data={startersByAgeData} margin={{ top: 20, right: 16, left: 4, bottom: 5 }} barCategoryGap="20%">
+                                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                                    <XAxis dataKey="ageGroup" tick={{ fill: '#64748b', fontSize: 10, fontWeight: 700 }} axisLine={{ stroke: '#e2e8f0' }} tickLine={false} interval={0} />
+                                    <YAxis tick={{ fill: '#cbd5e1', fontSize: 10 }} axisLine={false} tickLine={false} width={40} />
+                                    <Tooltip content={<ChartTooltip th={th} />} cursor={{ fill: 'rgba(59,130,246,0.04)' }} />
+                                    <Legend wrapperStyle={{ fontSize: 11, fontWeight: 700 }} />
+                                    <Bar dataKey="male" name={th ? 'ชาย (MALE)' : 'MALE'} stackId="a" fill="#3b82f6" radius={[0, 0, 0, 0]}>
+                                        <LabelList dataKey="male" position="inside" style={{ fill: '#fff', fontWeight: 800, fontSize: 10 }} formatter={(v: any) => v > 0 ? v : ''} />
+                                    </Bar>
+                                    <Bar dataKey="female" name={th ? 'หญิง (FEMALE)' : 'FEMALE'} stackId="a" fill="#22c55e" radius={[4, 4, 0, 0]}>
+                                        <LabelList dataKey="total" position="top" style={{ fill: '#0f172a', fontWeight: 900, fontSize: 11 }} />
+                                        <LabelList dataKey="female" position="inside" style={{ fill: '#fff', fontWeight: 800, fontSize: 10 }} formatter={(v: any) => v > 0 ? v : ''} />
+                                    </Bar>
+                                </BarChart>
+                            </ResponsiveContainer>
+                        </div>
+                    </div>
+                </div>
+
+                {/* ─── Checkpoint Distribution Charts per Category (Dual: Passed Through + Currently At) ─── */}
+                {categories.map(cat => {
+                    const dataCurrently = chartDataByCategory[cat];
+                    const dataPassed = chartDataByCategoryPassedThrough[cat];
+                    const cs = catSummary[cat];
+                    if ((!dataCurrently || dataCurrently.length === 0) && (!dataPassed || dataPassed.length === 0)) return null;
+                    const maxValPassed = dataPassed ? Math.max(...dataPassed.map(d => d.count), 1) : 1;
+                    const maxValCurrent = dataCurrently ? Math.max(...dataCurrently.map(d => d.count), 1) : 1;
+
+                    return (
+                        <div key={cat} style={{ ...styles.sectionCard, marginBottom: 24 }}>
+                            <div style={styles.sectionHeader}>
+                                <div>
+                                    <h2 style={styles.sectionTitle}>
+                                        <span style={{ fontSize: 18 }}>📍</span>
+                                        {cat} — {th ? 'การกระจายตัวนักวิ่งตามจุด Checkpoint' : 'Checkpoint Distribution'}
+                                    </h2>
+                                    <p style={styles.sectionSub}>{th ? 'เปรียบเทียบจำนวนนักวิ่งที่ผ่านแต่ละจุด กับจำนวนที่เหลืออยู่ปัจจุบัน' : 'Comparing cumulative pass-through vs runners currently remaining at each checkpoint'}</p>
                                 </div>
-                                <div style={{ padding: '8px 4px 16px 0' }}>
-                                    <ResponsiveContainer width="100%" height={220}>
-                                        <BarChart data={data} margin={{ top: 20, right: 16, left: 4, bottom: 5 }} barCategoryGap="25%">
-                                            <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
-                                            <XAxis
-                                                dataKey="cpName"
-                                                tick={{ fill: '#94a3b8', fontSize: 10, fontWeight: 700 }}
-                                                axisLine={{ stroke: '#e2e8f0' }}
-                                                tickLine={false}
-                                                interval={0}
-                                                angle={data.length > 8 ? -35 : 0}
-                                                textAnchor={data.length > 8 ? 'end' : 'middle'}
-                                                height={data.length > 8 ? 50 : 30}
-                                            />
-                                            <YAxis
-                                                domain={[0, Math.ceil(maxVal * 1.3) || 10]}
-                                                tick={{ fill: '#cbd5e1', fontSize: 10 }}
-                                                axisLine={false}
-                                                tickLine={false}
-                                                width={35}
-                                            />
-                                            <Tooltip content={<ChartTooltip th={th} />} cursor={{ fill: 'rgba(59,130,246,0.04)' }} />
-                                            <Bar dataKey="count" name={th ? 'จำนวน' : 'Count'} radius={[4, 4, 0, 0]} maxBarSize={48}>
-                                                <LabelList dataKey="count" position="top" style={{ fill: '#475569', fontWeight: 800, fontSize: 11 }} />
-                                                {data.map((entry, idx) => {
-                                                    const isFinish = entry.cpName.toLowerCase() === 'finish';
-                                                    if (entry.count === 0) return <Cell key={idx} fill="#e2e8f0" />;
-                                                    if (isFinish) return <Cell key={idx} fill="#22c55e" />;
-                                                    return <Cell key={idx} fill="#3b82f6" />;
-                                                })}
-                                            </Bar>
-                                        </BarChart>
-                                    </ResponsiveContainer>
-                                </div>
-                                {/* Mini summary row */}
-                                <div style={{
-                                    display: 'flex', gap: 0, borderTop: '1px solid #f1f5f9',
-                                }}>
-                                    {[
-                                        { label: th ? 'ปล่อยตัว' : 'Started', value: cs?.started || 0, color: '#f59e0b' },
-                                        { label: th ? 'จบ' : 'Finished', value: cs?.finished || 0, color: '#22c55e' },
-                                        { label: '♂', value: cs?.mF || 0, color: '#3b82f6' },
-                                        { label: '♀', value: cs?.fF || 0, color: '#ec4899' },
-                                    ].map((s, i) => (
-                                        <div key={i} style={{
-                                            flex: 1, textAlign: 'center', padding: '10px 6px',
-                                            borderRight: i < 3 ? '1px solid #f1f5f9' : undefined,
-                                        }}>
-                                            <div style={{ fontSize: 9, color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>{s.label}</div>
-                                            <div style={{ fontSize: 16, fontWeight: 900, color: s.color, marginTop: 2 }}>{s.value}</div>
-                                        </div>
-                                    ))}
+                                <div style={styles.distBadge}>
+                                    <div style={styles.distBadgeLabel}>TOTAL</div>
+                                    <div style={styles.distBadgeValue}>{cs?.total?.toLocaleString() || 0}</div>
                                 </div>
                             </div>
-                        );
-                    })}
-                </div>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 0 }}>
+                                {/* LEFT: Passed Through (cumulative) */}
+                                <div style={{ borderRight: '1px solid #f1f5f9' }}>
+                                    <div style={{ padding: '12px 16px 4px', fontSize: 12, fontWeight: 800, color: '#3b82f6', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                                        {th ? '📊 ผ่านจุดนี้แล้ว (สะสม)' : '📊 Passed Through (Cumulative)'}
+                                    </div>
+                                    <div style={{ padding: '4px 0 12px 0' }}>
+                                        <ResponsiveContainer width="100%" height={220}>
+                                            <BarChart data={dataPassed || []} margin={{ top: 20, right: 16, left: 4, bottom: 5 }} barCategoryGap="25%">
+                                                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                                                <XAxis dataKey="cpName" tick={{ fill: '#94a3b8', fontSize: 10, fontWeight: 700 }} axisLine={{ stroke: '#e2e8f0' }} tickLine={false} interval={0} angle={(dataPassed?.length || 0) > 6 ? -35 : 0} textAnchor={(dataPassed?.length || 0) > 6 ? 'end' : 'middle'} height={(dataPassed?.length || 0) > 6 ? 50 : 30} />
+                                                <YAxis domain={[0, Math.ceil(maxValPassed * 1.3) || 10]} tick={{ fill: '#cbd5e1', fontSize: 10 }} axisLine={false} tickLine={false} width={35} />
+                                                <Tooltip content={<ChartTooltip th={th} />} cursor={{ fill: 'rgba(59,130,246,0.04)' }} />
+                                                <Bar dataKey="count" name={th ? 'ผ่านเข้าจุด' : 'Passed Through'} radius={[4, 4, 0, 0]} maxBarSize={48}>
+                                                    <LabelList dataKey="count" position="top" style={{ fill: '#475569', fontWeight: 800, fontSize: 11 }} />
+                                                    {(dataPassed || []).map((entry, idx) => {
+                                                        const isFinish = entry.cpName.toLowerCase() === 'finish';
+                                                        if (entry.count === 0) return <Cell key={idx} fill="#e2e8f0" />;
+                                                        if (isFinish) return <Cell key={idx} fill="#22c55e" />;
+                                                        return <Cell key={idx} fill="#60a5fa" />;
+                                                    })}
+                                                </Bar>
+                                            </BarChart>
+                                        </ResponsiveContainer>
+                                    </div>
+                                </div>
+                                {/* RIGHT: Currently At */}
+                                <div>
+                                    <div style={{ padding: '12px 16px 4px', fontSize: 12, fontWeight: 800, color: '#f59e0b', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                                        {th ? '📌 เหลืออยู่ที่จุดนี้' : '📌 Currently At (Remaining)'}
+                                    </div>
+                                    <div style={{ padding: '4px 0 12px 0' }}>
+                                        <ResponsiveContainer width="100%" height={220}>
+                                            <BarChart data={dataCurrently || []} margin={{ top: 20, right: 16, left: 4, bottom: 5 }} barCategoryGap="25%">
+                                                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                                                <XAxis dataKey="cpName" tick={{ fill: '#94a3b8', fontSize: 10, fontWeight: 700 }} axisLine={{ stroke: '#e2e8f0' }} tickLine={false} interval={0} angle={(dataCurrently?.length || 0) > 6 ? -35 : 0} textAnchor={(dataCurrently?.length || 0) > 6 ? 'end' : 'middle'} height={(dataCurrently?.length || 0) > 6 ? 50 : 30} />
+                                                <YAxis domain={[0, Math.ceil(maxValCurrent * 1.3) || 10]} tick={{ fill: '#cbd5e1', fontSize: 10 }} axisLine={false} tickLine={false} width={35} />
+                                                <Tooltip content={<ChartTooltip th={th} />} cursor={{ fill: 'rgba(59,130,246,0.04)' }} />
+                                                <Bar dataKey="count" name={th ? 'เหลืออยู่' : 'Remaining'} radius={[4, 4, 0, 0]} maxBarSize={48}>
+                                                    <LabelList dataKey="count" position="top" style={{ fill: '#475569', fontWeight: 800, fontSize: 11 }} />
+                                                    {(dataCurrently || []).map((entry, idx) => {
+                                                        const isFinish = entry.cpName.toLowerCase() === 'finish';
+                                                        if (entry.count === 0) return <Cell key={idx} fill="#e2e8f0" />;
+                                                        if (isFinish) return <Cell key={idx} fill="#22c55e" />;
+                                                        return <Cell key={idx} fill="#f59e0b" />;
+                                                    })}
+                                                </Bar>
+                                            </BarChart>
+                                        </ResponsiveContainer>
+                                    </div>
+                                </div>
+                            </div>
+                            {/* Mini summary row */}
+                            <div style={{ display: 'flex', gap: 0, borderTop: '1px solid #f1f5f9' }}>
+                                {[
+                                    { label: th ? 'สมัคร' : 'Registered', value: cs?.total || 0, color: '#64748b' },
+                                    { label: th ? 'ปล่อยตัว' : 'Started', value: cs?.started || 0, color: '#f59e0b' },
+                                    { label: th ? 'จบ' : 'Finished', value: cs?.finished || 0, color: '#22c55e' },
+                                    { label: '♂', value: cs?.mF || 0, color: '#3b82f6' },
+                                    { label: '♀', value: cs?.fF || 0, color: '#ec4899' },
+                                ].map((s, i) => (
+                                    <div key={i} style={{
+                                        flex: 1, textAlign: 'center', padding: '10px 6px',
+                                        borderRight: i < 4 ? '1px solid #f1f5f9' : undefined,
+                                    }}>
+                                        <div style={{ fontSize: 9, color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>{s.label}</div>
+                                        <div style={{ fontSize: 16, fontWeight: 900, color: s.color, marginTop: 2 }}>{s.value}</div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    );
+                })}
 
                 {/* ─── Age Group Summary Chart ─── */}
                 {ageChartData.length > 0 && (

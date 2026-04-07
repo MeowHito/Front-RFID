@@ -25,6 +25,14 @@ interface Runner {
     categoryRank?: number;
 }
 
+interface AgeGroupConfig {
+    name: string;
+    minAge: number;
+    maxAge: number;
+    gender: 'male' | 'female';
+    active: boolean;
+}
+
 interface Campaign {
     _id: string;
     name: string;
@@ -32,11 +40,17 @@ interface Campaign {
     nameEn?: string;
     slug?: string;
     uuid?: string;
-    categories?: { name: string; distance?: string }[];
+    categories?: { name: string; distance?: string; ageGroups?: AgeGroupConfig[] }[];
     excludeOverallFromAgeGroup?: number;
 }
 
-const AGE_GROUPS = [
+interface AgeGroupBucket {
+    label: string;
+    min: number;
+    max: number;
+}
+
+const DEFAULT_AGE_GROUPS: AgeGroupBucket[] = [
     { label: '1-18 ปี', min: 0, max: 18 },
     { label: '19-29 ปี', min: 19, max: 29 },
     { label: '30-39 ปี', min: 30, max: 39 },
@@ -44,6 +58,24 @@ const AGE_GROUPS = [
     { label: '50-59 ปี', min: 50, max: 59 },
     { label: '60+ ปี', min: 60, max: 999 },
 ];
+
+function buildAgeGroupsFromConfig(ageGroups: AgeGroupConfig[]): AgeGroupBucket[] {
+    // Extract unique age ranges (deduplicate male/female pairs)
+    const seen = new Map<string, AgeGroupBucket>();
+    for (const g of ageGroups) {
+        if (!g.active) continue;
+        const key = `${g.minAge}-${g.maxAge}`;
+        if (!seen.has(key)) {
+            const isOpenEnd = g.maxAge >= 99;
+            const label = isOpenEnd ? `${g.minAge}+ ปี` : `${g.minAge}-${g.maxAge} ปี`;
+            seen.set(key, { label, min: g.minAge, max: g.maxAge });
+        }
+    }
+    const buckets = Array.from(seen.values());
+    // Sort by minAge ascending
+    buckets.sort((a, b) => a.min - b.min);
+    return buckets.length > 0 ? buckets : DEFAULT_AGE_GROUPS;
+}
 
 const TOP_N = 5;
 
@@ -55,19 +87,19 @@ function formatTime(ms: number | undefined | null): string {
     return `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 }
 
-function resolveAgeGroup(runner: Runner): string {
+function resolveAgeGroup(runner: Runner, ageGroups: AgeGroupBucket[]): string {
     const ag = (runner.ageGroup || '').replace(/^[MF]\s*/i, '').trim();
     // Try to parse age range like "30-39"
     const rangeMatch = ag.match(/(\d+)\s*-\s*(\d+)/);
     if (rangeMatch) {
         const lo = parseInt(rangeMatch[1]);
-        for (const g of AGE_GROUPS) {
+        for (const g of ageGroups) {
             if (lo >= g.min && lo <= g.max) return g.label;
         }
     }
     // Try from age field
     if (runner.age) {
-        for (const g of AGE_GROUPS) {
+        for (const g of ageGroups) {
             if (runner.age >= g.min && runner.age <= g.max) return g.label;
         }
     }
@@ -75,12 +107,12 @@ function resolveAgeGroup(runner: Runner): string {
     const numMatch = ag.match(/(\d+)/);
     if (numMatch) {
         const n = parseInt(numMatch[1]);
-        for (const g of AGE_GROUPS) {
+        for (const g of ageGroups) {
             if (n >= g.min && n <= g.max) return g.label;
         }
     }
-    if (ag.toLowerCase().includes('u18') || ag.toLowerCase().includes('under')) return AGE_GROUPS[0].label;
-    if (ag.includes('+') || ag.includes('60') || ag.includes('70')) return AGE_GROUPS[5].label;
+    if (ag.toLowerCase().includes('u18') || ag.toLowerCase().includes('under')) return ageGroups[0]?.label || 'Unknown';
+    if (ag.includes('+') || ag.includes('60') || ag.includes('70')) return ageGroups[ageGroups.length - 1]?.label || 'Unknown';
     return 'Unknown';
 }
 
@@ -178,6 +210,14 @@ export default function ResultWinnersBySlugPage() {
         };
     }, [campaign, selectedCategory, loadRunners]);
 
+    // Derive active age groups from selected category's config
+    const activeAgeGroups = useMemo(() => {
+        if (!campaign?.categories || !selectedCategory) return DEFAULT_AGE_GROUPS;
+        const cat = campaign.categories.find(c => c.name === selectedCategory);
+        if (!cat?.ageGroups || cat.ageGroups.length === 0) return DEFAULT_AGE_GROUPS;
+        return buildAgeGroupsFromConfig(cat.ageGroups);
+    }, [campaign, selectedCategory]);
+
     // Build winners per gender per age group
     const { maleWinners, femaleWinners } = useMemo(() => {
         const finished = runners.filter(r => r.status === 'finished' && (r.netTime || r.gunTime));
@@ -197,18 +237,18 @@ export default function ResultWinnersBySlugPage() {
 
         const maleWinners: Record<string, Runner[]> = {};
         const femaleWinners: Record<string, Runner[]> = {};
-        for (const g of AGE_GROUPS) { maleWinners[g.label] = []; femaleWinners[g.label] = []; }
+        for (const g of activeAgeGroups) { maleWinners[g.label] = []; femaleWinners[g.label] = []; }
 
         for (const runner of sorted) {
             if (excludedBibs.has(runner.bib)) continue;
-            const ag = resolveAgeGroup(runner);
+            const ag = resolveAgeGroup(runner, activeAgeGroups);
             const bucket = runner.gender === 'F' ? femaleWinners : maleWinners;
             if (bucket[ag] && bucket[ag].length < TOP_N) {
                 bucket[ag].push(runner);
             }
         }
         return { maleWinners, femaleWinners };
-    }, [runners, campaign]);
+    }, [runners, campaign, activeAgeGroups]);
 
     const rankBg = ['#f59e0b', '#9ca3af', '#92400e', '#e2e8f0', '#e2e8f0'];
     const rankFg = ['#000', '#fff', '#fff', '#475569', '#475569'];
@@ -260,7 +300,7 @@ export default function ResultWinnersBySlugPage() {
             <div style={{ padding: isMobile ? '8px 0' : '0.7vh 0', fontWeight: 900, fontSize: isMobile ? 16 : '2vh', textAlign: 'center', textTransform: 'uppercase', borderRadius: 8, color: 'white', letterSpacing: 2, background: bgHeader, flexShrink: 0 }}>
                 {title}
             </div>
-            {AGE_GROUPS.map(g => {
+            {activeAgeGroups.map(g => {
                 const list = winners[g.label] || [];
                 // Always render TOP_N rows — fill empties
                 const rows = Array.from({ length: TOP_N }, (_, i) => i);
