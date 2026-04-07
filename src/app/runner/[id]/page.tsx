@@ -33,6 +33,7 @@ interface RunnerData {
     genderNetRank?: number;
     categoryNetRank?: number;
     ageGroupRank?: number;
+    ageGroupNetRank?: number;
     netPace?: string;
     gunPace?: string;
     totalFinishers?: number;
@@ -451,7 +452,7 @@ export default function RunnerProfilePage() {
 
     // Gender/Category rank: use runner fields (no per-checkpoint gender rank available)
     const genderRank = runner.genderRank || runner.genderNetRank || 0;
-    const categoryRank = runner.categoryRank || runner.categoryNetRank || 0;
+    const categoryRank = runner.ageGroupRank || runner.ageGroupNetRank || runner.categoryRank || runner.categoryNetRank || 0;
 
     const runnerHitMap = new Map(runnerHits.map(hit => [normalizeCheckpoint(hit.checkpoint), hit]));
     const availableVideoCount = runnerHits.filter(hit => hit.recording).length;

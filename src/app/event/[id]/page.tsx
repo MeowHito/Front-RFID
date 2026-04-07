@@ -876,13 +876,13 @@ export default function EventLivePage() {
             if (runner.status === 'not_started' || runner.status === 'dns' || runner.status === 'dq') continue;
             if (runner.status === 'dnf' && !((runner.passedCount ?? 0) > 0)) continue;
             const gender = runner.gender || '_';
-            const catKey = resolveRunnerCategoryKey(runner) || '_';
+            const catKey = runner.ageGroup || '_';
             genderCounters[gender] = (genderCounters[gender] || 0) + 1;
             categoryCounters[catKey] = (categoryCounters[catKey] || 0) + 1;
             ranks.set(runner._id, { genRank: genderCounters[gender], catRank: categoryCounters[catKey] });
         }
         return ranks;
-    }, [filteredRunners, resolveRunnerCategoryKey]);
+    }, [filteredRunners]);
 
 
 
@@ -1373,7 +1373,7 @@ export default function EventLivePage() {
                                             case 'genRank': {
                                                 const hideGenRank = ['dnf', 'dns', 'dq', 'not_started'].includes(runner.status);
                                                 const liveGen = liveRanks.get(runner._id)?.genRank;
-                                                const displayGenRank = hideGenRank ? '-' : (liveGen || runner.genderRank || '-');
+                                                const displayGenRank = hideGenRank ? '-' : (runner.genderRank || runner.genderNetRank || liveGen || '-');
                                                 return (
                                                     <td key={key} className={isMobile ? 'px-0.5 py-1 text-center' : 'px-1.5 py-1.5 text-center'}>
                                                         <span className={isMobile ? 'text-[11px] font-bold' : 'text-xs font-bold'} style={{ color: isMobile ? '#0f172a' : themeStyles.textMuted }}>{displayGenRank}</span>
@@ -1383,7 +1383,7 @@ export default function EventLivePage() {
                                             case 'catRank': {
                                                 const hideCatRank = ['dnf', 'dns', 'dq', 'not_started'].includes(runner.status);
                                                 const liveCat = liveRanks.get(runner._id)?.catRank;
-                                                const displayCatRank = hideCatRank ? '-' : (liveCat || runner.categoryRank || '-');
+                                                const displayCatRank = hideCatRank ? '-' : (runner.ageGroupRank || runner.ageGroupNetRank || liveCat || '-');
                                                 return (
                                                     <td key={key} className={isMobile ? 'px-0.5 py-1 text-center' : 'px-1.5 py-1.5 text-center'}>
                                                         <span className={isMobile ? 'text-[11px] font-bold' : 'text-xs font-bold'} style={{ color: isMobile ? '#0f172a' : themeStyles.textMuted }}>{displayCatRank}</span>
