@@ -267,7 +267,7 @@ function getStatusLabel(status: string): string {
 
 function FollowHeartIcon({ filled, size = 14, color }: { filled: boolean; size?: number; color: string }) {
     return (
-        <svg viewBox="0 0 24 24" aria-hidden="true" style={{ width: size, height: size, display: 'block' }}>
+        <svg viewBox="0 0 24 24" aria-hidden="true" className="block" style={{ width: size, height: size }}>
             <path d="M12 21.35 10.55 20.03C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35Z" fill={filled ? color : 'none'} stroke={color} strokeWidth="2" strokeLinejoin="round" />
         </svg>
     );
@@ -983,10 +983,10 @@ export default function EventLivePage() {
     // Loading state
     if (loading) {
         return (
-            <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f8fafc', fontFamily: "'Inter', 'Prompt', sans-serif" }}>
-                <div style={{ textAlign: 'center' }}>
-                    <div style={{ width: 40, height: 40, border: '3px solid #e2e8f0', borderTopColor: '#22c55e', borderRadius: '50%', animation: 'spin 1s linear infinite', margin: '0 auto 16px' }} />
-                    <p style={{ color: '#94a3b8', fontSize: 14 }}>{language === 'th' ? 'กำลังโหลด...' : 'Loading...'}</p>
+            <div className="flex min-h-screen items-center justify-center bg-slate-50 font-['Inter','Prompt',sans-serif]">
+                <div className="text-center">
+                    <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-[3px] border-slate-200 border-t-green-500" />
+                    <p className="text-sm text-slate-400">{language === 'th' ? 'กำลังโหลด...' : 'Loading...'}</p>
                     <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
                 </div>
             </div>
@@ -995,12 +995,12 @@ export default function EventLivePage() {
 
     if (error || !campaign) {
         return (
-            <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f8fafc', fontFamily: "'Inter', 'Prompt', sans-serif" }}>
-                <div style={{ textAlign: 'center', padding: 32, background: '#fff', borderRadius: 16, boxShadow: '0 4px 24px rgba(0,0,0,0.08)', maxWidth: 400 }}>
-                    <div style={{ fontSize: 48, marginBottom: 16 }}>😔</div>
-                    <h2 style={{ fontSize: 20, fontWeight: 700, marginBottom: 8, color: '#0f172a' }}>{language === 'th' ? 'ไม่พบข้อมูล' : 'Not Found'}</h2>
-                    <p style={{ color: '#94a3b8', marginBottom: 16 }}>{error}</p>
-                    <Link href="/" style={{ display: 'inline-block', padding: '8px 24px', borderRadius: 8, background: '#22c55e', color: '#fff', fontWeight: 600, textDecoration: 'none' }}>
+            <div className="flex min-h-screen items-center justify-center bg-slate-50 font-['Inter','Prompt',sans-serif]">
+                <div className="max-w-[400px] rounded-2xl bg-white p-8 text-center shadow-[0_4px_24px_rgba(0,0,0,0.08)]">
+                    <div className="mb-4 text-5xl">😔</div>
+                    <h2 className="mb-2 text-xl font-bold text-slate-900">{language === 'th' ? 'ไม่พบข้อมูล' : 'Not Found'}</h2>
+                    <p className="mb-4 text-slate-400">{error}</p>
+                    <Link href="/" className="inline-block rounded-lg bg-green-500 px-6 py-2 font-semibold text-white no-underline">
                         {language === 'th' ? 'กลับหน้าแรก' : 'Back'}
                     </Link>
                 </div>
@@ -1021,7 +1021,7 @@ export default function EventLivePage() {
     };
 
     return (
-        <div style={{ minHeight: '100vh', overflow: 'hidden', background: themeStyles.bg, color: themeStyles.text, fontFamily: "'Inter', 'Prompt', sans-serif" }}>
+        <div className="min-h-screen overflow-hidden bg-[var(--background)] font-['Inter','Prompt',sans-serif] text-[var(--foreground)]">
             <style>{`
                 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Prompt:wght@400;500;600;700&display=swap');
                 @keyframes pulseLive { 0% { transform: scale(0.9); opacity: 0.7; } 50% { transform: scale(1.2); opacity: 1; } 100% { transform: scale(0.9); opacity: 0.7; } }
@@ -1034,44 +1034,40 @@ export default function EventLivePage() {
             `}</style>
 
             {/* ===== HEADER ===== */}
-            <header style={{ background: themeStyles.cardBg, borderBottom: `1px solid ${themeStyles.border}`, padding: '8px 16px', boxShadow: isDark ? '0 1px 3px rgba(0,0,0,0.2)' : '0 1px 3px rgba(0,0,0,0.04)', position: 'relative', zIndex: 30 }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', maxWidth: '100%', overflow: 'hidden' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0, flex: 1 }}>
+            <header className="relative z-30 border-b border-[var(--border)] bg-[var(--card-solid)] px-4 py-2 shadow-[0_1px_3px_rgba(0,0,0,0.04)] dark:shadow-[0_1px_3px_rgba(0,0,0,0.2)]">
+                <div className="flex max-w-full items-center justify-between overflow-hidden">
+                    <div className="flex min-w-0 flex-1 items-center gap-3">
                         <button
                             onClick={() => router.back()}
                             title={language === 'th' ? 'ย้อนกลับ' : 'Go back'}
-                            style={{
-                                display: 'flex', alignItems: 'center', gap: 4, padding: '4px 10px', borderRadius: 6,
-                                border: `1px solid ${themeStyles.border}`, background: 'transparent', color: themeStyles.textMuted,
-                                fontSize: 11, fontWeight: 600, cursor: 'pointer', flexShrink: 0, transition: 'all 0.2s',
-                            }}
+                            className="flex shrink-0 items-center gap-1 rounded-md border border-[var(--border)] bg-transparent px-2.5 py-1 text-[11px] font-semibold text-[var(--muted-foreground)] transition-all duration-200"
                             onMouseEnter={e => { e.currentTarget.style.background = themeStyles.hoverBg; e.currentTarget.style.color = themeStyles.text; }}
                             onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = themeStyles.textMuted; }}
                         >
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg>
                             {!isMobile && <span>{language === 'th' ? 'ย้อนกลับ' : 'Back'}</span>}
                         </button>
-                        <Link href="/" style={{ display: 'flex', alignItems: 'center', gap: 8, textDecoration: 'none', flexShrink: 0 }}>
+                        <Link href="/" className="flex shrink-0 items-center gap-2 no-underline">
                             <Image
                                 src={theme === 'dark' ? '/logo-white.png' : '/logo-black.png'}
                                 alt="Logo"
                                 width={isMobile ? 80 : 100}
                                 height={isMobile ? 26 : 32}
-                                style={{ objectFit: 'contain' }}
+                                className="object-contain"
                             />
                         </Link>
                         {!isMobile && (
-                            <span style={{ fontSize: 18, fontWeight: 900, fontStyle: 'italic', color: themeStyles.text, borderLeft: `1px solid ${themeStyles.border}`, paddingLeft: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
-                                <span style={{ color: isRaceFinished ? '#3b82f6' : '#22c55e', fontWeight: 700, fontStyle: 'normal', textTransform: 'uppercase' }}>
+                            <span className="flex items-center gap-2 border-l border-[var(--border)] pl-3 text-[18px] font-black italic text-[var(--foreground)]">
+                                <span className={`font-bold not-italic uppercase ${isRaceFinished ? 'text-blue-500' : 'text-green-500'}`}>
                                     {isRaceFinished ? 'Results' : 'Live'}
                                 </span>
-                                {!isRaceFinished && <span className="live-dot" style={{ background: '#22c55e' }} />}
+                                {!isRaceFinished && <span className="live-dot bg-green-500" />}
                             </span>
                         )}
-                        <div style={{ minWidth: 0 }}>
-                            <h1 style={{ fontSize: isMobile ? 12 : 14, fontWeight: 700, lineHeight: 1.2, margin: 0, color: themeStyles.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{campaign.name}</h1>
+                        <div className="min-w-0">
+                            <h1 className={`m-0 overflow-hidden text-ellipsis whitespace-nowrap font-bold leading-[1.2] text-[var(--foreground)] ${isMobile ? 'text-xs' : 'text-sm'}`}>{campaign.name}</h1>
                             {!isMobile && (
-                                <p style={{ fontSize: 10, color: themeStyles.textSecondary, fontWeight: 500, margin: 0 }}>
+                                <p className="m-0 text-[10px] font-medium text-[var(--muted-foreground)]">
                                     {formatDate(campaign.eventDate)} | {campaign.location}
                                 </p>
                             )}
@@ -1079,11 +1075,11 @@ export default function EventLivePage() {
                     </div>
 
                     {!isMobile && isAuthenticated && (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                            <span style={{ fontSize: 9, fontWeight: 700, color: themeStyles.textSecondary, textTransform: 'uppercase', letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>
+                        <div className="flex items-center gap-1.5">
+                            <span className="whitespace-nowrap text-[9px] font-bold uppercase tracking-[0.05em] text-[var(--muted-foreground)]">
                                 STATUS:
                             </span>
-                            <div style={{ display: 'flex', background: themeStyles.inputBg, padding: 3, borderRadius: 8 }}>
+                            <div className="flex rounded-lg bg-[var(--muted)] p-[3px]">
                                 {([
                                     { key: 'ALL', label: language === 'th' ? 'ทั้งหมด' : 'All', color: '#22c55e' },
                                     { key: 'finished', label: 'Finish', color: '#22c55e' },
@@ -1095,16 +1091,14 @@ export default function EventLivePage() {
                                     <button
                                         key={s.key}
                                         onClick={() => setFilterStatus(s.key)}
-                                        style={{
-                                            padding: '4px 10px', fontSize: 10, fontWeight: 700, borderRadius: 6, border: 'none', cursor: 'pointer', transition: 'all 0.2s', whiteSpace: 'nowrap',
-                                            ...(filterStatus === s.key
-                                                ? { background: s.color, color: '#fff' }
-                                                : { background: 'transparent', color: themeStyles.textMuted })
-                                        }}
+                                        className="whitespace-nowrap rounded-md border-none px-2.5 py-1 text-[10px] font-bold transition-all duration-200"
+                                        style={filterStatus === s.key
+                                            ? { background: s.color, color: '#fff' }
+                                            : { background: 'transparent', color: themeStyles.textMuted }}
                                     >
                                         {s.label}
                                         {statusCounts[s.key] > 0 && (
-                                            <span style={{ fontSize: 8, opacity: filterStatus === s.key ? 1 : 0.7 }}>{statusCounts[s.key]}</span>
+                                            <span className="text-[8px]" style={{ opacity: filterStatus === s.key ? 1 : 0.7 }}>{statusCounts[s.key]}</span>
                                         )}
                                     </button>
                                 ))}
@@ -1116,40 +1110,33 @@ export default function EventLivePage() {
             </header>
 
             {/* ===== FILTER BAR ===== */}
-            <div style={{ background: themeStyles.cardBg, borderBottom: `1px solid ${themeStyles.border}`, padding: '8px 16px', display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: isMobile ? 6 : 12 }}>
+            <div className={`flex flex-wrap items-center justify-between border-b border-[var(--border)] bg-[var(--card-solid)] px-4 py-2 ${isMobile ? 'gap-1.5' : 'gap-3'}`}>
                 {/* Row 1: Distance + More button (mobile) */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', ...(isMobile ? { width: '100%' } : {}) }}>
-                    <span style={{ fontSize: 10, fontWeight: 700, color: themeStyles.textSecondary, textTransform: 'uppercase', whiteSpace: 'nowrap' }}>
+                <div className={`flex flex-wrap items-center gap-2.5 ${isMobile ? 'w-full' : ''}`}>
+                    <span className="whitespace-nowrap text-[10px] font-bold uppercase text-[var(--muted-foreground)]">
                         Distance:
                     </span>
                     {isMobile ? (
                         <select
                             value={filterCategory}
                             onChange={e => setFilterCategory(e.target.value)}
-                            style={{
-                                padding: '6px 28px 6px 10px', borderRadius: 8, fontSize: 12, fontWeight: 700,
-                                background: themeStyles.inputBg, color: themeStyles.text,
-                                border: `1px solid ${themeStyles.border}`, cursor: 'pointer',
-                                appearance: 'auto', WebkitAppearance: 'menulist',
-                                flex: 1,
-                            }}
+                            className="flex-1 cursor-pointer appearance-auto rounded-lg border border-[var(--border)] bg-[var(--muted)] px-2.5 py-1.5 text-xs font-bold text-[var(--foreground)] outline-none"
+                            style={{ WebkitAppearance: 'menulist' }}
                         >
                             {categories.map(cat => (
                                 <option key={cat.key} value={cat.key}>{cat.label}</option>
                             ))}
                         </select>
                     ) : (
-                        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                        <div className="flex flex-wrap gap-1.5">
                             {categories.map(cat => (
                                 <button
                                     key={cat.key}
                                     onClick={() => setFilterCategory(cat.key)}
-                                    style={{
-                                        padding: '6px 14px', borderRadius: 20, fontSize: 11, fontWeight: 700, cursor: 'pointer', transition: 'all 0.2s', border: '1px solid',
-                                        ...(filterCategory === cat.key
-                                            ? { background: '#22c55e', color: '#fff', borderColor: '#22c55e' }
-                                            : { background: themeStyles.cardBg, color: themeStyles.textMuted, borderColor: themeStyles.border })
-                                    }}
+                                    className="cursor-pointer rounded-[20px] border px-3.5 py-1.5 text-[11px] font-bold transition-all duration-200"
+                                    style={filterCategory === cat.key
+                                        ? { background: '#22c55e', color: '#fff', borderColor: '#22c55e' }
+                                        : { background: themeStyles.cardBg, color: themeStyles.textMuted, borderColor: themeStyles.border }}
                                 >
                                     {cat.label}
                                 </button>
@@ -1161,7 +1148,8 @@ export default function EventLivePage() {
                     {isMobile && (
                         <button
                             onClick={() => setShowAllColumns(!showAllColumns)}
-                            style={{ background: showAllColumns ? '#22c55e' : themeStyles.cardBg, border: `1px solid ${showAllColumns ? '#22c55e' : themeStyles.border}`, color: showAllColumns ? '#fff' : themeStyles.textMuted, padding: '6px 12px', borderRadius: 8, fontSize: 11, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, whiteSpace: 'nowrap', marginLeft: 'auto' }}
+                            className="ml-auto flex items-center gap-1 whitespace-nowrap rounded-lg border px-3 py-1.5 text-[11px] font-bold"
+                            style={{ background: showAllColumns ? '#22c55e' : themeStyles.cardBg, borderColor: showAllColumns ? '#22c55e' : themeStyles.border, color: showAllColumns ? '#fff' : themeStyles.textMuted }}
                         >
                             <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 3v18M3 12h18" /></svg>
                             {showAllColumns ? (language === 'th' ? 'ย่อ' : 'Less') : (language === 'th' ? 'เพิ่มเติม' : 'More')}
@@ -1171,10 +1159,10 @@ export default function EventLivePage() {
 
                 {/* Row 2 (mobile): Search input + Gender filter — full width, gender flush right */}
                 {isMobile && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%' }}>
+                    <div className="flex w-full items-center gap-2">
                         {/* Search */}
-                        <div style={{ position: 'relative', flex: 1, minWidth: 0 }}>
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={themeStyles.textSecondary} strokeWidth="2" style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)' }}>
+                        <div className="relative min-w-0 flex-1">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={themeStyles.textSecondary} strokeWidth="2" className="absolute left-2.5 top-1/2 -translate-y-1/2">
                                 <circle cx="11" cy="11" r="8" /><path d="M21 21l-4.35-4.35" />
                             </svg>
                             <input
@@ -1182,25 +1170,23 @@ export default function EventLivePage() {
                                 placeholder={language === 'th' ? 'BIB หรือ ชื่อ...' : 'BIB or Name...'}
                                 value={searchQuery}
                                 onChange={(e) => setSearchQuery(e.target.value)}
-                                style={{ paddingLeft: 30, paddingRight: 10, paddingTop: 6, paddingBottom: 6, background: themeStyles.inputBg, border: 'none', borderRadius: 8, fontSize: 12, width: '100%', outline: 'none', color: themeStyles.text }}
+                                className="w-full rounded-lg border-none bg-[var(--muted)] px-2.5 py-1.5 pl-[30px] text-xs text-[var(--foreground)] outline-none"
                             />
                         </div>
                         {/* Gender Filter */}
-                        <div style={{ display: 'flex', background: themeStyles.inputBg, padding: 3, borderRadius: 8, flexShrink: 0 }}>
+                        <div className="flex shrink-0 rounded-lg bg-[var(--muted)] p-[3px]">
                             {(['ALL', 'FOLLOWED', 'M', 'F'] as const).map(g => (
                                 <button
                                     key={g}
                                     onClick={() => setFilterGender(g)}
                                     aria-label={g === 'FOLLOWED' ? (language === 'th' ? 'แสดงเฉพาะนักกีฬาที่ติดตาม' : 'Show followed runners only') : undefined}
                                     title={g === 'FOLLOWED' ? (language === 'th' ? 'แสดงเฉพาะนักกีฬาที่ติดตาม' : 'Show followed runners only') : undefined}
-                                    style={{
-                                        padding: '4px 10px', fontSize: 10, fontWeight: 700, borderRadius: 6, border: 'none', cursor: 'pointer', transition: 'all 0.2s', whiteSpace: 'nowrap',
-                                        ...(filterGender === g
-                                            ? { background: g === 'FOLLOWED' ? (isDark ? 'rgba(225,29,72,0.18)' : '#fff1f2') : '#22c55e', color: g === 'FOLLOWED' ? '#e11d48' : '#fff' }
-                                            : { background: 'transparent', color: themeStyles.textMuted })
-                                    }}
+                                    className="whitespace-nowrap rounded-md border-none px-2.5 py-1 text-[10px] font-bold transition-all duration-200"
+                                    style={filterGender === g
+                                        ? { background: g === 'FOLLOWED' ? (isDark ? 'rgba(225,29,72,0.18)' : '#fff1f2') : '#22c55e', color: g === 'FOLLOWED' ? '#e11d48' : '#fff' }
+                                        : { background: 'transparent', color: themeStyles.textMuted }}
                                 >
-                                    {g === 'FOLLOWED' ? <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}><FollowHeartIcon filled={filterGender === g} size={12} color="#e11d48" /></span> : g === 'ALL' ? (language === 'th' ? 'ทั้งหมด' : 'All') : g === 'M' ? (language === 'th' ? 'ชาย' : 'Male') : (language === 'th' ? 'หญิง' : 'Female')}
+                                    {g === 'FOLLOWED' ? <span className="inline-flex items-center justify-center"><FollowHeartIcon filled={filterGender === g} size={12} color="#e11d48" /></span> : g === 'ALL' ? (language === 'th' ? 'ทั้งหมด' : 'All') : g === 'M' ? (language === 'th' ? 'ชาย' : 'Male') : (language === 'th' ? 'หญิง' : 'Female')}
                                 </button>
                             ))}
                         </div>
@@ -1209,30 +1195,28 @@ export default function EventLivePage() {
 
                 {/* Right controls (desktop only) */}
                 {!isMobile && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <div className="flex items-center gap-2.5">
                         {/* Gender Filter — desktop only */}
-                        <div style={{ display: 'flex', background: themeStyles.inputBg, padding: 3, borderRadius: 8 }}>
+                        <div className="flex rounded-lg bg-[var(--muted)] p-[3px]">
                             {(['ALL', 'FOLLOWED', 'M', 'F'] as const).map(g => (
                                 <button
                                     key={g}
                                     onClick={() => setFilterGender(g)}
                                     aria-label={g === 'FOLLOWED' ? (language === 'th' ? 'แสดงเฉพาะนักกีฬาที่ติดตาม' : 'Show followed runners only') : undefined}
                                     title={g === 'FOLLOWED' ? (language === 'th' ? 'แสดงเฉพาะนักกีฬาที่ติดตาม' : 'Show followed runners only') : undefined}
-                                    style={{
-                                        padding: '4px 12px', fontSize: 10, fontWeight: 700, borderRadius: 6, border: 'none', cursor: 'pointer', transition: 'all 0.2s', whiteSpace: 'nowrap',
-                                        ...(filterGender === g
-                                            ? { background: g === 'FOLLOWED' ? (isDark ? 'rgba(225,29,72,0.18)' : '#fff1f2') : '#22c55e', color: g === 'FOLLOWED' ? '#e11d48' : '#fff' }
-                                            : { background: 'transparent', color: themeStyles.textMuted })
-                                    }}
+                                    className="whitespace-nowrap rounded-md border-none px-3 py-1 text-[10px] font-bold transition-all duration-200"
+                                    style={filterGender === g
+                                        ? { background: g === 'FOLLOWED' ? (isDark ? 'rgba(225,29,72,0.18)' : '#fff1f2') : '#22c55e', color: g === 'FOLLOWED' ? '#e11d48' : '#fff' }
+                                        : { background: 'transparent', color: themeStyles.textMuted }}
                                 >
-                                    {g === 'FOLLOWED' ? <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}><FollowHeartIcon filled={filterGender === g} size={12} color="#e11d48" /></span> : g === 'ALL' ? (language === 'th' ? 'ทั้งหมด' : 'All') : g === 'M' ? (language === 'th' ? 'ชาย' : 'Male') : (language === 'th' ? 'หญิง' : 'Female')}
+                                    {g === 'FOLLOWED' ? <span className="inline-flex items-center justify-center"><FollowHeartIcon filled={filterGender === g} size={12} color="#e11d48" /></span> : g === 'ALL' ? (language === 'th' ? 'ทั้งหมด' : 'All') : g === 'M' ? (language === 'th' ? 'ชาย' : 'Male') : (language === 'th' ? 'หญิง' : 'Female')}
                                 </button>
                             ))}
                         </div>
 
                         {/* Search */}
-                        <div style={{ position: 'relative' }}>
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={themeStyles.textSecondary} strokeWidth="2" style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)' }}>
+                        <div className="relative">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={themeStyles.textSecondary} strokeWidth="2" className="absolute left-2.5 top-1/2 -translate-y-1/2">
                                 <circle cx="11" cy="11" r="8" /><path d="M21 21l-4.35-4.35" />
                             </svg>
                             <input
@@ -1240,26 +1224,26 @@ export default function EventLivePage() {
                                 placeholder={language === 'th' ? 'BIB หรือ ชื่อ...' : 'BIB or Name...'}
                                 value={searchQuery}
                                 onChange={(e) => setSearchQuery(e.target.value)}
-                                style={{ paddingLeft: 30, paddingRight: 16, paddingTop: 6, paddingBottom: 6, background: themeStyles.inputBg, border: 'none', borderRadius: 8, fontSize: 12, width: 180, outline: 'none', color: themeStyles.text }}
+                                className="w-[180px] rounded-lg border-none bg-[var(--muted)] px-4 py-1.5 pl-[30px] text-xs text-[var(--foreground)] outline-none"
                             />
                         </div>
 
                         {/* Column dropdown */}
-                        <div style={{ position: 'relative' }}>
+                        <div className="relative">
                             <button
                                 onClick={() => setShowColDropdown(!showColDropdown)}
-                                style={{ background: themeStyles.cardBg, border: `1px solid ${themeStyles.border}`, color: themeStyles.textMuted, padding: '6px 12px', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}
+                                className="flex items-center gap-1.5 rounded-lg border border-[var(--border)] bg-[var(--card-solid)] px-3 py-1.5 text-xs font-bold text-[var(--muted-foreground)]"
                             >
                                 <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /><rect x="14" y="14" width="7" height="7" /></svg>
                                 Columns
                             </button>
                             {showColDropdown && (
-                                <div style={{ position: 'absolute', right: 0, top: 36, background: themeStyles.cardBg, minWidth: 160, boxShadow: isDark ? '0 8px 16px rgba(0,0,0,0.4)' : '0 8px 16px rgba(0,0,0,0.1)', borderRadius: 8, zIndex: 30, border: `1px solid ${themeStyles.border}`, padding: 8 }}>
-                                    <p style={{ fontSize: 10, fontWeight: 700, color: themeStyles.textSecondary, textTransform: 'uppercase', marginBottom: 4, padding: '0 8px' }}>Display</p>
-                                    <label style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 8px', fontSize: 12, cursor: 'pointer', color: themeStyles.text }}>
+                                <div className="absolute right-0 top-9 z-30 min-w-40 rounded-lg border p-2" style={{ background: themeStyles.cardBg, boxShadow: isDark ? '0 8px 16px rgba(0,0,0,0.4)' : '0 8px 16px rgba(0,0,0,0.1)', borderColor: themeStyles.border }}>
+                                    <p className="mb-1 px-2 text-[10px] font-bold uppercase" style={{ color: themeStyles.textSecondary }}>Display</p>
+                                    <label className="flex cursor-pointer items-center gap-2 px-2 py-1 text-xs" style={{ color: themeStyles.text }}>
                                         <input type="checkbox" checked={showGenRank} onChange={e => setShowGenRank(e.target.checked)} /> Gender Rank
                                     </label>
-                                    <label style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 8px', fontSize: 12, cursor: 'pointer', color: themeStyles.text }}>
+                                    <label className="flex cursor-pointer items-center gap-2 px-2 py-1 text-xs" style={{ color: themeStyles.text }}>
                                         <input type="checkbox" checked={showCatRank} onChange={e => setShowCatRank(e.target.checked)} /> Category Rank
                                     </label>
                                 </div>
@@ -1270,15 +1254,15 @@ export default function EventLivePage() {
             </div>
 
             {/* ===== TABLE ===== */}
-            <main style={{ padding: '0 16px' }}>
-                <div className="table-scroll" style={{ background: themeStyles.cardBg, borderRadius: 0, boxShadow: 'none', border: `1px solid ${themeStyles.border}`, borderTop: 'none', borderBottom: 'none', height: 'calc(100vh - 100px)', overflowY: 'auto', overflowX: isMobile && showAllColumns ? 'auto' : 'hidden', paddingBottom: 40 }}>
-                    <table style={{ width: isMobile && showAllColumns ? 700 : '100%', textAlign: 'left', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+            <main className="px-4">
+                <div className={`table-scroll border border-x-[var(--border)] border-y-0 bg-[var(--card-solid)] pb-10 ${isMobile && showAllColumns ? 'overflow-x-auto' : 'overflow-x-hidden'} overflow-y-auto`} style={{ height: 'calc(100vh - 100px)' }}>
+                    <table className="table-fixed border-collapse text-left" style={{ width: isMobile && showAllColumns ? 700 : '100%' }}>
                         <thead>
-                            <tr style={{ fontSize: 10, fontWeight: 700, color: themeStyles.textSecondary, textTransform: 'uppercase', letterSpacing: '-0.02em', position: 'sticky', top: 0, background: themeStyles.cardBg, zIndex: 20, borderBottom: `2px solid ${themeStyles.border}` }}>
+                            <tr className="sticky top-0 z-20 border-b-2 border-[var(--border)] bg-[var(--card-solid)] text-[10px] font-bold uppercase tracking-[-0.02em] text-[var(--muted-foreground)]">
                                 {visibleColumns.map(key => {
                                     const def = activeColDefs.find(c => c.key === key)!;
                                     return (
-                                        <th key={key} style={{ padding: isMobile && (key === 'status' || key === 'gunTime') ? '6px 1px' : !isMobile && key === 'status' ? '8px 6px 8px 20px' : isMobile ? '6px 4px' : '8px 6px', textAlign: def.align, width: isMobile ? def.mw : def.w }}>
+                                        <th key={key} style={{ padding: isMobile && key === 'status' ? '6px 4px' : isMobile && key === 'gunTime' ? '6px 1px' : !isMobile && key === 'status' ? '8px 6px' : isMobile ? '6px 4px' : '8px 6px', textAlign: key === 'status' ? 'center' : def.align, width: isMobile ? def.mw : def.w }}>
                                             {def.label}
                                         </th>
                                     );
@@ -1287,7 +1271,7 @@ export default function EventLivePage() {
                         </thead>
                         <tbody>
                             {filteredRunners.length === 0 ? (
-                                <tr><td colSpan={visibleColumns.length} style={{ padding: '48px 16px', textAlign: 'center', color: '#94a3b8', fontSize: 14 }}>
+                                <tr><td colSpan={visibleColumns.length} className="px-4 py-12 text-center text-sm text-slate-400">
                                     {filterGender === 'FOLLOWED'
                                         ? (language === 'th' ? 'ยังไม่มีนักกีฬาที่คุณติดตามในรายการนี้' : 'No followed runners in this event')
                                         : (language === 'th' ? 'ไม่พบข้อมูลผู้เข้าแข่งขัน' : 'No participants found')}
@@ -1381,8 +1365,8 @@ export default function EventLivePage() {
                                             case 'rank': {
                                                 const hideRank = ['dnf', 'dns', 'dq', 'not_started'].includes(runner.status);
                                                 return (
-                                                    <td key={key} style={{ padding: isMobile ? '4px 2px' : '6px 8px', textAlign: 'center' }}>
-                                                        <span style={{ fontSize: isMobile ? 14 : 16, fontWeight: 900, color: hideRank ? (isDark ? '#64748b' : '#cbd5e1') : (isMobile ? '#0f172a' : (rank <= 3 ? (rank === 1 ? '#22c55e' : isDark ? '#94a3b8' : '#334155') : (isDark ? '#64748b' : '#cbd5e1'))) }}>{hideRank ? '-' : rank}</span>
+                                                    <td key={key} className={isMobile ? 'px-0.5 py-1 text-center' : 'px-2 py-1.5 text-center'}>
+                                                        <span className={isMobile ? 'text-sm font-black' : 'text-base font-black'} style={{ color: hideRank ? (isDark ? '#64748b' : '#cbd5e1') : (isMobile ? '#0f172a' : (rank <= 3 ? (rank === 1 ? '#22c55e' : isDark ? '#94a3b8' : '#334155') : (isDark ? '#64748b' : '#cbd5e1'))) }}>{hideRank ? '-' : rank}</span>
                                                     </td>
                                                 );
                                             }
@@ -1391,8 +1375,8 @@ export default function EventLivePage() {
                                                 const liveGen = liveRanks.get(runner._id)?.genRank;
                                                 const displayGenRank = hideGenRank ? '-' : (liveGen || runner.genderRank || '-');
                                                 return (
-                                                    <td key={key} style={{ padding: isMobile ? '4px 2px' : '6px 6px', textAlign: 'center' }}>
-                                                        <span style={{ fontSize: isMobile ? 11 : 12, fontWeight: 700, color: isMobile ? '#0f172a' : themeStyles.textMuted }}>{displayGenRank}</span>
+                                                    <td key={key} className={isMobile ? 'px-0.5 py-1 text-center' : 'px-1.5 py-1.5 text-center'}>
+                                                        <span className={isMobile ? 'text-[11px] font-bold' : 'text-xs font-bold'} style={{ color: isMobile ? '#0f172a' : themeStyles.textMuted }}>{displayGenRank}</span>
                                                     </td>
                                                 );
                                             }
@@ -1401,25 +1385,25 @@ export default function EventLivePage() {
                                                 const liveCat = liveRanks.get(runner._id)?.catRank;
                                                 const displayCatRank = hideCatRank ? '-' : (liveCat || runner.categoryRank || '-');
                                                 return (
-                                                    <td key={key} style={{ padding: isMobile ? '4px 2px' : '6px 6px', textAlign: 'center' }}>
-                                                        <span style={{ fontSize: isMobile ? 11 : 12, fontWeight: 700, color: isMobile ? '#0f172a' : themeStyles.textMuted }}>{displayCatRank}</span>
+                                                    <td key={key} className={isMobile ? 'px-0.5 py-1 text-center' : 'px-1.5 py-1.5 text-center'}>
+                                                        <span className={isMobile ? 'text-[11px] font-bold' : 'text-xs font-bold'} style={{ color: isMobile ? '#0f172a' : themeStyles.textMuted }}>{displayCatRank}</span>
                                                     </td>
                                                 );
                                             }
                                             case 'runner':
                                                 return (
-                                                    <td key={key} style={{ padding: isMobile ? '4px 4px' : '6px 8px', overflow: 'hidden' }}>
-                                                        <div style={{ overflow: 'hidden', display: 'grid', gridTemplateRows: 'auto auto', rowGap: 3, minHeight: isMobile ? 28 : 32 }}>
-                                                            <span style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 4 : 6, minWidth: 0 }}>
-                                                                <span style={{ display: 'block', minWidth: 0, flex: '1 1 auto', fontWeight: 700, fontSize: isMobile ? 11 : 13, color: themeStyles.text, lineHeight: 1.15, textTransform: 'uppercase', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                                    <td key={key} className={isMobile ? 'overflow-hidden px-1 py-1' : 'overflow-hidden px-2 py-1.5'}>
+                                                        <div className={isMobile ? 'grid min-h-7 overflow-hidden [grid-template-rows:auto_auto] gap-y-[3px]' : 'grid min-h-8 overflow-hidden [grid-template-rows:auto_auto] gap-y-[3px]'}>
+                                                            <span className={`flex min-w-0 items-center ${isMobile ? 'gap-1' : 'gap-1.5'}`}>
+                                                                <span className={`block min-w-0 flex-1 truncate font-bold uppercase ${isMobile ? 'text-[11px]' : 'text-[13px]'}`} style={{ color: themeStyles.text, lineHeight: 1.15 }}>
                                                                     {runner.firstName} {runner.lastName}
                                                                 </span>
                                                             </span>
-                                                            <span style={{ fontSize: isMobile ? 9 : 10, color: themeStyles.text, fontWeight: 600, lineHeight: 1.15, display: 'flex', alignItems: 'center', gap: isMobile ? 4 : 6, whiteSpace: 'nowrap' }}>
-                                                                <span style={{ background: '#666666', color: '#fff', padding: '1px 6px', borderRadius: 4, fontSize: isMobile ? 9 : 10, fontWeight: 800, letterSpacing: '0.05em', border: '0px solid #6b7280' }}>
+                                                            <span className={`flex items-center whitespace-nowrap font-semibold ${isMobile ? 'gap-1 text-[9px]' : 'gap-1.5 text-[10px]'}`} style={{ color: themeStyles.text, lineHeight: 1.15 }}>
+                                                                <span className={`rounded bg-[#666666] px-1.5 py-px font-extrabold tracking-[0.05em] text-white ${isMobile ? 'text-[9px]' : 'text-[10px]'}`}>
                                                                     BIB {runner.bib}
                                                                 </span>
-                                                                {(() => { const d = rankDeltas.get(runner.bib); if (!d) return null; return <span style={{ fontSize: isMobile ? 8 : 9, fontWeight: 800, color: d > 0 ? '#16a34a' : '#dc2626' }}>{d > 0 ? `▲${d}` : `▼${Math.abs(d)}`}</span>; })()}
+                                                                {(() => { const d = rankDeltas.get(runner.bib); if (!d) return null; return <span className={isMobile ? 'text-[8px] font-extrabold' : 'text-[9px] font-extrabold'} style={{ color: d > 0 ? '#16a34a' : '#dc2626' }}>{d > 0 ? `▲${d}` : `▼${Math.abs(d)}`}</span>; })()}
                                                                 {runner.nationality ? `${runner.nationality} | ` : ''}{runner.ageGroup || runner.category}
                                                             </span>
                                                         </div>
@@ -1427,47 +1411,53 @@ export default function EventLivePage() {
                                                 );
                                             case 'sex':
                                                 return (
-                                                    <td key={key} style={{ padding: '6px 6px', textAlign: 'center', fontSize: 22, fontWeight: 900, color: runner.gender === 'M' ? '#3b82f6' : '#ec4899' }}>
+                                                    <td key={key} className="px-1.5 py-1.5 text-center text-[22px] font-black" style={{ color: runner.gender === 'M' ? '#3b82f6' : '#ec4899' }}>
                                                         {runner.gender === 'F' ? '♀' : '♂'}
                                                     </td>
                                                 );
                                             case 'status': {
-                                                const showStatusBadge = !['finished', 'in_progress'].includes(runner.status);
+                                                const isDnfStatus = runner.status === 'dnf';
+                                                const showStatusBadge = !['finished', 'in_progress', 'dnf'].includes(runner.status);
                                                 const showFinishCheckpointBadge = !!statusCheckpointName && isFinishCp;
                                                 const showInProgressCheckpointBadge = !!statusCheckpointName && runner.status === 'in_progress' && !isFinishCp;
-                                                const showCheckpointChip = showFinishCheckpointBadge || showInProgressCheckpointBadge;
-                                                const hideCheckpointText = runner.status === 'dns' || runner.status === 'not_started';
-                                                const showCheckpointBelow = runner.status === 'dnf' && !!statusCheckpointName;
-                                                const inlineStatusCheckpoint = !hideCheckpointText && !showCheckpointBelow ? statusCheckpointName : '';
+                                                const showDnfChip = isDnfStatus;
+                                                const showCheckpointChip = showFinishCheckpointBadge || showInProgressCheckpointBadge || showDnfChip;
+                                                const hideCheckpointText = runner.status === 'dns' || runner.status === 'not_started' || isDnfStatus;
+                                                const showCheckpointBelow = false;
+                                                const inlineStatusCheckpoint = showDnfChip
+                                                    ? getStatusLabel(runner.status)
+                                                    : !hideCheckpointText && !showCheckpointBelow ? statusCheckpointName : '';
                                                 const statusNameColor = showFinishCheckpointBadge
                                                     ? '#166534'
                                                     : showInProgressCheckpointBadge
                                                         ? '#92400e'
-                                                        : runner.statusCheckpoint ? '#dc2626' : themeStyles.text;
+                                                        : showDnfChip
+                                                            ? '#ffffff'
+                                                            : runner.statusCheckpoint ? '#dc2626' : themeStyles.text;
                                                 const statusTimeColor = statusCheckpointName ? statusNameColor : themeStyles.text;
                                                 return (
-                                                    <td key={key} style={{ padding: isMobile ? '4px 0px' : '6px 6px', verticalAlign: 'top' }}>
-                                                        <div style={{ display: 'grid', gridTemplateRows: showCheckpointBelow ? (statusScanTimeLabel ? 'auto auto auto' : 'auto auto') : (statusScanTimeLabel ? 'auto auto' : 'auto'), rowGap: 3, minWidth: 0, minHeight: isMobile ? 28 : 32, position: 'relative', paddingRight: isAdmin && !isMobile ? 18 : 0 }}>
-                                                            <div style={{ display: 'flex', alignItems: 'center', gap: 4, minWidth: 0, width: '100%' }}>
+                                                    <td key={key} className={isMobile ? 'px-0 py-1 align-top' : 'px-1.5 py-1.5 align-top'}>
+                                                        <div className={`${isMobile ? 'min-h-7' : 'min-h-8'} relative grid min-w-0 justify-items-center gap-y-[3px]`} style={{ gridTemplateRows: showCheckpointBelow ? (statusScanTimeLabel ? 'auto auto auto' : 'auto auto') : (statusScanTimeLabel ? 'auto auto' : 'auto') }}>
+                                                            <div className="relative flex w-full min-w-0 items-center justify-center gap-1">
                                                                 {showStatusBadge && (
-                                                                    <span style={{ display: 'inline-block', padding: isMobile ? '1px 4px' : '2px 8px', borderRadius: 3, fontWeight: 700, fontSize: isMobile ? 8 : 10, color: '#fff', background: getStatusBgColor(runner.status), lineHeight: 1.3, flexShrink: 0 }}>
+                                                                    <span className={`${isMobile ? 'px-1 py-px text-[8px]' : 'px-2 py-0.5 text-[10px]'} inline-block shrink-0 rounded-[3px] font-bold leading-[1.3] text-white`} style={{ background: getStatusBgColor(runner.status) }}>
                                                                         {getStatusLabel(runner.status)}
                                                                     </span>
                                                                 )}
                                                                 {inlineStatusCheckpoint ? (
-                                                                    <span style={{ display: showCheckpointChip ? 'inline-block' : 'block', minWidth: 0, maxWidth: showCheckpointChip ? '100%' : '100%', flex: showCheckpointChip ? '0 0 auto' : '1 1 auto', fontSize: isMobile ? 9 : 11, color: statusNameColor, fontWeight: 700, whiteSpace: 'nowrap', overflow: showCheckpointChip ? 'visible' : 'hidden', textOverflow: showCheckpointChip ? 'clip' : 'ellipsis', lineHeight: 1.15, background: showFinishCheckpointBadge ? '#dcfce7' : showInProgressCheckpointBadge ? '#fef3c7' : 'transparent', border: 'none', borderRadius: showCheckpointChip ? 999 : 0, padding: showCheckpointChip ? (isMobile ? '2px 7px' : '3px 10px') : 0 }}>
+                                                                    <span className={`${showCheckpointChip ? 'inline-block' : 'block'} min-w-0 max-w-full ${showCheckpointChip ? 'shrink-0 grow-0 basis-auto' : 'flex-1'} whitespace-nowrap font-bold leading-[1.15] ${showCheckpointChip ? 'overflow-visible text-clip rounded-full' : 'overflow-hidden text-ellipsis'} ${isMobile ? 'text-[9px]' : 'text-[11px]'}`} style={{ color: statusNameColor, background: showFinishCheckpointBadge ? '#dcfce7' : showInProgressCheckpointBadge ? '#fef3c7' : showDnfChip ? '#dc2626' : 'transparent', border: 'none', padding: showCheckpointChip ? (isMobile ? '2px 7px' : '3px 10px') : 0 }}>
                                                                         {inlineStatusCheckpoint}
-                                                                        {runner.statusNote ? ` · ${runner.statusNote}` : ''}
+                                                                        {!showDnfChip && runner.statusNote ? ` · ${runner.statusNote}` : ''}
                                                                     </span>
                                                                 ) : null}
                                                                 {isFollowedRunner && (
-                                                                    <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: isMobile ? 16 : 18, height: isMobile ? 16 : 18, borderRadius: 999, flexShrink: 0 }} title={language === 'th' ? 'กำลังติดตามนักกีฬา' : 'Following runner'}>
+                                                                    <span className={`${isMobile ? 'right-0 h-4 w-4' : isAdmin ? 'right-5 h-[18px] w-[18px]' : 'right-0 h-[18px] w-[18px]'} absolute inline-flex shrink-0 items-center justify-center rounded-full`} title={language === 'th' ? 'กำลังติดตามนักกีฬา' : 'Following runner'}>
                                                                         <FollowHeartIcon filled={true} size={isMobile ? 9 : 10} color="#e11d48" />
                                                                     </span>
                                                                 )}
                                                             </div>
                                                             {showCheckpointBelow && statusCheckpointName ? (
-                                                                <span style={{ display: 'block', maxWidth: '100%', fontSize: isMobile ? 9 : 10, color: '#dc2626', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.15 }}>
+                                                                <span className={`${isMobile ? 'text-[9px]' : 'text-[10px]'} block max-w-full overflow-hidden text-ellipsis whitespace-nowrap text-center font-semibold leading-[1.15] text-red-600`}>
                                                                     {statusCheckpointName}
                                                                 </span>
                                                             ) : null}
@@ -1475,15 +1465,14 @@ export default function EventLivePage() {
                                                                 <button
                                                                     onClick={(e) => openStatusEdit(runner, e)}
                                                                     title="Edit status"
-                                                                    style={{ position: 'absolute', top: 0, right: 0, background: 'none', border: 'none', cursor: 'pointer', padding: 2, fontSize: 15, color: themeStyles.textSecondary, opacity: 0.5, lineHeight: 0.8 }}
-                                                                    onMouseEnter={e => (e.currentTarget.style.opacity = '1')}
-                                                                    onMouseLeave={e => (e.currentTarget.style.opacity = '0.5')}
+                                                                    className="absolute right-0 top-0 border-none bg-transparent p-0.5 text-[15px] leading-[0.8] opacity-50 transition-opacity duration-150 hover:opacity-100"
+                                                                    style={{ color: themeStyles.textSecondary }}
                                                                 >
                                                                     ✏️
                                                                 </button>
                                                             )}
                                                             {statusScanTimeLabel && (
-                                                                <span style={{ display: 'block', maxWidth: '100%', fontSize: isMobile ? 9 : 10, color: statusTimeColor, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.15, paddingLeft: showCheckpointChip ? (isMobile ? 7 : 10) : 0 }}>
+                                                                <span className={`${isMobile ? 'text-[9px]' : 'text-[10px]'} block max-w-full overflow-hidden text-ellipsis whitespace-nowrap text-center font-semibold leading-[1.15]`} style={{ color: isDnfStatus ? '#dc2626' : statusTimeColor }}>
                                                                     {statusScanTimeLabel}
                                                                 </span>
                                                             )}
@@ -1493,154 +1482,154 @@ export default function EventLivePage() {
                                             }
                                             case 'gunTime':
                                                 return (
-                                                    <td key={key} style={{ padding: isMobile ? '4px 0px' : '6px 6px', textAlign: isMobile ? 'center' : 'left' }}>
-                                                        <span style={{ fontSize: isMobile ? 11 : 12, fontWeight: 700, color: themeStyles.text, fontFamily: 'monospace' }}>
+                                                    <td key={key} className={isMobile ? 'px-0 py-1 text-center' : 'px-1.5 py-1.5 text-left'}>
+                                                        <span className={`${isMobile ? 'text-[11px]' : 'text-xs'} font-bold font-mono`} style={{ color: themeStyles.text }}>
                                                             {formatDisplayTimeString(runner.gunTimeStr, isAdmin) || formatTime(runner.gunTime || runner.elapsedTime)}
                                                         </span>
                                                     </td>
                                                 );
                                             case 'netTime':
                                                 return (
-                                                    <td key={key} style={{ padding: '6px 6px', textAlign: 'center' }}>
-                                                        <span style={{ fontSize: 12, fontWeight: 700, color: (runner.netTimeStr || runner.netTime) ? '#22c55e' : themeStyles.textSecondary, fontFamily: 'monospace' }}>
+                                                    <td key={key} className="px-1.5 py-1.5 text-center">
+                                                        <span className="font-mono text-xs font-bold" style={{ color: (runner.netTimeStr || runner.netTime) ? '#22c55e' : themeStyles.textSecondary }}>
                                                             {formatDisplayTimeString(runner.netTimeStr, isAdmin) || formatTime(runner.netTime)}
                                                         </span>
                                                     </td>
                                                 );
                                             case 'genNet':
                                                 return (
-                                                    <td key={key} style={{ padding: '6px 4px', textAlign: 'center', fontSize: 11, fontWeight: 600, color: themeStyles.textMuted }}>
+                                                    <td key={key} className="px-1 py-1.5 text-center text-[11px] font-semibold" style={{ color: themeStyles.textMuted }}>
                                                         {runner.genderNetRank || '-'}
                                                     </td>
                                                 );
                                             case 'gunPace':
                                                 return (
-                                                    <td key={key} style={{ padding: '6px 6px', textAlign: 'center' }}>
-                                                        <span style={{ fontSize: 11, fontWeight: 600, color: themeStyles.textMuted, fontFamily: 'monospace' }}>
+                                                    <td key={key} className="px-1.5 py-1.5 text-center">
+                                                        <span className="font-mono text-[11px] font-semibold" style={{ color: themeStyles.textMuted }}>
                                                             {runner.gunPace || '-'}
                                                         </span>
                                                     </td>
                                                 );
                                             case 'netPace':
                                                 return (
-                                                    <td key={key} style={{ padding: '6px 6px', textAlign: 'center' }}>
-                                                        <span style={{ fontSize: 11, fontWeight: 600, color: runner.netPace ? '#22c55e' : themeStyles.textSecondary, fontFamily: 'monospace' }}>
+                                                    <td key={key} className="px-1.5 py-1.5 text-center">
+                                                        <span className="font-mono text-[11px] font-semibold" style={{ color: runner.netPace ? '#22c55e' : themeStyles.textSecondary }}>
                                                             {runner.netPace || '-'}
                                                         </span>
                                                     </td>
                                                 );
                                             case 'finish':
                                                 return (
-                                                    <td key={key} style={{ padding: '6px 4px', textAlign: 'center', fontSize: 11, fontWeight: 600, color: themeStyles.textMuted }}>
+                                                    <td key={key} className="px-1 py-1.5 text-center text-[11px] font-semibold" style={{ color: themeStyles.textMuted }}>
                                                         {runner.totalFinishers || '-'}
                                                     </td>
                                                 );
                                             case 'genFin':
                                                 return (
-                                                    <td key={key} style={{ padding: '6px 4px', textAlign: 'center', fontSize: 11, fontWeight: 600, color: themeStyles.textMuted }}>
+                                                    <td key={key} className="px-1 py-1.5 text-center text-[11px] font-semibold" style={{ color: themeStyles.textMuted }}>
                                                         {runner.genderFinishers || '-'}
                                                     </td>
                                                 );
                                             // ===== RaceTiger Pass Time columns =====
                                             case 'chipCode':
                                                 return (
-                                                    <td key={key} style={{ padding: '6px 4px', textAlign: 'center', fontSize: 10, fontFamily: 'monospace', color: themeStyles.textSecondary }}>
+                                                    <td key={key} className="px-1 py-1.5 text-center font-mono text-[10px]" style={{ color: themeStyles.textSecondary }}>
                                                         {runner.chipCode || '-'}
                                                     </td>
                                                 );
                                             case 'printingCode':
                                                 return (
-                                                    <td key={key} style={{ padding: '6px 4px', textAlign: 'center', fontSize: 10, fontFamily: 'monospace', color: themeStyles.textSecondary }}>
+                                                    <td key={key} className="px-1 py-1.5 text-center font-mono text-[10px]" style={{ color: themeStyles.textSecondary }}>
                                                         {runner.printingCode || '-'}
                                                     </td>
                                                 );
                                             case 'splitNo':
                                                 return (
-                                                    <td key={key} style={{ padding: '6px 4px', textAlign: 'center', fontSize: 11, fontWeight: 600, color: themeStyles.textMuted }}>
+                                                    <td key={key} className="px-1 py-1.5 text-center text-[11px] font-semibold" style={{ color: themeStyles.textMuted }}>
                                                         {runner.splitNo ?? '-'}
                                                     </td>
                                                 );
                                             case 'splitName':
                                                 return (
-                                                    <td key={key} style={{ padding: '6px 4px', textAlign: 'center', fontSize: 10, color: themeStyles.textSecondary }}>
+                                                    <td key={key} className="px-1 py-1.5 text-center text-[10px]" style={{ color: themeStyles.textSecondary }}>
                                                         {runner.splitDesc || '-'}
                                                     </td>
                                                 );
                                             case 'splitTime':
                                                 return (
-                                                    <td key={key} style={{ padding: '6px 4px', textAlign: 'center', fontSize: 11, fontWeight: 600, fontFamily: 'monospace', color: runner.splitTime ? themeStyles.text : themeStyles.textSecondary }}>
+                                                    <td key={key} className="px-1 py-1.5 text-center font-mono text-[11px] font-semibold" style={{ color: runner.splitTime ? themeStyles.text : themeStyles.textSecondary }}>
                                                         {runner.splitTime ? formatTime(runner.splitTime) : '-'}
                                                     </td>
                                                 );
                                             case 'splitPace':
                                                 return (
-                                                    <td key={key} style={{ padding: '6px 4px', textAlign: 'center', fontSize: 11, fontWeight: 600, fontFamily: 'monospace', color: runner.splitPace ? '#22c55e' : themeStyles.textSecondary }}>
+                                                    <td key={key} className="px-1 py-1.5 text-center font-mono text-[11px] font-semibold" style={{ color: runner.splitPace ? '#22c55e' : themeStyles.textSecondary }}>
                                                         {runner.splitPace || '-'}
                                                     </td>
                                                 );
                                             case 'distFromStart':
                                                 return (
-                                                    <td key={key} style={{ padding: '6px 4px', textAlign: 'center', fontSize: 11, fontWeight: 600, color: themeStyles.textMuted }}>
+                                                    <td key={key} className="px-1 py-1.5 text-center text-[11px] font-semibold" style={{ color: themeStyles.textMuted }}>
                                                         {runner.distanceFromStart ? `${runner.distanceFromStart.toFixed(1)}km` : '-'}
                                                     </td>
                                                 );
                                             case 'gunTimeMs':
                                                 return (
-                                                    <td key={key} style={{ padding: '6px 4px', textAlign: 'center', fontSize: 11, fontWeight: 600, fontFamily: 'monospace', color: runner.gunTimeMs ? themeStyles.text : themeStyles.textSecondary }}>
+                                                    <td key={key} className="px-1 py-1.5 text-center font-mono text-[11px] font-semibold" style={{ color: runner.gunTimeMs ? themeStyles.text : themeStyles.textSecondary }}>
                                                         {runner.gunTimeMs ? formatTime(runner.gunTimeMs) : '-'}
                                                     </td>
                                                 );
                                             case 'netTimeMs':
                                                 return (
-                                                    <td key={key} style={{ padding: '6px 4px', textAlign: 'center', fontSize: 11, fontWeight: 600, fontFamily: 'monospace', color: runner.netTimeMs ? themeStyles.text : themeStyles.textSecondary }}>
+                                                    <td key={key} className="px-1 py-1.5 text-center font-mono text-[11px] font-semibold" style={{ color: runner.netTimeMs ? themeStyles.text : themeStyles.textSecondary }}>
                                                         {runner.netTimeMs ? formatTime(runner.netTimeMs) : '-'}
                                                     </td>
                                                 );
                                             case 'totalGunTime':
                                                 return (
-                                                    <td key={key} style={{ padding: '6px 4px', textAlign: 'center', fontSize: 11, fontWeight: 600, fontFamily: 'monospace', color: runner.totalGunTime ? themeStyles.text : themeStyles.textSecondary }}>
+                                                    <td key={key} className="px-1 py-1.5 text-center font-mono text-[11px] font-semibold" style={{ color: runner.totalGunTime ? themeStyles.text : themeStyles.textSecondary }}>
                                                         {runner.totalGunTime ? formatTime(runner.totalGunTime) : '-'}
                                                     </td>
                                                 );
                                             case 'totalNetTime':
                                                 return (
-                                                    <td key={key} style={{ padding: '6px 4px', textAlign: 'center', fontSize: 11, fontWeight: 600, fontFamily: 'monospace', color: runner.totalNetTime ? themeStyles.text : themeStyles.textSecondary }}>
+                                                    <td key={key} className="px-1 py-1.5 text-center font-mono text-[11px] font-semibold" style={{ color: runner.totalNetTime ? themeStyles.text : themeStyles.textSecondary }}>
                                                         {runner.totalNetTime ? formatTime(runner.totalNetTime) : '-'}
                                                     </td>
                                                 );
                                             case 'supplement':
                                                 return (
-                                                    <td key={key} style={{ padding: '6px 4px', textAlign: 'center', fontSize: 10, color: themeStyles.textSecondary }}>
+                                                    <td key={key} className="px-1 py-1.5 text-center text-[10px]" style={{ color: themeStyles.textSecondary }}>
                                                         {runner.supplement || '-'}
                                                     </td>
                                                 );
                                             case 'cutOff':
                                                 return (
-                                                    <td key={key} style={{ padding: '6px 4px', textAlign: 'center', fontSize: 10, fontWeight: 600, color: runner.cutOff ? '#dc2626' : themeStyles.textSecondary }}>
+                                                    <td key={key} className="px-1 py-1.5 text-center text-[10px] font-semibold" style={{ color: runner.cutOff ? '#dc2626' : themeStyles.textSecondary }}>
                                                         {runner.cutOff || '-'}
                                                     </td>
                                                 );
                                             case 'legTime':
                                                 return (
-                                                    <td key={key} style={{ padding: '6px 4px', textAlign: 'center', fontSize: 11, fontWeight: 600, fontFamily: 'monospace', color: runner.legTime ? themeStyles.text : themeStyles.textSecondary }}>
+                                                    <td key={key} className="px-1 py-1.5 text-center font-mono text-[11px] font-semibold" style={{ color: runner.legTime ? themeStyles.text : themeStyles.textSecondary }}>
                                                         {runner.legTime ? formatTime(runner.legTime) : '-'}
                                                     </td>
                                                 );
                                             case 'legPace':
                                                 return (
-                                                    <td key={key} style={{ padding: '6px 4px', textAlign: 'center', fontSize: 11, fontWeight: 600, fontFamily: 'monospace', color: runner.legPace ? '#22c55e' : themeStyles.textSecondary }}>
+                                                    <td key={key} className="px-1 py-1.5 text-center font-mono text-[11px] font-semibold" style={{ color: runner.legPace ? '#22c55e' : themeStyles.textSecondary }}>
                                                         {runner.legPace || '-'}
                                                     </td>
                                                 );
                                             case 'legDistance':
                                                 return (
-                                                    <td key={key} style={{ padding: '6px 4px', textAlign: 'center', fontSize: 11, fontWeight: 600, color: themeStyles.textMuted }}>
+                                                    <td key={key} className="px-1 py-1.5 text-center text-[11px] font-semibold" style={{ color: themeStyles.textMuted }}>
                                                         {runner.legDistance ? `${runner.legDistance.toFixed(1)}km` : '-'}
                                                     </td>
                                                 );
                                             case 'lagMs':
                                                 return (
-                                                    <td key={key} style={{ padding: '6px 4px', textAlign: 'center', fontSize: 11, fontWeight: 600, fontFamily: 'monospace', color: runner.lagMs ? themeStyles.text : themeStyles.textSecondary }}>
+                                                    <td key={key} className="px-1 py-1.5 text-center font-mono text-[11px] font-semibold" style={{ color: runner.lagMs ? themeStyles.text : themeStyles.textSecondary }}>
                                                         {runner.lagMs ? formatTime(runner.lagMs) : '-'}
                                                     </td>
                                                 );
@@ -1822,29 +1811,29 @@ export default function EventLivePage() {
                                             }
                                             case 'progress':
                                                 return (
-                                                    <td key={key} style={{ padding: '6px 8px', textAlign: 'right' }}>
-                                                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
-                                                            <div style={{ display: 'flex', alignItems: 'baseline', gap: 4, marginBottom: 4 }}>
-                                                                <span style={{ fontWeight: 700, fontSize: 11, color: themeStyles.text }}>
+                                                    <td key={key} className="px-2 py-1.5 text-right">
+                                                        <div className="flex flex-col items-end">
+                                                            <div className="mb-1 flex items-baseline gap-1">
+                                                                <span className="text-[11px] font-bold" style={{ color: themeStyles.text }}>
                                                                     {progressPct}%
                                                                 </span>
                                                                 {progressLabel ? (
-                                                                    <span style={{ fontSize: 9, color: themeStyles.textSecondary, fontWeight: 500 }}>
+                                                                    <span className="text-[9px] font-medium" style={{ color: themeStyles.textSecondary }}>
                                                                         {progressLabel}
                                                                     </span>
                                                                 ) : progressDistKm > 0 && eventTotalKm > 0 ? (
-                                                                    <span style={{ fontSize: 9, color: themeStyles.textSecondary, fontWeight: 500 }}>
+                                                                    <span className="text-[9px] font-medium" style={{ color: themeStyles.textSecondary }}>
                                                                         {progressDistKm.toFixed(1)}/{eventTotalKm.toFixed(0)}km
                                                                     </span>
                                                                 ) : null}
                                                             </div>
-                                                            <div style={{ display: 'flex', alignItems: 'center', gap: 4, width: '100%', justifyContent: 'flex-end' }}>
+                                                            <div className="flex w-full items-center justify-end gap-1">
                                                                 {showProgressAlert && (
-                                                                    <span style={{ color: '#f59e0b', fontSize: 12, lineHeight: 1 }} title={language === 'th' ? 'จำนวน checkpoint ที่ผ่านยังไม่ครบ' : 'Checkpoint count is incomplete'}>
+                                                                    <span className="text-xs leading-none text-amber-500" title={language === 'th' ? 'จำนวน checkpoint ที่ผ่านยังไม่ครบ' : 'Checkpoint count is incomplete'}>
                                                                         ⚠
                                                                     </span>
                                                                 )}
-                                                                <div style={{ width: '100%', maxWidth: 80, height: 6, borderRadius: 3, background: isDark ? 'rgba(255,255,255,0.1)' : '#f1f5f9', overflow: 'hidden' }}>
+                                                                <div className="h-1.5 w-full max-w-20 overflow-hidden rounded-[3px]" style={{ background: isDark ? 'rgba(255,255,255,0.1)' : '#f1f5f9' }}>
                                                                     <div style={{
                                                                         height: '100%',
                                                                         width: `${progressPct}%`,
@@ -1868,48 +1857,48 @@ export default function EventLivePage() {
                                             // ===== LAB / LAP columns =====
                                             case 'laps':
                                                 return (
-                                                    <td key={key} style={{ padding: '6px 6px', textAlign: 'center' }}>
-                                                        <span style={{ fontSize: 18, fontWeight: 900, color: (runner.lapCount || runner.passedCount || 0) > 0 ? '#8b5cf6' : themeStyles.textSecondary }}>
+                                                    <td key={key} className="px-1.5 py-1.5 text-center">
+                                                        <span className="text-[18px] font-black" style={{ color: (runner.lapCount || runner.passedCount || 0) > 0 ? '#8b5cf6' : themeStyles.textSecondary }}>
                                                             {runner.lapCount || runner.passedCount || 0}
                                                         </span>
                                                     </td>
                                                 );
                                             case 'bestLap':
                                                 return (
-                                                    <td key={key} style={{ padding: '6px 6px', textAlign: 'center' }}>
-                                                        <span style={{ fontSize: 12, fontWeight: 700, color: runner.bestLapTime ? '#22c55e' : themeStyles.textSecondary, fontFamily: 'monospace' }}>
+                                                    <td key={key} className="px-1.5 py-1.5 text-center">
+                                                        <span className="font-mono text-xs font-bold" style={{ color: runner.bestLapTime ? '#22c55e' : themeStyles.textSecondary }}>
                                                             {runner.bestLapTime ? formatTime(runner.bestLapTime) : '-'}
                                                         </span>
                                                     </td>
                                                 );
                                             case 'avgLap':
                                                 return (
-                                                    <td key={key} style={{ padding: '6px 6px', textAlign: 'center' }}>
-                                                        <span style={{ fontSize: 12, fontWeight: 600, color: runner.avgLapTime ? themeStyles.text : themeStyles.textSecondary, fontFamily: 'monospace' }}>
+                                                    <td key={key} className="px-1.5 py-1.5 text-center">
+                                                        <span className="font-mono text-xs font-semibold" style={{ color: runner.avgLapTime ? themeStyles.text : themeStyles.textSecondary }}>
                                                             {runner.avgLapTime ? formatTime(runner.avgLapTime) : '-'}
                                                         </span>
                                                     </td>
                                                 );
                                             case 'lastLap':
                                                 return (
-                                                    <td key={key} style={{ padding: '6px 6px', textAlign: 'center' }}>
-                                                        <span style={{ fontSize: 12, fontWeight: 600, color: runner.lastLapTime ? themeStyles.text : themeStyles.textSecondary, fontFamily: 'monospace' }}>
+                                                    <td key={key} className="px-1.5 py-1.5 text-center">
+                                                        <span className="font-mono text-xs font-semibold" style={{ color: runner.lastLapTime ? themeStyles.text : themeStyles.textSecondary }}>
                                                             {runner.lastLapTime ? formatTime(runner.lastLapTime) : '-'}
                                                         </span>
                                                     </td>
                                                 );
                                             case 'totalTime':
                                                 return (
-                                                    <td key={key} style={{ padding: '6px 6px', textAlign: 'center' }}>
-                                                        <span style={{ fontSize: 12, fontWeight: 700, color: themeStyles.text, fontFamily: 'monospace' }}>
+                                                    <td key={key} className="px-1.5 py-1.5 text-center">
+                                                        <span className="font-mono text-xs font-bold" style={{ color: themeStyles.text }}>
                                                             {formatTime(runner.elapsedTime || runner.gunTime)}
                                                         </span>
                                                     </td>
                                                 );
                                             case 'lastPass':
                                                 return (
-                                                    <td key={key} style={{ padding: '6px 6px', textAlign: 'center' }}>
-                                                        <span style={{ fontSize: 11, color: runner.lastPassTime ? themeStyles.text : themeStyles.textSecondary, fontFamily: 'monospace' }}>
+                                                    <td key={key} className="px-1.5 py-1.5 text-center">
+                                                        <span className="font-mono text-[11px]" style={{ color: runner.lastPassTime ? themeStyles.text : themeStyles.textSecondary }}>
                                                             {runner.lastPassTime ? new Date(runner.lastPassTime).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '-'}
                                                         </span>
                                                     </td>
@@ -1926,8 +1915,8 @@ export default function EventLivePage() {
                                                     lapPaceStr = `${pM.toString().padStart(2, '0')}:${pS.toString().padStart(2, '0')}`;
                                                 }
                                                 return (
-                                                    <td key={key} style={{ padding: '6px 6px', textAlign: 'center' }}>
-                                                        <span style={{ fontSize: 11, fontWeight: 600, color: lapPaceStr !== '-' ? '#8b5cf6' : themeStyles.textSecondary, fontFamily: 'monospace' }}>
+                                                    <td key={key} className="px-1.5 py-1.5 text-center">
+                                                        <span className="font-mono text-[11px] font-semibold" style={{ color: lapPaceStr !== '-' ? '#8b5cf6' : themeStyles.textSecondary }}>
                                                             {lapPaceStr}
                                                         </span>
                                                     </td>
@@ -1960,22 +1949,22 @@ export default function EventLivePage() {
             </main>
 
             {/* ===== FOOTER ===== */}
-            <footer style={{ background: themeStyles.cardBg, borderTop: `1px solid ${themeStyles.border}`, padding: '8px 16px', position: 'fixed', bottom: 0, width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', zIndex: 30 }}>
-                <p style={{ fontSize: 9, fontWeight: 700, color: themeStyles.textSecondary, textTransform: 'uppercase', letterSpacing: '0.1em', margin: 0 }}>
+            <footer className="fixed bottom-0 z-30 flex w-full items-center justify-between border-t border-[var(--border)] bg-[var(--card-solid)] px-4 py-2">
+                <p className="m-0 text-[9px] font-bold uppercase tracking-[0.1em]" style={{ color: themeStyles.textSecondary }}>
                     Results
                 </p>
-                <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
-                    <span style={{ fontSize: 9, fontWeight: 700, color: themeStyles.textMuted, textTransform: 'uppercase' }}>
+                <div className="flex items-center gap-4">
+                    <span className="text-[9px] font-bold uppercase" style={{ color: themeStyles.textMuted }}>
                         {filteredRunners.length} / {runners.length} {language === 'th' ? 'คน' : 'runners'}
                     </span>
-                    <span style={{ fontSize: 9, fontWeight: 600, color: themeStyles.textSecondary }}>
+                    <span className="text-[9px] font-semibold" style={{ color: themeStyles.textSecondary }}>
                         {language === 'th' ? 'อัพเดทล่าสุด' : 'Updated'}: {lastUpdated.toLocaleTimeString(language === 'th' ? 'th-TH' : 'en-US')}
                     </span>
-                    <span style={{ fontSize: 9, fontWeight: 700, color: '#22c55e', textTransform: 'uppercase' }}>
-                        <span style={{ display: 'inline-block', width: 5, height: 5, borderRadius: '50%', background: '#22c55e', marginRight: 4, animation: 'pulseLive 1.5s infinite' }} />
+                    <span className="text-[9px] font-bold uppercase text-green-500">
+                        <span className="mr-1 inline-block h-[5px] w-[5px] rounded-full bg-green-500" style={{ animation: 'pulseLive 1.5s infinite' }} />
                         {isRaceFinished ? 'Auto-refresh 15s' : 'Auto-refresh 10s'}
                     </span>
-                    <span style={{ fontSize: 10, fontFamily: 'monospace', color: themeStyles.textSecondary }}>
+                    <span className="font-mono text-[10px]" style={{ color: themeStyles.textSecondary }}>
                         {currentTime.toLocaleTimeString(language === 'th' ? 'th-TH' : 'en-US')}
                     </span>
                 </div>
@@ -1987,36 +1976,31 @@ export default function EventLivePage() {
             {editingRunner && (
                 <div
                     onClick={() => setEditingRunner(null)}
-                    style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                    className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/50"
                 >
                     <div
                         onClick={e => e.stopPropagation()}
-                        style={{ background: isDark ? '#1e293b' : '#fff', borderRadius: 12, padding: 24, width: 520, maxWidth: '95vw', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}
+                        className="max-h-[90vh] w-[520px] max-w-[95vw] overflow-y-auto rounded-xl p-6 shadow-[0_20px_60px_rgba(0,0,0,0.3)]"
+                        style={{ background: isDark ? '#1e293b' : '#fff' }}
                     >
-                        <div style={{ marginBottom: 16 }}>
-                            <h3 style={{ margin: '0 0 8px', fontSize: 14, fontWeight: 700, color: themeStyles.textSecondary, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                        <div className="mb-4">
+                            <h3 className="mb-2 mt-0 text-sm font-bold uppercase tracking-[0.05em]" style={{ color: themeStyles.textSecondary }}>
                                 {language === 'th' ? 'แก้ไขข้อมูล Runner' : 'Edit Runner'}
                             </h3>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                                <span style={{
-                                    display: 'inline-flex', alignItems: 'center', gap: 4,
-                                    padding: '4px 12px', borderRadius: 6,
-                                    background: '#2563eb', color: '#fff',
-                                    fontSize: 13, fontWeight: 800, fontFamily: 'monospace', letterSpacing: '0.05em',
-                                    flexShrink: 0,
-                                }}>
+                            <div className="flex items-center gap-2.5">
+                                <span className="inline-flex shrink-0 items-center gap-1 rounded-md bg-blue-600 px-3 py-1 font-mono text-[13px] font-extrabold tracking-[0.05em] text-white">
                                     BIB {editingRunner.bib}
                                 </span>
-                                <span style={{ fontSize: 16, fontWeight: 700, color: themeStyles.text, lineHeight: 1.3 }}>
+                                <span className="text-base font-bold leading-[1.3]" style={{ color: themeStyles.text }}>
                                     {editingRunner.firstName} {editingRunner.lastName}
                                 </span>
                             </div>
                         </div>
 
-                        <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: themeStyles.textSecondary, marginBottom: 4, textTransform: 'uppercase' }}>
+                        <label className="mb-1 block text-[11px] font-bold uppercase" style={{ color: themeStyles.textSecondary }}>
                             {language === 'th' ? 'สถานะ' : 'Status'}
                         </label>
-                        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 14 }}>
+                        <div className="mb-3.5 flex flex-wrap gap-1.5">
                             {[
                                 { value: 'not_started', label: 'Not Started', color: '#94a3b8' },
                                 { value: 'in_progress', label: 'Racing', color: '#f97316' },
@@ -2028,12 +2012,11 @@ export default function EventLivePage() {
                                 <button
                                     key={opt.value}
                                     onClick={() => setEditStatus(opt.value)}
+                                    className="cursor-pointer rounded-md px-3.5 py-1.5 text-xs font-bold transition-all duration-150"
                                     style={{
-                                        padding: '6px 14px', borderRadius: 6, fontSize: 12, fontWeight: 700, cursor: 'pointer',
                                         border: editStatus === opt.value ? `2px solid ${opt.color}` : '2px solid transparent',
                                         background: editStatus === opt.value ? opt.color : (isDark ? '#334155' : '#f1f5f9'),
                                         color: editStatus === opt.value ? '#fff' : themeStyles.text,
-                                        transition: 'all 0.15s',
                                     }}
                                 >
                                     {opt.label}
@@ -2041,41 +2024,43 @@ export default function EventLivePage() {
                             ))}
                         </div>
 
-                        <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: themeStyles.textSecondary, marginBottom: 4, textTransform: 'uppercase' }}>
+                        <label className="mb-1 block text-[11px] font-bold uppercase" style={{ color: themeStyles.textSecondary }}>
                             {language === 'th' ? 'จุด Checkpoint' : 'Checkpoint'}
                         </label>
                         <input
                             value={editCheckpoint}
                             onChange={e => setEditCheckpoint(e.target.value)}
                             placeholder={language === 'th' ? 'เช่น CP3, FINISH' : 'e.g. CP3, FINISH'}
-                            style={{ width: '100%', padding: '8px 12px', borderRadius: 6, border: `1px solid ${themeStyles.border}`, background: isDark ? '#0f172a' : '#fff', color: themeStyles.text, fontSize: 13, marginBottom: 14, boxSizing: 'border-box' }}
+                            className="mb-3.5 w-full rounded-md border px-3 py-2 text-[13px] box-border"
+                            style={{ borderColor: themeStyles.border, background: isDark ? '#0f172a' : '#fff', color: themeStyles.text }}
                         />
 
-                        <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: themeStyles.textSecondary, marginBottom: 4, textTransform: 'uppercase' }}>
+                        <label className="mb-1 block text-[11px] font-bold uppercase" style={{ color: themeStyles.textSecondary }}>
                             {language === 'th' ? 'หมายเหตุ' : 'Note'}
                         </label>
                         <input
                             value={editNote}
                             onChange={e => setEditNote(e.target.value)}
                             placeholder={language === 'th' ? 'เช่น ขาเจ็บ, หลงทาง' : 'e.g. injury, lost route'}
-                            style={{ width: '100%', padding: '8px 12px', borderRadius: 6, border: `1px solid ${themeStyles.border}`, background: isDark ? '#0f172a' : '#fff', color: themeStyles.text, fontSize: 13, marginBottom: 14, boxSizing: 'border-box' }}
+                            className="mb-3.5 w-full rounded-md border px-3 py-2 text-[13px] box-border"
+                            style={{ borderColor: themeStyles.border, background: isDark ? '#0f172a' : '#fff', color: themeStyles.text }}
                         />
 
                         {/* ===== CHECKPOINT TIMING SECTION ===== */}
-                        <div style={{ borderTop: `1px solid ${themeStyles.border}`, paddingTop: 14, marginBottom: 14 }}>
-                            <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: themeStyles.textSecondary, marginBottom: 8, textTransform: 'uppercase' }}>
+                        <div className="mb-3.5 border-t pt-3.5" style={{ borderTopColor: themeStyles.border }}>
+                            <label className="mb-2 block text-[11px] font-bold uppercase" style={{ color: themeStyles.textSecondary }}>
                                 {language === 'th' ? 'เวลาเข้าจุด Checkpoint' : 'Checkpoint Times'}
                             </label>
                             {editTimingLoading ? (
-                                <div style={{ textAlign: 'center', padding: 16, color: themeStyles.textSecondary, fontSize: 12 }}>
+                                <div className="p-4 text-center text-xs" style={{ color: themeStyles.textSecondary }}>
                                     {language === 'th' ? 'กำลังโหลด...' : 'Loading...'}
                                 </div>
                             ) : editCheckpoints.length === 0 ? (
-                                <div style={{ textAlign: 'center', padding: 12, color: themeStyles.textSecondary, fontSize: 12, background: isDark ? '#0f172a' : '#f9fafb', borderRadius: 6 }}>
+                                <div className="rounded-md p-3 text-center text-xs" style={{ color: themeStyles.textSecondary, background: isDark ? '#0f172a' : '#f9fafb' }}>
                                     {language === 'th' ? 'ไม่พบข้อมูล Checkpoint' : 'No checkpoints found'}
                                 </div>
                             ) : (
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                <div className="flex flex-col gap-1.5">
                                     {editCheckpoints.map((cp, i) => {
                                         const matchedRecord = editTimingRecords.find(r =>
                                             r.checkpoint.toUpperCase() === cp.name.toUpperCase()
@@ -2098,25 +2083,14 @@ export default function EventLivePage() {
                                         const cpColor = cp.type === 'start' ? '#3b82f6' : cp.type === 'finish' ? '#22c55e' : '#8b5cf6';
                                         const hasChanged = editTimingChanges[cp.name] !== undefined;
                                         return (
-                                            <div key={cp.name + i} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                                <span style={{
-                                                    display: 'inline-block', padding: '2px 8px', borderRadius: 4,
-                                                    fontSize: 10, fontWeight: 700, color: '#fff', background: cpColor,
-                                                    minWidth: 60, textAlign: 'center', whiteSpace: 'nowrap',
-                                                }}>
+                                            <div key={cp.name + i} className="flex items-center gap-2">
+                                                <span className="inline-block min-w-[60px] whitespace-nowrap rounded px-2 py-0.5 text-center text-[10px] font-bold text-white" style={{ background: cpColor }}>
                                                     {cp.name}
                                                 </span>
                                                 <button
                                                     onClick={() => setCpTimingPickerOpen(cp.name)}
-                                                    style={{
-                                                        flex: 1, padding: '6px 10px', borderRadius: 6,
-                                                        border: `1px solid ${hasChanged ? '#8b5cf6' : themeStyles.border}`,
-                                                        background: isDark ? '#0f172a' : '#fff',
-                                                        color: displayTime ? themeStyles.text : themeStyles.textSecondary,
-                                                        fontSize: 12, fontFamily: 'monospace', cursor: 'pointer',
-                                                        textAlign: 'left', boxSizing: 'border-box',
-                                                        transition: 'all 0.15s',
-                                                    }}
+                                                    className="box-border flex-1 cursor-pointer rounded-md px-2.5 py-1.5 text-left font-mono text-xs transition-all duration-150"
+                                                    style={{ border: `1px solid ${hasChanged ? '#8b5cf6' : themeStyles.border}`, background: isDark ? '#0f172a' : '#fff', color: displayTime ? themeStyles.text : themeStyles.textSecondary }}
                                                 >
                                                     {displayTime || (language === 'th' ? 'กดเพื่อตั้งเวลา' : 'Click to set time')}
                                                 </button>
@@ -2184,18 +2158,13 @@ export default function EventLivePage() {
                                                 }
                                                 setTimeout(() => setEditTimingSaveMsg(null), 3000);
                                             }}
-                                            style={{
-                                                padding: '6px 16px', borderRadius: 6, border: 'none',
-                                                background: '#8b5cf6', color: '#fff', fontSize: 12,
-                                                fontWeight: 700, cursor: 'pointer', alignSelf: 'flex-end',
-                                                marginTop: 4,
-                                            }}
+                                            className="mt-1 self-end rounded-md border-none bg-violet-500 px-4 py-1.5 text-xs font-bold text-white"
                                         >
                                             {language === 'th' ? 'บันทึกเวลา Checkpoint' : 'Save Checkpoint Times'}
                                         </button>
                                     )}
                                     {editTimingSaveMsg && (
-                                        <span style={{ fontSize: 11, fontWeight: 600, color: '#22c55e', alignSelf: 'flex-end' }}>
+                                        <span className="self-end text-[11px] font-semibold text-green-500">
                                             ✓ {editTimingSaveMsg}
                                         </span>
                                     )}
@@ -2204,22 +2173,24 @@ export default function EventLivePage() {
                         </div>
 
                         {editSaveError && (
-                            <div style={{ marginBottom: 12, borderRadius: 8, border: '1px solid #fecaca', background: '#fef2f2', padding: '10px 12px', fontSize: 12, fontWeight: 600, color: '#b91c1c' }}>
+                            <div className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-xs font-semibold text-red-700">
                                 {editSaveError}
                             </div>
                         )}
 
-                        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                        <div className="flex justify-end gap-2">
                             <button
                                 onClick={() => setEditingRunner(null)}
-                                style={{ padding: '8px 20px', borderRadius: 6, border: `1px solid ${themeStyles.border}`, background: 'transparent', color: themeStyles.text, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
+                                className="rounded-md border bg-transparent px-5 py-2 text-[13px] font-semibold"
+                                style={{ borderColor: themeStyles.border, color: themeStyles.text }}
                             >
                                 {language === 'th' ? 'ยกเลิก' : 'Cancel'}
                             </button>
                             <button
                                 onClick={handleStatusUpdate}
                                 disabled={editSaving}
-                                style={{ padding: '8px 24px', borderRadius: 6, border: 'none', background: '#2563eb', color: '#fff', fontSize: 13, fontWeight: 700, cursor: editSaving ? 'not-allowed' : 'pointer', opacity: editSaving ? 0.6 : 1 }}
+                                className="rounded-md border-none bg-blue-600 px-6 py-2 text-[13px] font-bold text-white"
+                                style={{ cursor: editSaving ? 'not-allowed' : 'pointer', opacity: editSaving ? 0.6 : 1 }}
                             >
                                 {editSaving ? '...' : (language === 'th' ? 'บันทึก' : 'Save')}
                             </button>
