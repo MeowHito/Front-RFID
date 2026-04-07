@@ -1364,9 +1364,10 @@ export default function EventLivePage() {
                                         switch (key) {
                                             case 'rank': {
                                                 const hideRank = ['dnf', 'dns', 'dq', 'not_started'].includes(runner.status);
+                                                const displayRank = runner.overallRank || rank;
                                                 return (
                                                     <td key={key} className={isMobile ? 'px-0.5 py-1 text-center' : 'px-2 py-1.5 text-center'}>
-                                                        <span className={isMobile ? 'text-sm font-black' : 'text-base font-black'} style={{ color: hideRank ? (isDark ? '#64748b' : '#cbd5e1') : (isMobile ? '#0f172a' : (rank <= 3 ? (rank === 1 ? '#22c55e' : isDark ? '#94a3b8' : '#334155') : (isDark ? '#64748b' : '#cbd5e1'))) }}>{hideRank ? '-' : rank}</span>
+                                                        <span className={isMobile ? 'text-sm font-black' : 'text-base font-black'} style={{ color: hideRank ? (isDark ? '#64748b' : '#cbd5e1') : (isMobile ? '#0f172a' : (displayRank <= 3 ? (displayRank === 1 ? '#22c55e' : isDark ? '#94a3b8' : '#334155') : (isDark ? '#64748b' : '#cbd5e1'))) }}>{hideRank ? '-' : displayRank}</span>
                                                     </td>
                                                 );
                                             }

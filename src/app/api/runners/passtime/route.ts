@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-
-const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:3001';
+import { BACKEND_URL } from '../../_helpers';
 
 export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
