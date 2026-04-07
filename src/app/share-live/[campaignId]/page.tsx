@@ -499,6 +499,38 @@ export default function ShareLiveMonitorPage() {
                                 placeholder="ค้นหา BIB, ชื่อ..."
                                 className="py-1.5 pr-3 pl-[30px] rounded-[10px] border-[1.5px] border-slate-200 text-[12px] w-full sm:w-[250px] outline-none focus:border-slate-400 transition-colors" />
                         </div>
+                        <button
+                            onClick={toggleSound}
+                            title={soundEnabled ? 'ปิดเสียงประกาศ' : 'เปิดเสียงประกาศ'}
+                            className="relative px-2.5 py-2 rounded-lg border text-xs font-semibold cursor-pointer transition-all"
+                            style={{
+                                background: soundEnabled
+                                    ? 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)'
+                                    : '#fff',
+                                borderColor: soundEnabled ? '#15803d' : '#e2e8f0',
+                                color: soundEnabled ? '#fff' : '#64748b',
+                            }}
+                        >
+                            {soundEnabled ? (
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" fill="white" />
+                                    <path d="M15.54 8.46a5 5 0 010 7.07" />
+                                    <path d="M19.07 4.93a10 10 0 010 14.14" />
+                                </svg>
+                            ) : (
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" fill="#94a3b8" stroke="#94a3b8" />
+                                    <line x1="23" y1="9" x2="17" y2="15" stroke="#ef4444" strokeWidth="2.5" />
+                                    <line x1="17" y1="9" x2="23" y2="15" stroke="#ef4444" strokeWidth="2.5" />
+                                </svg>
+                            )}
+                            {isSpeaking && soundEnabled && (
+                                <span
+                                    className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-yellow-400 border border-white"
+                                    style={{ animation: 'pulse 1s infinite' }}
+                                />
+                            )}
+                        </button>
                         <button onClick={fetchRunners} disabled={dataLoading}
                             className="px-3.5 py-2 rounded-lg border border-slate-200 bg-white text-xs font-semibold cursor-pointer text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed transition-colors">
                             {dataLoading ? '...' : '🔄'}
@@ -617,45 +649,6 @@ export default function ShareLiveMonitorPage() {
                     Powered by RFID Timing System •
                 </div>
             </div>
-
-            {/* ===== Floating Speaker Toggle Button ===== */}
-            <button
-                onClick={toggleSound}
-                title={soundEnabled ? 'ปิดเสียงประกาศ' : 'เปิดเสียงประกาศ'}
-                className="fixed bottom-6 right-6 z-50 w-14 h-14 rounded-full shadow-xl flex items-center justify-center transition-all duration-300 border-2 cursor-pointer"
-                style={{
-                    background: soundEnabled
-                        ? 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)'
-                        : 'linear-gradient(135deg, #64748b 0%, #475569 100%)',
-                    borderColor: soundEnabled ? '#15803d' : '#334155',
-                    boxShadow: soundEnabled
-                        ? '0 4px 20px rgba(34, 197, 94, 0.4)'
-                        : '0 4px 15px rgba(0,0,0,0.2)',
-                }}
-            >
-                {soundEnabled ? (
-                    /* Speaker ON icon */
-                    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" fill="white" />
-                        <path d="M15.54 8.46a5 5 0 010 7.07" />
-                        <path d="M19.07 4.93a10 10 0 010 14.14" />
-                    </svg>
-                ) : (
-                    /* Speaker OFF icon with red strikethrough */
-                    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" fill="white" stroke="white" />
-                        <line x1="23" y1="9" x2="17" y2="15" stroke="#ef4444" strokeWidth="2.5" />
-                        <line x1="17" y1="9" x2="23" y2="15" stroke="#ef4444" strokeWidth="2.5" />
-                    </svg>
-                )}
-                {/* Speaking pulse indicator */}
-                {isSpeaking && soundEnabled && (
-                    <span
-                        className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-yellow-400 border-2 border-white"
-                        style={{ animation: 'pulse 1s infinite' }}
-                    />
-                )}
-            </button>
 
             {/* Pulse animation keyframes */}
             <style dangerouslySetInnerHTML={{
