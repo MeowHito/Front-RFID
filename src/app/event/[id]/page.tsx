@@ -98,6 +98,8 @@ interface Runner {
     netTimeMs?: number;
     totalGunTime?: number;
     totalNetTime?: number;
+    totalGunTimeMs?: number;
+    totalNetTimeMs?: number;
     supplement?: string;
     cutOff?: string;
     legTime?: number;
@@ -337,31 +339,7 @@ export default function EventLivePage() {
                 if (r.status === 'dnf' && !((r.passedCount ?? 0) > 0)) return false;
                 return true;
             })
-            .sort((a, b) => {
-                const statusOrder: Record<string, number> = { 'finished': 0, 'in_progress': 1, 'dnf': 2 };
-                const statusDiff = (statusOrder[a.status] ?? 3) - (statusOrder[b.status] ?? 3);
-                if (statusDiff !== 0) return statusDiff;
-                if (a.status === 'finished' && b.status === 'finished') {
-                    const aNet = a.netTime || a.gunTime || 0;
-                    const bNet = b.netTime || b.gunTime || 0;
-                    if (aNet > 0 && bNet > 0) return aNet - bNet;
-                    if (aNet > 0 && bNet <= 0) return -1;
-                    if (aNet <= 0 && bNet > 0) return 1;
-                    return compareStableBibOrder(a, b);
-                }
-                if (a.status === 'in_progress' && b.status === 'in_progress') {
-                    const aPassed = a.passedCount ?? 0;
-                    const bPassed = b.passedCount ?? 0;
-                    if (aPassed !== bPassed) return bPassed - aPassed;
-                    const aTime = a.netTime || a.gunTime || a.elapsedTime || 0;
-                    const bTime = b.netTime || b.gunTime || b.elapsedTime || 0;
-                    if (aTime > 0 && bTime > 0) return aTime - bTime;
-                    if (aTime > 0 && bTime <= 0) return -1;
-                    if (aTime <= 0 && bTime > 0) return 1;
-                    return compareStableBibOrder(a, b);
-                }
-                return compareStableBibOrder(a, b);
-            });
+            .sort(compareRunnerRankOrder);
 
         // Build current rank map (bib → position)
         const currentRanks = new Map<string, number>();
@@ -393,12 +371,72 @@ export default function EventLivePage() {
     }
 
     function compareStableBibOrder(a: Runner, b: Runner) {
-        const aPrevRank = a.bib ? prevRanksRef.current.get(a.bib) : undefined;
-        const bPrevRank = b.bib ? prevRanksRef.current.get(b.bib) : undefined;
-        if (aPrevRank !== undefined && bPrevRank !== undefined && aPrevRank !== bPrevRank) {
-            return aPrevRank - bPrevRank;
+        const bibCompare = (a.bib || '').localeCompare(b.bib || '', undefined, { numeric: true });
+        if (bibCompare !== 0) return bibCompare;
+        return (a._id || '').localeCompare(b._id || '');
+    }
+
+    function getRunnerPrimaryTimeMs(runner: Runner) {
+        const candidates = [
+            runner.netTimeMs,
+            runner.totalNetTimeMs,
+            runner.totalNetTime,
+            runner.netTime,
+            runner.gunTimeMs,
+            runner.totalGunTimeMs,
+            runner.totalGunTime,
+            runner.gunTime,
+            runner.elapsedTime,
+        ];
+        for (const value of candidates) {
+            const num = Number(value || 0);
+            if (Number.isFinite(num) && num > 0) return num;
         }
-        return (a.bib || '').localeCompare(b.bib || '', undefined, { numeric: true });
+        return 0;
+    }
+
+    function getRunnerScanTimeMs(runner: Runner) {
+        const time = runner.scanTime ? new Date(runner.scanTime).getTime() : 0;
+        return Number.isFinite(time) && time > 0 ? time : 0;
+    }
+
+    function compareRunnerRankOrder(a: Runner, b: Runner) {
+        const statusOrder: Record<string, number> = { 'finished': 0, 'in_progress': 1, 'dnf': 2, 'dns': 3, 'dq': 4, 'not_started': 5 };
+        const statusDiff = (statusOrder[a.status] ?? 6) - (statusOrder[b.status] ?? 6);
+        if (statusDiff !== 0) return statusDiff;
+
+        const aRank = a.overallRank ?? 0;
+        const bRank = b.overallRank ?? 0;
+        if (aRank > 0 && bRank > 0 && aRank !== bRank) return aRank - bRank;
+
+        if (a.status === 'finished' && b.status === 'finished') {
+            const aTime = getRunnerPrimaryTimeMs(a);
+            const bTime = getRunnerPrimaryTimeMs(b);
+            if (aTime > 0 && bTime > 0 && aTime !== bTime) return aTime - bTime;
+            if (aTime > 0 && bTime <= 0) return -1;
+            if (aTime <= 0 && bTime > 0) return 1;
+            const aScan = getRunnerScanTimeMs(a);
+            const bScan = getRunnerScanTimeMs(b);
+            if (aScan > 0 && bScan > 0 && aScan !== bScan) return aScan - bScan;
+            return compareStableBibOrder(a, b);
+        }
+
+        if (a.status === 'in_progress' && b.status === 'in_progress') {
+            const aPassed = a.passedCount ?? 0;
+            const bPassed = b.passedCount ?? 0;
+            if (aPassed !== bPassed) return bPassed - aPassed;
+            const aTime = getRunnerPrimaryTimeMs(a);
+            const bTime = getRunnerPrimaryTimeMs(b);
+            if (aTime > 0 && bTime > 0 && aTime !== bTime) return aTime - bTime;
+            if (aTime > 0 && bTime <= 0) return -1;
+            if (aTime <= 0 && bTime > 0) return 1;
+            const aScan = getRunnerScanTimeMs(a);
+            const bScan = getRunnerScanTimeMs(b);
+            if (aScan > 0 && bScan > 0 && aScan !== bScan) return aScan - bScan;
+            return compareStableBibOrder(a, b);
+        }
+
+        return compareStableBibOrder(a, b);
     }
 
     // Derive effective status from actual RaceTiger timing data
@@ -818,8 +856,12 @@ export default function EventLivePage() {
         [followedRunnersForEvent]
     );
 
+    const allRankedRunners = useMemo(() => {
+        return [...runners].sort(compareRunnerRankOrder);
+    }, [runners]);
+
     const filteredRunners = useMemo(() => {
-        return runners
+        return allRankedRunners
             .filter(runner => {
                 const matchesSearch = !searchQuery || runner.firstName?.toLowerCase().includes(searchQuery.toLowerCase()) || runner.lastName?.toLowerCase().includes(searchQuery.toLowerCase()) || runner.bib?.includes(searchQuery);
                 const matchesGender = filterGender === 'ALL' || filterGender === 'FOLLOWED' || runner.gender === filterGender;
@@ -827,42 +869,8 @@ export default function EventLivePage() {
                 const matchesCategory = !filterCategory || resolveRunnerCategoryKey(runner) === filterCategory;
                 const matchesStatus = filterStatus === 'ALL' || runner.status === filterStatus;
                 return matchesSearch && matchesGender && matchesFollowed && matchesCategory && matchesStatus;
-            })
-            .sort((a, b) => {
-                // Group by status: finished FIRST, then in_progress, then DNF/DNS/DQ, then not_started
-                const statusOrder: Record<string, number> = { 'finished': 0, 'in_progress': 1, 'dnf': 2, 'dns': 3, 'dq': 4, 'not_started': 5 };
-                const statusDiff = (statusOrder[a.status] ?? 6) - (statusOrder[b.status] ?? 6);
-                if (statusDiff !== 0) return statusDiff;
-
-                // Within finished group: sort by netTime ASC (fastest first, ms precision)
-                if (a.status === 'finished' && b.status === 'finished') {
-                    const aNet = a.netTime || a.gunTime || 0;
-                    const bNet = b.netTime || b.gunTime || 0;
-                    if (aNet > 0 && bNet > 0) return aNet - bNet;
-                    if (aNet > 0 && bNet <= 0) return -1;
-                    if (aNet <= 0 && bNet > 0) return 1;
-                    return compareStableBibOrder(a, b);
-                }
-
-                // Within in_progress group: sort by checkpoint closest to finish DESC, then fastest time ASC
-                if (a.status === 'in_progress' && b.status === 'in_progress') {
-                    const aPassed = a.passedCount ?? 0;
-                    const bPassed = b.passedCount ?? 0;
-                    if (aPassed !== bPassed) return bPassed - aPassed; // DESC: more passed = closer to finish
-
-                    // Same checkpoint count: sort by elapsed time ASC (faster = higher rank)
-                    const aTime = a.netTime || a.gunTime || a.elapsedTime || 0;
-                    const bTime = b.netTime || b.gunTime || b.elapsedTime || 0;
-                    if (aTime > 0 && bTime > 0) return aTime - bTime;
-                    if (aTime > 0 && bTime <= 0) return -1;
-                    if (aTime <= 0 && bTime > 0) return 1;
-                    return compareStableBibOrder(a, b);
-                }
-
-                // Fallback: by BIB
-                return compareStableBibOrder(a, b);
             });
-    }, [runners, searchQuery, filterGender, followedRunnerIds, filterCategory, filterStatus, resolveRunnerCategoryKey]);
+    }, [allRankedRunners, searchQuery, filterGender, followedRunnerIds, filterCategory, filterStatus, resolveRunnerCategoryKey]);
 
     // Compute live gender and category ranks from sorted runners
     // These are computed AFTER sorting so rank=position within gender/category group
@@ -870,7 +878,7 @@ export default function EventLivePage() {
         const genderCounters: Record<string, number> = {};
         const categoryCounters: Record<string, number> = {};
         const ranks = new Map<string, { genRank: number; catRank: number }>();
-        for (const runner of filteredRunners) {
+        for (const runner of allRankedRunners) {
             // Rank runners who have passed at least one checkpoint (finished, in_progress, or DNF with progress)
             // Skip DNS/DQ/not_started runners with no checkpoint progress
             if (runner.status === 'not_started' || runner.status === 'dns' || runner.status === 'dq') continue;
@@ -882,7 +890,7 @@ export default function EventLivePage() {
             ranks.set(runner._id, { genRank: genderCounters[gender], catRank: categoryCounters[catKey] });
         }
         return ranks;
-    }, [filteredRunners]);
+    }, [allRankedRunners]);
 
 
 
@@ -1374,7 +1382,7 @@ export default function EventLivePage() {
                                             case 'genRank': {
                                                 const hideGenRank = ['dnf', 'dns', 'dq', 'not_started'].includes(runner.status);
                                                 const liveGen = liveRanks.get(runner._id)?.genRank;
-                                                const displayGenRank = hideGenRank ? '-' : (runner.genderRank || runner.genderNetRank || liveGen || '-');
+                                                const displayGenRank = hideGenRank ? '-' : (liveGen || runner.genderRank || runner.genderNetRank || '-');
                                                 return (
                                                     <td key={key} className={isMobile ? 'px-0.5 py-1 text-center' : 'px-1.5 py-1.5 text-center'}>
                                                         <span className={isMobile ? 'text-[11px] font-bold' : 'text-xs font-bold'} style={{ color: isMobile ? '#0f172a' : themeStyles.textMuted }}>{displayGenRank}</span>
@@ -1384,7 +1392,7 @@ export default function EventLivePage() {
                                             case 'catRank': {
                                                 const hideCatRank = ['dnf', 'dns', 'dq', 'not_started'].includes(runner.status);
                                                 const liveCat = liveRanks.get(runner._id)?.catRank;
-                                                const displayCatRank = hideCatRank ? '-' : (runner.ageGroupRank || runner.ageGroupNetRank || liveCat || '-');
+                                                const displayCatRank = hideCatRank ? '-' : (liveCat || runner.ageGroupRank || runner.ageGroupNetRank || '-');
                                                 return (
                                                     <td key={key} className={isMobile ? 'px-0.5 py-1 text-center' : 'px-1.5 py-1.5 text-center'}>
                                                         <span className={isMobile ? 'text-[11px] font-bold' : 'text-xs font-bold'} style={{ color: isMobile ? '#0f172a' : themeStyles.textMuted }}>{displayCatRank}</span>
