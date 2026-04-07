@@ -219,17 +219,51 @@ function FollowHeartIcon({ filled, size = 16, color }: { filled: boolean; size?:
 /** Auto-shrink text to always fit one line within its container */
 function FitName({ children, className, style, maxSize = 28 }: { children: string; className?: string; style?: React.CSSProperties; maxSize?: number }) {
     const ref = useRef<HTMLDivElement>(null);
+    const frameRef = useRef<number | null>(null);
     useEffect(() => {
         const el = ref.current;
         if (!el) return;
-        let size = maxSize;
-        el.style.fontSize = `${size}px`;
-        while (el.scrollWidth > el.clientWidth && size > 14) {
-            size--;
+        const fit = () => {
+            const width = el.clientWidth;
+            if (!width) return;
+            let size = maxSize;
             el.style.fontSize = `${size}px`;
+            while (el.scrollWidth > width && size > 10) {
+                size -= 1;
+                el.style.fontSize = `${size}px`;
+            }
+        };
+
+        const scheduleFit = () => {
+            if (frameRef.current !== null) {
+                cancelAnimationFrame(frameRef.current);
+            }
+            frameRef.current = requestAnimationFrame(() => {
+                fit();
+                frameRef.current = null;
+            });
+        };
+
+        scheduleFit();
+        window.addEventListener('resize', scheduleFit);
+
+        let observer: ResizeObserver | null = null;
+        if (typeof ResizeObserver !== 'undefined') {
+            observer = new ResizeObserver(() => scheduleFit());
+            observer.observe(el);
+            if (el.parentElement) observer.observe(el.parentElement);
         }
+
+        return () => {
+            window.removeEventListener('resize', scheduleFit);
+            observer?.disconnect();
+            if (frameRef.current !== null) {
+                cancelAnimationFrame(frameRef.current);
+                frameRef.current = null;
+            }
+        };
     }, [children, maxSize]);
-    return <div ref={ref} style={{ ...style, whiteSpace: 'nowrap', overflow: 'hidden', width: '100%', fontSize: maxSize, fontWeight: 900, textTransform: 'uppercase' as const }} className={className}>{children}</div>;
+    return <div ref={ref} style={{ ...style, whiteSpace: 'nowrap', overflow: 'hidden', width: '100%', minWidth: 0, flex: '1 1 auto', fontSize: maxSize, fontWeight: 900, textTransform: 'uppercase' as const }} className={className}>{children}</div>;
 }
 
 export default function RunnerProfilePage() {
@@ -577,9 +611,6 @@ export default function RunnerProfilePage() {
                 @media (max-width: 640px) {
                     .runner-header { padding: 6px 10px !important; }
                     .runner-info-section { padding: 12px !important; gap: 12px !important; }
-                    .runner-bib-panel { min-width: 84px !important; padding: 10px 12px !important; border-radius: 12px !important; }
-                    .runner-bib-label { font-size: 10px !important; }
-                    .runner-bib-value { font-size: 20px !important; }
                     .runner-stats-grid { gap: 8px !important; margin-bottom: 12px !important; }
                     .runner-stat-card { padding: 10px !important; border-radius: 10px !important; }
                     .runner-stat-value { font-size: 18px !important; }
@@ -587,8 +618,8 @@ export default function RunnerProfilePage() {
                     .runner-main { padding: 10px 10px 24px !important; }
                     .runner-progress-bar { padding: 14px !important; margin-bottom: 12px !important; }
                     .runner-cp-table-header { padding: 10px 14px !important; }
-                    .runner-actions { gap: 6px !important; margin-left: auto !important; align-items: flex-end !important; width: 100% !important; }
-                    .runner-action-btn { padding: 8px 14px !important; font-size: 12px !important; min-width: auto !important; min-height: 36px !important; border-radius: 10px !important; }
+                    .runner-actions { gap: 6px !important; margin-left: 0 !important; align-items: stretch !important; width: 100% !important; }
+                    .runner-action-btn { width: 100% !important; padding: 8px 14px !important; font-size: 12px !important; min-width: 0 !important; min-height: 36px !important; border-radius: 10px !important; box-sizing: border-box !important; }
                     .runner-footer { padding: 16px !important; margin-top: 16px !important; }
                     .runner-modal-overlay { padding: 8px !important; }
                     .runner-modal { width: 100% !important; height: calc(100vh - 16px) !important; max-height: calc(100vh - 16px) !important; border-radius: 20px !important; }
@@ -627,25 +658,20 @@ export default function RunnerProfilePage() {
 
             <main className="runner-main" style={{ flex: '1 0 auto', width: '100%', maxWidth: 1120, margin: '0 auto', padding: '16px 16px 32px' }}>
                 {/* RUNNER INFO SECTION */}
-                <section className="runner-info-section" style={{ display: 'flex', flexWrap: 'wrap', gap: 16, alignItems: 'center', background: '#fff', padding: 20, borderRadius: 16, border: '1px solid #e2e8f0', boxShadow: '0 1px 3px rgba(0,0,0,0.04)', marginBottom: 16 }}>
-                    <div className="runner-bib-panel" style={{ minWidth: 96, alignSelf: 'stretch', display: 'flex', flexDirection: 'column', justifyContent: 'center', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 14, padding: '12px 14px' }}>
-                        <span className="runner-bib-label" style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#94a3b8', marginBottom: 4 }}>
-                            BIB Number
-                        </span>
-                        <span className="runner-bib-value" style={{ fontSize: 24, fontWeight: 900, color: '#0f172a', lineHeight: 1, fontFamily: 'monospace' }}>
-                            {runner.bib}
-                        </span>
-                    </div>
-
+                <section className="runner-info-section" style={{ display: 'flex', flexWrap: 'wrap', gap: 16, alignItems: 'center', background: '#fff', padding: 20, borderRadius: 16, border: 'none', boxShadow: 'none', marginBottom: 16 }}>
                     <div style={{ flex: 1, minWidth: 200 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4, minWidth: 0 }}>
                             <FitName style={{ color: '#0f172a' }} maxSize={28}>{displayName}</FitName>
                             {runner.status === 'in_progress' && <span className="live-dot" style={{ background: '#22c55e' }} title="Racing" />}
                         </div>
                         <p style={{ color: '#64748b', fontWeight: 700, fontSize: 14, margin: '4px 0', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                             {runner.nationality && <span style={{ fontSize: 16 }}>{runner.nationality}</span>}
                             {runner.nationality && ' | '}
-                            {genderLabel} {runner.ageGroup || ''} | <span style={{ color: '#0f172a' }}>{runner.category}</span>
+                            <span style={{ color: '#94a3b8' }}>BIB Number</span>
+                            <span style={{ color: '#0f172a', fontWeight: 750 }}>{runner.bib}</span>
+                            {genderLabel}
+                            {runner.ageGroup || ''}
+                            | <span style={{ color: '#0f172a' }}>{runner.category}</span>
                         </p>
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 8 }}>
                             <span style={{ background: statusInfo.bg, color: statusInfo.color, padding: '4px 12px', borderRadius: 20, fontSize: 12, fontWeight: 700, textTransform: 'uppercase' }}>{statusInfo.text}</span>
@@ -657,6 +683,7 @@ export default function RunnerProfilePage() {
 
                     <div className="runner-actions" style={{ display: 'flex', flexDirection: 'column', gap: 6, marginLeft: 'auto', alignItems: 'flex-end' }}>
                         <button
+                            className="runner-action-btn"
                             type="button"
                             onClick={handleToggleFollow}
                             style={{
@@ -674,6 +701,7 @@ export default function RunnerProfilePage() {
                                 cursor: 'pointer',
                                 fontWeight: 800,
                                 fontSize: 13,
+                                width: '100%',
                             }}
                         >
                             <FollowHeartIcon filled={isFollowedRunner} size={16} color="#fff" />
@@ -681,11 +709,11 @@ export default function RunnerProfilePage() {
                         </button>
                         {isFinished ? (
                             <>
-                                <Link href={`/runner/${runnerId}/eslip`} className="runner-action-btn" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, background: '#16a34a', color: '#fff', padding: '8px 18px', borderRadius: 10, fontWeight: 700, fontSize: 13, textDecoration: 'none', border: 'none', cursor: 'pointer' }}>
-                                    ✅ Finished — ดู E-Slip
+                                <Link href={`/runner/${runnerId}/eslip`} className="runner-action-btn" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, background: '#16a34a', color: '#fff', padding: '8px 18px', borderRadius: 10, fontWeight: 700, fontSize: 13, textDecoration: 'none', border: 'none', cursor: 'pointer', minWidth: 200, minHeight: 38, width: '100%' }}>
+                                    Finished — ดู E-Slip
                                 </Link>
                                 {campaign?.isApproveCertificate && (
-                                    <Link href={`/runner/${runnerId}/certificate`} className="runner-action-btn" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, background: '#2563eb', color: '#fff', padding: '8px 18px', borderRadius: 10, fontWeight: 700, fontSize: 13, textDecoration: 'none', border: 'none', cursor: 'pointer' }}>
+                                    <Link href={`/runner/${runnerId}/certificate`} className="runner-action-btn" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, background: '#2563eb', color: '#fff', padding: '8px 18px', borderRadius: 10, fontWeight: 700, fontSize: 13, textDecoration: 'none', border: 'none', cursor: 'pointer', minWidth: 200, minHeight: 38, width: '100%' }}>
                                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="12" y1="18" x2="12" y2="12" /><polyline points="9 15 12 18 15 15" /></svg>
                                         ดาวน์โหลดใบประกาศ
                                     </Link>
@@ -693,7 +721,7 @@ export default function RunnerProfilePage() {
                             </>
                         ) : (
                             <div className="runner-action-btn" style={{ background: '#f1f5f9', color: '#94a3b8', padding: '8px 14px', borderRadius: 10, fontWeight: 700, fontSize: 12, textAlign: 'center', border: '1px solid #e2e8f0' }}>
-                                ⏳ ยังวิ่งไม่จบ แต่ถ้ามีกล้องใน Checkpoint ก็เปิดดูได้ทันที
+                                ยังไม่จบการแข่งขัน
                             </div>
                         )}
                     </div>
