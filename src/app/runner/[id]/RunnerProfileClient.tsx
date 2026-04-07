@@ -31,6 +31,7 @@ interface RunnerData {
     genderNetRank?: number;
     categoryNetRank?: number;
     ageGroupRank?: number;
+    ageGroupNetRank?: number;
     netPace?: string;
     gunPace?: string;
     totalFinishers?: number;
@@ -679,7 +680,7 @@ export default function RunnerProfileClient() {
                                         </div>
                                         <div className="rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur-sm">
                                             <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-slate-400">Category Rank</p>
-                                            <p className="mt-2 text-3xl font-black text-white">{runner.categoryRank || runner.categoryNetRank || '-'}</p>
+                                            <p className="mt-2 text-3xl font-black text-white">{runner.ageGroupRank || runner.ageGroupNetRank || runner.categoryRank || runner.categoryNetRank || '-'}</p>
                                         </div>
                                         <div className="rounded-2xl border border-rose-400/20 bg-rose-500/10 p-4 shadow-[0_0_24px_rgba(244,63,94,0.08)]">
                                             <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-rose-200">{isFinished ? 'Finish Time' : 'Elapsed'}</p>

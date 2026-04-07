@@ -5,13 +5,15 @@ import { useLanguage } from '@/lib/language-context';
 import AdminLayout from '../AdminLayout';
 import '../admin.css';
 import {
-    BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, LabelList,
+    BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, LabelList, Legend,
 } from 'recharts';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 interface Campaign {
     _id: string;
     name: string;
+    date?: string;
+    location?: string;
     categories?: { name: string; distance?: string }[];
 }
 
@@ -36,32 +38,335 @@ interface Runner {
     passedCount?: number;
     gunTime?: number;
     netTime?: number;
+    netTimeStr?: string;
+    gunTimeStr?: string;
 }
 
-// Timing record per checkpoint
 interface TimingRecord {
     bib: string;
     scanTime?: string;
     elapsedTime?: number;
 }
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-const CHART_COLORS = {
-    bar: '#22c55e',
-    barHover: '#16a34a',
-    finish: '#22c55e',
-    remaining: '#f59e0b',
-    zero: '#e5e7eb',
+// ─── Styles ──────────────────────────────────────────────────────────────────
+const styles = {
+    // Page wrapper
+    page: {
+        fontFamily: "'Inter', 'Segoe UI', sans-serif",
+        maxWidth: 1200,
+        margin: '0 auto',
+    } as React.CSSProperties,
+
+    // Hero section
+    hero: {
+        background: 'linear-gradient(135deg, #0f1b2d 0%, #1a2940 50%, #0d253f 100%)',
+        borderRadius: 16,
+        padding: '32px 36px',
+        marginBottom: 24,
+        position: 'relative' as const,
+        overflow: 'hidden',
+    } as React.CSSProperties,
+    heroOverlay: {
+        position: 'absolute' as const,
+        top: 0, right: 0, bottom: 0,
+        width: '40%',
+        background: 'linear-gradient(90deg, #0f1b2d 0%, transparent 30%)',
+        zIndex: 1,
+    } as React.CSSProperties,
+    heroBg: {
+        position: 'absolute' as const,
+        top: 0, right: 0, bottom: 0,
+        width: '50%',
+        opacity: 0.12,
+        backgroundImage: 'url("data:image/svg+xml,%3Csvg width=\'60\' height=\'60\' viewBox=\'0 0 60 60\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cg fill=\'none\' fill-rule=\'evenodd\'%3E%3Cg fill=\'%23ffffff\' fill-opacity=\'0.15\'%3E%3Cpath d=\'M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z\'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")',
+    } as React.CSSProperties,
+    heroContent: {
+        position: 'relative' as const,
+        zIndex: 2,
+    } as React.CSSProperties,
+    liveBadge: {
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 6,
+        background: 'rgba(239, 68, 68, 0.15)',
+        color: '#ef4444',
+        padding: '5px 14px',
+        borderRadius: 20,
+        fontSize: 11,
+        fontWeight: 800,
+        letterSpacing: 1.2,
+        textTransform: 'uppercase' as const,
+        marginBottom: 12,
+        border: '1px solid rgba(239, 68, 68, 0.25)',
+    } as React.CSSProperties,
+    liveDot: {
+        width: 7,
+        height: 7,
+        borderRadius: '50%',
+        background: '#ef4444',
+        animation: 'pulse 2s infinite',
+    } as React.CSSProperties,
+    heroTitle: {
+        fontSize: 28,
+        fontWeight: 900,
+        color: '#ffffff',
+        margin: '0 0 6px',
+        letterSpacing: -0.5,
+        lineHeight: 1.2,
+    } as React.CSSProperties,
+    heroSubtitle: {
+        fontSize: 14,
+        color: 'rgba(148, 163, 184, 0.9)',
+        margin: 0,
+        maxWidth: 520,
+        lineHeight: 1.5,
+    } as React.CSSProperties,
+    heroActions: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: 10,
+        marginTop: 16,
+    } as React.CSSProperties,
+
+    // Stat cards
+    statsGrid: {
+        display: 'grid',
+        gridTemplateColumns: 'repeat(4, 1fr)',
+        gap: 16,
+        marginBottom: 24,
+        marginTop: -40,
+        position: 'relative' as const,
+        zIndex: 5,
+        padding: '0 12px',
+    } as React.CSSProperties,
+    statCard: {
+        background: '#ffffff',
+        borderRadius: 14,
+        padding: '20px 22px',
+        boxShadow: '0 2px 12px rgba(0,0,0,0.06), 0 1px 3px rgba(0,0,0,0.04)',
+        border: '1px solid #f1f5f9',
+        position: 'relative' as const,
+        overflow: 'hidden',
+    } as React.CSSProperties,
+    statLabel: {
+        fontSize: 10,
+        fontWeight: 700,
+        color: '#94a3b8',
+        textTransform: 'uppercase' as const,
+        letterSpacing: 1,
+        marginBottom: 8,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+    } as React.CSSProperties,
+    statValue: {
+        fontSize: 32,
+        fontWeight: 900,
+        color: '#0f172a',
+        letterSpacing: -1,
+        lineHeight: 1,
+    } as React.CSSProperties,
+    statSub: {
+        fontSize: 12,
+        marginTop: 6,
+        fontWeight: 600,
+    } as React.CSSProperties,
+    statIcon: {
+        width: 36,
+        height: 36,
+        borderRadius: 10,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        fontSize: 16,
+    } as React.CSSProperties,
+
+    // Distribution cards
+    distGrid: {
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 440px), 1fr))',
+        gap: 20,
+        marginBottom: 24,
+    } as React.CSSProperties,
+    distCard: {
+        background: '#ffffff',
+        borderRadius: 14,
+        border: '1px solid #f1f5f9',
+        boxShadow: '0 1px 6px rgba(0,0,0,0.04)',
+        overflow: 'hidden',
+    } as React.CSSProperties,
+    distHeader: {
+        padding: '18px 22px 0',
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'flex-start',
+    } as React.CSSProperties,
+    distTitle: {
+        fontSize: 16,
+        fontWeight: 800,
+        color: '#0f172a',
+        margin: '0 0 4px',
+    } as React.CSSProperties,
+    distSub: {
+        fontSize: 12,
+        color: '#94a3b8',
+        margin: 0,
+    } as React.CSSProperties,
+    distBadge: {
+        background: '#f0fdf4',
+        border: '1px solid #bbf7d0',
+        borderRadius: 8,
+        padding: '4px 10px',
+        textAlign: 'center' as const,
+    } as React.CSSProperties,
+    distBadgeLabel: {
+        fontSize: 9,
+        fontWeight: 700,
+        color: '#16a34a',
+        textTransform: 'uppercase' as const,
+        letterSpacing: 0.8,
+    } as React.CSSProperties,
+    distBadgeValue: {
+        fontSize: 18,
+        fontWeight: 900,
+        color: '#16a34a',
+    } as React.CSSProperties,
+
+    // Section card
+    sectionCard: {
+        background: '#ffffff',
+        borderRadius: 14,
+        border: '1px solid #f1f5f9',
+        boxShadow: '0 1px 6px rgba(0,0,0,0.04)',
+        overflow: 'hidden',
+        marginBottom: 24,
+    } as React.CSSProperties,
+    sectionHeader: {
+        padding: '20px 24px',
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        flexWrap: 'wrap' as const,
+        gap: 12,
+    } as React.CSSProperties,
+    sectionTitle: {
+        fontSize: 18,
+        fontWeight: 800,
+        color: '#0f172a',
+        margin: 0,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 8,
+    } as React.CSSProperties,
+    sectionSub: {
+        fontSize: 13,
+        color: '#94a3b8',
+        margin: '2px 0 0',
+    } as React.CSSProperties,
+
+    // Table
+    table: {
+        width: '100%',
+        borderCollapse: 'collapse' as const,
+        fontSize: 13,
+    } as React.CSSProperties,
+    th: {
+        padding: '12px 18px',
+        textAlign: 'left' as const,
+        fontSize: 10,
+        fontWeight: 700,
+        color: '#94a3b8',
+        textTransform: 'uppercase' as const,
+        letterSpacing: 1,
+        borderBottom: '1px solid #f1f5f9',
+    } as React.CSSProperties,
+    td: {
+        padding: '14px 18px',
+        borderBottom: '1px solid #f8fafc',
+        color: '#334155',
+    } as React.CSSProperties,
+
+    // Legend dots
+    legendDot: (color: string) => ({
+        display: 'inline-block',
+        width: 8,
+        height: 8,
+        borderRadius: '50%',
+        background: color,
+        marginRight: 5,
+    }) as React.CSSProperties,
+
+    // Status badges
+    statusBadge: (bg: string, color: string) => ({
+        display: 'inline-flex',
+        padding: '3px 10px',
+        borderRadius: 12,
+        fontSize: 10,
+        fontWeight: 800,
+        letterSpacing: 0.6,
+        textTransform: 'uppercase' as const,
+        background: bg,
+        color: color,
+        border: `1px solid ${color}20`,
+    }) as React.CSSProperties,
 };
 
-const AGE_GROUPS_ORDER = [
-    'Under 15', '15-19', '20-24', '25-29', '30-34', '35-39',
-    '40-44', '45-49', '50-54', '55-59', '60-64', '65-69', '70+',
-];
+// ─── Custom Tooltip ──────────────────────────────────────────────────────────
+function ChartTooltip({ active, payload, label, th }: any) {
+    if (!active || !payload?.length) return null;
+    const d = payload[0]?.payload;
+    return (
+        <div style={{
+            background: '#fff', borderRadius: 10, padding: '10px 14px',
+            boxShadow: '0 4px 20px rgba(0,0,0,0.12)', border: '1px solid #e2e8f0',
+            minWidth: 120,
+        }}>
+            <div style={{ fontWeight: 800, color: '#0f172a', fontSize: 13, marginBottom: 4 }}>{label}</div>
+            {payload.map((p: any, i: number) => (
+                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#475569', marginTop: 2 }}>
+                    <span style={{ ...styles.legendDot(p.color || p.fill), marginRight: 4 }} />
+                    <span>{p.name || (th ? 'จำนวน' : 'Count')}:</span>
+                    <span style={{ fontWeight: 800, color: '#0f172a' }}>{p.value}</span>
+                </div>
+            ))}
+            {d?.total !== undefined && (
+                <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 4, paddingTop: 4, borderTop: '1px solid #f1f5f9' }}>
+                    {th ? 'ทั้งหมดในประเภท' : 'Category total'}: {d.total}
+                </div>
+            )}
+        </div>
+    );
+}
 
-function getAgeGroupLabel(ag?: string): string {
-    if (!ag) return 'N/A';
-    return ag;
+// ─── Age Group Status Label ──────────────────────────────────────────────────
+function getAgeGroupStatus(count: number, avgCount: number): { label: string; bg: string; color: string } {
+    const ratio = avgCount > 0 ? count / avgCount : 0;
+    if (ratio > 1.5) return { label: 'HIGH VOLUME', bg: '#dbeafe', color: '#1d4ed8' };
+    if (ratio > 1.1) return { label: 'ELITE FOCUS', bg: '#fce7f3', color: '#be185d' };
+    if (ratio > 0.7) return { label: 'STABLE', bg: '#f1f5f9', color: '#475569' };
+    return { label: 'GROWTH', bg: '#ecfdf5', color: '#059669' };
+}
+
+function formatTimeMs(ms?: number): string {
+    if (!ms || ms <= 0) return '-';
+    const h = Math.floor(ms / 3600000);
+    const m = Math.floor((ms % 3600000) / 60000);
+    const s = Math.floor((ms % 60000) / 1000);
+    return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+}
+
+function formatPace(ms?: number, distKm?: number): string {
+    if (!ms || ms <= 0 || !distKm || distKm <= 0) return '-';
+    const totalMin = ms / 60000;
+    const paceMin = totalMin / distKm;
+    const min = Math.floor(paceMin);
+    const sec = Math.round((paceMin - min) * 60);
+    return `${min}'${sec.toString().padStart(2, '0')}" /km`;
+}
+
+function formatCount(n: number): string {
+    if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
+    return n.toString();
 }
 
 // ─── Component ───────────────────────────────────────────────────────────────
@@ -79,7 +384,7 @@ export default function GeneralChartPage() {
     const [autoRefresh, setAutoRefresh] = useState(true);
     const refreshRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-    // ── Load featured campaign ──
+    // ── Load campaign ──
     useEffect(() => {
         (async () => {
             try {
@@ -105,30 +410,25 @@ export default function GeneralChartPage() {
         })();
     }, [campaign?._id]);
 
-    // ── Fetch all data ──
+    // ── Fetch all ──
     const fetchAll = useCallback(async (silent = false) => {
         if (!campaign?._id) return;
         if (!silent) setRunnersLoading(true);
         try {
-            // Fetch runners
             const rRes = await fetch(`/api/runners/passtime?id=${campaign._id}`, { cache: 'no-store' });
             let payload: any = {};
             try { payload = await rRes.json(); } catch { payload = {}; }
-            let runnerList: Runner[] = [];
-            if (Array.isArray(payload)) runnerList = payload;
-            else if (Array.isArray(payload?.data?.data)) runnerList = payload.data.data;
-            else if (Array.isArray(payload?.data)) runnerList = payload.data;
-            setRunners(runnerList);
+            let list: Runner[] = [];
+            if (Array.isArray(payload)) list = payload;
+            else if (Array.isArray(payload?.data?.data)) list = payload.data.data;
+            else if (Array.isArray(payload?.data)) list = payload.data;
+            setRunners(list);
 
-            // Fetch timing per checkpoint → build set of bibs that passed each CP
             if (checkpoints.length > 0) {
                 const cpResults = await Promise.all(
                     checkpoints.map(async (cp) => {
                         try {
-                            const res = await fetch(
-                                `/api/timing/checkpoint-by-campaign/${campaign._id}?cp=${encodeURIComponent(cp.name)}`,
-                                { cache: 'no-store' }
-                            );
+                            const res = await fetch(`/api/timing/checkpoint-by-campaign/${campaign._id}?cp=${encodeURIComponent(cp.name)}`, { cache: 'no-store' });
                             const records: TimingRecord[] = await res.json();
                             return { cpName: cp.name, bibs: new Set(records.filter(r => r.bib && r.scanTime).map(r => r.bib)) };
                         } catch {
@@ -136,215 +436,157 @@ export default function GeneralChartPage() {
                         }
                     })
                 );
-                const newMap: Record<string, Set<string>> = {};
-                for (const { cpName, bibs } of cpResults) {
-                    newMap[cpName] = bibs;
-                }
-                setCpTimingMap(newMap);
+                const m: Record<string, Set<string>> = {};
+                for (const { cpName, bibs } of cpResults) m[cpName] = bibs;
+                setCpTimingMap(m);
             }
-
             setLastRefresh(new Date());
-        } catch (err) {
-            console.error('Failed to fetch chart data', err);
-        } finally {
-            if (!silent) setRunnersLoading(false);
-        }
+        } catch (err) { console.error('Chart fetch error', err); }
+        finally { if (!silent) setRunnersLoading(false); }
     }, [campaign?._id, checkpoints]);
 
-    useEffect(() => {
-        if (campaign?._id && checkpoints.length >= 0) fetchAll(false);
-    }, [fetchAll]);
+    useEffect(() => { if (campaign?._id && checkpoints.length >= 0) fetchAll(false); }, [fetchAll]);
 
-    // ── Auto-refresh every 15s ──
     useEffect(() => {
         if (refreshRef.current) clearInterval(refreshRef.current);
-        if (autoRefresh && campaign?._id) {
-            refreshRef.current = setInterval(() => fetchAll(true), 15_000);
-        }
+        if (autoRefresh && campaign?._id) refreshRef.current = setInterval(() => fetchAll(true), 15000);
         return () => { if (refreshRef.current) clearInterval(refreshRef.current); };
     }, [autoRefresh, fetchAll, campaign?._id]);
 
-    // ── Unique categories ──
+    // ── Categories ──
     const categories = useMemo(() => {
         const cats = new Set<string>();
         runners.forEach(r => { if (r.category) cats.add(r.category); });
         return Array.from(cats).sort();
     }, [runners]);
 
-    // ── Build chart data per category ──
-    // For each category:
-    //   - For each checkpoint (in order), count how many runners are "currently" at that CP
-    //   - "Currently at CP X" = passed CP X but NOT passed the next CP
-    //   - Finish = runners with status 'finished'
-    const chartDataByCategory = useMemo(() => {
-        const result: Record<string, { cpName: string; count: number; total: number }[]> = {};
-
-        for (const cat of categories) {
-            const catRunners = runners.filter(r => r.category === cat);
-            const totalInCat = catRunners.length;
-
-            // Get checkpoints applicable to this category
-            const catCheckpoints = checkpoints.filter(cp => {
-                if (!cp.distanceMappings || cp.distanceMappings.length === 0) return true;
-                return cp.distanceMappings.includes(cat);
-            });
-
-            if (catCheckpoints.length === 0) continue;
-
-            const chartData: { cpName: string; count: number; total: number }[] = [];
-
-            // For each checkpoint, calculate "runners currently at this checkpoint"
-            // = runners who have scanned at this CP but NOT scanned at the NEXT CP
-            for (let i = 0; i < catCheckpoints.length; i++) {
-                const cp = catCheckpoints[i];
-                const nextCp = i < catCheckpoints.length - 1 ? catCheckpoints[i + 1] : null;
-                const cpBibs = cpTimingMap[cp.name] || new Set<string>();
-
-                // Get bibs of runners in this category who passed this CP
-                const catBibsAtCp = catRunners.filter(r => cpBibs.has(r.bib));
-
-                let count: number;
-                if (cp.type === 'finish' || cp.name.toLowerCase() === 'finish') {
-                    // Finish line: count = runners who passed finish
-                    count = catBibsAtCp.length;
-                } else if (nextCp) {
-                    // Intermediate: passed this CP but NOT yet passed next CP
-                    const nextBibs = cpTimingMap[nextCp.name] || new Set<string>();
-                    count = catBibsAtCp.filter(r => !nextBibs.has(r.bib)).length;
-                } else {
-                    // Last non-finish checkpoint with no next — everyone who passed is "at" here
-                    count = catBibsAtCp.length;
-                }
-
-                chartData.push({
-                    cpName: cp.name,
-                    count,
-                    total: totalInCat,
-                });
-            }
-
-            result[cat] = chartData;
-        }
-
-        return result;
-    }, [categories, runners, checkpoints, cpTimingMap]);
-
     // ── Summary stats ──
-    const summaryStats = useMemo(() => {
-        const totalRunners = runners.length;
-        const started = runners.filter(r => {
-            const startBibs = cpTimingMap['START'] || cpTimingMap['Start'] || new Set<string>();
-            return startBibs.has(r.bib) || r.status === 'in_progress' || r.status === 'finished';
-        }).length;
+    const summary = useMemo(() => {
+        const total = runners.length;
+        const startBibs = cpTimingMap['START'] || cpTimingMap['Start'] || new Set<string>();
+        const started = runners.filter(r => startBibs.has(r.bib) || r.status === 'in_progress' || r.status === 'finished').length;
         const finished = runners.filter(r => r.status === 'finished').length;
+        const inProgress = runners.filter(r => r.status === 'in_progress').length;
         const dnf = runners.filter(r => r.status === 'dnf').length;
         const dns = runners.filter(r => r.status === 'dns').length;
         const dq = runners.filter(r => r.status === 'dq').length;
-        const inProgress = runners.filter(r => r.status === 'in_progress').length;
+        const finishRate = total > 0 ? ((finished / total) * 100).toFixed(1) : '0.0';
 
-        // Gender breakdown
-        const maleFinished = runners.filter(r => r.gender === 'M' && r.status === 'finished').length;
-        const femaleFinished = runners.filter(r => r.gender === 'F' && r.status === 'finished').length;
+        // Avg finish time
+        const finishTimes = runners.filter(r => r.status === 'finished' && ((r.netTime && r.netTime > 0) || (r.gunTime && r.gunTime > 0))).map(r => r.netTime || r.gunTime || 0);
+        const avgFinishTime = finishTimes.length > 0 ? finishTimes.reduce((a, b) => a + b, 0) / finishTimes.length : 0;
+
+        // Best finish time
+        const bestFinishTime = finishTimes.length > 0 ? Math.min(...finishTimes) : 0;
+
         const maleTotal = runners.filter(r => r.gender === 'M').length;
         const femaleTotal = runners.filter(r => r.gender === 'F').length;
+        const maleFinished = runners.filter(r => r.gender === 'M' && r.status === 'finished').length;
+        const femaleFinished = runners.filter(r => r.gender === 'F' && r.status === 'finished').length;
 
-        // Age group breakdown for finishers
-        const ageGroupFinishers: Record<string, { male: number; female: number; total: number }> = {};
-        runners.forEach(r => {
-            const ag = r.ageGroup || 'N/A';
-            if (!ageGroupFinishers[ag]) ageGroupFinishers[ag] = { male: 0, female: 0, total: 0 };
-        });
-        runners.filter(r => r.status === 'finished').forEach(r => {
-            const ag = r.ageGroup || 'N/A';
-            if (!ageGroupFinishers[ag]) ageGroupFinishers[ag] = { male: 0, female: 0, total: 0 };
-            ageGroupFinishers[ag].total++;
-            if (r.gender === 'M') ageGroupFinishers[ag].male++;
-            else if (r.gender === 'F') ageGroupFinishers[ag].female++;
-        });
-
-        return {
-            totalRunners, started, finished, dnf, dns, dq, inProgress,
-            maleTotal, femaleTotal, maleFinished, femaleFinished,
-            ageGroupFinishers,
-        };
+        return { total, started, finished, inProgress, dnf, dns, dq, finishRate, avgFinishTime, bestFinishTime, maleTotal, femaleTotal, maleFinished, femaleFinished };
     }, [runners, cpTimingMap]);
 
-    // ── Age group chart data ──
-    const ageGroupChartData = useMemo(() => {
-        const data: { ageGroup: string; male: number; female: number; total: number }[] = [];
-        const agMap = summaryStats.ageGroupFinishers;
-        const allGroups = Object.keys(agMap).sort((a, b) => {
-            const ai = AGE_GROUPS_ORDER.indexOf(a);
-            const bi = AGE_GROUPS_ORDER.indexOf(b);
-            if (ai >= 0 && bi >= 0) return ai - bi;
-            if (ai >= 0) return -1;
-            if (bi >= 0) return 1;
-            return a.localeCompare(b);
-        });
-        for (const ag of allGroups) {
-            const d = agMap[ag];
-            if (d.total > 0) {
-                data.push({ ageGroup: ag, male: d.male, female: d.female, total: d.total });
-            }
-        }
-        return data;
-    }, [summaryStats]);
-
-    // ── Per-category summary ──
-    const categorySummary = useMemo(() => {
-        const result: Record<string, {
-            total: number; started: number; finished: number; inProgress: number;
-            dns: number; dnf: number; dq: number;
-            maleTotal: number; femaleTotal: number; maleFinished: number; femaleFinished: number;
-        }> = {};
+    // ── Chart data per category ──
+    const chartDataByCategory = useMemo(() => {
+        const result: Record<string, { cpName: string; count: number; total: number }[]> = {};
         for (const cat of categories) {
             const catRunners = runners.filter(r => r.category === cat);
-            const startBibs = cpTimingMap['START'] || cpTimingMap['Start'] || new Set<string>();
+            const catCps = checkpoints.filter(cp => {
+                if (!cp.distanceMappings || cp.distanceMappings.length === 0) return true;
+                return cp.distanceMappings.includes(cat);
+            });
+            if (catCps.length === 0) continue;
+            const data: { cpName: string; count: number; total: number }[] = [];
+            for (let i = 0; i < catCps.length; i++) {
+                const cp = catCps[i];
+                const nextCp = i < catCps.length - 1 ? catCps[i + 1] : null;
+                const cpBibs = cpTimingMap[cp.name] || new Set<string>();
+                const catBibsAtCp = catRunners.filter(r => cpBibs.has(r.bib));
+                let count: number;
+                if (cp.type === 'finish' || cp.name.toLowerCase() === 'finish') {
+                    count = catBibsAtCp.length;
+                } else if (nextCp) {
+                    const nextBibs = cpTimingMap[nextCp.name] || new Set<string>();
+                    count = catBibsAtCp.filter(r => !nextBibs.has(r.bib)).length;
+                } else {
+                    count = catBibsAtCp.length;
+                }
+                data.push({ cpName: cp.name, count, total: catRunners.length });
+            }
+            result[cat] = data;
+        }
+        return result;
+    }, [categories, runners, checkpoints, cpTimingMap]);
+
+    // ── Per-category summary ──
+    const catSummary = useMemo(() => {
+        const result: Record<string, { total: number; started: number; finished: number; mF: number; fF: number }> = {};
+        const startBibs = cpTimingMap['START'] || cpTimingMap['Start'] || new Set<string>();
+        for (const cat of categories) {
+            const cr = runners.filter(r => r.category === cat);
             result[cat] = {
-                total: catRunners.length,
-                started: catRunners.filter(r => startBibs.has(r.bib) || r.status === 'in_progress' || r.status === 'finished').length,
-                finished: catRunners.filter(r => r.status === 'finished').length,
-                inProgress: catRunners.filter(r => r.status === 'in_progress').length,
-                dns: catRunners.filter(r => r.status === 'dns').length,
-                dnf: catRunners.filter(r => r.status === 'dnf').length,
-                dq: catRunners.filter(r => r.status === 'dq').length,
-                maleTotal: catRunners.filter(r => r.gender === 'M').length,
-                femaleTotal: catRunners.filter(r => r.gender === 'F').length,
-                maleFinished: catRunners.filter(r => r.gender === 'M' && r.status === 'finished').length,
-                femaleFinished: catRunners.filter(r => r.gender === 'F' && r.status === 'finished').length,
+                total: cr.length,
+                started: cr.filter(r => startBibs.has(r.bib) || r.status === 'in_progress' || r.status === 'finished').length,
+                finished: cr.filter(r => r.status === 'finished').length,
+                mF: cr.filter(r => r.gender === 'M' && r.status === 'finished').length,
+                fF: cr.filter(r => r.gender === 'F' && r.status === 'finished').length,
             };
         }
         return result;
     }, [categories, runners, cpTimingMap]);
 
-    // ─── Custom Tooltip ──────────────────────────────────────────────────────
-    const CustomTooltip = ({ active, payload, label }: any) => {
-        if (!active || !payload || !payload.length) return null;
-        const data = payload[0].payload;
-        return (
-            <div style={{
-                background: 'rgba(15, 23, 42, 0.95)',
-                backdropFilter: 'blur(12px)',
-                border: '1px solid rgba(255,255,255,0.1)',
-                borderRadius: 12,
-                padding: '12px 16px',
-                boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
-            }}>
-                <p style={{ margin: 0, fontWeight: 800, color: '#fff', fontSize: 14 }}>{label}</p>
-                <p style={{ margin: '4px 0 0', color: '#22c55e', fontWeight: 700, fontSize: 16 }}>
-                    {th ? 'อยู่ที่จุดนี้:' : 'Currently here:'} {data.count} {th ? 'คน' : 'runners'}
-                </p>
-                <p style={{ margin: '2px 0 0', color: '#94a3b8', fontSize: 12 }}>
-                    {th ? 'ทั้งหมดในประเภท:' : 'Total in category:'} {data.total}
-                </p>
-            </div>
-        );
-    };
+    // ── Age group data ──
+    const ageGroupData = useMemo(() => {
+        const groups: Record<string, { registered: number; male: number; female: number; total: number; bestTime: number; times: number[] }> = {};
+        runners.forEach(r => {
+            const ag = r.ageGroup || 'N/A';
+            if (!groups[ag]) groups[ag] = { registered: 0, male: 0, female: 0, total: 0, bestTime: Infinity, times: [] };
+            groups[ag].registered++;
+        });
+        runners.filter(r => r.status === 'finished').forEach(r => {
+            const ag = r.ageGroup || 'N/A';
+            if (!groups[ag]) groups[ag] = { registered: 0, male: 0, female: 0, total: 0, bestTime: Infinity, times: [] };
+            groups[ag].total++;
+            if (r.gender === 'M') groups[ag].male++;
+            else if (r.gender === 'F') groups[ag].female++;
+            const t = r.netTime || r.gunTime || 0;
+            if (t > 0) {
+                groups[ag].times.push(t);
+                if (t < groups[ag].bestTime) groups[ag].bestTime = t;
+            }
+        });
+
+        const allGroups = Object.keys(groups).sort((a, b) => {
+            const numA = parseInt(a); const numB = parseInt(b);
+            if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
+            return a.localeCompare(b);
+        });
+
+        const avgFinished = allGroups.length > 0 ? allGroups.reduce((s, g) => s + groups[g].total, 0) / allGroups.length : 0;
+
+        return allGroups.map(ag => ({
+            ageGroup: ag,
+            ...groups[ag],
+            bestTime: groups[ag].bestTime === Infinity ? 0 : groups[ag].bestTime,
+            avgTime: groups[ag].times.length > 0 ? groups[ag].times.reduce((a, b) => a + b, 0) / groups[ag].times.length : 0,
+            status: getAgeGroupStatus(groups[ag].total, avgFinished),
+        }));
+    }, [runners]);
+
+    const ageChartData = useMemo(() =>
+        ageGroupData.filter(d => d.total > 0).map(d => ({
+            ageGroup: d.ageGroup,
+            male: d.male,
+            female: d.female,
+        })),
+        [ageGroupData]
+    );
 
     if (loading) {
         return (
             <AdminLayout breadcrumbItems={[{ label: 'General Chart', labelEn: 'General Chart' }]}>
-                <div style={{ padding: 40, textAlign: 'center', color: '#94a3b8' }}>
+                <div style={{ padding: 60, textAlign: 'center', color: '#94a3b8', fontSize: 14 }}>
                     {th ? 'กำลังโหลด...' : 'Loading...'}
                 </div>
             </AdminLayout>
@@ -354,8 +596,8 @@ export default function GeneralChartPage() {
     if (!campaign) {
         return (
             <AdminLayout breadcrumbItems={[{ label: 'General Chart', labelEn: 'General Chart' }]}>
-                <div style={{ padding: 40, textAlign: 'center', color: '#94a3b8' }}>
-                    {th ? 'ไม่พบกิจกรรมที่กำลังดำเนินการ' : 'No active campaign found'}
+                <div style={{ padding: 60, textAlign: 'center', color: '#94a3b8' }}>
+                    {th ? 'ไม่พบกิจกรรม' : 'No campaign found'}
                 </div>
             </AdminLayout>
         );
@@ -363,447 +605,331 @@ export default function GeneralChartPage() {
 
     return (
         <AdminLayout breadcrumbItems={[{ label: 'กราฟสถิติ', labelEn: 'General Chart' }]}>
-            {/* ─── Header ─── */}
-            <div style={{
-                background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)',
-                borderRadius: 16,
-                padding: '24px 28px',
-                marginBottom: 20,
-                boxShadow: '0 4px 20px rgba(0,0,0,0.15)',
-            }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
-                    <div>
-                        <h1 style={{ margin: 0, fontSize: 22, fontWeight: 900, color: '#fff', display: 'flex', alignItems: 'center', gap: 10 }}>
-                            📊 General Chart
-                            <span style={{
-                                background: 'rgba(34, 197, 94, 0.15)',
-                                color: '#22c55e',
-                                padding: '4px 12px',
-                                borderRadius: 8,
-                                fontSize: 12,
-                                fontWeight: 700,
-                            }}>
-                                LIVE
-                            </span>
+            {/* Pulse animation */}
+            <style>{`@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}`}</style>
+
+            <div style={styles.page}>
+                {/* ─── Hero Header ─── */}
+                <div style={styles.hero}>
+                    <div style={styles.heroBg} />
+                    <div style={styles.heroOverlay} />
+                    <div style={styles.heroContent}>
+                        <div style={styles.liveBadge}>
+                            <div style={styles.liveDot} />
+                            LIVE EVENT
+                        </div>
+                        <h1 style={styles.heroTitle}>
+                            {th ? 'สถิติภาพรวมกิจกรรม' : 'Performance Analytics'}
                         </h1>
-                        <p style={{ margin: '6px 0 0', color: '#94a3b8', fontSize: 13 }}>
-                            {campaign.name} — {th ? 'สถิติการกระจายตัวของนักวิ่ง ณ แต่ละ Checkpoint' : 'Runner distribution across checkpoints'}
+                        <p style={styles.heroSubtitle}>
+                            {campaign.name} — {th
+                                ? 'ข้อมูลการกระจายตัวนักวิ่ง สรุปผลแยกประเภท เพศ และกลุ่มอายุ แบบเรียลไทม์'
+                                : 'Comprehensive demographic breakdown and performance metrics across all categories'}
                         </p>
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                        <button
-                            onClick={() => fetchAll(false)}
-                            disabled={runnersLoading}
-                            style={{
-                                padding: '8px 16px',
-                                borderRadius: 10,
-                                border: '1px solid rgba(255,255,255,0.15)',
-                                background: 'rgba(255,255,255,0.08)',
-                                color: '#fff',
-                                fontWeight: 700,
-                                fontSize: 13,
-                                cursor: 'pointer',
-                            }}
-                        >
-                            {runnersLoading ? '⏳' : '🔄'} {th ? 'รีเฟรช' : 'Refresh'}
-                        </button>
-                        <label style={{
-                            display: 'flex', alignItems: 'center', gap: 6,
-                            color: '#94a3b8', fontSize: 12, cursor: 'pointer',
-                        }}>
-                            <input
-                                type="checkbox"
-                                checked={autoRefresh}
-                                onChange={e => setAutoRefresh(e.target.checked)}
-                                style={{ accentColor: '#22c55e' }}
-                            />
-                            {th ? 'รีเฟรชอัตโนมัติ' : 'Auto-refresh'}
-                        </label>
-                        {lastRefresh && (
-                            <span style={{ color: '#64748b', fontSize: 11, fontFamily: 'monospace' }}>
-                                {lastRefresh.toLocaleTimeString('th-TH')}
-                            </span>
-                        )}
-                    </div>
-                </div>
-            </div>
-
-            {/* ─── Overall Summary Cards ─── */}
-            <div style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
-                gap: 12,
-                marginBottom: 24,
-            }}>
-                {[
-                    { label: th ? 'ทั้งหมด' : 'Total', value: summaryStats.totalRunners, color: '#3b82f6', icon: '👥', bg: 'rgba(59,130,246,0.08)' },
-                    { label: th ? 'ปล่อยตัวแล้ว' : 'Started', value: summaryStats.started, color: '#f59e0b', icon: '🚀', bg: 'rgba(245,158,11,0.08)' },
-                    { label: th ? 'กำลังวิ่ง' : 'In Progress', value: summaryStats.inProgress, color: '#8b5cf6', icon: '🏃', bg: 'rgba(139,92,246,0.08)' },
-                    { label: th ? 'เข้าเส้นชัย' : 'Finished', value: summaryStats.finished, color: '#22c55e', icon: '🏆', bg: 'rgba(34,197,94,0.08)' },
-                    { label: 'DNF', value: summaryStats.dnf, color: '#ef4444', icon: '❌', bg: 'rgba(239,68,68,0.08)' },
-                    { label: 'DNS', value: summaryStats.dns, color: '#6b7280', icon: '🚫', bg: 'rgba(107,114,128,0.08)' },
-                    { label: 'DQ', value: summaryStats.dq, color: '#ec4899', icon: '⛔', bg: 'rgba(236,72,153,0.08)' },
-                ].map(item => (
-                    <div key={item.label} style={{
-                        background: '#fff',
-                        border: '1px solid #e5e7eb',
-                        borderRadius: 14,
-                        padding: '16px 18px',
-                        boxShadow: '0 1px 4px rgba(0,0,0,0.04)',
-                        position: 'relative',
-                        overflow: 'hidden',
-                    }}>
-                        <div style={{
-                            position: 'absolute', top: 0, left: 0, right: 0, height: 3,
-                            background: item.color,
-                        }} />
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <div>
-                                <span style={{ fontSize: 11, fontWeight: 600, color: '#64748b', textTransform: 'uppercase', letterSpacing: 0.5 }}>
-                                    {item.label}
+                        <div style={styles.heroActions}>
+                            <button
+                                onClick={() => fetchAll(false)}
+                                disabled={runnersLoading}
+                                style={{
+                                    padding: '8px 18px', borderRadius: 8,
+                                    border: '1px solid rgba(255,255,255,0.2)',
+                                    background: 'rgba(255,255,255,0.08)',
+                                    color: '#fff', fontWeight: 700, fontSize: 12,
+                                    cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6,
+                                    transition: 'all 0.2s',
+                                }}
+                            >
+                                {runnersLoading ? '⏳' : '🔄'} {th ? 'รีเฟรช' : 'Refresh'}
+                            </button>
+                            <label style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'rgba(148,163,184,0.8)', fontSize: 12, cursor: 'pointer' }}>
+                                <input type="checkbox" checked={autoRefresh} onChange={e => setAutoRefresh(e.target.checked)}
+                                    style={{ accentColor: '#3b82f6', width: 14, height: 14 }} />
+                                Auto
+                            </label>
+                            {lastRefresh && (
+                                <span style={{ color: '#475569', fontSize: 11, fontFamily: 'monospace', background: 'rgba(255,255,255,0.06)', padding: '3px 8px', borderRadius: 6 }}>
+                                    {lastRefresh.toLocaleTimeString('th-TH')}
                                 </span>
-                                <div style={{ fontSize: 28, fontWeight: 900, color: item.color, marginTop: 2 }}>
-                                    {item.value}
-                                </div>
-                            </div>
-                            <span style={{
-                                fontSize: 28, width: 48, height: 48, borderRadius: 12,
-                                background: item.bg, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            }}>
-                                {item.icon}
-                            </span>
-                        </div>
-                    </div>
-                ))}
-            </div>
-
-            {/* ─── Gender Summary ─── */}
-            <div style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
-                gap: 16,
-                marginBottom: 24,
-            }}>
-                {/* Male summary */}
-                <div style={{
-                    background: '#fff', border: '1px solid #e5e7eb', borderRadius: 14,
-                    padding: '20px 24px',
-                    boxShadow: '0 1px 4px rgba(0,0,0,0.04)',
-                }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-                        <span style={{ fontSize: 22, color: '#3b82f6' }}>♂</span>
-                        <span style={{ fontWeight: 800, color: '#1e40af', fontSize: 15 }}>
-                            {th ? 'ชาย' : 'Male'}
-                        </span>
-                    </div>
-                    <div style={{ display: 'flex', gap: 16 }}>
-                        <div>
-                            <div style={{ fontSize: 11, color: '#64748b', fontWeight: 600 }}>{th ? 'ทั้งหมด' : 'Total'}</div>
-                            <div style={{ fontSize: 24, fontWeight: 900, color: '#3b82f6' }}>{summaryStats.maleTotal}</div>
-                        </div>
-                        <div>
-                            <div style={{ fontSize: 11, color: '#64748b', fontWeight: 600 }}>{th ? 'จบแล้ว' : 'Finished'}</div>
-                            <div style={{ fontSize: 24, fontWeight: 900, color: '#22c55e' }}>{summaryStats.maleFinished}</div>
-                        </div>
-                        <div>
-                            <div style={{ fontSize: 11, color: '#64748b', fontWeight: 600 }}>%</div>
-                            <div style={{ fontSize: 24, fontWeight: 900, color: '#0f172a' }}>
-                                {summaryStats.maleTotal > 0 ? Math.round((summaryStats.maleFinished / summaryStats.maleTotal) * 100) : 0}%
-                            </div>
+                            )}
                         </div>
                     </div>
                 </div>
-                {/* Female summary */}
-                <div style={{
-                    background: '#fff', border: '1px solid #e5e7eb', borderRadius: 14,
-                    padding: '20px 24px',
-                    boxShadow: '0 1px 4px rgba(0,0,0,0.04)',
-                }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-                        <span style={{ fontSize: 22, color: '#ec4899' }}>♀</span>
-                        <span style={{ fontWeight: 800, color: '#9d174d', fontSize: 15 }}>
-                            {th ? 'หญิง' : 'Female'}
-                        </span>
-                    </div>
-                    <div style={{ display: 'flex', gap: 16 }}>
-                        <div>
-                            <div style={{ fontSize: 11, color: '#64748b', fontWeight: 600 }}>{th ? 'ทั้งหมด' : 'Total'}</div>
-                            <div style={{ fontSize: 24, fontWeight: 900, color: '#ec4899' }}>{summaryStats.femaleTotal}</div>
-                        </div>
-                        <div>
-                            <div style={{ fontSize: 11, color: '#64748b', fontWeight: 600 }}>{th ? 'จบแล้ว' : 'Finished'}</div>
-                            <div style={{ fontSize: 24, fontWeight: 900, color: '#22c55e' }}>{summaryStats.femaleFinished}</div>
-                        </div>
-                        <div>
-                            <div style={{ fontSize: 11, color: '#64748b', fontWeight: 600 }}>%</div>
-                            <div style={{ fontSize: 24, fontWeight: 900, color: '#0f172a' }}>
-                                {summaryStats.femaleTotal > 0 ? Math.round((summaryStats.femaleFinished / summaryStats.femaleTotal) * 100) : 0}%
+
+                {/* ─── Top Stat Cards ─── */}
+                <div style={styles.statsGrid} className="gc-stats-grid">
+                    {[
+                        {
+                            label: th ? 'นักวิ่งทั้งหมด' : 'TOTAL PARTICIPANTS',
+                            value: summary.total.toLocaleString(),
+                            sub: `♂ ${summary.maleTotal}  ♀ ${summary.femaleTotal}`,
+                            subColor: '#64748b',
+                            iconBg: '#dbeafe', icon: '👥',
+                        },
+                        {
+                            label: th ? 'อัตราจบ' : 'FINISHER RATE',
+                            value: `${summary.finishRate}%`,
+                            sub: `${summary.finished} / ${summary.total}`,
+                            subColor: summary.finished > 0 ? '#16a34a' : '#94a3b8',
+                            iconBg: '#fce7f3', icon: '🏁',
+                        },
+                        {
+                            label: th ? 'เวลาเฉลี่ย' : 'AVG. FINISH TIME',
+                            value: formatTimeMs(summary.avgFinishTime),
+                            sub: summary.bestFinishTime > 0 ? `Best: ${formatTimeMs(summary.bestFinishTime)}` : '',
+                            subColor: '#3b82f6',
+                            iconBg: '#e0f2fe', icon: '⏱️',
+                        },
+                        {
+                            label: th ? 'ประเภทแข่ง' : 'ACTIVE COURSES',
+                            value: categories.length.toString().padStart(2, '0'),
+                            sub: th ? 'กำลังติดตามแบบเรียลไทม์' : 'Real-time Tracking',
+                            subColor: '#ef4444',
+                            iconBg: '#fee2e2', icon: '📊',
+                        },
+                    ].map((card, i) => (
+                        <div key={i} style={styles.statCard} className="gc-stat-card">
+                            <div style={styles.statLabel}>
+                                <span>{card.label}</span>
+                                <span style={{ ...styles.statIcon, background: card.iconBg }}>{card.icon}</span>
                             </div>
+                            <div style={styles.statValue}>{card.value}</div>
+                            {card.sub && <div style={{ ...styles.statSub, color: card.subColor }}>{card.sub}</div>}
                         </div>
-                    </div>
+                    ))}
                 </div>
-            </div>
 
-            {/* ─── Per-Category Bar Charts (runner distribution across CPs) ─── */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
-                {categories.map(cat => {
-                    const chartData = chartDataByCategory[cat];
-                    const summary = categorySummary[cat];
-                    if (!chartData || chartData.length === 0) return null;
+                {/* ─── Distribution Charts per Category ─── */}
+                <div style={styles.distGrid} className="gc-dist-grid">
+                    {categories.map(cat => {
+                        const data = chartDataByCategory[cat];
+                        const cs = catSummary[cat];
+                        if (!data || data.length === 0) return null;
+                        const maxVal = Math.max(...data.map(d => d.count), 1);
 
-                    const maxCount = Math.max(...chartData.map(d => d.count), 1);
-                    const yDomain = [0, Math.ceil(maxCount * 1.2) || 10];
-
-                    return (
-                        <div key={cat} style={{
-                            background: '#fff',
-                            border: '1px solid #e5e7eb',
-                            borderRadius: 16,
-                            overflow: 'hidden',
-                            boxShadow: '0 2px 8px rgba(0,0,0,0.04)',
-                        }}>
-                            {/* Category header */}
-                            <div style={{
-                                padding: '16px 24px',
-                                borderBottom: '1px solid #f1f5f9',
-                                display: 'flex',
-                                justifyContent: 'space-between',
-                                alignItems: 'center',
-                                flexWrap: 'wrap',
-                                gap: 10,
-                            }}>
-                                <div>
-                                    <h2 style={{ margin: 0, fontSize: 18, fontWeight: 900, color: '#0f172a' }}>
-                                        {cat}
-                                    </h2>
-                                    <span style={{ fontSize: 12, color: '#64748b' }}>
-                                        {th ? 'จำนวนนักวิ่งที่อยู่ ณ แต่ละ Checkpoint' : 'Runner count currently at each checkpoint'}
-                                    </span>
+                        return (
+                            <div key={cat} style={styles.distCard}>
+                                <div style={styles.distHeader}>
+                                    <div>
+                                        <h3 style={styles.distTitle}>{cat} Runner Distribution</h3>
+                                        <p style={styles.distSub}>
+                                            {th
+                                                ? 'จำนวนนักวิ่งที่อยู่ ณ แต่ละจุด'
+                                                : 'Number of runners currently at each checkpoint.'}
+                                        </p>
+                                    </div>
+                                    <div style={styles.distBadge}>
+                                        <div style={styles.distBadgeLabel}>TOTAL</div>
+                                        <div style={styles.distBadgeValue}>{cs?.total?.toLocaleString() || 0}</div>
+                                    </div>
                                 </div>
-                                <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                                <div style={{ padding: '8px 4px 16px 0' }}>
+                                    <ResponsiveContainer width="100%" height={220}>
+                                        <BarChart data={data} margin={{ top: 20, right: 16, left: 4, bottom: 5 }} barCategoryGap="25%">
+                                            <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                                            <XAxis
+                                                dataKey="cpName"
+                                                tick={{ fill: '#94a3b8', fontSize: 10, fontWeight: 700 }}
+                                                axisLine={{ stroke: '#e2e8f0' }}
+                                                tickLine={false}
+                                                interval={0}
+                                                angle={data.length > 8 ? -35 : 0}
+                                                textAnchor={data.length > 8 ? 'end' : 'middle'}
+                                                height={data.length > 8 ? 50 : 30}
+                                            />
+                                            <YAxis
+                                                domain={[0, Math.ceil(maxVal * 1.3) || 10]}
+                                                tick={{ fill: '#cbd5e1', fontSize: 10 }}
+                                                axisLine={false}
+                                                tickLine={false}
+                                                width={35}
+                                            />
+                                            <Tooltip content={<ChartTooltip th={th} />} cursor={{ fill: 'rgba(59,130,246,0.04)' }} />
+                                            <Bar dataKey="count" name={th ? 'จำนวน' : 'Count'} radius={[4, 4, 0, 0]} maxBarSize={48}>
+                                                <LabelList dataKey="count" position="top" style={{ fill: '#475569', fontWeight: 800, fontSize: 11 }} />
+                                                {data.map((entry, idx) => {
+                                                    const isFinish = entry.cpName.toLowerCase() === 'finish';
+                                                    if (entry.count === 0) return <Cell key={idx} fill="#e2e8f0" />;
+                                                    if (isFinish) return <Cell key={idx} fill="#22c55e" />;
+                                                    return <Cell key={idx} fill="#3b82f6" />;
+                                                })}
+                                            </Bar>
+                                        </BarChart>
+                                    </ResponsiveContainer>
+                                </div>
+                                {/* Mini summary row */}
+                                <div style={{
+                                    display: 'flex', gap: 0, borderTop: '1px solid #f1f5f9',
+                                }}>
                                     {[
-                                        { label: th ? 'ทั้งหมด' : 'Total', value: summary?.total || 0, color: '#3b82f6' },
-                                        { label: th ? 'ปล่อยตัว' : 'Started', value: summary?.started || 0, color: '#f59e0b' },
-                                        { label: th ? 'จบ' : 'Finished', value: summary?.finished || 0, color: '#22c55e' },
-                                        { label: th ? '♂ จบ' : '♂ Fin', value: summary?.maleFinished || 0, color: '#3b82f6' },
-                                        { label: th ? '♀ จบ' : '♀ Fin', value: summary?.femaleFinished || 0, color: '#ec4899' },
-                                    ].map(item => (
-                                        <div key={item.label} style={{
-                                            textAlign: 'center',
-                                            padding: '4px 12px',
-                                            background: '#f8fafc',
-                                            borderRadius: 8,
-                                            border: '1px solid #e2e8f0',
+                                        { label: th ? 'ปล่อยตัว' : 'Started', value: cs?.started || 0, color: '#f59e0b' },
+                                        { label: th ? 'จบ' : 'Finished', value: cs?.finished || 0, color: '#22c55e' },
+                                        { label: '♂', value: cs?.mF || 0, color: '#3b82f6' },
+                                        { label: '♀', value: cs?.fF || 0, color: '#ec4899' },
+                                    ].map((s, i) => (
+                                        <div key={i} style={{
+                                            flex: 1, textAlign: 'center', padding: '10px 6px',
+                                            borderRight: i < 3 ? '1px solid #f1f5f9' : undefined,
                                         }}>
-                                            <div style={{ fontSize: 10, color: '#64748b', fontWeight: 600, textTransform: 'uppercase' }}>{item.label}</div>
-                                            <div style={{ fontSize: 18, fontWeight: 900, color: item.color }}>{item.value}</div>
+                                            <div style={{ fontSize: 9, color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>{s.label}</div>
+                                            <div style={{ fontSize: 16, fontWeight: 900, color: s.color, marginTop: 2 }}>{s.value}</div>
                                         </div>
                                     ))}
                                 </div>
                             </div>
+                        );
+                    })}
+                </div>
 
-                            {/* Chart area */}
-                            <div style={{ padding: '16px 12px 20px 0' }}>
-                                <ResponsiveContainer width="100%" height={280}>
-                                    <BarChart
-                                        data={chartData}
-                                        margin={{ top: 20, right: 20, left: 10, bottom: 5 }}
-                                        barCategoryGap="20%"
-                                    >
-                                        <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
-                                        <XAxis
-                                            dataKey="cpName"
-                                            tick={{ fill: '#64748b', fontSize: 11, fontWeight: 700 }}
-                                            axisLine={{ stroke: '#e2e8f0' }}
-                                            tickLine={false}
-                                        />
-                                        <YAxis
-                                            domain={yDomain}
-                                            tick={{ fill: '#94a3b8', fontSize: 11 }}
-                                            axisLine={false}
-                                            tickLine={false}
-                                            label={{
-                                                value: th ? 'จำนวนคน' : 'Runner Count',
-                                                angle: -90,
-                                                position: 'insideLeft',
-                                                style: { fill: '#94a3b8', fontSize: 12, fontWeight: 600 },
-                                                offset: 0,
-                                            }}
-                                        />
-                                        <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(34,197,94,0.06)' }} />
-                                        <Bar
-                                            dataKey="count"
-                                            radius={[6, 6, 0, 0]}
-                                            maxBarSize={60}
-                                        >
-                                            <LabelList
-                                                dataKey="count"
-                                                position="top"
-                                                style={{ fill: '#0f172a', fontWeight: 900, fontSize: 13 }}
-                                            />
-                                            {chartData.map((entry, index) => {
-                                                const isFinish = entry.cpName.toLowerCase() === 'finish';
-                                                const hasRunners = entry.count > 0;
-                                                let fillColor = '#e5e7eb'; // grey for 0
-                                                if (hasRunners && isFinish) fillColor = '#22c55e';
-                                                else if (hasRunners) fillColor = '#f59e0b';
-                                                return <Cell key={index} fill={fillColor} />;
-                                            })}
-                                        </Bar>
-                                    </BarChart>
-                                </ResponsiveContainer>
+                {/* ─── Age Group Summary Chart ─── */}
+                {ageChartData.length > 0 && (
+                    <div style={styles.sectionCard}>
+                        <div style={styles.sectionHeader}>
+                            <div>
+                                <h2 style={styles.sectionTitle}>
+                                    <span style={{ fontSize: 18 }}>📊</span>
+                                    {th ? 'Age Group Summary' : 'Age Group Summary'}
+                                </h2>
+                                <p style={styles.sectionSub}>
+                                    {th ? 'จำนวนผู้เข้าเส้นชัยแยกกลุ่มอายุ' : 'Comparison of participants finishing across key age brackets.'}
+                                </p>
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 14, fontSize: 12, fontWeight: 600, color: '#475569' }}>
+                                <span><span style={styles.legendDot('#3b82f6')} />MALE</span>
+                                <span><span style={styles.legendDot('#ec4899')} />FEMALE</span>
                             </div>
                         </div>
-                    );
-                })}
+                        <div style={{ padding: '8px 12px 20px 0' }}>
+                            <ResponsiveContainer width="100%" height={280}>
+                                <BarChart data={ageChartData} margin={{ top: 10, right: 20, left: 10, bottom: 5 }} barCategoryGap="30%">
+                                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                                    <XAxis dataKey="ageGroup" tick={{ fill: '#64748b', fontSize: 11, fontWeight: 700 }} axisLine={{ stroke: '#e2e8f0' }} tickLine={false} />
+                                    <YAxis tick={{ fill: '#cbd5e1', fontSize: 11 }} axisLine={false} tickLine={false} />
+                                    <Tooltip content={<ChartTooltip th={th} />} cursor={{ fill: 'rgba(59,130,246,0.04)' }} />
+                                    <Bar dataKey="male" name={th ? 'ชาย' : 'Male'} fill="#3b82f6" radius={[4, 4, 0, 0]} maxBarSize={36}>
+                                        <LabelList dataKey="male" position="top" style={{ fill: '#3b82f6', fontWeight: 800, fontSize: 10 }} />
+                                    </Bar>
+                                    <Bar dataKey="female" name={th ? 'หญิง' : 'Female'} fill="#ec4899" radius={[4, 4, 0, 0]} maxBarSize={36}>
+                                        <LabelList dataKey="female" position="top" style={{ fill: '#ec4899', fontWeight: 800, fontSize: 10 }} />
+                                    </Bar>
+                                </BarChart>
+                            </ResponsiveContainer>
+                        </div>
+                    </div>
+                )}
+
+                {/* ─── Age Group Breakdown Table ─── */}
+                {ageGroupData.length > 0 && (
+                    <div style={styles.sectionCard}>
+                        <div style={styles.sectionHeader}>
+                            <div>
+                                <h2 style={{ ...styles.sectionTitle, fontSize: 16 }}>
+                                    {th ? 'Age Group Breakdown' : 'Age Group Breakdown'}
+                                </h2>
+                                <p style={styles.sectionSub}>
+                                    {th ? 'รายละเอียดสถิติแยกตามกลุ่มอายุ' : 'Detailed performance and registration metrics per bracket.'}
+                                </p>
+                            </div>
+                        </div>
+                        <div style={{ overflowX: 'auto' }}>
+                            <table style={styles.table}>
+                                <thead>
+                                    <tr>
+                                        <th style={styles.th}>{th ? 'กลุ่มอายุ' : 'AGE BRACKET'}</th>
+                                        <th style={{ ...styles.th, textAlign: 'center' }}>{th ? 'สมัคร' : 'REGISTERED'}</th>
+                                        <th style={{ ...styles.th, textAlign: 'center' }}>{th ? 'จบ' : 'FINISHED'}</th>
+                                        <th style={{ ...styles.th, textAlign: 'center' }}>{th ? 'เวลาดีที่สุด' : 'TOP FINISH TIME'}</th>
+                                        <th style={{ ...styles.th, textAlign: 'center' }}>{th ? 'สถานะ' : 'STATUS'}</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {ageGroupData.map((row, i) => (
+                                        <tr key={row.ageGroup} style={{ background: i % 2 === 0 ? '#fff' : '#fafbfc', transition: 'background 0.15s' }}
+                                            onMouseEnter={e => (e.currentTarget.style.background = '#f0f4ff')}
+                                            onMouseLeave={e => (e.currentTarget.style.background = i % 2 === 0 ? '#fff' : '#fafbfc')}
+                                        >
+                                            <td style={{ ...styles.td, fontWeight: 800, color: '#0f172a' }}>
+                                                <div>{row.ageGroup}</div>
+                                                <div style={{ fontSize: 11, color: '#94a3b8', fontWeight: 500 }}>
+                                                    ♂ {row.male} · ♀ {row.female}
+                                                </div>
+                                            </td>
+                                            <td style={{ ...styles.td, textAlign: 'center', fontWeight: 700, color: '#334155' }}>
+                                                {row.registered.toLocaleString()}
+                                            </td>
+                                            <td style={{ ...styles.td, textAlign: 'center', fontWeight: 800, color: '#0f172a' }}>
+                                                {row.total}
+                                            </td>
+                                            <td style={{ ...styles.td, textAlign: 'center', fontWeight: 800, color: '#ef4444', fontFamily: 'monospace' }}>
+                                                {row.bestTime > 0 ? formatTimeMs(row.bestTime) : '-'}
+                                            </td>
+                                            <td style={{ ...styles.td, textAlign: 'center' }}>
+                                                <span style={styles.statusBadge(row.status.bg, row.status.color)}>
+                                                    {row.status.label}
+                                                </span>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                )}
             </div>
 
-            {/* ─── Age Group Finishers Chart ─── */}
-            {ageGroupChartData.length > 0 && (
-                <div style={{
-                    background: '#fff',
-                    border: '1px solid #e5e7eb',
-                    borderRadius: 16,
-                    overflow: 'hidden',
-                    boxShadow: '0 2px 8px rgba(0,0,0,0.04)',
-                    marginTop: 24,
-                }}>
-                    <div style={{
-                        padding: '16px 24px',
-                        borderBottom: '1px solid #f1f5f9',
-                    }}>
-                        <h2 style={{ margin: 0, fontSize: 18, fontWeight: 900, color: '#0f172a' }}>
-                            {th ? '📊 สรุปผู้เข้าเส้นชัยแยกตามกลุ่มอายุ' : '📊 Finishers by Age Group'}
-                        </h2>
-                        <span style={{ fontSize: 12, color: '#64748b' }}>
-                            {th ? 'แยกชาย/หญิง' : 'Male / Female breakdown'}
-                        </span>
-                    </div>
-                    <div style={{ padding: '16px 12px 20px 0' }}>
-                        <ResponsiveContainer width="100%" height={320}>
-                            <BarChart
-                                data={ageGroupChartData}
-                                margin={{ top: 20, right: 20, left: 10, bottom: 5 }}
-                                barCategoryGap="15%"
-                            >
-                                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
-                                <XAxis
-                                    dataKey="ageGroup"
-                                    tick={{ fill: '#64748b', fontSize: 11, fontWeight: 700 }}
-                                    axisLine={{ stroke: '#e2e8f0' }}
-                                    tickLine={false}
-                                />
-                                <YAxis
-                                    tick={{ fill: '#94a3b8', fontSize: 11 }}
-                                    axisLine={false}
-                                    tickLine={false}
-                                />
-                                <Tooltip
-                                    contentStyle={{
-                                        background: 'rgba(15,23,42,0.95)',
-                                        border: '1px solid rgba(255,255,255,0.1)',
-                                        borderRadius: 12,
-                                        color: '#fff',
-                                        fontSize: 13,
-                                    }}
-                                    labelStyle={{ fontWeight: 800, marginBottom: 4 }}
-                                />
-                                <Bar dataKey="male" name={th ? 'ชาย' : 'Male'} fill="#3b82f6" radius={[4, 4, 0, 0]} maxBarSize={40}>
-                                    <LabelList dataKey="male" position="top" style={{ fill: '#3b82f6', fontWeight: 800, fontSize: 11 }} />
-                                </Bar>
-                                <Bar dataKey="female" name={th ? 'หญิง' : 'Female'} fill="#ec4899" radius={[4, 4, 0, 0]} maxBarSize={40}>
-                                    <LabelList dataKey="female" position="top" style={{ fill: '#ec4899', fontWeight: 800, fontSize: 11 }} />
-                                </Bar>
-                            </BarChart>
-                        </ResponsiveContainer>
-                    </div>
-                </div>
-            )}
+            {/* ─── Mobile responsive styles ─── */}
+            <style>{`
+                .gc-stats-grid {
+                    display: grid !important;
+                    grid-template-columns: repeat(4, 1fr) !important;
+                    gap: 16px !important;
+                    margin-bottom: 24px !important;
+                    margin-top: -40px !important;
+                    position: relative !important;
+                    z-index: 5 !important;
+                    padding: 0 12px !important;
+                }
+                .gc-stat-card {
+                    min-width: 0 !important;
+                }
+                @media (max-width: 900px) {
+                    .gc-stats-grid {
+                        grid-template-columns: repeat(2, 1fr) !important;
+                        margin-top: -28px !important;
+                        gap: 10px !important;
+                        padding: 0 8px !important;
+                    }
+                }
+                @media (max-width: 520px) {
+                    .gc-stats-grid {
+                        grid-template-columns: 1fr 1fr !important;
+                        margin-top: -20px !important;
+                        gap: 8px !important;
+                        padding: 0 4px !important;
+                    }
+                    .gc-stat-card {
+                        padding: 14px 14px !important;
+                    }
+                    .gc-dist-grid {
+                        grid-template-columns: 1fr !important;
+                    }
+                }
+            `}</style>
 
-            {/* ─── Age Group Table ─── */}
-            {ageGroupChartData.length > 0 && (
-                <div style={{
-                    background: '#fff',
-                    border: '1px solid #e5e7eb',
-                    borderRadius: 16,
-                    overflow: 'hidden',
-                    boxShadow: '0 2px 8px rgba(0,0,0,0.04)',
-                    marginTop: 16,
-                    marginBottom: 24,
-                }}>
-                    <div style={{ padding: '16px 24px', borderBottom: '1px solid #f1f5f9' }}>
-                        <h3 style={{ margin: 0, fontSize: 15, fontWeight: 800, color: '#0f172a' }}>
-                            {th ? 'ตารางสรุปผู้เข้าเส้นชัยแยกอายุ' : 'Age Group Finisher Table'}
-                        </h3>
-                    </div>
-                    <div style={{ overflowX: 'auto' }}>
-                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-                            <thead>
-                                <tr style={{ background: '#f8fafc' }}>
-                                    <th style={{ padding: '10px 16px', textAlign: 'left', fontWeight: 700, color: '#475569', borderBottom: '2px solid #e2e8f0' }}>
-                                        {th ? 'กลุ่มอายุ' : 'Age Group'}
-                                    </th>
-                                    <th style={{ padding: '10px 16px', textAlign: 'center', fontWeight: 700, color: '#3b82f6', borderBottom: '2px solid #e2e8f0' }}>
-                                        ♂ {th ? 'ชาย' : 'Male'}
-                                    </th>
-                                    <th style={{ padding: '10px 16px', textAlign: 'center', fontWeight: 700, color: '#ec4899', borderBottom: '2px solid #e2e8f0' }}>
-                                        ♀ {th ? 'หญิง' : 'Female'}
-                                    </th>
-                                    <th style={{ padding: '10px 16px', textAlign: 'center', fontWeight: 700, color: '#0f172a', borderBottom: '2px solid #e2e8f0' }}>
-                                        {th ? 'รวม' : 'Total'}
-                                    </th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {ageGroupChartData.map((row, i) => (
-                                    <tr key={row.ageGroup} style={{ background: i % 2 === 0 ? '#fff' : '#f8fafc' }}>
-                                        <td style={{ padding: '8px 16px', fontWeight: 700, color: '#334155', borderBottom: '1px solid #f1f5f9' }}>
-                                            {row.ageGroup}
-                                        </td>
-                                        <td style={{ padding: '8px 16px', textAlign: 'center', fontWeight: 800, color: '#3b82f6', borderBottom: '1px solid #f1f5f9' }}>
-                                            {row.male}
-                                        </td>
-                                        <td style={{ padding: '8px 16px', textAlign: 'center', fontWeight: 800, color: '#ec4899', borderBottom: '1px solid #f1f5f9' }}>
-                                            {row.female}
-                                        </td>
-                                        <td style={{ padding: '8px 16px', textAlign: 'center', fontWeight: 900, color: '#0f172a', borderBottom: '1px solid #f1f5f9' }}>
-                                            {row.total}
-                                        </td>
-                                    </tr>
-                                ))}
-                                {/* Total row */}
-                                <tr style={{ background: '#f1f5f9' }}>
-                                    <td style={{ padding: '10px 16px', fontWeight: 900, color: '#0f172a', borderTop: '2px solid #e2e8f0' }}>
-                                        {th ? 'รวมทั้งหมด' : 'Grand Total'}
-                                    </td>
-                                    <td style={{ padding: '10px 16px', textAlign: 'center', fontWeight: 900, color: '#3b82f6', borderTop: '2px solid #e2e8f0' }}>
-                                        {ageGroupChartData.reduce((sum, r) => sum + r.male, 0)}
-                                    </td>
-                                    <td style={{ padding: '10px 16px', textAlign: 'center', fontWeight: 900, color: '#ec4899', borderTop: '2px solid #e2e8f0' }}>
-                                        {ageGroupChartData.reduce((sum, r) => sum + r.female, 0)}
-                                    </td>
-                                    <td style={{ padding: '10px 16px', textAlign: 'center', fontWeight: 900, color: '#0f172a', borderTop: '2px solid #e2e8f0' }}>
-                                        {ageGroupChartData.reduce((sum, r) => sum + r.total, 0)}
-                                    </td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            )}
-
-            {/* Loading overlay */}
+            {/* Loading indicator */}
             {runnersLoading && (
                 <div style={{
                     position: 'fixed', bottom: 20, right: 20, zIndex: 9999,
-                    background: 'rgba(15,23,42,0.9)', color: '#fff',
-                    padding: '10px 20px', borderRadius: 12,
+                    background: '#0f172a', color: '#fff',
+                    padding: '10px 20px', borderRadius: 10,
                     fontSize: 13, fontWeight: 700,
-                    boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
+                    boxShadow: '0 8px 32px rgba(0,0,0,0.2)',
+                    display: 'flex', alignItems: 'center', gap: 8,
                 }}>
-                    ⏳ {th ? 'กำลังโหลดข้อมูล...' : 'Loading data...'}
+                    <div style={{ width: 14, height: 14, border: '2px solid rgba(255,255,255,0.2)', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+                    {th ? 'กำลังโหลด...' : 'Loading...'}
                 </div>
             )}
+            <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
         </AdminLayout>
     );
 }
