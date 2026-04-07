@@ -1278,7 +1278,7 @@ export default function EventLivePage() {
                                 {visibleColumns.map(key => {
                                     const def = activeColDefs.find(c => c.key === key)!;
                                     return (
-                                        <th key={key} style={{ padding: isMobile && (key === 'status' || key === 'gunTime') ? '6px 1px' : isMobile ? '6px 4px' : '8px 6px', textAlign: def.align, width: isMobile ? def.mw : def.w }}>
+                                        <th key={key} style={{ padding: isMobile && (key === 'status' || key === 'gunTime') ? '6px 1px' : !isMobile && key === 'status' ? '8px 6px 8px 20px' : isMobile ? '6px 4px' : '8px 6px', textAlign: def.align, width: isMobile ? def.mw : def.w }}>
                                             {def.label}
                                         </th>
                                     );
