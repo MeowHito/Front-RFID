@@ -155,6 +155,16 @@ function parseDistanceValue(value: unknown): number | null {
     return Number.isFinite(parsed) ? parsed : null;
 }
 
+function parseElapsedTimeToMs(value?: string | null): number {
+    const trimmed = String(value || '').trim();
+    if (!trimmed) return 0;
+    const parts = trimmed.split(':').map(Number);
+    if (parts.some((part) => Number.isNaN(part))) return 0;
+    if (parts.length === 3) return (parts[0] * 3600 + parts[1] * 60 + parts[2]) * 1000;
+    if (parts.length === 2) return (parts[0] * 60 + parts[1]) * 1000;
+    return 0;
+}
+
 type ColDef = { key: string; label: string; w: string; mw: string; align: 'left' | 'center' | 'right'; fixed?: boolean; desktopOnly?: boolean };
 
 // Marathon column definitions
@@ -164,8 +174,8 @@ const COL_DEFS: ColDef[] = [
     { key: 'catRank', label: 'Cat', w: '3%', mw: '4%', align: 'center' },
     { key: 'runner', label: 'Runner', w: '15%', mw: '22%', align: 'left', fixed: true },
     { key: 'sex', label: 'Sex', w: '3%', mw: '5%', align: 'center' },
-    { key: 'status', label: 'Status', w: '8%', mw: '14%', align: 'left', fixed: true },
-    { key: 'gunTime', label: 'Gun Time', w: '7%', mw: '10%', align: 'center' },
+    { key: 'status', label: 'Status', w: '8%', mw: '10%', align: 'left', fixed: true },
+    { key: 'gunTime', label: 'Gun Time', w: '6%', mw: '6%', align: 'left' },
     { key: 'netTime', label: 'Net Time', w: '7%', mw: '10%', align: 'center' },
     { key: 'genNet', label: 'Gen Net', w: '4%', mw: '5%', align: 'center' },
     { key: 'gunPace', label: 'Gun Pace', w: '5%', mw: '8%', align: 'center' },
@@ -458,6 +468,7 @@ export default function EventLivePage() {
             checkpointOrder,
             totalCheckpoints,
             completedCpCount,
+            useSplitCheckpoint,
             isFinishLike: runner.status === 'finished' || isFinishCheckpointName(checkpointName) || (checkpointKey ? isFinishCheckpointName(checkpointKey) : false),
         };
     }
@@ -690,6 +701,29 @@ export default function EventLivePage() {
 
         return runner.category;
     }, [categories]);
+
+    const getRunnerCategoryStartDate = useCallback((runner: Runner): Date | null => {
+        if (!campaign?.eventDate) return null;
+        const categoryList = Array.isArray(campaign.categories) ? campaign.categories : [];
+        const runnerCategoryText = normalizeComparableText(runner.category);
+        const runnerDistance = parseDistanceValue(runner.category);
+        const matchedCategory = categoryList.find((cat) => {
+            const normalizedName = normalizeComparableText(cat.name);
+            const normalizedDistance = normalizeComparableText(cat.distance);
+            const categoryDistance = parseDistanceValue(cat.distance || cat.name);
+            if (runnerCategoryText && (runnerCategoryText === normalizedName || runnerCategoryText === normalizedDistance)) return true;
+            if (runnerDistance !== null && categoryDistance !== null && Math.abs(runnerDistance - categoryDistance) < 0.001) return true;
+            return false;
+        }) || categoryList[0];
+        const startTime = String(matchedCategory?.startTime || '').trim();
+        if (!startTime) return null;
+        const baseDate = new Date(campaign.eventDate);
+        if (Number.isNaN(baseDate.getTime())) return null;
+        const [hours = '0', minutes = '0', seconds = '0'] = startTime.split(':');
+        const startDate = new Date(baseDate);
+        startDate.setHours(Number(hours) || 0, Number(minutes) || 0, Number(seconds) || 0, 0);
+        return Number.isNaN(startDate.getTime()) ? null : startDate;
+    }, [campaign?.eventDate, campaign?.categories]);
 
     // Determine active display mode and column set
     const isLabMode = campaign?.displayMode === 'lab';
@@ -1044,7 +1078,7 @@ export default function EventLivePage() {
                         </div>
                     </div>
 
-                    {!isMobile && (
+                    {!isMobile && isAuthenticated && (
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                             <span style={{ fontSize: 9, fontWeight: 700, color: themeStyles.textSecondary, textTransform: 'uppercase', letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>
                                 STATUS:
@@ -1238,13 +1272,13 @@ export default function EventLivePage() {
             {/* ===== TABLE ===== */}
             <main style={{ padding: '0 16px' }}>
                 <div className="table-scroll" style={{ background: themeStyles.cardBg, borderRadius: 0, boxShadow: 'none', border: `1px solid ${themeStyles.border}`, borderTop: 'none', borderBottom: 'none', height: 'calc(100vh - 100px)', overflowY: 'auto', overflowX: isMobile && showAllColumns ? 'auto' : 'hidden', paddingBottom: 40 }}>
-                    <table style={{ width: isMobile && showAllColumns ? 800 : '100%', textAlign: 'left', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+                    <table style={{ width: isMobile && showAllColumns ? 700 : '100%', textAlign: 'left', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
                         <thead>
                             <tr style={{ fontSize: 10, fontWeight: 700, color: themeStyles.textSecondary, textTransform: 'uppercase', letterSpacing: '-0.02em', position: 'sticky', top: 0, background: themeStyles.cardBg, zIndex: 20, borderBottom: `2px solid ${themeStyles.border}` }}>
                                 {visibleColumns.map(key => {
                                     const def = activeColDefs.find(c => c.key === key)!;
                                     return (
-                                        <th key={key} style={{ padding: isMobile ? '6px 4px' : '8px 6px', textAlign: def.align, width: isMobile ? def.mw : def.w }}>
+                                        <th key={key} style={{ padding: isMobile && (key === 'status' || key === 'gunTime') ? '6px 1px' : isMobile ? '6px 4px' : '8px 6px', textAlign: def.align, width: isMobile ? def.mw : def.w }}>
                                             {def.label}
                                         </th>
                                     );
@@ -1274,6 +1308,7 @@ export default function EventLivePage() {
                                     let eventTotalKm = 0;
                                     let progressLabel = '';
                                     const isFinishCp = checkpointMeta.isFinishLike;
+                                    const runnerStartDate = getRunnerCategoryStartDate(runner);
                                     if (runner.status === 'finished' || isFinishCp) {
                                         progressPct = 100;
                                         if (totalCps > 0 && completedCpCount > 0) {
@@ -1329,8 +1364,15 @@ export default function EventLivePage() {
                                     }
 
                                     const showProgressAlert = progressPct >= 100 && totalCps > 0 && completedCpCount > 0 && completedCpCount < totalCps;
-                                    const statusScanTimeLabel = !isRaceFinished && runner.scanTime
-                                        ? formatStatusScanTime(runner.scanTime)
+                                    const finishElapsedMs = runner.gunTime || runner.elapsedTime || runner.netTime || parseElapsedTimeToMs(runner.gunTimeStr);
+                                    const currentCheckpointElapsedMs = checkpointMeta.useSplitCheckpoint
+                                        ? (runner.splitTime || finishElapsedMs)
+                                        : (isFinishCp ? finishElapsedMs : 0);
+                                    const currentCheckpointTime = !isRaceFinished && runnerStartDate && currentCheckpointElapsedMs > 0
+                                        ? new Date(runnerStartDate.getTime() + currentCheckpointElapsedMs).toISOString()
+                                        : (runner.lastPassTime || runner.scanTime);
+                                    const statusScanTimeLabel = !isRaceFinished && currentCheckpointTime
+                                        ? formatStatusScanTime(currentCheckpointTime)
                                         : '';
 
                                     // Render cell content per column key
@@ -1372,11 +1414,8 @@ export default function EventLivePage() {
                                                                 <span style={{ display: 'block', minWidth: 0, flex: '1 1 auto', fontWeight: 700, fontSize: isMobile ? 11 : 13, color: themeStyles.text, lineHeight: 1.15, textTransform: 'uppercase', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                                                                     {runner.firstName} {runner.lastName}
                                                                 </span>
-                                                                {runner.status === 'in_progress' && (
-                                                                    <span className="live-dot" style={{ background: '#22c55e', position: 'static', flexShrink: 0 }} />
-                                                                )}
                                                             </span>
-                                                            <span style={{ fontSize: isMobile ? 9 : 10, color: themeStyles.textSecondary, fontWeight: 500, lineHeight: 1.15, display: 'flex', alignItems: 'center', gap: isMobile ? 4 : 6, whiteSpace: 'nowrap' }}>
+                                                            <span style={{ fontSize: isMobile ? 9 : 10, color: themeStyles.text, fontWeight: 600, lineHeight: 1.15, display: 'flex', alignItems: 'center', gap: isMobile ? 4 : 6, whiteSpace: 'nowrap' }}>
                                                                 <span style={{ background: '#666666', color: '#fff', padding: '1px 6px', borderRadius: 4, fontSize: isMobile ? 9 : 10, fontWeight: 800, letterSpacing: '0.05em', border: '0px solid #6b7280' }}>
                                                                     BIB {runner.bib}
                                                                 </span>
@@ -1405,9 +1444,9 @@ export default function EventLivePage() {
                                                     : showInProgressCheckpointBadge
                                                         ? '#92400e'
                                                         : runner.statusCheckpoint ? '#dc2626' : themeStyles.text;
-                                                const statusTimeColor = runner.statusCheckpoint ? '#dc2626' : themeStyles.textSecondary;
+                                                const statusTimeColor = statusCheckpointName ? statusNameColor : themeStyles.text;
                                                 return (
-                                                    <td key={key} style={{ padding: isMobile ? '4px 2px' : '6px 6px', verticalAlign: 'top' }}>
+                                                    <td key={key} style={{ padding: isMobile ? '4px 0px' : '6px 6px', verticalAlign: 'top' }}>
                                                         <div style={{ display: 'grid', gridTemplateRows: showCheckpointBelow ? (statusScanTimeLabel ? 'auto auto auto' : 'auto auto') : (statusScanTimeLabel ? 'auto auto' : 'auto'), rowGap: 3, minWidth: 0, minHeight: isMobile ? 28 : 32, position: 'relative', paddingRight: isAdmin && !isMobile ? 18 : 0 }}>
                                                             <div style={{ display: 'flex', alignItems: 'center', gap: 4, minWidth: 0, width: '100%' }}>
                                                                 {showStatusBadge && (
@@ -1444,7 +1483,7 @@ export default function EventLivePage() {
                                                                 </button>
                                                             )}
                                                             {statusScanTimeLabel && (
-                                                                <span style={{ display: 'block', maxWidth: '100%', fontSize: isMobile ? 9 : 10, color: statusTimeColor, fontWeight: 400, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.15 }}>
+                                                                <span style={{ display: 'block', maxWidth: '100%', fontSize: isMobile ? 9 : 10, color: statusTimeColor, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.15, paddingLeft: showCheckpointChip ? (isMobile ? 7 : 10) : 0 }}>
                                                                     {statusScanTimeLabel}
                                                                 </span>
                                                             )}
@@ -1454,7 +1493,7 @@ export default function EventLivePage() {
                                             }
                                             case 'gunTime':
                                                 return (
-                                                    <td key={key} style={{ padding: isMobile ? '4px 2px' : '6px 6px', textAlign: 'center' }}>
+                                                    <td key={key} style={{ padding: isMobile ? '4px 0px' : '6px 6px', textAlign: isMobile ? 'center' : 'left' }}>
                                                         <span style={{ fontSize: isMobile ? 11 : 12, fontWeight: 700, color: themeStyles.text, fontFamily: 'monospace' }}>
                                                             {formatDisplayTimeString(runner.gunTimeStr, isAdmin) || formatTime(runner.gunTime || runner.elapsedTime)}
                                                         </span>
