@@ -51,13 +51,55 @@ interface AgeGroupBucket {
 }
 
 const DEFAULT_AGE_GROUPS: AgeGroupBucket[] = [
-    { label: '1-18 ปี', min: 0, max: 18 },
-    { label: '19-29 ปี', min: 19, max: 29 },
-    { label: '30-39 ปี', min: 30, max: 39 },
-    { label: '40-49 ปี', min: 40, max: 49 },
-    { label: '50-59 ปี', min: 50, max: 59 },
-    { label: '60+ ปี', min: 60, max: 999 },
+    { label: '1-18', min: 0, max: 18 },
+    { label: '19-29', min: 19, max: 29 },
+    { label: '30-39', min: 30, max: 39 },
+    { label: '40-49', min: 40, max: 49 },
+    { label: '50-59', min: 50, max: 59 },
+    { label: '60+', min: 60, max: 999 },
 ];
+
+function normalizeAgeGroupLabel(value?: string | null): string {
+    return String(value || '')
+        .replace(/^[MF]\s*/i, '')
+        .replace(/\s*ปี$/i, '')
+        .trim();
+}
+
+function parseAgeGroupBucket(value?: string | null): AgeGroupBucket | null {
+    const label = normalizeAgeGroupLabel(value);
+    if (!label) return null;
+
+    const rangeMatch = label.match(/(\d+)\s*-\s*(\d+)/);
+    if (rangeMatch) {
+        return {
+            label,
+            min: parseInt(rangeMatch[1]),
+            max: parseInt(rangeMatch[2]),
+        };
+    }
+
+    const underMatch = label.match(/(?:u|under)\s*(\d+)/i);
+    if (underMatch) {
+        const max = parseInt(underMatch[1]) - 1;
+        return {
+            label,
+            min: 0,
+            max: max >= 0 ? max : 0,
+        };
+    }
+
+    const plusMatch = label.match(/(\d+)\s*\+/);
+    if (plusMatch) {
+        return {
+            label,
+            min: parseInt(plusMatch[1]),
+            max: 999,
+        };
+    }
+
+    return null;
+}
 
 function buildAgeGroupsFromConfig(ageGroups: AgeGroupConfig[]): AgeGroupBucket[] {
     // Extract unique age ranges (deduplicate male/female pairs)
@@ -67,7 +109,7 @@ function buildAgeGroupsFromConfig(ageGroups: AgeGroupConfig[]): AgeGroupBucket[]
         const key = `${g.minAge}-${g.maxAge}`;
         if (!seen.has(key)) {
             const isOpenEnd = g.maxAge >= 99;
-            const label = isOpenEnd ? `${g.minAge}+ ปี` : `${g.minAge}-${g.maxAge} ปี`;
+            const label = isOpenEnd ? `${g.minAge}+` : `${g.minAge}-${g.maxAge}`;
             seen.set(key, { label, min: g.minAge, max: g.maxAge });
         }
     }
@@ -75,6 +117,23 @@ function buildAgeGroupsFromConfig(ageGroups: AgeGroupConfig[]): AgeGroupBucket[]
     // Sort by minAge ascending
     buckets.sort((a, b) => a.min - b.min);
     return buckets.length > 0 ? buckets : DEFAULT_AGE_GROUPS;
+}
+
+function buildAgeGroupsFromRunners(runners: Runner[]): AgeGroupBucket[] {
+    const seen = new Map<string, AgeGroupBucket>();
+    for (const runner of runners) {
+        const bucket = parseAgeGroupBucket(runner.ageGroup);
+        if (!bucket) continue;
+        const key = bucket.label.toLowerCase();
+        if (!seen.has(key)) {
+            seen.set(key, bucket);
+        }
+    }
+    return Array.from(seen.values()).sort((a, b) => {
+        if (a.min !== b.min) return a.min - b.min;
+        if (a.max !== b.max) return a.max - b.max;
+        return a.label.localeCompare(b.label, undefined, { numeric: true, sensitivity: 'base' });
+    });
 }
 
 const TOP_N = 5;
@@ -88,7 +147,9 @@ function formatTime(ms: number | undefined | null): string {
 }
 
 function resolveAgeGroup(runner: Runner, ageGroups: AgeGroupBucket[]): string {
-    const ag = (runner.ageGroup || '').replace(/^[MF]\s*/i, '').trim();
+    const ag = normalizeAgeGroupLabel(runner.ageGroup);
+    const exactMatch = ageGroups.find(g => normalizeAgeGroupLabel(g.label).toLowerCase() === ag.toLowerCase());
+    if (exactMatch) return exactMatch.label;
     // Try to parse age range like "30-39"
     const rangeMatch = ag.match(/(\d+)\s*-\s*(\d+)/);
     if (rangeMatch) {
@@ -101,14 +162,6 @@ function resolveAgeGroup(runner: Runner, ageGroups: AgeGroupBucket[]): string {
     if (runner.age) {
         for (const g of ageGroups) {
             if (runner.age >= g.min && runner.age <= g.max) return g.label;
-        }
-    }
-    // Try numeric in ageGroup
-    const numMatch = ag.match(/(\d+)/);
-    if (numMatch) {
-        const n = parseInt(numMatch[1]);
-        for (const g of ageGroups) {
-            if (n >= g.min && n <= g.max) return g.label;
         }
     }
     if (ag.toLowerCase().includes('u18') || ag.toLowerCase().includes('under')) return ageGroups[0]?.label || 'Unknown';
@@ -212,11 +265,13 @@ export default function ResultWinnersBySlugPage() {
 
     // Derive active age groups from selected category's config
     const activeAgeGroups = useMemo(() => {
+        const syncedAgeGroups = buildAgeGroupsFromRunners(runners);
+        if (syncedAgeGroups.length > 0) return syncedAgeGroups;
         if (!campaign?.categories || !selectedCategory) return DEFAULT_AGE_GROUPS;
         const cat = campaign.categories.find(c => c.name === selectedCategory);
         if (!cat?.ageGroups || cat.ageGroups.length === 0) return DEFAULT_AGE_GROUPS;
         return buildAgeGroupsFromConfig(cat.ageGroups);
-    }, [campaign, selectedCategory]);
+    }, [campaign, selectedCategory, runners]);
 
     // Build winners per gender per age group
     const { maleWinners, femaleWinners } = useMemo(() => {
@@ -296,7 +351,7 @@ export default function ResultWinnersBySlugPage() {
 
     // Render a winners column
     const renderColumn = (title: string, bgHeader: string, bgAgeHeader: string, winners: Record<string, Runner[]>) => (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: isMobile ? 8 : '0.4vh', minHeight: 0, flex: 1 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: isMobile ? 8 : '0.6vh', minHeight: 0, flex: 1, overflowY: isMobile ? 'visible' : 'auto', paddingRight: isMobile ? 0 : 4 }}>
             <div style={{ padding: isMobile ? '8px 0' : '0.7vh 0', fontWeight: 900, fontSize: isMobile ? 16 : '2vh', textAlign: 'center', textTransform: 'uppercase', borderRadius: 8, color: 'white', letterSpacing: 2, background: bgHeader, flexShrink: 0 }}>
                 {title}
             </div>
@@ -305,11 +360,11 @@ export default function ResultWinnersBySlugPage() {
                 // Always render TOP_N rows — fill empties
                 const rows = Array.from({ length: TOP_N }, (_, i) => i);
                 return (
-                    <div key={g.label} style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: 8, overflow: 'hidden', display: 'flex', flexDirection: 'column', flex: isMobile ? undefined : 1, minHeight: 0 }}>
+                    <div key={g.label} style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: 8, overflow: 'hidden', display: 'flex', flexDirection: 'column', flexShrink: 0, minHeight: isMobile ? 150 : '18vh' }}>
                         <div style={{ background: bgAgeHeader, color: 'white', fontWeight: 800, fontSize: isMobile ? 13 : '1.5vh', padding: isMobile ? '4px 12px' : '0.25vh 12px', textAlign: 'center', flexShrink: 0 }}>
                             {g.label}
                         </div>
-                        <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', flex: isMobile ? undefined : 1, padding: isMobile ? '4px' : '0.15vh 4px', minHeight: 0 }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'flex-start', flex: 1, padding: isMobile ? '4px' : '0.25vh 4px', minHeight: 0 }}>
                             {rows.map(i => list[i] ? renderRunnerRow(list[i], i) : renderEmptyRow(i))}
                         </div>
                     </div>
