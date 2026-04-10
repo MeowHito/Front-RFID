@@ -42,6 +42,7 @@ interface Campaign {
     uuid?: string;
     categories?: { name: string; distance?: string; ageGroups?: AgeGroupConfig[] }[];
     excludeOverallFromAgeGroup?: number;
+    disableAgeGroupRanking?: boolean;
 }
 
 interface AgeGroupBucket {
@@ -58,6 +59,8 @@ const DEFAULT_AGE_GROUPS: AgeGroupBucket[] = [
     { label: '50-59', min: 50, max: 59 },
     { label: '60+', min: 60, max: 999 },
 ];
+
+const OVERALL_GROUP: AgeGroupBucket = { label: 'OVERALL', min: 0, max: 999 };
 
 function normalizeAgeGroupLabel(value?: string | null): string {
     return String(value || '')
@@ -225,7 +228,7 @@ export default function ResultWinnersBySlugPage() {
         if (!campaign?._id || !selectedCategory) { setRunners([]); return; }
         if (isRefresh) setRefreshing(true); else setLoading(true);
         try {
-            const params = new URLSearchParams({ campaignId: campaign._id, category: selectedCategory, limit: '10000' });
+            const params = new URLSearchParams({ campaignId: campaign._id, category: selectedCategory, limit: '10000', skipStatusCounts: 'true' });
             const res = await fetch(`/api/runners/paged?${params.toString()}`, { cache: 'no-store' });
             if (res.ok) {
                 const data = await res.json();
@@ -264,14 +267,17 @@ export default function ResultWinnersBySlugPage() {
     }, [campaign, selectedCategory, loadRunners]);
 
     // Derive active age groups from selected category's config
+    const disableAgeGroupRanking = Boolean(campaign?.disableAgeGroupRanking);
+
     const activeAgeGroups = useMemo(() => {
+        if (disableAgeGroupRanking) return [OVERALL_GROUP];
         const syncedAgeGroups = buildAgeGroupsFromRunners(runners);
         if (syncedAgeGroups.length > 0) return syncedAgeGroups;
         if (!campaign?.categories || !selectedCategory) return DEFAULT_AGE_GROUPS;
         const cat = campaign.categories.find(c => c.name === selectedCategory);
         if (!cat?.ageGroups || cat.ageGroups.length === 0) return DEFAULT_AGE_GROUPS;
         return buildAgeGroupsFromConfig(cat.ageGroups);
-    }, [campaign, selectedCategory, runners]);
+    }, [campaign, selectedCategory, runners, disableAgeGroupRanking]);
 
     // Build winners per gender per age group
     const { maleWinners, femaleWinners } = useMemo(() => {
@@ -296,14 +302,14 @@ export default function ResultWinnersBySlugPage() {
 
         for (const runner of sorted) {
             if (excludedBibs.has(runner.bib)) continue;
-            const ag = resolveAgeGroup(runner, activeAgeGroups);
+            const ag = disableAgeGroupRanking ? OVERALL_GROUP.label : resolveAgeGroup(runner, activeAgeGroups);
             const bucket = runner.gender === 'F' ? femaleWinners : maleWinners;
             if (bucket[ag] && bucket[ag].length < TOP_N) {
                 bucket[ag].push(runner);
             }
         }
         return { maleWinners, femaleWinners };
-    }, [runners, campaign, activeAgeGroups]);
+    }, [runners, campaign, activeAgeGroups, disableAgeGroupRanking]);
 
     const rankBg = ['#f59e0b', '#9ca3af', '#92400e', '#e2e8f0', '#e2e8f0'];
     const rankFg = ['#000', '#fff', '#fff', '#475569', '#475569'];
@@ -362,7 +368,7 @@ export default function ResultWinnersBySlugPage() {
                 return (
                     <div key={g.label} style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: 8, overflow: 'hidden', display: 'flex', flexDirection: 'column', flexShrink: 0, minHeight: isMobile ? 150 : '18vh' }}>
                         <div style={{ background: bgAgeHeader, color: 'white', fontWeight: 800, fontSize: isMobile ? 13 : '1.5vh', padding: isMobile ? '4px 12px' : '0.25vh 12px', textAlign: 'center', flexShrink: 0 }}>
-                            {g.label}
+                            {disableAgeGroupRanking ? 'OVERALL RANKING' : g.label}
                         </div>
                         <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'flex-start', flex: 1, padding: isMobile ? '4px' : '0.25vh 4px', minHeight: 0 }}>
                             {rows.map(i => list[i] ? renderRunnerRow(list[i], i) : renderEmptyRow(i))}
@@ -430,8 +436,8 @@ export default function ResultWinnersBySlugPage() {
                 </div>
             ) : (
                 <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: isMobile ? 12 : '1vw', flex: isMobile ? undefined : 1, minHeight: 0, paddingBottom: isMobile ? 16 : 0 }}>
-                    {renderColumn('♂ MALE WINNERS', '#2563eb', '#1e3a5f', maleWinners)}
-                    {renderColumn('♀ FEMALE WINNERS', '#db2777', '#831843', femaleWinners)}
+                    {renderColumn(disableAgeGroupRanking ? '♂ MALE RANKING' : '♂ MALE WINNERS', '#2563eb', '#1e3a5f', maleWinners)}
+                    {renderColumn(disableAgeGroupRanking ? '♀ FEMALE RANKING' : '♀ FEMALE WINNERS', '#db2777', '#831843', femaleWinners)}
                 </div>
             )}
         </div>
