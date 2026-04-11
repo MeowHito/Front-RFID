@@ -267,7 +267,7 @@ export default function ResultWinnersBySlugPage() {
     }, [campaign, selectedCategory, loadRunners]);
 
     // Derive active age groups from selected category's config
-    const disableAgeGroupRanking = Boolean(campaign?.disableAgeGroupRanking);
+    const disableAgeGroupRanking = false;
 
     const activeAgeGroups = useMemo(() => {
         if (disableAgeGroupRanking) return [OVERALL_GROUP];

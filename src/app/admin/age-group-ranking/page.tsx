@@ -37,6 +37,7 @@ interface AgeGroupBucket {
 interface FeaturedCampaignSettings {
     _id: string;
     name: string;
+    slug?: string;
     excludeOverallFromAgeGroup?: number;
     disableAgeGroupRanking?: boolean;
     categories?: { name: string; distance?: string; ageGroups?: AgeGroupConfig[] }[];
@@ -167,11 +168,12 @@ export default function AgeGroupRankingPage() {
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [excludeTop, setExcludeTop] = useState<number>(0);
-    const [disableAgeGroupRanking, setDisableAgeGroupRanking] = useState(false);
     const [selectedCategory, setSelectedCategory] = useState('');
     const [previewRunners, setPreviewRunners] = useState<Runner[]>([]);
     const [previewLoading, setPreviewLoading] = useState(false);
     const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+    const origin = typeof window !== 'undefined' ? window.location.origin : '';
+    const disableAgeGroupRanking = false;
 
     useEffect(() => {
         fetchCampaign();
@@ -184,7 +186,6 @@ export default function AgeGroupRankingPage() {
                 const data = await res.json();
                 setCampaign(data);
                 setExcludeTop(Math.max(0, Number(data?.excludeOverallFromAgeGroup) || 0));
-                setDisableAgeGroupRanking(Boolean(data?.disableAgeGroupRanking));
                 setSelectedCategory(data?.categories?.[0]?.name || '');
             }
         } catch { /* */ } finally {
@@ -225,6 +226,16 @@ export default function AgeGroupRankingPage() {
         loadPreview();
     }, [campaign?._id, selectedCategory]);
 
+    const sortedFinishedRunners = useMemo(() => {
+        return [...previewRunners]
+            .filter(r => r.status === 'finished' && (r.netTime || r.gunTime || r.elapsedTime))
+            .sort((a, b) => {
+                const at = a.netTime || a.gunTime || a.elapsedTime || Infinity;
+                const bt = b.netTime || b.gunTime || b.elapsedTime || Infinity;
+                return at - bt;
+            });
+    }, [previewRunners]);
+
     const activeAgeGroups = useMemo(() => {
         if (disableAgeGroupRanking) return [OVERALL_GROUP];
         const syncedAgeGroups = buildAgeGroupsFromRunners(previewRunners);
@@ -236,16 +247,9 @@ export default function AgeGroupRankingPage() {
     }, [campaign, selectedCategory, previewRunners, disableAgeGroupRanking]);
 
     const { maleWinners, femaleWinners } = useMemo(() => {
-        const finished = previewRunners.filter(r => r.status === 'finished' && (r.netTime || r.gunTime || r.elapsedTime));
-        const sorted = [...finished].sort((a, b) => {
-            const at = a.netTime || a.gunTime || a.elapsedTime || Infinity;
-            const bt = b.netTime || b.gunTime || b.elapsedTime || Infinity;
-            return at - bt;
-        });
-
         const excludedBibs = new Set<string>();
         if (excludeTop > 0) {
-            sorted.slice(0, excludeTop).forEach(r => excludedBibs.add(r.bib));
+            sortedFinishedRunners.slice(0, excludeTop).forEach(r => excludedBibs.add(r.bib));
         }
 
         const male: Record<string, Runner[]> = {};
@@ -255,7 +259,7 @@ export default function AgeGroupRankingPage() {
             female[group.label] = [];
         }
 
-        for (const runner of sorted) {
+        for (const runner of sortedFinishedRunners) {
             if (excludedBibs.has(runner.bib)) continue;
             const groupLabel = disableAgeGroupRanking ? OVERALL_GROUP.label : resolveAgeGroup(runner, activeAgeGroups);
             const bucket = runner.gender === 'F' ? female : male;
@@ -265,9 +269,20 @@ export default function AgeGroupRankingPage() {
         }
 
         return { maleWinners: male, femaleWinners: female };
-    }, [previewRunners, activeAgeGroups, disableAgeGroupRanking, excludeTop]);
+    }, [sortedFinishedRunners, activeAgeGroups, disableAgeGroupRanking, excludeTop]);
+
+    const overallMaleWinners = useMemo(() => {
+        return sortedFinishedRunners.filter(r => r.gender !== 'F').slice(0, TOP_N);
+    }, [sortedFinishedRunners]);
+
+    const overallFemaleWinners = useMemo(() => {
+        return sortedFinishedRunners.filter(r => r.gender === 'F').slice(0, TOP_N);
+    }, [sortedFinishedRunners]);
 
     const previewCategory = campaign?.categories?.find(item => item.name === selectedCategory);
+    const campaignPath = campaign?.slug || campaign?._id || '';
+    const ageGroupShareUrl = campaignPath ? `${origin}/Result-Winners/${campaignPath}` : '';
+    const overallShareUrl = campaignPath ? `${origin}/Overall-Winners/${campaignPath}` : '';
 
     const renderPreviewColumn = (title: string, headerClass: string, groupClass: string, winners: Record<string, Runner[]>) => (
         <div className="space-y-2">
@@ -312,9 +327,81 @@ export default function AgeGroupRankingPage() {
         </div>
     );
 
+    const renderOverallPreviewColumn = (title: string, headerClass: string, runners: Runner[]) => (
+        <div className="space-y-2">
+            <div className={`rounded-lg px-3 py-2 text-center text-xs font-bold text-white ${headerClass}`}>
+                {title}
+            </div>
+            <div className="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm">
+                <div className={`px-3 py-1.5 text-center text-[11px] font-bold text-white ${headerClass}`}>
+                    {language === 'th' ? 'อันดับ Overall' : 'Overall ranking'}
+                </div>
+                <div className="divide-y divide-gray-100">
+                    {Array.from({ length: TOP_N }, (_, index) => {
+                        const runner = runners[index];
+                        return (
+                            <div key={`overall-${title}-${index}`} className="flex items-center gap-2 px-2.5 py-2">
+                                <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-gray-100 text-[10px] font-bold text-gray-700">
+                                    {index + 1}
+                                </div>
+                                <div className="min-w-0 flex-1 leading-tight">
+                                    <p className="truncate text-xs font-semibold text-gray-800">
+                                        {runner ? `${runner.firstName} ${runner.lastName}` : '—'}
+                                    </p>
+                                    <p className="text-[10px] text-gray-500">
+                                        {runner ? `BIB ${runner.bib}` : (language === 'th' ? 'ไม่มีข้อมูล' : 'No data')}
+                                    </p>
+                                </div>
+                                <div className="shrink-0 text-[11px] font-bold text-gray-800">
+                                    {runner ? (runner.netTimeStr || formatTime(runner.netTime || runner.gunTime || runner.elapsedTime)) : '-'}
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+            </div>
+        </div>
+    );
+
+    const renderCategoryTabs = () => (
+        campaign?.categories && campaign.categories.length > 0 ? (
+            <div className="flex flex-wrap gap-1.5">
+                {campaign.categories.map(category => (
+                    <button
+                        key={category.name}
+                        type="button"
+                        onClick={() => setSelectedCategory(category.name)}
+                        className={`rounded-full px-2.5 py-1 text-[11px] font-bold transition-all ${
+                            selectedCategory === category.name
+                                ? 'bg-slate-800 text-white'
+                                : 'border border-gray-300 bg-white text-gray-700 hover:border-gray-400'
+                        }`}
+                    >
+                        {category.name}{category.distance ? ` (${category.distance})` : ''}
+                    </button>
+                ))}
+            </div>
+        ) : null
+    );
+
     const showToast = (message: string, type: 'success' | 'error') => {
         setToast({ message, type });
         setTimeout(() => setToast(null), 3000);
+    };
+
+    const handleCopyLink = async (url: string) => {
+        if (!url) return;
+        try {
+            await navigator.clipboard.writeText(url);
+        } catch {
+            const input = document.createElement('input');
+            input.value = url;
+            document.body.appendChild(input);
+            input.select();
+            document.execCommand('copy');
+            document.body.removeChild(input);
+        }
+        showToast(language === 'th' ? 'คัดลอกลิงก์แล้ว' : 'Link copied', 'success');
     };
 
     const updateExcludeTop = (value: number) => {
@@ -331,7 +418,7 @@ export default function AgeGroupRankingPage() {
                 headers: authHeaders(),
                 body: JSON.stringify({
                     excludeOverallFromAgeGroup: excludeTop,
-                    disableAgeGroupRanking,
+                    disableAgeGroupRanking: false,
                 }),
             });
             if (res.ok) {
@@ -354,12 +441,12 @@ export default function AgeGroupRankingPage() {
         >
             {/* Toast */}
             {toast && (
-                <div className={`fixed top-5 right-5 z-[9999] px-6 py-3 rounded-lg text-white font-semibold shadow-lg ${toast.type === 'success' ? 'bg-green-500' : 'bg-red-500'}`}>
+                <div className={`fixed top-5 right-5 z-50 px-6 py-3 rounded-lg text-white font-semibold shadow-lg ${toast.type === 'success' ? 'bg-green-500' : 'bg-red-500'}`}>
                     {toast.message}
                 </div>
             )}
 
-            <div className="mx-auto max-w-screen-2xl p-4 lg:h-[calc(100vh-96px)] lg:overflow-hidden">
+            <div className="mx-auto max-w-screen-2xl p-4">
                 {loading ? (
                     <div className="text-center py-10 text-gray-400 text-sm">
                         {language === 'th' ? 'กำลังโหลด...' : 'Loading...'}
@@ -369,168 +456,108 @@ export default function AgeGroupRankingPage() {
                         {language === 'th' ? 'ไม่พบแคมเปญที่กดดาว — กรุณากดดาวเลือกกิจกรรมที่ต้องการก่อน' : 'No featured campaign found — please star a campaign first'}
                     </div>
                 ) : (
-                    <>
-                        <div className="grid gap-4 lg:h-full lg:grid-cols-[320px,minmax(0,1fr)] xl:grid-cols-[340px,minmax(0,1fr)]">
-                            <div className="space-y-4">
-                                <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-                                    <div className="flex items-start justify-between gap-3">
-                                        <div className="min-w-0">
-                                            <h1 className="flex items-center gap-2 text-lg font-bold text-gray-800">
-                                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2"><path d="M12 2l2.09 6.26L20 9.27l-4.91 3.82L16.18 20 12 16.77 7.82 20l1.09-6.91L4 9.27l5.91-1.01L12 2z" /></svg>
-                                                {language === 'th' ? 'ตั้งค่าอันดับกลุ่มอายุ' : 'Age Group Ranking'}
-                                            </h1>
-                                            <p className="mt-1 text-xs leading-5 text-gray-500">
-                                                {language === 'th'
-                                                    ? 'ตั้งค่าหน้า Result-Winners และดูพรีวิวได้ในหน้านี้เลย'
-                                                    : 'Configure Result-Winners and preview it from this single screen'}
-                                            </p>
-                                        </div>
-                                        <div className="rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-2 text-[11px] font-semibold leading-4 text-blue-700">
-                                            {language === 'th' ? 'กิจกรรมที่เลือก' : 'Selected'}
-                                            <div className="mt-1 max-w-36 truncate text-xs text-blue-900">{campaign.name}</div>
-                                        </div>
-                                    </div>
-
-                                    <div className="mt-4 space-y-3">
-                                        <div>
-                                            <p className="mb-1.5 text-xs font-semibold text-gray-700">
-                                                {language === 'th' ? 'รูปแบบการแสดงผล' : 'Display mode'}
-                                            </p>
-                                            <div className="grid grid-cols-2 gap-2">
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setDisableAgeGroupRanking(false)}
-                                                    className={`rounded-xl px-3 py-2 text-xs font-bold transition-all ${
-                                                        !disableAgeGroupRanking
-                                                            ? 'bg-green-600 text-white shadow-sm'
-                                                            : 'bg-white text-gray-600 border border-gray-300 hover:border-gray-400'
-                                                    }`}
-                                                >
-                                                    {language === 'th' ? 'ใช้กลุ่มอายุ' : 'Use age groups'}
-                                                </button>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setDisableAgeGroupRanking(true)}
-                                                    className={`rounded-xl px-3 py-2 text-xs font-bold transition-all ${
-                                                        disableAgeGroupRanking
-                                                            ? 'bg-indigo-600 text-white shadow-sm'
-                                                            : 'bg-white text-gray-600 border border-gray-300 hover:border-gray-400'
-                                                    }`}
-                                                >
-                                                    {language === 'th' ? 'ไม่ใช้กลุ่มอายุ' : 'No age groups'}
-                                                </button>
-                                            </div>
-                                        </div>
-
-                                        <div className="rounded-xl border border-gray-200 bg-gray-50 p-3">
-                                            <div className="flex items-center justify-between gap-3">
-                                                <div>
-                                                    <p className="text-xs font-bold text-gray-800">
-                                                        {language === 'th' ? 'ตัด Overall อันดับ 1 ถึง' : 'Exclude Overall 1 to'}
-                                                    </p>
-                                                    <p className="mt-1 text-[11px] leading-4 text-gray-500">
-                                                        {excludeTop === 0
-                                                            ? (language === 'th' ? '0 = ไม่ตัดอันดับ Overall' : '0 = no Overall exclusion')
-                                                            : (language === 'th' ? `ซ่อนอันดับ Overall 1-${excludeTop}` : `Hide Overall ranks 1-${excludeTop}`)}
-                                                    </p>
-                                                </div>
-
-                                                <div className="flex items-center gap-1.5">
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => updateExcludeTop(excludeTop - 1)}
-                                                        className="flex h-8 w-8 items-center justify-center rounded-lg border border-gray-300 text-base font-bold text-gray-700 hover:bg-white"
-                                                        aria-label="Decrease overall exclusion"
-                                                    >
-                                                        -
-                                                    </button>
-                                                    <input
-                                                        type="number"
-                                                        min={0}
-                                                        value={excludeTop}
-                                                        onChange={(e) => updateExcludeTop(Number(e.target.value))}
-                                                        className="h-8 w-16 rounded-lg border border-gray-300 bg-white text-center text-xs font-bold text-gray-800 outline-none focus:border-green-500"
-                                                    />
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => updateExcludeTop(excludeTop + 1)}
-                                                        className="flex h-8 w-8 items-center justify-center rounded-lg border border-gray-300 text-base font-bold text-gray-700 hover:bg-white"
-                                                        aria-label="Increase overall exclusion"
-                                                    >
-                                                        +
-                                                    </button>
-                                                </div>
-                                            </div>
-                                        </div>
-
-                                        <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-[11px] leading-4 text-amber-800">
-                                            <p className="font-bold">{language === 'th' ? 'สรุปการแสดงผล' : 'Display summary'}</p>
-                                            <p className="mt-1">
-                                                {disableAgeGroupRanking
-                                                    ? (language === 'th' ? 'แสดงอันดับทั่วไปแยกชาย/หญิงแทนกลุ่มอายุ' : 'Shows normal male/female rankings instead of age-group sections')
-                                                    : (excludeTop === 0
-                                                        ? (language === 'th' ? 'ทุกคนยังอยู่ในอันดับกลุ่มอายุตามปกติ' : 'All runners remain in age-group rankings')
-                                                        : (language === 'th' ? `ตัด Overall 1-${excludeTop} ออกจากอันดับกลุ่มอายุ` : `Excludes Overall 1-${excludeTop} from age-group rankings`))}
-                                            </p>
-                                            <p className="mt-1 text-amber-700/90">
-                                                {language === 'th' ? 'มีผลเฉพาะหน้า Result-Winners' : 'This only affects the Result-Winners page'}
-                                            </p>
-                                        </div>
-
-                                        <button
-                                            onClick={handleSave}
-                                            disabled={saving}
-                                            className={`w-full rounded-xl px-4 py-2.5 text-sm font-bold text-white transition-all ${
-                                                saving ? 'bg-gray-400 cursor-wait' : 'bg-green-600 hover:bg-green-700 cursor-pointer'
-                                            }`}
-                                        >
-                                            {saving
-                                                ? (language === 'th' ? 'กำลังบันทึก...' : 'Saving...')
-                                                : (language === 'th' ? '💾 บันทึกการตั้งค่า' : '💾 Save Settings')}
-                                        </button>
-                                    </div>
-                                </div>
+                    <div className="space-y-5 rounded-2xl bg-[#eef1f7] p-4">
+                        <div className="rounded-2xl border border-red-200 bg-white p-3 shadow-sm">
+                            <div className="flex flex-wrap items-center gap-2">
+                                <span className="rounded-md bg-red-500 px-3 py-1.5 text-[11px] font-bold text-white">
+                                    {language === 'th' ? 'อันดับกลุ่มอายุ' : 'Age group winners'}
+                                </span>
+                                <button
+                                    type="button"
+                                    onClick={() => handleCopyLink(ageGroupShareUrl)}
+                                    className="rounded-md bg-sky-500 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-sky-600"
+                                >
+                                    {language === 'th' ? 'link share' : 'link share'}
+                                </button>
                             </div>
 
-                            <div className="flex min-h-0 flex-col rounded-2xl border border-gray-200 bg-gray-50 p-4 shadow-sm">
-                                <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                            <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <span className="rounded-md bg-red-500 px-3 py-1.5 text-[11px] font-bold text-white">
+                                        {language === 'th' ? 'ตัวเลือก Overall' : 'Overall options'}
+                                    </span>
+                                    <button
+                                        type="button"
+                                        onClick={() => updateExcludeTop(0)}
+                                        className={`rounded-md border px-3 py-1.5 text-[11px] font-bold transition-all ${
+                                            excludeTop === 0
+                                                ? 'border-red-500 bg-white text-red-600 shadow-sm'
+                                                : 'border-red-200 bg-red-50 text-red-500 hover:border-red-300'
+                                        }`}
+                                    >
+                                        {language === 'th' ? 'ไม่ตัดออก' : 'No exclusion'}
+                                    </button>
+                                    <div className="flex flex-wrap items-center gap-1.5 rounded-lg border border-violet-200 bg-violet-50 px-2 py-1.5">
+                                        <span className="rounded-md bg-violet-500 px-2.5 py-1 text-[11px] font-bold text-white">
+                                            {language === 'th' ? 'ตัด Overall' : 'Exclude Overall'}
+                                        </span>
+                                        <span className="text-[11px] font-bold text-violet-700">
+                                            {language === 'th' ? 'ตั้งแต่' : 'From rank'}
+                                        </span>
+                                        <button
+                                            type="button"
+                                            onClick={() => updateExcludeTop(excludeTop - 1)}
+                                            className="flex h-7 w-7 items-center justify-center rounded-md bg-red-500 text-sm font-bold text-white hover:bg-red-600"
+                                            aria-label="Decrease overall exclusion"
+                                        >
+                                            -
+                                        </button>
+                                        <input
+                                            type="number"
+                                            min={0}
+                                            value={excludeTop}
+                                            onChange={(e) => updateExcludeTop(Number(e.target.value))}
+                                            className="h-7 w-14 rounded-md border border-red-300 bg-white text-center text-[11px] font-bold text-red-600 outline-none focus:border-red-500"
+                                        />
+                                        <button
+                                            type="button"
+                                            onClick={() => updateExcludeTop(excludeTop + 1)}
+                                            className="flex h-7 w-7 items-center justify-center rounded-md bg-red-500 text-sm font-bold text-white hover:bg-red-600"
+                                            aria-label="Increase overall exclusion"
+                                        >
+                                            +
+                                        </button>
+                                        <span className="rounded-md border border-red-300 bg-white px-2.5 py-1 text-[11px] font-bold text-red-600">
+                                            {excludeTop === 0
+                                                ? (language === 'th' ? 'ไม่ตัดออก' : 'No exclusion')
+                                                : (language === 'th' ? `1-${excludeTop}` : `1-${excludeTop}`)}
+                                        </span>
+                                    </div>
+                                </div>
+
+                                <button
+                                    onClick={handleSave}
+                                    disabled={saving}
+                                    className={`rounded-md px-4 py-1.5 text-[11px] font-bold text-white transition-all ${
+                                        saving ? 'bg-gray-400 cursor-wait' : 'bg-red-500 hover:bg-red-600 cursor-pointer'
+                                    }`}
+                                >
+                                    {saving
+                                        ? (language === 'th' ? 'กำลังบันทึก...' : 'Saving...')
+                                        : (language === 'th' ? 'บันทึก' : 'Save')}
+                                </button>
+                            </div>
+
+                            <div className="mt-4 rounded-2xl border border-gray-200 bg-[#f8fafc] p-3">
+                                <div className="flex flex-wrap items-start justify-between gap-3">
                                     <div>
                                         <h3 className="text-sm font-bold text-gray-800">
                                             {language === 'th' ? 'พรีวิวหน้า Result-Winners' : 'Result-Winners preview'}
                                         </h3>
                                         <p className="mt-1 text-[11px] text-gray-500">
-                                            {language === 'th'
-                                                ? 'เลือกประเภทแล้วดูผลลัพธ์แบบย่อได้ทันที'
-                                                : 'Pick a category and preview the compact result instantly'}
+                                            {language === 'th' ? 'เลือกประเภทแล้วดูหน้าที่จะแชร์ได้ทันที' : 'Choose category and preview the shared page instantly'}
                                         </p>
                                     </div>
                                     {previewCategory && (
-                                        <div className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-gray-600">
+                                        <div className="rounded-full bg-white px-3 py-1.5 text-[11px] font-semibold text-gray-600 shadow-sm">
                                             {previewCategory.name}{previewCategory.distance ? ` (${previewCategory.distance})` : ''}
                                         </div>
                                     )}
                                 </div>
 
-                                {campaign.categories && campaign.categories.length > 0 && (
-                                    <div className="mt-3 flex flex-wrap gap-1.5">
-                                        {campaign.categories.map(category => (
-                                            <button
-                                                key={category.name}
-                                                type="button"
-                                                onClick={() => setSelectedCategory(category.name)}
-                                                className={`rounded-full px-2.5 py-1 text-[11px] font-bold transition-all ${
-                                                    selectedCategory === category.name
-                                                        ? 'bg-slate-800 text-white'
-                                                        : 'border border-gray-300 bg-white text-gray-700 hover:border-gray-400'
-                                                }`}
-                                            >
-                                                {category.name}{category.distance ? ` (${category.distance})` : ''}
-                                            </button>
-                                        ))}
-                                    </div>
-                                )}
+                                <div className="mt-3">{renderCategoryTabs()}</div>
 
-                                <div className="mt-3 min-h-0 flex-1 overflow-y-auto pr-1">
+                                <div className="mt-3">
                                     {previewLoading ? (
                                         <div className="rounded-xl border border-dashed border-gray-300 bg-white px-4 py-8 text-center text-sm text-gray-500">
                                             {language === 'th' ? 'กำลังโหลดข้อมูลอันดับ...' : 'Loading ranking data...'}
@@ -541,14 +568,68 @@ export default function AgeGroupRankingPage() {
                                         </div>
                                     ) : (
                                         <div className="grid gap-3 xl:grid-cols-2">
-                                            {renderPreviewColumn(disableAgeGroupRanking ? (language === 'th' ? 'อันดับชาย' : 'Male ranking') : (language === 'th' ? 'ผู้ชนะชาย' : 'Male winners'), 'bg-blue-600', 'bg-blue-900', maleWinners)}
-                                            {renderPreviewColumn(disableAgeGroupRanking ? (language === 'th' ? 'อันดับหญิง' : 'Female ranking') : (language === 'th' ? 'ผู้ชนะหญิง' : 'Female winners'), 'bg-pink-600', 'bg-pink-900', femaleWinners)}
+                                            {renderPreviewColumn(language === 'th' ? 'ผู้ชนะชาย' : 'Male winners', 'bg-blue-600', 'bg-blue-900', maleWinners)}
+                                            {renderPreviewColumn(language === 'th' ? 'ผู้ชนะหญิง' : 'Female winners', 'bg-pink-600', 'bg-pink-900', femaleWinners)}
                                         </div>
                                     )}
                                 </div>
                             </div>
                         </div>
-                    </>
+
+                        <div className="border-t-2 border-sky-300" />
+
+                        <div className="rounded-2xl border border-sky-200 bg-white p-3 shadow-sm">
+                            <div className="flex flex-wrap items-center gap-2">
+                                <span className="rounded-md bg-amber-400 px-3 py-1.5 text-[11px] font-bold text-gray-900">
+                                    {language === 'th' ? 'อันดับ Overall' : 'Overall winners'}
+                                </span>
+                                <button
+                                    type="button"
+                                    onClick={() => handleCopyLink(overallShareUrl)}
+                                    className="rounded-md bg-sky-500 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-sky-600"
+                                >
+                                    {language === 'th' ? 'link share' : 'link share'}
+                                </button>
+                            </div>
+
+                            <div className="mt-4 rounded-2xl border border-gray-200 bg-[#f8fafc] p-3">
+                                <div className="flex flex-wrap items-start justify-between gap-3">
+                                    <div>
+                                        <h3 className="text-sm font-bold text-gray-800">
+                                            {language === 'th' ? 'พรีวิวหน้า Overall-Winners' : 'Overall-Winners preview'}
+                                        </h3>
+                                        <p className="mt-1 text-[11px] text-gray-500">
+                                            {language === 'th' ? 'ลิงก์นี้จะแสดงอันดับ Overall แยกชาย/หญิง' : 'This link shows overall male/female rankings'}
+                                        </p>
+                                    </div>
+                                    {previewCategory && (
+                                        <div className="rounded-full bg-white px-3 py-1.5 text-[11px] font-semibold text-gray-600 shadow-sm">
+                                            {previewCategory.name}{previewCategory.distance ? ` (${previewCategory.distance})` : ''}
+                                        </div>
+                                    )}
+                                </div>
+
+                                <div className="mt-3">{renderCategoryTabs()}</div>
+
+                                <div className="mt-3">
+                                    {previewLoading ? (
+                                        <div className="rounded-xl border border-dashed border-gray-300 bg-white px-4 py-8 text-center text-sm text-gray-500">
+                                            {language === 'th' ? 'กำลังโหลดข้อมูลอันดับ...' : 'Loading ranking data...'}
+                                        </div>
+                                    ) : !selectedCategory ? (
+                                        <div className="rounded-xl border border-dashed border-gray-300 bg-white px-4 py-8 text-center text-sm text-gray-500">
+                                            {language === 'th' ? 'ไม่มีประเภทการแข่งขันสำหรับแสดงพรีวิว' : 'No category available for preview'}
+                                        </div>
+                                    ) : (
+                                        <div className="grid gap-3 xl:grid-cols-2">
+                                            {renderOverallPreviewColumn(language === 'th' ? 'อันดับชาย' : 'Male overall', 'bg-blue-600', overallMaleWinners)}
+                                            {renderOverallPreviewColumn(language === 'th' ? 'อันดับหญิง' : 'Female overall', 'bg-pink-600', overallFemaleWinners)}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 )}
             </div>
         </AdminLayout>

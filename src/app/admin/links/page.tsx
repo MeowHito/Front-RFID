@@ -29,6 +29,12 @@ const LINK_ROWS: LinkRow[] = [
         buildUrl: (origin, campaign) => `${origin}/Result-Winners/${campaign?.slug || campaign?._id || ''}`,
     },
     {
+        id: 'overall-winners',
+        label: 'อันดับ Overall (Overall Winners)',
+        labelEn: 'Overall Winners',
+        buildUrl: (origin, campaign) => `${origin}/Overall-Winners/${campaign?.slug || campaign?._id || ''}`,
+    },
+    {
         id: 'scanning',
         label: '📡 หน้าสแกน RFID (Scanning)',
         labelEn: '📡 RFID Scanning Display',
@@ -133,7 +139,7 @@ export default function LinksPage() {
                                         <th className="px-4 py-2.5 text-left font-bold text-slate-600">
                                             URL
                                         </th>
-                                        <th className="px-4 py-2.5 text-center font-bold text-slate-600 w-[100px]">
+                                        <th className="px-4 py-2.5 text-center font-bold text-slate-600 w-25">
                                             {language === 'th' ? 'คัดลอก' : 'Copy'}
                                         </th>
                                     </tr>
@@ -163,7 +169,7 @@ export default function LinksPage() {
                                                 <td className="px-4 py-3 text-center align-middle">
                                                     <button
                                                         onClick={() => handleCopy(url, row.id)}
-                                                        className={`px-3.5 py-1.5 rounded-md border-none text-white font-bold text-xs cursor-pointer whitespace-nowrap transition-colors min-w-[70px] ${isCopied ? 'bg-green-500' : 'bg-blue-500 hover:bg-blue-600'}`}
+                                                        className={`px-3.5 py-1.5 rounded-md border-none text-white font-bold text-xs cursor-pointer whitespace-nowrap transition-colors min-w-18 ${isCopied ? 'bg-green-500' : 'bg-blue-500 hover:bg-blue-600'}`}
                                                     >
                                                         {isCopied ? '✓ Copied!' : '📋 Copy'}
                                                     </button>
