@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo } from 'react';
 import AdminLayout from '@/app/admin/AdminLayout';
 import { useLanguage } from '@/lib/language-context';
 import { authHeaders } from '@/lib/authHeaders';
+import { LinkIcon } from '@heroicons/react/24/outline';
 
 interface Runner {
     _id: string;
@@ -294,7 +295,7 @@ export default function AgeGroupRankingPage() {
                     const list = winners[group.label] || [];
                     return (
                         <div key={group.label} className="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm">
-                            <div className={`px-3 py-1.5 text-center text-[11px] font-bold text-white ${groupClass}`}>
+                            <div className={`px-3 py-1.5 text-center text-[11px] font-bold drop-shadow-sm ${groupClass}`} style={{ color: '#ffffff' }}>
                                 {disableAgeGroupRanking ? (language === 'th' ? 'อันดับทั่วไป' : 'Overall ranking') : group.label}
                             </div>
                             <div className="divide-y divide-gray-100">
@@ -373,9 +374,10 @@ export default function AgeGroupRankingPage() {
                         onClick={() => setSelectedCategory(category.name)}
                         className={`rounded-full px-2.5 py-1 text-[11px] font-bold transition-all ${
                             selectedCategory === category.name
-                                ? 'bg-slate-800 text-white'
+                                ? 'bg-slate-900 shadow-md'
                                 : 'border border-gray-300 bg-white text-gray-700 hover:border-gray-400'
                         }`}
+                        style={selectedCategory === category.name ? { color: '#ffffff' } : undefined}
                     >
                         {category.name}{category.distance ? ` (${category.distance})` : ''}
                     </button>
@@ -459,15 +461,16 @@ export default function AgeGroupRankingPage() {
                     <div className="space-y-5 rounded-2xl bg-[#eef1f7] p-4">
                         <div className="rounded-2xl border border-red-200 bg-white p-3 shadow-sm">
                             <div className="flex flex-wrap items-center gap-2">
-                                <span className="rounded-md bg-red-500 px-3 py-1.5 text-[11px] font-bold text-white">
+                                <span className="rounded-md px-3 py-1.5 text-[16px] font-bold text-white">
                                     {language === 'th' ? 'อันดับกลุ่มอายุ' : 'Age group winners'}
                                 </span>
                                 <button
                                     type="button"
                                     onClick={() => handleCopyLink(ageGroupShareUrl)}
-                                    className="rounded-md bg-sky-500 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-sky-600"
+                                    title={language === 'th' ? 'คัดลอกลิงก์' : 'Copy link'}
+                                    className="flex items-center justify-center rounded-md bg-sky-500 px-2.5 py-1.5 text-white hover:bg-sky-600 transition-colors"
                                 >
-                                    {language === 'th' ? 'link share' : 'link share'}
+                                    <LinkIcon className="h-4 w-4" />
                                 </button>
                             </div>
 
@@ -529,7 +532,7 @@ export default function AgeGroupRankingPage() {
                                     onClick={handleSave}
                                     disabled={saving}
                                     className={`rounded-md px-4 py-1.5 text-[11px] font-bold text-white transition-all ${
-                                        saving ? 'bg-gray-400 cursor-wait' : 'bg-red-500 hover:bg-red-600 cursor-pointer'
+                                        saving ? 'bg-gray-400 cursor-wait' : 'bg-green-500 hover:bg-green-600 cursor-pointer'
                                     }`}
                                 >
                                     {saving
@@ -563,7 +566,7 @@ export default function AgeGroupRankingPage() {
                                             {language === 'th' ? 'กำลังโหลดข้อมูลอันดับ...' : 'Loading ranking data...'}
                                         </div>
                                     ) : !selectedCategory ? (
-                                        <div className="rounded-xl border border-dashed border-gray-300 bg-white px-4 py-8 text-center text-sm text-gray-500">
+                                        <div className="rounded-xl border border-dashed border-gray-300 bg-green px-4 py-8 text-center text-sm text-gray-500">
                                             {language === 'th' ? 'ไม่มีประเภทการแข่งขันสำหรับแสดงพรีวิว' : 'No category available for preview'}
                                         </div>
                                     ) : (
@@ -586,9 +589,10 @@ export default function AgeGroupRankingPage() {
                                 <button
                                     type="button"
                                     onClick={() => handleCopyLink(overallShareUrl)}
-                                    className="rounded-md bg-sky-500 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-sky-600"
+                                    title={language === 'th' ? 'คัดลอกลิงก์' : 'Copy link'}
+                                    className="flex items-center justify-center rounded-md bg-sky-500 px-2.5 py-1.5 text-white hover:bg-sky-600 transition-colors"
                                 >
-                                    {language === 'th' ? 'link share' : 'link share'}
+                                    <LinkIcon className="h-4 w-4" />
                                 </button>
                             </div>
 
