@@ -54,7 +54,7 @@ const DEFAULT_AGE_GROUPS: AgeGroupBucket[] = [
 ];
 
 const OVERALL_GROUP: AgeGroupBucket = { label: 'OVERALL', min: 0, max: 999 };
-const TOP_N = 5;
+const DEFAULT_TOP_N = 5;
 
 function normalizeAgeGroupLabel(value?: string | null): string {
     return String(value || '')
@@ -169,6 +169,7 @@ export default function AgeGroupRankingPage() {
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [excludeTop, setExcludeTop] = useState<number>(0);
+    const [displayCount, setDisplayCount] = useState<number>(DEFAULT_TOP_N);
     const [selectedCategory, setSelectedCategory] = useState('');
     const [previewRunners, setPreviewRunners] = useState<Runner[]>([]);
     const [previewLoading, setPreviewLoading] = useState(false);
@@ -264,62 +265,67 @@ export default function AgeGroupRankingPage() {
             if (excludedBibs.has(runner.bib)) continue;
             const groupLabel = disableAgeGroupRanking ? OVERALL_GROUP.label : resolveAgeGroup(runner, activeAgeGroups);
             const bucket = runner.gender === 'F' ? female : male;
-            if (bucket[groupLabel] && bucket[groupLabel].length < TOP_N) {
+            if (bucket[groupLabel] && bucket[groupLabel].length < displayCount) {
                 bucket[groupLabel].push(runner);
             }
         }
 
         return { maleWinners: male, femaleWinners: female };
-    }, [sortedFinishedRunners, activeAgeGroups, disableAgeGroupRanking, excludeTop]);
+    }, [sortedFinishedRunners, activeAgeGroups, disableAgeGroupRanking, excludeTop, displayCount]);
 
     const overallMaleWinners = useMemo(() => {
-        return sortedFinishedRunners.filter(r => r.gender !== 'F').slice(0, TOP_N);
-    }, [sortedFinishedRunners]);
+        return sortedFinishedRunners.filter(r => r.gender !== 'F').slice(0, displayCount);
+    }, [sortedFinishedRunners, displayCount]);
 
     const overallFemaleWinners = useMemo(() => {
-        return sortedFinishedRunners.filter(r => r.gender === 'F').slice(0, TOP_N);
-    }, [sortedFinishedRunners]);
+        return sortedFinishedRunners.filter(r => r.gender === 'F').slice(0, displayCount);
+    }, [sortedFinishedRunners, displayCount]);
 
     const previewCategory = campaign?.categories?.find(item => item.name === selectedCategory);
     const campaignPath = campaign?.slug || campaign?._id || '';
     const ageGroupShareUrl = campaignPath ? `${origin}/Result-Winners/${campaignPath}` : '';
     const overallShareUrl = campaignPath ? `${origin}/Overall-Winners/${campaignPath}` : '';
 
+    /* ── Preview column: vertical layout like Result-Winners page ── */
     const renderPreviewColumn = (title: string, headerClass: string, groupClass: string, winners: Record<string, Runner[]>) => (
-        <div className="space-y-2">
-            <div className={`rounded-lg px-3 py-2 text-center text-xs font-bold text-white ${headerClass}`}>
+        <div className="space-y-0">
+            <div className={`rounded-t-lg px-3 py-2 text-center text-xs font-bold ${headerClass}`} style={{ color: '#ffffff' }}>
                 {title}
             </div>
-            <div className={`grid gap-2 ${disableAgeGroupRanking ? 'grid-cols-1' : 'sm:grid-cols-2 2xl:grid-cols-3'}`}>
-                {activeAgeGroups.map(group => {
+            <div className="rounded-b-lg border border-gray-200 bg-white overflow-hidden">
+                {activeAgeGroups.map((group, gi) => {
                     const list = winners[group.label] || [];
+                    const actualList = list.filter(r => !!r);
                     return (
-                        <div key={group.label} className="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm">
-                            <div className={`px-3 py-1.5 text-center text-[11px] font-bold drop-shadow-sm ${groupClass}`} style={{ color: '#ffffff' }}>
+                        <div key={group.label}>
+                            {/* Age group header */}
+                            <div className={`px-4 py-1.5 text-center text-[11px] font-bold ${groupClass} ${gi > 0 ? 'border-t border-gray-200' : ''}`} style={{ color: '#ffffff' }}>
                                 {disableAgeGroupRanking ? (language === 'th' ? 'อันดับทั่วไป' : 'Overall ranking') : group.label}
                             </div>
+                            {/* Runners list */}
                             <div className="divide-y divide-gray-100">
-                                {Array.from({ length: TOP_N }, (_, index) => {
-                                    const runner = list[index];
-                                    return (
-                                        <div key={`${group.label}-${index}`} className="flex items-center gap-2 px-2.5 py-1.5">
-                                            <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-gray-100 text-[10px] font-bold text-gray-700">
-                                                {index + 1}
-                                            </div>
-                                            <div className="min-w-0 flex-1 leading-tight">
-                                                <p className="truncate text-xs font-semibold text-gray-800">
-                                                    {runner ? `${runner.firstName} ${runner.lastName}` : '—'}
-                                                </p>
-                                                <p className="text-[10px] text-gray-500">
-                                                    {runner ? `BIB ${runner.bib}` : (language === 'th' ? 'ไม่มีข้อมูล' : 'No data')}
-                                                </p>
-                                            </div>
-                                            <div className="shrink-0 text-[11px] font-bold text-gray-800">
-                                                {runner ? (runner.netTimeStr || formatTime(runner.netTime || runner.gunTime || runner.elapsedTime)) : '-'}
-                                            </div>
+                                {actualList.length > 0 ? actualList.map((runner, index) => (
+                                    <div key={`${group.label}-${index}`} className="flex items-center gap-2 px-3 py-1.5">
+                                        <div className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white ${
+                                            index === 0 ? 'bg-yellow-500' : index === 1 ? 'bg-gray-400' : index === 2 ? 'bg-amber-700' : 'bg-gray-300 text-gray-600'
+                                        }`} style={index > 2 ? { color: '#4b5563' } : undefined}>
+                                            {index + 1}
                                         </div>
-                                    );
-                                })}
+                                        <div className="min-w-0 flex-1 leading-tight">
+                                            <p className="truncate text-xs font-semibold text-gray-800">
+                                                {runner.firstName} {runner.lastName}
+                                            </p>
+                                            <p className="text-[10px] text-gray-500">BIB {runner.bib}</p>
+                                        </div>
+                                        <div className="shrink-0 text-[11px] font-bold text-gray-800">
+                                            {runner.netTimeStr || formatTime(runner.netTime || runner.gunTime || runner.elapsedTime)}
+                                        </div>
+                                    </div>
+                                )) : (
+                                    <div className="px-3 py-3 text-center text-[11px] text-gray-400">
+                                        {language === 'th' ? 'ไม่มีข้อมูล' : 'No data'}
+                                    </div>
+                                )}
                             </div>
                         </div>
                     );
@@ -329,36 +335,37 @@ export default function AgeGroupRankingPage() {
     );
 
     const renderOverallPreviewColumn = (title: string, headerClass: string, runners: Runner[]) => (
-        <div className="space-y-2">
-            <div className={`rounded-lg px-3 py-2 text-center text-xs font-bold text-white ${headerClass}`}>
+        <div className="space-y-0">
+            <div className={`rounded-t-lg px-3 py-2 text-center text-xs font-bold ${headerClass}`} style={{ color: '#ffffff' }}>
                 {title}
             </div>
-            <div className="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm">
-                <div className={`px-3 py-1.5 text-center text-[11px] font-bold text-white ${headerClass}`}>
+            <div className="rounded-b-lg border border-gray-200 bg-white overflow-hidden">
+                <div className={`px-4 py-1.5 text-center text-[11px] font-bold ${headerClass}`} style={{ color: '#ffffff' }}>
                     {language === 'th' ? 'อันดับ Overall' : 'Overall ranking'}
                 </div>
                 <div className="divide-y divide-gray-100">
-                    {Array.from({ length: TOP_N }, (_, index) => {
-                        const runner = runners[index];
-                        return (
-                            <div key={`overall-${title}-${index}`} className="flex items-center gap-2 px-2.5 py-2">
-                                <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-gray-100 text-[10px] font-bold text-gray-700">
-                                    {index + 1}
-                                </div>
-                                <div className="min-w-0 flex-1 leading-tight">
-                                    <p className="truncate text-xs font-semibold text-gray-800">
-                                        {runner ? `${runner.firstName} ${runner.lastName}` : '—'}
-                                    </p>
-                                    <p className="text-[10px] text-gray-500">
-                                        {runner ? `BIB ${runner.bib}` : (language === 'th' ? 'ไม่มีข้อมูล' : 'No data')}
-                                    </p>
-                                </div>
-                                <div className="shrink-0 text-[11px] font-bold text-gray-800">
-                                    {runner ? (runner.netTimeStr || formatTime(runner.netTime || runner.gunTime || runner.elapsedTime)) : '-'}
-                                </div>
+                    {runners.length > 0 ? runners.map((runner, index) => (
+                        <div key={`overall-${title}-${index}`} className="flex items-center gap-2 px-3 py-1.5">
+                            <div className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white ${
+                                index === 0 ? 'bg-yellow-500' : index === 1 ? 'bg-gray-400' : index === 2 ? 'bg-amber-700' : 'bg-gray-300 text-gray-600'
+                            }`} style={index > 2 ? { color: '#4b5563' } : undefined}>
+                                {index + 1}
                             </div>
-                        );
-                    })}
+                            <div className="min-w-0 flex-1 leading-tight">
+                                <p className="truncate text-xs font-semibold text-gray-800">
+                                    {runner.firstName} {runner.lastName}
+                                </p>
+                                <p className="text-[10px] text-gray-500">BIB {runner.bib}</p>
+                            </div>
+                            <div className="shrink-0 text-[11px] font-bold text-gray-800">
+                                {runner.netTimeStr || formatTime(runner.netTime || runner.gunTime || runner.elapsedTime)}
+                            </div>
+                        </div>
+                    )) : (
+                        <div className="px-3 py-3 text-center text-[11px] text-gray-400">
+                            {language === 'th' ? 'ไม่มีข้อมูล' : 'No data'}
+                        </div>
+                    )}
                 </div>
             </div>
         </div>
@@ -372,11 +379,10 @@ export default function AgeGroupRankingPage() {
                         key={category.name}
                         type="button"
                         onClick={() => setSelectedCategory(category.name)}
-                        className={`rounded-full px-2.5 py-1 text-[11px] font-bold transition-all ${
-                            selectedCategory === category.name
+                        className={`rounded-full px-2.5 py-1 text-[11px] font-bold transition-all ${selectedCategory === category.name
                                 ? 'bg-slate-900 shadow-md'
                                 : 'border border-gray-300 bg-white text-gray-700 hover:border-gray-400'
-                        }`}
+                            }`}
                         style={selectedCategory === category.name ? { color: '#ffffff' } : undefined}
                     >
                         {category.name}{category.distance ? ` (${category.distance})` : ''}
@@ -409,6 +415,11 @@ export default function AgeGroupRankingPage() {
     const updateExcludeTop = (value: number) => {
         const normalized = Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0;
         setExcludeTop(normalized);
+    };
+
+    const updateDisplayCount = (value: number) => {
+        const normalized = Number.isFinite(value) ? Math.max(1, Math.floor(value)) : DEFAULT_TOP_N;
+        setDisplayCount(normalized);
     };
 
     const handleSave = async () => {
@@ -476,54 +487,35 @@ export default function AgeGroupRankingPage() {
 
                             <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
                                 <div className="flex flex-wrap items-center gap-2">
-                                    <span className="rounded-md bg-red-500 px-3 py-1.5 text-[11px] font-bold text-white">
+                                    <span className="rounded-md px-3 py-1.5 text-[11px] font-bold" style={{ color: '#374151' }}>
                                         {language === 'th' ? 'ตัวเลือก Overall' : 'Overall options'}
                                     </span>
                                     <button
                                         type="button"
                                         onClick={() => updateExcludeTop(0)}
-                                        className={`rounded-md border px-3 py-1.5 text-[11px] font-bold transition-all ${
-                                            excludeTop === 0
-                                                ? 'border-red-500 bg-white text-red-600 shadow-sm'
-                                                : 'border-red-200 bg-red-50 text-red-500 hover:border-red-300'
-                                        }`}
+                                        className="rounded-md border px-3 py-1.5 text-[11px] font-bold transition-all"
+                                        style={excludeTop === 0
+                                            ? { backgroundColor: '#fef08a', borderColor: '#eab308', color: '#854d0e', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }
+                                            : { backgroundColor: '#ffffff', borderColor: '#d1d5db', color: '#6b7280' }
+                                        }
                                     >
                                         {language === 'th' ? 'ไม่ตัดออก' : 'No exclusion'}
                                     </button>
                                     <div className="flex flex-wrap items-center gap-1.5 rounded-lg border border-violet-200 bg-violet-50 px-2 py-1.5">
-                                        <span className="rounded-md bg-violet-500 px-2.5 py-1 text-[11px] font-bold text-white">
-                                            {language === 'th' ? 'ตัด Overall' : 'Exclude Overall'}
+                                        <span className="text-[11px] font-bold" style={{ color: '#5b21b6' }}>
+                                            {language === 'th' ? 'ตัดอันดับ Overall ออก:' : 'Exclude Overall rank:'}
                                         </span>
-                                        <span className="text-[11px] font-bold text-violet-700">
-                                            {language === 'th' ? 'ตั้งแต่' : 'From rank'}
-                                        </span>
-                                        <button
-                                            type="button"
-                                            onClick={() => updateExcludeTop(excludeTop - 1)}
-                                            className="flex h-7 w-7 items-center justify-center rounded-md bg-red-500 text-sm font-bold text-white hover:bg-red-600"
-                                            aria-label="Decrease overall exclusion"
-                                        >
-                                            -
-                                        </button>
                                         <input
                                             type="number"
                                             min={0}
-                                            value={excludeTop}
-                                            onChange={(e) => updateExcludeTop(Number(e.target.value))}
-                                            className="h-7 w-14 rounded-md border border-red-300 bg-white text-center text-[11px] font-bold text-red-600 outline-none focus:border-red-500"
+                                            value={excludeTop === 0 ? '' : excludeTop}
+                                            placeholder="0"
+                                            onChange={(e) => updateExcludeTop(e.target.value === '' ? 0 : Number(e.target.value))}
+                                            className="h-9 w-20 rounded-lg border-2 border-blue-400 bg-white text-center font-semibold outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                                            style={{ color: '#1d4ed8', fontSize: '15px' }}
                                         />
-                                        <button
-                                            type="button"
-                                            onClick={() => updateExcludeTop(excludeTop + 1)}
-                                            className="flex h-7 w-7 items-center justify-center rounded-md bg-red-500 text-sm font-bold text-white hover:bg-red-600"
-                                            aria-label="Increase overall exclusion"
-                                        >
-                                            +
-                                        </button>
-                                        <span className="rounded-md border border-red-300 bg-white px-2.5 py-1 text-[11px] font-bold text-red-600">
-                                            {excludeTop === 0
-                                                ? (language === 'th' ? 'ไม่ตัดออก' : 'No exclusion')
-                                                : (language === 'th' ? `1-${excludeTop}` : `1-${excludeTop}`)}
+                                        <span className="text-[11px] font-bold" style={{ color: '#5b21b6' }}>
+                                            {language === 'th' ? 'อันดับ' : 'rank(s)'}
                                         </span>
                                     </div>
                                 </div>
@@ -531,14 +523,33 @@ export default function AgeGroupRankingPage() {
                                 <button
                                     onClick={handleSave}
                                     disabled={saving}
-                                    className={`rounded-md px-4 py-1.5 text-[11px] font-bold text-white transition-all ${
-                                        saving ? 'bg-gray-400 cursor-wait' : 'bg-green-500 hover:bg-green-600 cursor-pointer'
-                                    }`}
+                                    className={`rounded-md px-4 py-1.5 text-[11px] font-bold text-white transition-all ${saving ? 'bg-gray-400 cursor-wait' : 'bg-green-500 hover:bg-green-600 cursor-pointer'}`}
+                                    style={{ color: '#ffffff' }}
                                 >
                                     {saving
                                         ? (language === 'th' ? 'กำลังบันทึก...' : 'Saving...')
                                         : (language === 'th' ? 'บันทึก' : 'Save')}
                                 </button>
+                            </div>
+
+                            {/* Display count setting */}
+                            <div className="mt-3 flex flex-wrap items-center gap-2">
+                                <div className="flex items-center gap-1.5 rounded-lg border border-sky-200 bg-sky-50 px-2 py-1.5">
+                                    <span className="text-[11px] font-bold" style={{ color: '#0369a1' }}>
+                                        {language === 'th' ? 'แสดงผลอันดับ:' : 'Display ranks:'}
+                                    </span>
+                                    <input
+                                        type="number"
+                                        min={1}
+                                        value={displayCount}
+                                        onChange={(e) => updateDisplayCount(e.target.value === '' ? DEFAULT_TOP_N : Number(e.target.value))}
+                                        className="h-9 w-20 rounded-lg border-2 border-sky-400 bg-white text-center font-semibold outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
+                                        style={{ color: '#0369a1', fontSize: '15px' }}
+                                    />
+                                    <span className="text-[11px] font-bold" style={{ color: '#0369a1' }}>
+                                        {language === 'th' ? 'อันดับแรก / กลุ่มอายุ' : 'top per age group'}
+                                    </span>
+                                </div>
                             </div>
 
                             <div className="mt-4 rounded-2xl border border-gray-200 bg-[#f8fafc] p-3">
@@ -560,19 +571,19 @@ export default function AgeGroupRankingPage() {
 
                                 <div className="mt-3">{renderCategoryTabs()}</div>
 
-                                <div className="mt-3">
+                                <div className="mt-3" style={{ maxHeight: '600px', overflowY: 'auto' }}>
                                     {previewLoading ? (
                                         <div className="rounded-xl border border-dashed border-gray-300 bg-white px-4 py-8 text-center text-sm text-gray-500">
                                             {language === 'th' ? 'กำลังโหลดข้อมูลอันดับ...' : 'Loading ranking data...'}
                                         </div>
                                     ) : !selectedCategory ? (
-                                        <div className="rounded-xl border border-dashed border-gray-300 bg-green px-4 py-8 text-center text-sm text-gray-500">
+                                        <div className="rounded-xl border border-dashed border-gray-300 bg-white px-4 py-8 text-center text-sm text-gray-500">
                                             {language === 'th' ? 'ไม่มีประเภทการแข่งขันสำหรับแสดงพรีวิว' : 'No category available for preview'}
                                         </div>
                                     ) : (
                                         <div className="grid gap-3 xl:grid-cols-2">
-                                            {renderPreviewColumn(language === 'th' ? 'ผู้ชนะชาย' : 'Male winners', 'bg-blue-600', 'bg-blue-900', maleWinners)}
-                                            {renderPreviewColumn(language === 'th' ? 'ผู้ชนะหญิง' : 'Female winners', 'bg-pink-600', 'bg-pink-900', femaleWinners)}
+                                            {renderPreviewColumn(language === 'th' ? '♂ ผู้ชนะชาย' : '♂ Male winners', 'bg-blue-600', 'bg-blue-900', maleWinners)}
+                                            {renderPreviewColumn(language === 'th' ? '♀ ผู้ชนะหญิง' : '♀ Female winners', 'bg-pink-600', 'bg-pink-900', femaleWinners)}
                                         </div>
                                     )}
                                 </div>
@@ -615,7 +626,7 @@ export default function AgeGroupRankingPage() {
 
                                 <div className="mt-3">{renderCategoryTabs()}</div>
 
-                                <div className="mt-3">
+                                <div className="mt-3" style={{ maxHeight: '600px', overflowY: 'auto' }}>
                                     {previewLoading ? (
                                         <div className="rounded-xl border border-dashed border-gray-300 bg-white px-4 py-8 text-center text-sm text-gray-500">
                                             {language === 'th' ? 'กำลังโหลดข้อมูลอันดับ...' : 'Loading ranking data...'}
@@ -626,8 +637,8 @@ export default function AgeGroupRankingPage() {
                                         </div>
                                     ) : (
                                         <div className="grid gap-3 xl:grid-cols-2">
-                                            {renderOverallPreviewColumn(language === 'th' ? 'อันดับชาย' : 'Male overall', 'bg-blue-600', overallMaleWinners)}
-                                            {renderOverallPreviewColumn(language === 'th' ? 'อันดับหญิง' : 'Female overall', 'bg-pink-600', overallFemaleWinners)}
+                                            {renderOverallPreviewColumn(language === 'th' ? '♂ อันดับชาย' : '♂ Male overall', 'bg-blue-600', overallMaleWinners)}
+                                            {renderOverallPreviewColumn(language === 'th' ? '♀ อันดับหญิง' : '♀ Female overall', 'bg-pink-600', overallFemaleWinners)}
                                         </div>
                                     )}
                                 </div>
