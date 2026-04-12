@@ -281,6 +281,10 @@ export default function AgeGroupRankingPage() {
         return sortedFinishedRunners.filter(r => r.gender === 'F').slice(0, displayCount);
     }, [sortedFinishedRunners, displayCount]);
 
+    const overallDisplayedCount = useMemo(() => {
+        return overallMaleWinners.length + overallFemaleWinners.length;
+    }, [overallMaleWinners, overallFemaleWinners]);
+
     const previewCategory = campaign?.categories?.find(item => item.name === selectedCategory);
     const campaignPath = campaign?.slug || campaign?._id || '';
     const ageGroupShareUrl = campaignPath ? `${origin}/Result-Winners/${campaignPath}` : '';
@@ -454,7 +458,7 @@ export default function AgeGroupRankingPage() {
         >
             {/* Toast */}
             {toast && (
-                <div className={`fixed top-5 right-5 z-50 px-6 py-3 rounded-lg text-white font-semibold shadow-lg ${toast.type === 'success' ? 'bg-green-500' : 'bg-red-500'}`}>
+                <div className={`fixed right-5 top-24 z-50 px-6 py-3 rounded-lg text-white font-semibold shadow-lg ${toast.type === 'success' ? 'bg-green-500' : 'bg-red-500'}`}>
                     {toast.message}
                 </div>
             )}
@@ -518,6 +522,22 @@ export default function AgeGroupRankingPage() {
                                             {language === 'th' ? 'อันดับ' : 'rank(s)'}
                                         </span>
                                     </div>
+                                    <div className="flex items-center gap-1.5 rounded-lg border border-sky-200 bg-sky-50 px-2 py-1.5">
+                                        <span className="text-[11px] font-bold" style={{ color: '#0369a1' }}>
+                                            {language === 'th' ? 'แสดงผลอันดับ:' : 'Display ranks:'}
+                                        </span>
+                                        <input
+                                            type="number"
+                                            min={1}
+                                            value={displayCount}
+                                            onChange={(e) => updateDisplayCount(e.target.value === '' ? DEFAULT_TOP_N : Number(e.target.value))}
+                                            className="h-9 w-20 rounded-lg border-2 border-sky-400 bg-white text-center font-semibold outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
+                                            style={{ color: '#0369a1', fontSize: '15px' }}
+                                        />
+                                        <span className="text-[11px] font-bold" style={{ color: '#0369a1' }}>
+                                            {language === 'th' ? 'อันดับแรก / กลุ่มอายุ' : 'top per age group'}
+                                        </span>
+                                    </div>
                                 </div>
 
                                 <button
@@ -530,26 +550,6 @@ export default function AgeGroupRankingPage() {
                                         ? (language === 'th' ? 'กำลังบันทึก...' : 'Saving...')
                                         : (language === 'th' ? 'บันทึก' : 'Save')}
                                 </button>
-                            </div>
-
-                            {/* Display count setting */}
-                            <div className="mt-3 flex flex-wrap items-center gap-2">
-                                <div className="flex items-center gap-1.5 rounded-lg border border-sky-200 bg-sky-50 px-2 py-1.5">
-                                    <span className="text-[11px] font-bold" style={{ color: '#0369a1' }}>
-                                        {language === 'th' ? 'แสดงผลอันดับ:' : 'Display ranks:'}
-                                    </span>
-                                    <input
-                                        type="number"
-                                        min={1}
-                                        value={displayCount}
-                                        onChange={(e) => updateDisplayCount(e.target.value === '' ? DEFAULT_TOP_N : Number(e.target.value))}
-                                        className="h-9 w-20 rounded-lg border-2 border-sky-400 bg-white text-center font-semibold outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
-                                        style={{ color: '#0369a1', fontSize: '15px' }}
-                                    />
-                                    <span className="text-[11px] font-bold" style={{ color: '#0369a1' }}>
-                                        {language === 'th' ? 'อันดับแรก / กลุ่มอายุ' : 'top per age group'}
-                                    </span>
-                                </div>
                             </div>
 
                             <div className="mt-4 rounded-2xl border border-gray-200 bg-[#f8fafc] p-3">
@@ -594,7 +594,7 @@ export default function AgeGroupRankingPage() {
 
                         <div className="rounded-2xl border border-sky-200 bg-white p-3 shadow-sm">
                             <div className="flex flex-wrap items-center gap-2">
-                                <span className="rounded-md bg-amber-400 px-3 py-1.5 text-[11px] font-bold text-gray-900">
+                                <span className=" px-3 py-1.5 text-[19px] font-bold text-gray-900">
                                     {language === 'th' ? 'อันดับ Overall' : 'Overall winners'}
                                 </span>
                                 <button
@@ -617,14 +617,22 @@ export default function AgeGroupRankingPage() {
                                             {language === 'th' ? 'ลิงก์นี้จะแสดงอันดับ Overall แยกชาย/หญิง' : 'This link shows overall male/female rankings'}
                                         </p>
                                     </div>
-                                    {previewCategory && (
-                                        <div className="rounded-full bg-white px-3 py-1.5 text-[11px] font-semibold text-gray-600 shadow-sm">
-                                            {previewCategory.name}{previewCategory.distance ? ` (${previewCategory.distance})` : ''}
-                                        </div>
-                                    )}
                                 </div>
 
-                                <div className="mt-3">{renderCategoryTabs()}</div>
+                                <div className="mt-3 grid items-center gap-2 md:grid-cols-[1fr_auto_1fr]">
+                                    <div className="justify-self-start">{renderCategoryTabs()}</div>
+                                    <div className="justify-self-center rounded-lg border border-gray-300 px-3 py-1.5 text-[11px] font-semibold text-gray-700">
+                                        {language === 'th' ? 'จำนวนที่แสดง' : 'Displayed runners'}
+                                        <span className="ml-2 text-[13px] font-bold text-gray-900">{overallDisplayedCount}</span>
+                                    </div>
+                                    <div className="justify-self-end">
+                                        {previewCategory && (
+                                            <div className="rounded-full bg-white px-3 py-1.5 text-[11px] font-semibold text-gray-600 shadow-sm">
+                                                {previewCategory.name}{previewCategory.distance ? ` (${previewCategory.distance})` : ''}
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
 
                                 <div className="mt-3" style={{ maxHeight: '600px', overflowY: 'auto' }}>
                                     {previewLoading ? (
