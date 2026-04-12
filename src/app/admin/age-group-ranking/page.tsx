@@ -340,13 +340,15 @@ export default function AgeGroupRankingPage() {
 
     const renderOverallPreviewColumn = (title: string, headerClass: string, runners: Runner[]) => (
         <div className="space-y-0">
-            <div className={`rounded-t-lg px-3 py-2 text-center text-xs font-bold ${headerClass}`} style={{ color: '#ffffff' }}>
-                {title}
-            </div>
-            <div className="rounded-b-lg border border-gray-200 bg-white overflow-hidden">
-                <div className={`px-4 py-1.5 text-center text-[11px] font-bold ${headerClass}`} style={{ color: '#ffffff' }}>
+            <div className={`overflow-hidden rounded-t-lg ${headerClass}`} style={{ color: '#ffffff' }}>
+                <div className="px-3 py-2 text-center text-xs font-bold">
+                    {title}
+                </div>
+                <div className="px-4 py-1.5 text-center text-[11px] font-bold">
                     {language === 'th' ? 'อันดับ Overall' : 'Overall ranking'}
                 </div>
+            </div>
+            <div className="rounded-b-lg border border-t-0 border-gray-200 bg-white overflow-hidden">
                 <div className="divide-y divide-gray-100">
                     {runners.length > 0 ? runners.map((runner, index) => (
                         <div key={`overall-${title}-${index}`} className="flex items-center gap-2 px-3 py-1.5">
@@ -384,7 +386,7 @@ export default function AgeGroupRankingPage() {
                         type="button"
                         onClick={() => setSelectedCategory(category.name)}
                         className={`rounded-full px-2.5 py-1 text-[11px] font-bold transition-all ${selectedCategory === category.name
-                                ? 'bg-slate-900 shadow-md'
+                                ? 'bg-orange-600 shadow-md'
                                 : 'border border-gray-300 bg-white text-gray-700 hover:border-gray-400'
                             }`}
                         style={selectedCategory === category.name ? { color: '#ffffff' } : undefined}
@@ -553,21 +555,7 @@ export default function AgeGroupRankingPage() {
                             </div>
 
                             <div className="mt-4 rounded-2xl border border-gray-200 bg-[#f8fafc] p-3">
-                                <div className="flex flex-wrap items-start justify-between gap-3">
-                                    <div>
-                                        <h3 className="text-sm font-bold text-gray-800">
-                                            {language === 'th' ? 'พรีวิวหน้า Result-Winners' : 'Result-Winners preview'}
-                                        </h3>
-                                        <p className="mt-1 text-[11px] text-gray-500">
-                                            {language === 'th' ? 'เลือกประเภทแล้วดูหน้าที่จะแชร์ได้ทันที' : 'Choose category and preview the shared page instantly'}
-                                        </p>
-                                    </div>
-                                    {previewCategory && (
-                                        <div className="rounded-full bg-white px-3 py-1.5 text-[11px] font-semibold text-gray-600 shadow-sm">
-                                            {previewCategory.name}{previewCategory.distance ? ` (${previewCategory.distance})` : ''}
-                                        </div>
-                                    )}
-                                </div>
+                                
 
                                 <div className="mt-3">{renderCategoryTabs()}</div>
 
@@ -609,14 +597,6 @@ export default function AgeGroupRankingPage() {
 
                             <div className="mt-4 rounded-2xl border border-gray-200 bg-[#f8fafc] p-3">
                                 <div className="flex flex-wrap items-start justify-between gap-3">
-                                    <div>
-                                        <h3 className="text-sm font-bold text-gray-800">
-                                            {language === 'th' ? 'พรีวิวหน้า Overall-Winners' : 'Overall-Winners preview'}
-                                        </h3>
-                                        <p className="mt-1 text-[11px] text-gray-500">
-                                            {language === 'th' ? 'ลิงก์นี้จะแสดงอันดับ Overall แยกชาย/หญิง' : 'This link shows overall male/female rankings'}
-                                        </p>
-                                    </div>
                                 </div>
 
                                 <div className="mt-3 grid items-center gap-2 md:grid-cols-[1fr_auto_1fr]">
@@ -624,13 +604,6 @@ export default function AgeGroupRankingPage() {
                                     <div className="justify-self-center rounded-lg border border-gray-300 px-3 py-1.5 text-[11px] font-semibold text-gray-700">
                                         {language === 'th' ? 'จำนวนที่แสดง' : 'Displayed runners'}
                                         <span className="ml-2 text-[13px] font-bold text-gray-900">{overallDisplayedCount}</span>
-                                    </div>
-                                    <div className="justify-self-end">
-                                        {previewCategory && (
-                                            <div className="rounded-full bg-white px-3 py-1.5 text-[11px] font-semibold text-gray-600 shadow-sm">
-                                                {previewCategory.name}{previewCategory.distance ? ` (${previewCategory.distance})` : ''}
-                                            </div>
-                                        )}
                                     </div>
                                 </div>
 
