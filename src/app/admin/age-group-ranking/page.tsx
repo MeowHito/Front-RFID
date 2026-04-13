@@ -169,7 +169,8 @@ export default function AgeGroupRankingPage() {
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [excludeTop, setExcludeTop] = useState<number>(0);
-    const [displayCount, setDisplayCount] = useState<number>(DEFAULT_TOP_N);
+    const [ageGroupDisplayCount, setAgeGroupDisplayCount] = useState<number>(DEFAULT_TOP_N);
+    const [overallDisplayCount, setOverallDisplayCount] = useState<number>(DEFAULT_TOP_N);
     const [selectedCategory, setSelectedCategory] = useState('');
     const [previewRunners, setPreviewRunners] = useState<Runner[]>([]);
     const [previewLoading, setPreviewLoading] = useState(false);
@@ -265,25 +266,21 @@ export default function AgeGroupRankingPage() {
             if (excludedBibs.has(runner.bib)) continue;
             const groupLabel = disableAgeGroupRanking ? OVERALL_GROUP.label : resolveAgeGroup(runner, activeAgeGroups);
             const bucket = runner.gender === 'F' ? female : male;
-            if (bucket[groupLabel] && bucket[groupLabel].length < displayCount) {
+            if (bucket[groupLabel] && bucket[groupLabel].length < ageGroupDisplayCount) {
                 bucket[groupLabel].push(runner);
             }
         }
 
         return { maleWinners: male, femaleWinners: female };
-    }, [sortedFinishedRunners, activeAgeGroups, disableAgeGroupRanking, excludeTop, displayCount]);
+    }, [sortedFinishedRunners, activeAgeGroups, disableAgeGroupRanking, excludeTop, ageGroupDisplayCount]);
 
     const overallMaleWinners = useMemo(() => {
-        return sortedFinishedRunners.filter(r => r.gender !== 'F').slice(0, displayCount);
-    }, [sortedFinishedRunners, displayCount]);
+        return sortedFinishedRunners.filter(r => r.gender !== 'F').slice(0, overallDisplayCount);
+    }, [sortedFinishedRunners, overallDisplayCount]);
 
     const overallFemaleWinners = useMemo(() => {
-        return sortedFinishedRunners.filter(r => r.gender === 'F').slice(0, displayCount);
-    }, [sortedFinishedRunners, displayCount]);
-
-    const overallDisplayedCount = useMemo(() => {
-        return overallMaleWinners.length + overallFemaleWinners.length;
-    }, [overallMaleWinners, overallFemaleWinners]);
+        return sortedFinishedRunners.filter(r => r.gender === 'F').slice(0, overallDisplayCount);
+    }, [sortedFinishedRunners, overallDisplayCount]);
 
     const previewCategory = campaign?.categories?.find(item => item.name === selectedCategory);
     const campaignPath = campaign?.slug || campaign?._id || '';
@@ -423,9 +420,14 @@ export default function AgeGroupRankingPage() {
         setExcludeTop(normalized);
     };
 
-    const updateDisplayCount = (value: number) => {
+    const updateAgeGroupDisplayCount = (value: number) => {
         const normalized = Number.isFinite(value) ? Math.max(1, Math.floor(value)) : DEFAULT_TOP_N;
-        setDisplayCount(normalized);
+        setAgeGroupDisplayCount(normalized);
+    };
+
+    const updateOverallDisplayCount = (value: number) => {
+        const normalized = Number.isFinite(value) ? Math.max(1, Math.floor(value)) : DEFAULT_TOP_N;
+        setOverallDisplayCount(normalized);
     };
 
     const handleSave = async () => {
@@ -531,8 +533,8 @@ export default function AgeGroupRankingPage() {
                                         <input
                                             type="number"
                                             min={1}
-                                            value={displayCount}
-                                            onChange={(e) => updateDisplayCount(e.target.value === '' ? DEFAULT_TOP_N : Number(e.target.value))}
+                                            value={ageGroupDisplayCount}
+                                            onChange={(e) => updateAgeGroupDisplayCount(e.target.value === '' ? DEFAULT_TOP_N : Number(e.target.value))}
                                             className="h-9 w-20 rounded-lg border-2 border-sky-400 bg-white text-center font-semibold outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
                                             style={{ color: '#0369a1', fontSize: '15px' }}
                                         />
@@ -601,9 +603,21 @@ export default function AgeGroupRankingPage() {
 
                                 <div className="mt-3 grid items-center gap-2 md:grid-cols-[1fr_auto_1fr]">
                                     <div className="justify-self-start">{renderCategoryTabs()}</div>
-                                    <div className="justify-self-center rounded-lg border border-gray-300 px-3 py-1.5 text-[11px] font-semibold text-gray-700">
-                                        {language === 'th' ? 'จำนวนที่แสดง' : 'Displayed runners'}
-                                        <span className="ml-2 text-[13px] font-bold text-gray-900">{overallDisplayedCount}</span>
+                                    <div className="justify-self-center flex items-center gap-1.5 rounded-lg border border-sky-200 bg-sky-50 px-2 py-1.5">
+                                        <span className="text-[11px] font-bold" style={{ color: '#0369a1' }}>
+                                            {language === 'th' ? 'แสดงผลอันดับ:' : 'Display ranks:'}
+                                        </span>
+                                        <input
+                                            type="number"
+                                            min={1}
+                                            value={overallDisplayCount}
+                                            onChange={(e) => updateOverallDisplayCount(e.target.value === '' ? DEFAULT_TOP_N : Number(e.target.value))}
+                                            className="h-9 w-20 rounded-lg border-2 border-sky-400 bg-white text-center font-semibold outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
+                                            style={{ color: '#0369a1', fontSize: '15px' }}
+                                        />
+                                        <span className="text-[11px] font-bold" style={{ color: '#0369a1' }}>
+                                            {language === 'th' ? 'อันดับแรก' : 'top ranks'}
+                                        </span>
                                     </div>
                                 </div>
 
