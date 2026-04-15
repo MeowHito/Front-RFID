@@ -111,11 +111,13 @@ function Template1({ runner, timings, campaign, bgImage, slipRef, showField }: T
 
     return (
         <div ref={slipRef} className="w-full max-w-[380px] relative rounded-[30px] overflow-hidden shadow-2xl">
-            {/* Background image layer */}
+            {/* Background image layer — uses <img> for reliable html-to-image capture */}
             {bgImage && (
-                <div
-                    className="absolute inset-0 bg-cover bg-center z-0"
-                    style={{ backgroundImage: `url(${bgImage})` }}
+                <img
+                    src={bgImage}
+                    alt=""
+                    className="absolute inset-0 w-full h-full object-cover z-0"
+                    crossOrigin="anonymous"
                 />
             )}
             {/* Gradient overlay */}
@@ -246,11 +248,13 @@ function Template2({ runner, timings, campaign, bgImage, slipRef, showField, tex
 
     return (
         <div ref={slipRef} className="w-full max-w-[360px] min-h-[720px] relative rounded-[32px] overflow-hidden shadow-xl border border-white/30 flex flex-col">
-            {/* Background image layer */}
+            {/* Background image layer — uses <img> for reliable html-to-image capture */}
             {bgImage && (
-                <div
-                    className="absolute inset-0 bg-cover bg-center z-0"
-                    style={{ backgroundImage: `url(${bgImage})` }}
+                <img
+                    src={bgImage}
+                    alt=""
+                    className="absolute inset-0 w-full h-full object-cover z-0"
+                    crossOrigin="anonymous"
                 />
             )}
             {/* Gradient overlay */}
