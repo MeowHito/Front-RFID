@@ -79,6 +79,7 @@ interface TemplateProps {
     bgImage: string | null;
     slipRef: React.RefObject<HTMLDivElement | null>;
     showField: (key: string) => boolean;
+    textColorMode?: 'light' | 'dark';
 }
 
 /** Auto-shrink text to always fit one line within its container */
@@ -204,8 +205,9 @@ function Template1({ runner, timings, campaign, bgImage, slipRef, showField }: T
                                 const displayNetTime = t.netTime ?? t.elapsedTime;
                                 return (
                                     <div key={t._id} className={`flex justify-between items-center pb-1 ${i < displayTimings.length - 1 ? 'border-b border-dashed border-white/10' : ''}`}>
-                                        <span className={`text-[11px] font-semibold ${isFinish ? 'text-green-500' : 'text-slate-200'}`}>{t.checkpoint}{t.distanceFromStart ? ` (${t.distanceFromStart}K)` : ''}</span>
-                                        <span className={`text-xs font-extrabold font-mono ${isFinish ? 'text-green-500' : 'text-white'}`}>{displayNetTime ? formatTime(displayNetTime) : '-'}</span>
+                                        <span className={`text-[11px] whitespace-nowrap ${isFinish ? 'text-green-500' : 'text-slate-200'}`}>{t.checkpoint}{t.distanceFromStart ? ` (${t.distanceFromStart}K)` : ''}</span>
+                                        <span className="grow border-b border-dotted border-slate-200 relative -top-1" />
+                                        <span className={`font-mono whitespace-nowrap ${isFinish ? 'text-sm font-extrabold text-green-500' : 'text-xs font-extrabold text-white'}`}>{displayNetTime ? formatTime(displayNetTime) : '-'}</span>
                                     </div>
                                 );
                             })}
@@ -222,7 +224,7 @@ function Template1({ runner, timings, campaign, bgImage, slipRef, showField }: T
 }
 
 // ==================== TEMPLATE 2: Semi-transparent Photo Background ====================
-function Template2({ runner, timings, campaign, bgImage, slipRef, showField }: TemplateProps) {
+function Template2({ runner, timings, campaign, bgImage, slipRef, showField, textColorMode = 'dark' }: TemplateProps) {
     const displayName = `${runner.firstName} ${runner.lastName}`.trim();
     const genderLabel = runner.gender === 'M' ? 'Male' : 'Female';
     const dist = parseDistanceValue(runner.category);
@@ -230,10 +232,20 @@ function Template2({ runner, timings, campaign, bgImage, slipRef, showField }: T
     const gunTimeStr = runner.gunTimeStr || formatTime(runner.gunTime);
     const netTimeStr = runner.netTimeStr || formatTime(runner.netTime);
     const sortedTimings = [...timings].sort((a, b) => (a.order || 0) - (b.order || 0));
-    const displayTimings = sortedTimings.slice(-4);
+    const displayTimings = sortedTimings.slice(-7);
+    const isLightText = textColorMode === 'light';
+    const primaryTextClass = isLightText ? 'text-white' : 'text-black';
+    const secondaryTextClass = primaryTextClass;
+    const mutedTextClass = primaryTextClass;
+    const footerTextClass = primaryTextClass;
+    const dividerClass = isLightText ? 'bg-white/35' : 'bg-slate-200';
+    const dottedBorderClass = isLightText ? 'border-white/35' : 'border-slate-200';
+    const finishTextClass = primaryTextClass;
+    const normalCheckpointTextClass = primaryTextClass;
+    const badgeClass = isLightText ? 'bg-black/65 text-white' : 'bg-white/80 text-slate-900';
 
     return (
-        <div ref={slipRef} className="w-full max-w-[380px] relative rounded-[35px] overflow-hidden shadow-2xl">
+        <div ref={slipRef} className="w-full max-w-[360px] min-h-[720px] relative rounded-[32px] overflow-hidden shadow-xl border border-white/30 flex flex-col">
             {/* Background image layer */}
             {bgImage && (
                 <div
@@ -242,87 +254,105 @@ function Template2({ runner, timings, campaign, bgImage, slipRef, showField }: T
                 />
             )}
             {/* Gradient overlay */}
-            <div className={`absolute inset-0 z-[1] ${bgImage ? '' : 'bg-gradient-to-br from-slate-800 to-slate-600'}`}
-                style={bgImage ? { background: 'linear-gradient(to bottom, rgba(0,0,0,0.6) 0%, rgba(0,0,0,0) 25%, rgba(0,0,0,0) 65%, rgba(0,0,0,0.7) 100%)' } : {}}
+            <div className={`absolute inset-0 z-[1] ${bgImage ? '' : 'bg-gradient-to-br from-slate-300 to-slate-100'}`}
+                style={bgImage ? { background: 'linear-gradient(180deg, rgba(255,255,255,0.18) 0%, rgba(255,255,255,0.12) 100%)' } : {}}
             />
 
             {/* Content */}
-            <div className="relative z-[2] flex flex-col justify-between min-h-[760px] px-6 py-9">
+            <div className="relative z-[2] flex flex-col grow overflow-hidden">
                 {/* Header */}
-                <div className="text-center">
-                    <div className="text-[28px] font-black text-white uppercase leading-tight" style={{ textShadow: '0 2px 4px rgba(0,0,0,0.8)' }}>{campaign?.name || 'Race Event'}</div>
-                    <div className="text-[13px] font-bold text-green-400 uppercase tracking-[2px] mt-2" style={{ textShadow: '0 2px 4px rgba(0,0,0,0.8)' }}>{runner.category}</div>
+                {/* Old boxed header: <div className="bg-white/32 backdrop-blur-md px-5 pt-9 pb-6 text-center border-b border-white/50"> */}
+                <div className="px-5 pt-9 pb-6 text-center">
+                    <FitName className={`font-black uppercase leading-tight text-center ${primaryTextClass}`} maxSize={22}>{campaign?.name || 'Race Event'}</FitName>
                 </div>
 
-                {/* Bottom Panel */}
-                <div className="bg-black/50 border border-white/15 rounded-[25px] p-5 mb-1">
-                    {/* Runner Info */}
-                    <div className="mb-4">
-                        <FitName className="font-black text-white uppercase leading-none m-0" style={{ textShadow: '0 2px 4px rgba(0,0,0,0.8)' }} maxSize={28}>{displayName}</FitName>
-                        <p className="text-[13px] font-semibold text-slate-300 mt-1.5" style={{ textShadow: '0 1px 3px rgba(0,0,0,0.8)' }}>BIB {runner.bib} • {genderLabel} {runner.ageGroup || ''}</p>
+                {/* Content */}
+                <div className="px-4 py-6 flex flex-col grow overflow-hidden">
+                    {/* Runner */}
+                    <div className="text-center mb-5">
+                        <div className={`px-3 py-0.5 rounded-lg text-sm font-extrabold inline-block mb-2 ${badgeClass}`}>BIB {runner.bib}</div>
+                        <FitName className={`font-black uppercase leading-none ${primaryTextClass}`} maxSize={28}>{displayName}</FitName>
+                        <div className={`text-[14px] font-semibold mt-1 ${secondaryTextClass}`}>{runner.category} | {genderLabel}</div>
                     </div>
 
-                    {/* Ranks + Times — unified card */}
-                    {(showField('overallRank') || showField('genderRank') || showField('categoryRank') || showField('gunTime') || showField('netTime')) && (
-                        <div className="bg-white/10 border border-white/10 rounded-2xl p-4 mb-3">
-                            {(showField('overallRank') || showField('genderRank') || showField('categoryRank')) && (
-                                <div className={`flex justify-center gap-8 ${(showField('gunTime') || showField('netTime')) ? 'pb-3 border-b border-white/10' : ''}`}>
-                                    {[
-                                        { key: 'overallRank', label: 'Overall', val: runner.overallRank || '-' },
-                                        { key: 'genderRank', label: 'Gender', val: runner.genderRank || runner.genderNetRank || '-' },
-                                        { key: 'categoryRank', label: 'Category', val: runner.categoryRank || runner.categoryNetRank || '-' },
-                                    ].filter(r => showField(r.key)).map((r, i) => (
-                                        <div key={i} className="text-center min-w-[60px]">
-                                            <div className="text-[10px] font-black text-white uppercase">{r.label}</div>
-                                            <div className="text-xl font-black text-white">{r.val}</div>
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
-                            {(showField('gunTime') || showField('netTime')) && (
-                                <div className="flex justify-center gap-8 pt-3">
-                                    {showField('gunTime') && <div className="text-center min-w-[80px]">
-                                        <div className="text-[10px] font-black text-white uppercase mb-1">Gun Time</div>
-                                        <div className="text-lg font-black text-white">{gunTimeStr}</div>
-                                    </div>}
-                                    {showField('netTime') && <div className="text-center min-w-[80px]">
-                                        <div className="text-[10px] font-black text-white uppercase mb-1">Net Time</div>
-                                        <div className="text-lg font-black text-green-400">{netTimeStr}</div>
-                                    </div>}
-                                </div>
-                            )}
+                    {/* Gun Time & Net Time */}
+                    {(showField('gunTime') || showField('netTime')) && (
+                        <div className="flex justify-center gap-2.5 mb-4">
+                            {/* Old boxed gun time: <div className="bg-white/50 backdrop-blur-md border border-white/55 rounded-xl py-2.5 px-3 text-center flex-1"> */}
+                            {showField('gunTime') && <div className="py-2.5 px-3 text-center flex-1">
+                                <div className={`text-[8px] font-extrabold uppercase mb-1 ${mutedTextClass}`}>Gun Time</div>
+                                <div className={`text-lg font-black ${primaryTextClass}`}>{gunTimeStr}</div>
+                            </div>}
+                            {/* Old boxed net time: <div className="bg-green-50/72 backdrop-blur-md border border-green-200/80 rounded-xl py-2.5 px-3 text-center flex-1"> */}
+                            {showField('netTime') && <div className="py-2.5 px-3 text-center flex-1">
+                                <div className={`text-[8px] font-extrabold uppercase mb-1 ${mutedTextClass}`}>Net Time</div>
+                                <div className={`text-lg font-black ${primaryTextClass}`}>{netTimeStr}</div>
+                            </div>}
                         </div>
                     )}
 
-                    {/* Stats Grid */}
+                    {/* Stats Panel */}
                     {(showField('distance') || showField('pace')) && (
-                        <div className="flex justify-center gap-6 pb-4 border-b border-white/15">
-                            {showField('distance') && <div className="text-center min-w-[80px]">
-                                <div className="text-[10px] font-bold text-slate-400 uppercase mb-1">Distance</div>
-                                <div className="text-[19px] font-black text-white" style={{ textShadow: '0 2px 4px rgba(0,0,0,0.5)' }}>{dist ?? '-'}<span className="text-[11px] text-slate-400 ml-0.5">KM</span></div>
-                            </div>}
-                            {showField('pace') && <div className="text-center min-w-[80px]">
-                                <div className="text-[10px] font-bold text-slate-400 uppercase mb-1">Avg Pace</div>
-                                <div className="text-[19px] font-black text-white" style={{ textShadow: '0 2px 4px rgba(0,0,0,0.5)' }}>{pace}<span className="text-[11px] text-slate-400 ml-0.5">/K</span></div>
-                            </div>}
-                        </div>
+                        <>
+                            {/* Old boxed stats: <div className="bg-white/50 backdrop-blur-md border border-white/55 rounded-[20px] px-1 py-4 flex justify-around items-center mb-5"> */}
+                            <div className="px-1 py-4 flex justify-around items-center mb-5">
+                                {[
+                                    { key: 'distance', label: 'Distance', val: `${dist ?? '-'}`, unit: 'KM' },
+                                    { key: 'pace', label: 'Avg Pace', val: pace, unit: '/K' },
+                                ].filter(s => showField(s.key)).map((s, i) => (
+                                    <div key={i} className="flex-1 text-center relative">
+                                        {i < 1 && <div className={`absolute right-0 top-[20%] h-[60%] w-px ${dividerClass}`} />}
+                                        <div className={`text-[8px] font-extrabold uppercase mb-1 ${mutedTextClass}`}>{s.label}</div>
+                                        <div className={`text-lg font-black leading-none ${primaryTextClass}`}>{s.val}<span className={`text-[10px] ${mutedTextClass}`}>{s.unit}</span></div>
+                                    </div>
+                                ))}
+                            </div>
+                        </>
                     )}
 
-                    {/* Splits */}
-                    <div className="mt-4 flex flex-col gap-2">
+                    {/* Rank Grid */}
+                    {(showField('overallRank') || showField('genderRank') || showField('categoryRank')) && (
+                        <>
+                            {/* Old boxed rank grid: <div className="bg-white/50 backdrop-blur-md rounded-[20px] border border-white/55 px-1 py-3 mb-5 flex justify-around items-stretch"> */}
+                            <div className="px-1 py-3 mb-5 flex justify-around items-stretch">
+                                {[
+                                    { key: 'overallRank', label: 'Overall', val: runner.overallRank || '-' },
+                                    { key: 'genderRank', label: 'Gender', val: runner.genderRank || runner.genderNetRank || '-' },
+                                    { key: 'categoryRank', label: 'Category', val: runner.categoryRank || runner.categoryNetRank || '-' },
+                                ].filter(r => showField(r.key)).map((r, i, arr) => (
+                                    <div key={i} className="flex-1 text-center relative flex flex-col justify-center px-3 py-1.5">
+                                        {i < arr.length - 1 && <div className={`absolute right-0 top-[18%] h-[64%] w-px ${dividerClass}`} />}
+                                        <div className={`text-base font-black ${primaryTextClass}`}>{r.val}</div>
+                                        <div className={`text-[8px] font-extrabold uppercase ${mutedTextClass}`}>{r.label}</div>
+                                    </div>
+                                ))}
+                            </div>
+                        </>
+                    )}
+
+                    {/* Checkpoints */}
+                    {/* Old boxed checkpoints: <div className="bg-white/50 backdrop-blur-md rounded-2xl p-3 border border-white/55 grow flex flex-col"> */}
+                    <div className="p-3 grow flex flex-col">
+                        <div className={`text-[10px] font-extrabold uppercase mb-2.5 ${mutedTextClass}`}>Checkpoint Splits</div>
+                        <div className="flex flex-col gap-1">
                         {displayTimings.map((t) => {
                             const isFinish = t.checkpoint?.toLowerCase().includes('finish');
                             const netMs = t.netTime ?? t.elapsedTime;
                             return (
-                                <div key={t._id} className={`flex justify-between text-xs font-semibold ${isFinish ? 'text-green-400' : 'text-slate-200'}`}>
-                                    <span style={{ textShadow: '0 1px 3px rgba(0,0,0,0.8)' }}>{t.checkpoint}{t.distanceFromStart ? ` (${t.distanceFromStart}K)` : ''}</span>
-                                    <span className={`font-mono font-extrabold ${isFinish ? 'text-green-400' : 'text-white'}`} style={{ textShadow: '0 1px 3px rgba(0,0,0,0.8)' }}>{netMs ? formatTime(netMs) : '-'}</span>
+                                <div key={t._id} className="flex justify-between items-baseline gap-2">
+                                    <span className={`text-[11px] whitespace-nowrap ${isFinish ? `font-extrabold ${finishTextClass}` : `font-semibold ${normalCheckpointTextClass}`}`}>{isFinish ? 'FINISH LINE' : t.checkpoint}</span>
+                                    <span className={`grow border-b border-dotted relative -top-1 ${dottedBorderClass}`} />
+                                    <span className={`font-mono whitespace-nowrap ${isFinish ? `text-sm font-extrabold ${finishTextClass}` : `text-xs font-extrabold ${primaryTextClass}`}`}>{netMs ? formatTime(netMs) : '-'}</span>
                                 </div>
                             );
                         })}
+                        {displayTimings.length === 0 && (
+                            <div className={`text-center text-[11px] py-3 ${mutedTextClass}`}>No checkpoint data</div>
+                        )}
+                    </div>
                     </div>
 
-                    <div className="text-center text-[9px] font-bold text-white/40 uppercase tracking-[4px] mt-5">Verified Result</div>
+                    <div className={`text-center text-[9px] mt-auto pt-4 font-bold tracking-[2px] ${footerTextClass}`}>OFFICIAL RESULT BY ACTION TIMING</div>
                 </div>
             </div>
         </div>
@@ -344,17 +374,16 @@ function Template3({ runner, timings, campaign, slipRef, showField }: TemplatePr
         <div ref={slipRef} className="w-full max-w-[360px] min-h-[720px] bg-white rounded-[32px] overflow-hidden shadow-xl border border-slate-200 flex flex-col">
             {/* Header */}
             <div className="bg-slate-50 px-5 pt-9 pb-6 text-center border-b border-slate-100">
-                <div className="text-[22px] font-black text-slate-900 uppercase leading-tight">{campaign?.name || 'Race Event'}</div>
-                <div className="text-xs font-semibold text-slate-500 mt-1">{runner.category} • {new Date(campaign?.eventDate || '').getFullYear()}</div>
+                <FitName className="font-black text-slate-900 uppercase leading-tight text-center" maxSize={22}>{campaign?.name || 'Race Event'}</FitName>
             </div>
 
             {/* Content */}
             <div className="px-4 py-6 flex flex-col grow overflow-hidden">
                 {/* Runner */}
                 <div className="text-center mb-5">
-                    <div className="bg-slate-900 text-white px-3 py-0.5 rounded-lg text-sm font-extrabold inline-block mb-2">{runner.bib}</div>
+                    <div className="bg-slate-900 text-white px-3 py-0.5 rounded-lg text-sm font-extrabold inline-block mb-2">BIB {runner.bib}</div>
                     <FitName className="font-black uppercase text-slate-900 leading-none" maxSize={28}>{displayName}</FitName>
-                    <div className="text-xs font-semibold text-slate-500 mt-1">{runner.category} | {genderLabel} {runner.ageGroup || ''}</div>
+                    <div className="text-[14px] font-semibold text-slate-500 mt-1">{runner.category} | {genderLabel}</div>
                 </div>
 
                 {/* Gun Time & Net Time */}
@@ -444,7 +473,8 @@ export default function ESlipPage() {
     const [bgImage, setBgImage] = useState<string | null>(null);
     const [downloading, setDownloading] = useState(false);
     const [activeTemplate, setActiveTemplate] = useState<string>('template2');
-    const [availableTemplates, setAvailableTemplates] = useState<string[]>(['template2', 'template1', 'template3']);
+    const [availableTemplates, setAvailableTemplates] = useState<string[]>(['template2', 'template3']);
+    const [photoTextColor, setPhotoTextColor] = useState<'light' | 'dark'>('dark');
 
     useEffect(() => {
         if (!runnerId) return;
@@ -461,8 +491,9 @@ export default function ESlipPage() {
                     // Set available templates from admin config
                     const adminTemplates = c?.eslipTemplates;
                     if (Array.isArray(adminTemplates) && adminTemplates.length > 0) {
-                        setAvailableTemplates(adminTemplates);
-                        const preferred = adminTemplates.find(t => t !== 'template3') || adminTemplates[0];
+                        const filtered = adminTemplates.filter(t => t !== 'template1');
+                        setAvailableTemplates(filtered.length > 0 ? filtered : ['template2', 'template3']);
+                        const preferred = filtered.find(t => t !== 'template3') || filtered[0] || 'template2';
                         setActiveTemplate(preferred);
                     } else if (c?.eslipTemplate) {
                         setActiveTemplate(c.eslipTemplate);
@@ -589,7 +620,7 @@ export default function ESlipPage() {
                     <div className="mb-4 flex gap-2 flex-wrap justify-center">
                         {availableTemplates.map(t => {
                             const isActive = activeTemplate === t;
-                            const label = t === 'template1' ? '🌙 Dark' : t === 'template2' ? '📷 Photo' : '🤍 White';
+                            const label = t === 'template2' ? '📷 Photo' : '🤍 Default';
                             return (
                                 <button
                                     key={t}
@@ -608,6 +639,33 @@ export default function ESlipPage() {
                         })}
                     </div>
                 )}
+                {activeTemplate === 'template2' && (
+                    <div className="mb-4 max-w-[380px] rounded-[16px] bg-[#121a2c] border border-white/10 px-3 py-2.5">
+                        <div className="flex items-center gap-2.5">
+                            <div className="text-[10px] font-extrabold uppercase tracking-[1.2px] text-white/75 shrink-0">Choose Text Color</div>
+                            <button
+                                type="button"
+                                onClick={() => setPhotoTextColor('dark')}
+                                className={` rounded-xl border text-left px-2.5 py-2 transition-all cursor-pointer ${photoTextColor === 'dark' ? 'bg-[#1a2439] border-white/18 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.05)]' : 'bg-white/3 border-white/8'}`}
+                            >
+                                <div className="flex items-center gap-2.5">
+                                    <span className="w-7 h-7 rounded-full bg-black border border-white/10 shrink-0" />
+
+                                </div>
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setPhotoTextColor('light')}
+                                className={` rounded-xl border text-left px-2.5 py-2 transition-all cursor-pointer ${photoTextColor === 'light' ? 'bg-white border-white shadow-[0_0_0_1px_rgba(255,255,255,0.35)]' : 'bg-white/3 border-white/8'}`}
+                            >
+                                <div className="flex items-center gap-2.5">
+                                    <span className="w-7     h-7 rounded-full bg-white border border-white/20 shrink-0" />
+                                    
+                                </div>
+                            </button>
+                        </div>
+                    </div>
+                )}
 
                 {/* Render Active Template */}
                 {(() => {
@@ -615,7 +673,7 @@ export default function ESlipPage() {
                     const showField = (key: string) => !vf || vf.length === 0 || vf.includes(key);
                     const common = { runner, timings, campaign, slipRef, showField };
                     if (activeTemplate === 'template1') return <Template1 {...common} bgImage={bgImage} />;
-                    if (activeTemplate === 'template2') return <Template2 {...common} bgImage={bgImage} />;
+                    if (activeTemplate === 'template2') return <Template2 {...common} bgImage={bgImage} textColorMode={photoTextColor} />;
                     return <Template3 {...common} bgImage={null} />;
                 })()}
 

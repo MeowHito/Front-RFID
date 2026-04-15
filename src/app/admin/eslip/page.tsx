@@ -25,22 +25,15 @@ const ESLIP_FIELDS = [
 
 const TEMPLATES = [
     {
-        id: 'template1',
-        name: 'E-Slip 1 — Dark',
-        description: 'พื้นหลังสีเข้ม พร้อมรูปถ่ายนักวิ่ง สไตล์โมเดิร์น',
-        previewBg: 'linear-gradient(135deg, #0f172a, #1e293b)',
-        icon: '🌙',
-    },
-    {
         id: 'template2',
-        name: 'E-Slip 2 — Photo',
+        name: 'E-Slip — Photo',
         description: 'ภาพถ่ายเป็นพื้นหลัง กรอบข้อมูลแบบ Frosted Glass',
         previewBg: 'linear-gradient(135deg, #334155, #1e293b)',
         icon: '📷',
     },
     {
         id: 'template3',
-        name: 'E-Slip 3 — Clean White',
+        name: 'E-Slip — Default',
         description: 'สไตล์สะอาดตา พื้นหลังขาว เหมาะสำหรับพิมพ์',
         previewBg: 'linear-gradient(135deg, #f8fafc, #e2e8f0)',
         icon: '🤍',
@@ -145,11 +138,9 @@ export default function AdminESlipPage() {
                 <div style={{ marginBottom: 32 }}>
                     <h1 style={{ fontSize: 24, fontWeight: 800, color: '#0f172a', margin: '0 0 4px' }}>
                         <i className="fas fa-id-badge" style={{ marginRight: 8, color: '#3b82f6' }} />
-                        E-Slip Template
+                        เลือก E-Slip Template
                     </h1>
-                    <p style={{ fontSize: 14, color: '#64748b', margin: 0 }}>
-                        เลือกรูปแบบ E-Slip ที่จะให้ผู้เข้าแข่งขันเลือกใช้ได้ (เลือกได้หลายแบบ)
-                    </p>
+                    
                 </div>
 
                 {!campaign ? (
@@ -159,18 +150,7 @@ export default function AdminESlipPage() {
                 ) : (
                     <>
                         {/* Campaign Info */}
-                        <div style={{ marginBottom: 24, padding: '12px 16px', background: '#eff6ff', borderRadius: 10, border: '1px solid #bfdbfe', display: 'flex', alignItems: 'center', gap: 8 }}>
-                            <i className="fas fa-star" style={{ color: '#f59e0b' }} />
-                            <span style={{ fontSize: 14, fontWeight: 700, color: '#1e40af' }}>{campaign.name}</span>
-                        </div>
-
-                        {/* Instructions */}
-                        <div style={{ marginBottom: 20, padding: '10px 14px', background: '#fefce8', borderRadius: 8, border: '1px solid #fde68a' }}>
-                            <p style={{ fontSize: 12, color: '#92400e', margin: 0, fontWeight: 600 }}>
-                                <i className="fas fa-info-circle" style={{ marginRight: 4 }} />
-                                กดเลือกแบบที่ต้องการเปิดให้ User ใช้ได้ — ถ้าเลือก 1 แบบ User จะได้ใช้แบบนั้นอย่างเดียว ถ้าเลือกหลายแบบ User จะเลือกได้เอง
-                            </p>
-                        </div>
+                        
 
                         {/* Template Cards */}
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 20, marginBottom: 32 }}>
@@ -216,11 +196,9 @@ export default function AdminESlipPage() {
                         <div style={{ marginBottom: 32 }}>
                             <h2 style={{ fontSize: 18, fontWeight: 700, color: '#0f172a', margin: '0 0 4px' }}>
                                 <i className="fas fa-eye" style={{ marginRight: 8, color: '#8b5cf6' }} />
-                                แสดงข้อมูลใน E-Slip
-                            </h2>
-                            <p style={{ fontSize: 13, color: '#64748b', margin: '0 0 16px' }}>
                                 เลือกข้อมูลที่จะแสดงให้ผู้เข้าแข่งขันเห็นบน E-Slip
-                            </p>
+                            </h2>
+                            
                             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 10 }}>
                                 {ESLIP_FIELDS.map(field => {
                                     const isActive = visibleFields.includes(field.key);
@@ -269,11 +247,7 @@ export default function AdminESlipPage() {
                         </div>
 
                         {/* Summary */}
-                        <div style={{ marginBottom: 20, padding: '10px 14px', background: '#f0fdf4', borderRadius: 8, border: '1px solid #bbf7d0' }}>
-                            <p style={{ fontSize: 12, color: '#15803d', margin: 0, fontWeight: 600 }}>
-                                เปิดใช้งาน {selectedTemplates.length} แบบ — {selectedTemplates.length === 1 ? 'User จะได้ใช้แบบนี้อย่างเดียว' : 'User จะเลือกแบบที่ชอบได้เอง'}
-                            </p>
-                        </div>
+                        
 
                         {/* Save Button */}
                         <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
@@ -296,18 +270,7 @@ export default function AdminESlipPage() {
                         </div>
 
                         {/* Info Box */}
-                        <div style={{ marginTop: 32, padding: 20, background: '#eff6ff', borderRadius: 12, border: '1px solid #bfdbfe' }}>
-                            <h4 style={{ fontSize: 14, fontWeight: 700, color: '#1e40af', margin: '0 0 8px' }}>
-                                <i className="fas fa-info-circle" style={{ marginRight: 6 }} />
-                                วิธีการทำงาน
-                            </h4>
-                            <ul style={{ fontSize: 13, color: '#334155', margin: 0, paddingLeft: 20, lineHeight: 2 }}>
-                                <li>เมื่อผู้เข้าแข่งขันกดดูรายละเอียดนักวิ่ง จะเห็นหน้า <strong>Runner Profile</strong> พร้อมข้อมูล Checkpoint</li>
-                                <li>ถ้านักวิ่ง <strong>Finish</strong> แล้ว จะมีปุ่ม <strong>&quot;ดู E-Slip&quot;</strong> ให้กดเข้าไปดาวน์โหลดเป็นภาพได้</li>
-                                <li>ถ้าเปิดหลายแบบ — User จะเห็น <strong>Dropdown</strong> เลือกแบบที่ชอบ</li>
-                                <li>ถ้าเปิดแบบเดียว — User จะเห็นแบบนั้นเลยโดยไม่ต้องเลือก</li>
-                            </ul>
-                        </div>
+                        
                     </>
                 )}
             </div>
