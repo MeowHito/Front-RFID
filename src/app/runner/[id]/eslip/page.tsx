@@ -472,8 +472,8 @@ export default function ESlipPage() {
     const [error, setError] = useState<string | null>(null);
     const [bgImage, setBgImage] = useState<string | null>(null);
     const [downloading, setDownloading] = useState(false);
-    const [activeTemplate, setActiveTemplate] = useState<string>('template2');
-    const [availableTemplates, setAvailableTemplates] = useState<string[]>(['template2', 'template3']);
+    const [activeTemplate, setActiveTemplate] = useState<string>('template3');
+    const [availableTemplates, setAvailableTemplates] = useState<string[]>(['template3', 'template2']);
     const [photoTextColor, setPhotoTextColor] = useState<'light' | 'dark'>('dark');
 
     useEffect(() => {
@@ -491,12 +491,17 @@ export default function ESlipPage() {
                     // Set available templates from admin config
                     const adminTemplates = c?.eslipTemplates;
                     if (Array.isArray(adminTemplates) && adminTemplates.length > 0) {
-                        const filtered = adminTemplates.filter(t => t !== 'template1');
-                        setAvailableTemplates(filtered.length > 0 ? filtered : ['template2', 'template3']);
-                        const preferred = filtered.find(t => t !== 'template3') || filtered[0] || 'template2';
-                        setActiveTemplate(preferred);
-                    } else if (c?.eslipTemplate) {
-                        setActiveTemplate(c.eslipTemplate);
+                        const filtered = adminTemplates.filter((t: string) => t !== 'template1');
+                        const sorted = (filtered.length > 0 ? filtered : ['template2', 'template3']).sort((a: string, b: string) => {
+                            if (a === 'template3') return -1;
+                            if (b === 'template3') return 1;
+                            return 0;
+                        });
+                        setAvailableTemplates(sorted);
+                        setActiveTemplate(sorted.includes('template3') ? 'template3' : sorted[0] || 'template3');
+                    } else {
+                        setAvailableTemplates(['template3', 'template2']);
+                        setActiveTemplate('template3');
                     }
                 } else {
                     setError(json.status?.description || 'Runner not found');
@@ -510,21 +515,28 @@ export default function ESlipPage() {
     }, [runnerId]);
 
     const handleBgUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
+        const input = e.currentTarget;
+        const file = input.files?.[0];
+        input.value = '';
         if (!file) return;
-        if (file.size > 5 * 1024 * 1024) {
-            try {
+        try {
+            let dataUrl: string;
+            if (file.size > 5 * 1024 * 1024) {
                 const { compressImage } = await import('@/lib/image-utils');
-                const compressed = await compressImage(file);
-                setBgImage(compressed);
-            } catch (err) {
-                console.error('Compress error:', err);
-                alert('ไม่สามารถบีบอัดรูปภาพได้');
+                dataUrl = await compressImage(file);
+            } else {
+                dataUrl = await new Promise<string>((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onload = () => resolve(reader.result as string);
+                    reader.onerror = () => reject(reader.error);
+                    reader.readAsDataURL(file);
+                });
             }
-        } else {
-            const reader = new FileReader();
-            reader.onload = (ev) => setBgImage(ev.target?.result as string);
-            reader.readAsDataURL(file);
+            setBgImage(null);
+            requestAnimationFrame(() => setBgImage(dataUrl));
+        } catch (err) {
+            console.error('Background image upload error:', err);
+            alert('ไม่สามารถอัปโหลดรูปภาพได้');
         }
     };
 
@@ -543,10 +555,24 @@ export default function ESlipPage() {
             const fileName = `ACTION_ESlip_${runner?.bib || 'runner'}.jpg`;
             const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
 
+            if (isMobile && typeof navigator.share === 'function') {
+                try {
+                    const res = await fetch(dataUrl);
+                    const blob = await res.blob();
+                    const imageFile = new File([blob], fileName, { type: blob.type || 'image/jpeg' });
+                    const shareData: ShareData = { files: [imageFile] };
+                    if (navigator.canShare?.(shareData)) {
+                        await navigator.share(shareData);
+                        return;
+                    }
+                } catch (shareErr: any) {
+                    if (shareErr?.name === 'AbortError') return;
+                    console.warn('Share API failed, falling back to preview:', shareErr);
+                }
+            }
+
             if (isMobile) {
-                // Show image inline — user can long-press to save
                 setPreviewImage(dataUrl);
-                setDownloading(false);
                 return;
             }
 
@@ -554,8 +580,11 @@ export default function ESlipPage() {
             link.download = fileName;
             link.href = dataUrl;
             link.click();
-        } catch (err) { console.error('E-Slip download error:', err); }
-        finally { setDownloading(false); }
+        } catch (err) {
+            console.error('E-Slip download error:', err);
+        } finally {
+            setDownloading(false);
+        }
     };
 
     if (loading) {
