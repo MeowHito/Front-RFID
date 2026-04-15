@@ -551,11 +551,15 @@ export default function ESlipPage() {
         setDownloading(true);
         try {
             const { toJpeg } = await import('html-to-image');
-            const dataUrl = await toJpeg(slipRef.current, {
+            const opts = {
                 quality: 0.95,
                 pixelRatio: 3,
                 backgroundColor: activeTemplate === 'template3' ? '#f1f5f9' : '#0f172a',
-            });
+                cacheBust: true,
+            };
+            // Safari/iOS needs a double-render: first pass primes image loading, second captures correctly
+            await toJpeg(slipRef.current, opts).catch(() => {});
+            const dataUrl = await toJpeg(slipRef.current, opts);
             const fileName = `ACTION_ESlip_${runner?.bib || 'runner'}.jpg`;
             const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
 
