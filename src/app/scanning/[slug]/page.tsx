@@ -189,8 +189,8 @@ export default function ScanningBySlugPage() {
                 .ce-profile-inner { width: 100%; height: 100%; border-radius: 2px; overflow: hidden; background: #f1f5f9; display: flex; align-items: center; justify-content: center; }
                 .ce-profile-img { width: 100%; height: 100%; object-fit: cover; filter: grayscale(20%); }
                 .ce-placeholder-svg { width: 72%; height: 72%; opacity: 0.25; }
-                .ce-qr-on-frame { position: absolute; bottom: -18px; right: -18px; background: white; padding: 7px; border-radius: 4px; border: 1px solid #cbd5e1; box-shadow: 0 8px 12px rgba(0,0,0,0.1); display: flex; flex-direction: column; align-items: center; }
-                .ce-qr-caption { color: #64748b; font-size: 8px; font-weight: 700; text-transform: uppercase; margin-top: 4px; text-align: center; letter-spacing: 1px; font-family: 'Prompt', sans-serif; }
+                .ce-qr-on-frame { position: absolute; bottom: -22px; right: -22px; background: white; padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1; box-shadow: 0 8px 16px rgba(0,0,0,0.15); display: flex; flex-direction: column; align-items: center; }
+                .ce-qr-caption { color: #64748b; font-size: 11px; font-weight: 700; text-transform: uppercase; margin-top: 6px; text-align: center; letter-spacing: 1px; font-family: 'Prompt', sans-serif; }
                 .ce-runner-info { display: flex; flex-direction: column; justify-content: center; align-items: flex-start; max-width: 58%; }
                 .ce-status-badge { color: #16a34a; font-weight: 600; font-size: 1rem; text-transform: uppercase; margin: 0 0 14px; display: flex; align-items: center; gap: 8px; letter-spacing: 2px; font-family: 'Prompt', sans-serif; }
                 .ce-runner-name { font-size: clamp(3rem, 5.5vw, 5.2rem); font-weight: 800; line-height: 1.1; margin: 0 0 6px; color: #0f172a; font-family: 'Prompt', sans-serif; }
@@ -347,11 +347,11 @@ export default function ScanningBySlugPage() {
                                         {origin && (runner as any)._id ? (
                                             <QRCodeSVG
                                                 value={`${origin}/upload/${(runner as any)._id}?slug=${campaign?.slug || ''}`}
-                                                size={76} bgColor="#ffffff" fgColor="#0f172a" level="H"
+                                                size={portrait ? 110 : 140} bgColor="#ffffff" fgColor="#0f172a" level="H"
                                             />
                                         ) : (
-                                            <div style={{ width: 76, height: 76, background: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                                <i className="fa-solid fa-qrcode" style={{ fontSize: 40, color: '#0f172a' }} />
+                                            <div style={{ width: portrait ? 110 : 140, height: portrait ? 110 : 140, background: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                                <i className="fa-solid fa-qrcode" style={{ fontSize: 60, color: '#0f172a' }} />
                                             </div>
                                         )}
                                         <p className="ce-qr-caption">Upload Photo</p>
