@@ -29,8 +29,9 @@ interface Runner {
     netTime?: number; gunTime?: number; overallRank?: number;
     team?: string; teamName?: string; shirtSize?: string; age?: number;
     gunPace?: string; netPace?: string; photoUrl?: string;
+    wave?: string; medical?: string;
 }
-interface Campaign { _id: string; name: string; slug?: string; scanningTemplate?: string; scanningBgImage?: string; }
+interface Campaign { _id: string; name: string; slug?: string; scanningTemplate?: string; scanningBgImage?: string; subtitle?: string; }
 
 export default function ScanningBySlugPage() {
     const params = useParams();
@@ -38,7 +39,6 @@ export default function ScanningBySlugPage() {
 
     const [campaign, setCampaign] = useState<Campaign | null>(null);
     const [campaignNotFound, setCampaignNotFound] = useState(false);
-    const [template, setTemplate] = useState<'classic' | 'split'>('classic');
     const [scanCode, setScanCode] = useState('');
     const [loading, setLoading] = useState(false);
     const [runner, setRunner] = useState<Runner | null>(null);
@@ -46,8 +46,9 @@ export default function ScanningBySlugPage() {
     const [animKey, setAnimKey] = useState(0);
     const [photoUploaded, setPhotoUploaded] = useState(false);
     const [origin, setOrigin] = useState('');
+    const [portrait, setPortrait] = useState(false);
+    const [checkInTime, setCheckInTime] = useState('');
     const hiddenInputRef = useRef<HTMLInputElement>(null);
-    const fileInputRef = useRef<HTMLInputElement>(null);
 
     // Load campaign by slug
     useEffect(() => {
@@ -58,7 +59,6 @@ export default function ScanningBySlugPage() {
                 if (res.ok) {
                     const data = await res.json();
                     setCampaign(data);
-                    if (data.scanningTemplate === 'split') setTemplate('split');
                 } else {
                     setCampaignNotFound(true);
                 }
@@ -111,10 +111,8 @@ export default function ScanningBySlugPage() {
             const res = await fetch(`/api/runners/lookup?${params.toString()}`);
             const data = await res.json();
             const foundRunner = data.runner || null;
-            // Reset photoUrl so QR code shows fresh every scan
             if (foundRunner && foundRunner.photoUrl) {
                 foundRunner.photoUrl = '';
-                // Clear in DB too
                 fetch(`/api/runners/${foundRunner._id}/photo`, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
@@ -124,21 +122,15 @@ export default function ScanningBySlugPage() {
             setRunner(foundRunner);
             setFound(!!data.found);
             setAnimKey(k => k + 1);
+            if (data.found) {
+                setCheckInTime(new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }));
+            }
         } catch {
             setRunner(null); setFound(false); setAnimKey(k => k + 1);
         } finally {
             setLoading(false); setScanCode('');
         }
     }, [scanCode, loading, campaign]);
-
-    const handlePhotoUpload = () => fileInputRef.current?.click();
-    const onFileSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (!file || !runner) return;
-        // TODO: upload file to server, for now just mark as uploaded
-        setPhotoUploaded(true);
-        e.target.value = '';
-    };
 
     // Campaign not found state
     if (campaignNotFound) {
@@ -160,46 +152,110 @@ export default function ScanningBySlugPage() {
     }
 
     const campaignName = campaign?.name || 'RFID Running Event';
+
     const r = runner;
     const nameTh = r ? `${r.firstNameTh || ''} ${r.lastNameTh || ''}`.trim() : '';
     const nameEn = r ? `${r.firstName} ${r.lastName}` : '';
     const distance = r?.category || '-';
     const bibNum = r?.bib || '-';
-    const genderLabel = r?.gender === 'M' ? 'Male' : r?.gender === 'F' ? 'Female' : '-';
+    const genderLabel = r?.gender === 'M' ? 'Male' : r?.gender === 'F' ? 'Female' : (r?.gender || '-');
     const ageGroupLabel = r?.ageGroup || '-';
     const flag = toFlag(r?.nationality);
+    const waveLabel = r?.wave || '-';
+    const shirtLabel = r?.shirtSize || '-';
+    const hasMedical = !!(r?.medical && r.medical.trim() !== '' && r.medical !== 'ไม่มี');
 
     return (
         <>
-            <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@400;600;700;800;900&family=Exo+2:wght@800;900&display=swap" rel="stylesheet" />
+            <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@400;600;700;800;900&family=Lexend:wght@300;400;600;700;800;900&family=Inter:wght@400;500;600;700;800&family=Roboto+Slab:wght@400;600;700;800;900&display=swap" rel="stylesheet" />
             <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+
+            <style>{`
+                @keyframes scanFadeIn { from { opacity: 0; transform: translateY(30px); } to { opacity: 1; transform: translateY(0); } }
+                @keyframes scanProgress { from { width: 100%; } to { width: 0%; } }
+                @keyframes scanPulse { 0%,100% { opacity: 1; } 50% { opacity: 0.6; } }
+                .ce-card { width: 90vw; height: 90vh; max-width: 1400px; background: #ffffff; color: #0f172a; border-radius: 8px; display: flex; flex-direction: column; padding: 46px 72px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5); position: relative; animation: scanFadeIn 0.6s cubic-bezier(0.16, 1, 0.3, 1); overflow: hidden; }
+                .ce-progress { position: absolute; top: 0; left: 0; height: 4px; background: #16a34a; border-radius: 8px 8px 0 0; animation: scanProgress 8s linear forwards; z-index: 5; }
+                .ce-header { text-align: center; border-bottom: 1px solid #cbd5e1; padding-bottom: 22px; margin-bottom: 26px; flex-shrink: 0; }
+                .ce-event-sub { font-family: 'Prompt', sans-serif; font-size: 1rem; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: 6px; margin: 0 0 4px; }
+                .ce-event-name { font-family: 'Prompt', sans-serif; font-size: clamp(1.6rem, 3vw, 2.4rem); font-weight: 800; letter-spacing: 1px; color: #0f172a; margin: 0; line-height: 1.15; }
+                .ce-medical { display: flex; align-items: center; gap: 16px; background: #fef2f2; border: 2px solid #fca5a5; border-radius: 6px; padding: 13px 22px; margin-bottom: 22px; flex-shrink: 0; }
+                .ce-medical-icon { font-size: 1.8rem; color: #dc2626; flex-shrink: 0; }
+                .ce-medical-label { font-size: 0.8rem; font-weight: 700; color: #991b1b; text-transform: uppercase; letter-spacing: 2px; margin: 0 0 2px; }
+                .ce-medical-text { font-size: 1.1rem; font-weight: 600; color: #dc2626; margin: 0; }
+                .ce-middle { flex: 1; display: flex; flex-direction: row; align-items: center; justify-content: center; gap: 72px; min-height: 0; }
+                .ce-profile-wrapper { position: relative; flex-shrink: 0; }
+                .ce-profile-container { width: 440px; height: 440px; border-radius: 4px; border: 1px solid #cbd5e1; padding: 8px; background: white; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); }
+                .ce-profile-inner { width: 100%; height: 100%; border-radius: 2px; overflow: hidden; background: #f1f5f9; display: flex; align-items: center; justify-content: center; }
+                .ce-profile-img { width: 100%; height: 100%; object-fit: cover; filter: grayscale(20%); }
+                .ce-placeholder-svg { width: 72%; height: 72%; opacity: 0.25; }
+                .ce-qr-on-frame { position: absolute; bottom: -18px; right: -18px; background: white; padding: 7px; border-radius: 4px; border: 1px solid #cbd5e1; box-shadow: 0 8px 12px rgba(0,0,0,0.1); display: flex; flex-direction: column; align-items: center; }
+                .ce-qr-caption { color: #64748b; font-size: 8px; font-weight: 700; text-transform: uppercase; margin-top: 4px; text-align: center; letter-spacing: 1px; font-family: 'Prompt', sans-serif; }
+                .ce-runner-info { display: flex; flex-direction: column; justify-content: center; align-items: flex-start; max-width: 58%; }
+                .ce-status-badge { color: #16a34a; font-weight: 600; font-size: 1rem; text-transform: uppercase; margin: 0 0 14px; display: flex; align-items: center; gap: 8px; letter-spacing: 2px; font-family: 'Prompt', sans-serif; }
+                .ce-runner-name { font-size: clamp(3rem, 5.5vw, 5.2rem); font-weight: 800; line-height: 1.1; margin: 0 0 6px; color: #0f172a; font-family: 'Prompt', sans-serif; }
+                .ce-runner-name-en { font-size: clamp(1.2rem, 2vw, 1.9rem); font-weight: 400; color: #64748b; text-transform: uppercase; margin: 0 0 32px; letter-spacing: 2px; font-family: 'Prompt', sans-serif; }
+                .ce-bib-group { display: flex; align-items: baseline; gap: 18px; border-left: 4px solid #16a34a; padding-left: 18px; }
+                .ce-bib-block { display: flex; align-items: baseline; gap: 10px; }
+                .ce-bib-label { font-size: 1rem; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: 3px; font-family: 'Prompt', sans-serif; }
+                .ce-bib-text { font-family: 'Prompt', sans-serif; font-size: clamp(5rem, 8vw, 7.5rem); font-weight: 700; color: #0f172a; line-height: 0.9; }
+                .ce-bib-divider { width: 2px; align-self: stretch; background: #cbd5e1; margin: 8px 4px; }
+                .ce-dist-badge { color: #ef4444; font-size: clamp(2.5rem, 4vw, 3.4rem); font-weight: 800; text-transform: uppercase; letter-spacing: 2px; font-family: 'Prompt', sans-serif; }
+                .ce-bottom { margin-top: auto; border-top: 1px solid #cbd5e1; padding-top: 22px; flex-shrink: 0; }
+                .ce-info-bar { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0; }
+                .ce-info-item { text-align: left; padding: 10px 18px; border-left: 1px solid #e2e8f0; }
+                .ce-info-item:first-child { border-left: none; padding-left: 0; }
+                .ce-info-label { font-size: 1rem; font-weight: 600; color: #94a3b8; text-transform: uppercase; letter-spacing: 2px; margin: 0 0 6px; font-family: 'Prompt', sans-serif; }
+                .ce-info-value { font-size: 2.4rem; font-weight: 800; color: #0f172a; line-height: 1; margin: 0; font-family: 'Prompt', sans-serif; }
+                .ce-info-item.highlight .ce-info-label { color: #16a34a; }
+                .ce-info-item.highlight .ce-info-value { color: #16a34a; font-size: 2.7rem; }
+                .ce-seal { position: absolute; bottom: 18px; right: 28px; font-size: 0.62rem; color: #cbd5e1; font-weight: 700; letter-spacing: 4px; text-transform: uppercase; text-align: right; font-family: 'Prompt', sans-serif; line-height: 1.4; }
+                .ce-seal-mark { color: #94a3b8; }
+
+                /* Portrait */
+                .ce-portrait .ce-card { width: min(88vw, 520px); height: 94vh; padding: 32px 32px 24px; }
+                .ce-portrait .ce-header { padding-bottom: 14px; margin-bottom: 16px; }
+                .ce-portrait .ce-event-sub { font-size: 0.7rem; letter-spacing: 4px; }
+                .ce-portrait .ce-event-name { font-size: clamp(1rem, 4.5vw, 1.4rem); }
+                .ce-portrait .ce-middle { flex-direction: column; gap: 20px; align-items: center; justify-content: flex-start; }
+                .ce-portrait .ce-profile-container { width: min(70vw, 340px); height: min(70vw, 340px); }
+                .ce-portrait .ce-qr-on-frame { bottom: -14px; right: -14px; }
+                .ce-portrait .ce-runner-info { align-items: center; text-align: center; max-width: 100%; }
+                .ce-portrait .ce-status-badge { justify-content: center; font-size: 0.85rem; margin-bottom: 10px; }
+                .ce-portrait .ce-runner-name { font-size: clamp(2rem, 9vw, 3rem); margin-bottom: 4px; }
+                .ce-portrait .ce-runner-name-en { font-size: clamp(0.85rem, 3vw, 1.1rem); margin-bottom: 18px; }
+                .ce-portrait .ce-bib-group { border-left: none; border-top: 4px solid #16a34a; padding-left: 0; padding-top: 14px; justify-content: center; gap: 12px; }
+                .ce-portrait .ce-bib-text { font-size: clamp(4rem, 17vw, 5.5rem); }
+                .ce-portrait .ce-bib-label { font-size: 0.75rem; letter-spacing: 2px; }
+                .ce-portrait .ce-dist-badge { font-size: 2.1rem; }
+                .ce-portrait .ce-info-bar { grid-template-columns: repeat(2, 1fr); gap: 1px; background: #e2e8f0; border-radius: 6px; overflow: hidden; }
+                .ce-portrait .ce-info-item { border-left: none; background: white; padding: 14px 16px; text-align: center; }
+                .ce-portrait .ce-info-item:first-child { padding-left: 16px; }
+                .ce-portrait .ce-info-label { font-size: 0.85rem; letter-spacing: 1.5px; }
+                .ce-portrait .ce-info-value { font-size: 1.85rem; }
+                .ce-portrait .ce-info-item.highlight .ce-info-value { font-size: 2.15rem; }
+                .ce-portrait .ce-medical { padding: 10px 14px; gap: 10px; margin-bottom: 12px; }
+                .ce-portrait .ce-medical-icon { font-size: 1.3rem; }
+                .ce-portrait .ce-medical-label { font-size: 0.68rem; }
+                .ce-portrait .ce-medical-text { font-size: 0.95rem; }
+                .ce-portrait .ce-seal { bottom: 8px; right: 12px; font-size: 0.52rem; }
+            `}</style>
 
             <input ref={hiddenInputRef} value={scanCode}
                 onChange={e => setScanCode(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter') handleScan(); }}
                 style={{ position: 'fixed', top: -100, left: -100, opacity: 0 }} autoFocus />
 
-            <input ref={fileInputRef} type="file" accept="image/*" style={{ display: 'none' }}
-                onChange={onFileSelected} />
-
-            {/* Template toggle */}
-            <button onClick={() => {
-                const next = template === 'classic' ? 'split' : 'classic';
-                setTemplate(next);
-                if (campaign?._id) {
-                    fetch(`/api/campaigns/${campaign._id}`, {
-                        method: 'PUT',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ scanningTemplate: next }),
-                    }).catch(() => {});
-                }
-            }} style={{
+            {/* Orientation Toggle */}
+            <button onClick={() => setPortrait(p => !p)} style={{
                 position: 'fixed', top: 16, right: 16, zIndex: 100, height: 36,
-                padding: '0 14px', borderRadius: 18, border: '1px solid rgba(255,255,255,0.2)',
-                background: 'rgba(0,0,0,0.5)', color: '#94a3b8', fontSize: 11, cursor: 'pointer',
+                padding: '0 14px', borderRadius: 6, border: '1px solid rgba(255,255,255,0.2)',
+                background: 'rgba(255,255,255,0.1)', color: '#fff', fontSize: 12, cursor: 'pointer',
                 backdropFilter: 'blur(10px)', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6,
+                fontFamily: "'Lexend', sans-serif",
             }}>
-                <i className="fa-solid fa-shuffle" /> {template === 'classic' ? 'Classic' : 'Split'}
+                <i className={portrait ? 'fa-solid fa-desktop' : 'fa-solid fa-mobile-screen-button'} />
+                {portrait ? 'Toggle Landscape' : 'Toggle Portrait'}
             </button>
 
             {/* Loading */}
@@ -219,7 +275,7 @@ export default function ScanningBySlugPage() {
                 <div key={`nf-${animKey}`} style={{
                     position: 'fixed', inset: 0, zIndex: 80, display: 'flex', flexDirection: 'column',
                     alignItems: 'center', justifyContent: 'center',
-                    background: '#020617', animation: 'fadeIn 0.5s ease-out', fontFamily: "'Prompt', sans-serif",
+                    background: '#020617', animation: 'scanFadeIn 0.5s ease-out', fontFamily: "'Prompt', sans-serif",
                 }}>
                     <div style={{ fontSize: 80, marginBottom: 24 }}>❌</div>
                     <div style={{ fontSize: 36, fontWeight: 900, color: '#ef4444', marginBottom: 8 }}>ไม่พบนักวิ่ง</div>
@@ -234,350 +290,133 @@ export default function ScanningBySlugPage() {
                     alignItems: 'center', justifyContent: 'center',
                     background: '#020617', fontFamily: "'Prompt', sans-serif",
                 }}>
-                    <div style={{ fontSize: 80, marginBottom: 24, animation: 'pulse 2s ease-in-out infinite' }}>📡</div>
+                    <div style={{ fontSize: 80, marginBottom: 24, animation: 'scanPulse 2s ease-in-out infinite' }}>📡</div>
                     <div style={{ fontSize: 36, fontWeight: 900, color: '#fff', marginBottom: 8 }}>รอการสแกน</div>
                     <div style={{ fontSize: 18, color: '#94a3b8' }}>Waiting for RFID scan...</div>
                     <div style={{ fontSize: 14, color: '#64748b', marginTop: 20 }}>{campaignName}</div>
                 </div>
             )}
 
-            {/* === CLASSIC TEMPLATE === */}
-            {found && runner && template === 'classic' && (
-                <div key={`c-${animKey}`} style={{
+            {/* === CLASSIC ELEGANCE TEMPLATE === */}
+            {found && runner && (
+                <div key={`a-${animKey}`} className={portrait ? 'ce-portrait' : ''} style={{
                     position: 'fixed', inset: 0, zIndex: 60,
                     background: campaign?.scanningBgImage
                         ? `url(${campaign.scanningBgImage}) center/cover no-repeat`
-                        : 'radial-gradient(circle at center, #1e293b 0%, #020617 100%)',
+                        : '#0f172a',
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    fontFamily: "'Prompt', sans-serif", animation: 'fadeIn 0.6s ease-out',
+                    fontFamily: "'Prompt', sans-serif",
+                    overflow: 'hidden',
                 }}>
-                    {/* Dark overlay when BG image is set */}
                     {campaign?.scanningBgImage && (
                         <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 0 }} />
                     )}
-                    <div style={{
-                        width: '95vw', height: '95vh', maxWidth: 1600,
-                        background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.1)',
-                        borderRadius: 40, display: 'flex', flexDirection: 'column',
-                        padding: '40px 60px', boxShadow: '0 30px 60px rgba(0,0,0,0.5)',
-                        backdropFilter: 'blur(20px)', position: 'relative', overflow: 'hidden',
-                    }}>
+
+                    <div className="ce-card">
+                        <div className="ce-progress" key={`prog-${animKey}`} />
+
                         {/* Header */}
-                        <div style={{ textAlign: 'center', borderBottom: '2px solid rgba(255,255,255,0.1)', paddingBottom: 20, marginBottom: 30 }}>
-                            <h1 style={{ fontSize: 'clamp(2rem,4vw,3rem)', fontWeight: 900, textTransform: 'uppercase', letterSpacing: 2, color: '#fff', margin: 0 }}>
-                                {campaignName}
-                            </h1>
-                            <h2 style={{ fontSize: 'clamp(1rem,2vw,1.5rem)', fontWeight: 700, color: '#4ade80', textTransform: 'uppercase', letterSpacing: 4, margin: '4px 0 0' }}>
-                                RFID Check-in • Action Timing
-                            </h2>
+                        <div className="ce-header">
+                            <h1 className="ce-event-name">{campaignName}</h1>
                         </div>
 
-                        {/* Middle */}
-                        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 50, padding: '20px 0' }}>
-                            {/* Runner photo / QR area — bigger, shifted left */}
-                            <div style={{ position: 'relative', flexShrink: 0, marginRight: 10 }}>
-                                <div style={{
-                                    width: 340, height: 340, borderRadius: 30,
-                                    border: '6px solid #4ade80', overflow: 'hidden',
-                                    boxShadow: '0 20px 40px rgba(74,222,128,0.2)',
-                                    background: '#0f172a', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                }}>
-                                    {runner.photoUrl ? (
-                                        <img src={runner.photoUrl} alt="runner" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                                    ) : (
-                                        <div style={{ textAlign: 'center', color: '#4ade80' }}>
-                                            <i className="fa-solid fa-person-running" style={{ fontSize: 100, marginBottom: 12 }} />
-                                        </div>
-                                    )}
+                        {/* Medical Alert */}
+                        {hasMedical && (
+                            <div className="ce-medical">
+                                <div className="ce-medical-icon">
+                                    <i className="fa-solid fa-triangle-exclamation" />
                                 </div>
-                                {/* QR Code / Flag overlay */}
-                                {!photoUploaded && !runner.photoUrl ? (
-                                    <div style={{
-                                        position: 'absolute', bottom: -15, right: -15,
-                                        background: '#fff', padding: 10, borderRadius: 16,
-                                        border: '4px solid #4ade80', boxShadow: '0 15px 30px rgba(0,0,0,0.5)',
-                                        display: 'flex', flexDirection: 'column', alignItems: 'center',
-                                    }}>
-                                        {origin && (runner as any)._id ? (
-                                            <>
-                                                <QRCodeSVG
-                                                    value={`${origin}/upload/${(runner as any)._id}?slug=${campaign?.slug || ''}`}
-                                                    size={90}
-                                                    bgColor="#ffffff"
-                                                    fgColor="#0f172a"
-                                                    level="M"
-                                                />
-                                                <p style={{ color: '#0f172a', fontSize: 10, fontWeight: 900, textTransform: 'uppercase', marginTop: 6 }}>Scan to Upload</p>
-                                            </>
-                                        ) : (
-                                            <>
-                                                <div style={{ width: 90, height: 90, background: '#f1f5f9', borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                                    <i className="fa-solid fa-qrcode" style={{ fontSize: 50, color: '#0f172a' }} />
-                                                </div>
-                                                <p style={{ color: '#0f172a', fontSize: 10, fontWeight: 900, textTransform: 'uppercase', marginTop: 6 }}>Scan to Upload</p>
-                                            </>
-                                        )}
-                                    </div>
-                                ) : (
-                                    <div style={{
-                                        position: 'absolute', bottom: -10, right: -10,
-                                        background: '#fff', padding: 6, borderRadius: 12,
-                                        border: '3px solid #4ade80', boxShadow: '0 10px 20px rgba(0,0,0,0.4)',
-                                        display: 'flex', flexDirection: 'column', alignItems: 'center',
-                                    }}>
-                                        <div style={{ width: 55, height: 45, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                            <span style={{ fontSize: 28, fontWeight: 900, color: '#0f172a', fontFamily: "'Exo 2', sans-serif", fontStyle: 'italic' }}>{bibNum}</span>
-                                        </div>
-                                        <p style={{ color: '#64748b', fontSize: 8, fontWeight: 800, textTransform: 'uppercase', marginTop: 2 }}>BIB</p>
-                                    </div>
-                                )}
-                            </div>
-
-                            <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-                                <div style={{ color: '#4ade80', fontWeight: 800, fontSize: '1.5rem', textTransform: 'uppercase', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 10 }}>
-                                    <i className="fa-solid fa-circle-check" /> Verified Runner
-                                    {flag && <span style={{ fontSize: 32 }}>{flag}</span>}
+                                <div>
+                                    <p className="ce-medical-label">⚕ Medical Alert — แจ้งเจ้าหน้าที่</p>
+                                    <p className="ce-medical-text">{r?.medical}</p>
                                 </div>
-                                <h2 style={{ fontSize: 'clamp(3rem,5vw,5rem)', fontWeight: 900, lineHeight: 1, margin: '0 0 5px', color: '#fff' }}>
-                                    {nameTh || nameEn}
-                                </h2>
-                                {nameTh && (
-                                    <h3 style={{ fontSize: 'clamp(1.5rem,2.5vw,2rem)', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', margin: '0 0 30px' }}>{nameEn}</h3>
-                                )}
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 20, marginTop: nameTh ? 0 : 25 }}>
-                                    {/* Distance badge — bigger red box */}
-                                    <div style={{
-                                        background: '#ef4444', color: '#fff', padding: '14px 36px', borderRadius: 18,
-                                        fontSize: '2.8rem', fontWeight: 900, boxShadow: '0 10px 25px rgba(239,68,68,0.4)',
-                                        border: '3px solid rgba(255,255,255,0.2)',
-                                    }}>{distance}</div>
-                                    <div>
-                                        <div style={{ fontSize: '1rem', fontWeight: 700, color: '#64748b', letterSpacing: 3, textTransform: 'uppercase' }}>BIB</div>
-                                        <div style={{
-                                            fontSize: 'clamp(5rem,9vw,8rem)', fontWeight: 900, color: '#fff',
-                                            fontStyle: 'italic', lineHeight: 0.85, textShadow: '0 5px 15px rgba(0,0,0,0.5)',
-                                            fontFamily: "'Exo 2', sans-serif",
-                                        }}>{bibNum}</div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* Bottom info bar — 2 items only (no shirt size) */}
-                        <div style={{ marginTop: 40 }}>
-                            <div style={{
-                                display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)',
-                                background: 'rgba(255,255,255,0.05)', borderRadius: 30,
-                                overflow: 'hidden', border: '1px solid rgba(255,255,255,0.1)',
-                            }}>
-                                <BarItem label="Gender" value={genderLabel} />
-                                <BarItem label="Age Group" value={ageGroupLabel} highlight />
-                            </div>
-                        </div>
-
-                        <div style={{
-                            position: 'absolute', bottom: 0, left: 0, height: 10,
-                            background: '#4ade80', borderRadius: '0 0 40px 40px',
-                            animation: 'timer 8s linear forwards',
-                        }} />
-                    </div>
-                </div>
-            )}
-
-            {/* === SPLIT TEMPLATE === */}
-            {found && runner && template === 'split' && (
-                <div key={`s-${animKey}`} style={{
-                    position: 'fixed', inset: 0, zIndex: 60,
-                    background: campaign?.scanningBgImage
-                        ? `url(${campaign.scanningBgImage}) center/cover no-repeat`
-                        : 'linear-gradient(135deg, #020617 0%, #0f172a 100%)',
-                    display: 'flex', flexDirection: 'row',
-                    fontFamily: "'Prompt', sans-serif", animation: 'fadeIn 0.8s ease-out',
-                }}>
-                    {/* Dark overlay when BG image is set */}
-                    {campaign?.scanningBgImage && (
-                        <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 0 }} />
-                    )}
-                    {/* Left — runner image area, bigger */}
-                    <div style={{ width: '42%', height: '100%', position: 'relative', overflow: 'hidden', background: '#000', zIndex: 1 }}>
-                        <div style={{
-                            width: '100%', height: '100%',
-                            background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 50%, #020617 100%)',
-                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        }}>
-                            {runner.photoUrl ? (
-                                <img src={runner.photoUrl} alt="runner" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                            ) : (
-                                <div style={{ textAlign: 'center', color: '#4ade80' }}>
-                                    <i className="fa-solid fa-person-running" style={{ fontSize: 260, marginBottom: 20 }} />
-                                </div>
-                            )}
-                        </div>
-                        <div style={{
-                            position: 'absolute', inset: 0,
-                            background: 'linear-gradient(to right, rgba(2,6,23,0) 70%, rgba(2,6,23,1) 100%)',
-                        }} />
-                        {/* QR Code / Flag overlay */}
-                        {!photoUploaded && !runner.photoUrl ? (
-                            <div style={{
-                                position: 'absolute', bottom: 40, left: 40, zIndex: 10,
-                                background: '#fff', padding: 12, borderRadius: 16, width: 150,
-                                display: 'flex', flexDirection: 'column', alignItems: 'center',
-                                border: '4px solid #4ade80', boxShadow: '0 15px 30px rgba(0,0,0,0.5)',
-                            }}>
-                                {origin && (runner as any)._id ? (
-                                    <>
-                                        <QRCodeSVG
-                                            value={`${origin}/upload/${(runner as any)._id}?slug=${campaign?.slug || ''}`}
-                                            size={120}
-                                            bgColor="#ffffff"
-                                            fgColor="#0f172a"
-                                            level="M"
-                                        />
-                                        <p style={{ color: '#0f172a', fontSize: 10, fontWeight: 900, textTransform: 'uppercase', marginTop: 8, textAlign: 'center' }}>
-                                            Scan to upload<br />your photo
-                                        </p>
-                                    </>
-                                ) : (
-                                    <>
-                                        <div style={{ width: 120, height: 120, background: '#f1f5f9', borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                            <i className="fa-solid fa-qrcode" style={{ fontSize: 70, color: '#0f172a' }} />
-                                        </div>
-                                        <p style={{ color: '#0f172a', fontSize: 10, fontWeight: 900, textTransform: 'uppercase', marginTop: 8, textAlign: 'center' }}>
-                                            Scan to upload<br />your photo
-                                        </p>
-                                    </>
-                                )}
-                            </div>
-                        ) : (
-                            <div style={{
-                                position: 'absolute', bottom: 40, left: 40, zIndex: 10,
-                                background: '#fff', padding: 8, borderRadius: 12, width: 90,
-                                display: 'flex', flexDirection: 'column', alignItems: 'center',
-                                border: '3px solid #4ade80', boxShadow: '0 10px 20px rgba(0,0,0,0.4)',
-                            }}>
-                                <div style={{ width: 70, height: 55, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                    <span style={{ fontSize: 36, fontWeight: 900, color: '#0f172a', fontFamily: "'Exo 2', sans-serif", fontStyle: 'italic' }}>{bibNum}</span>
-                                </div>
-                                <p style={{ color: '#64748b', fontSize: 9, fontWeight: 800, textTransform: 'uppercase', marginTop: 4, textAlign: 'center' }}>BIB</p>
                             </div>
                         )}
-                    </div>
 
-                    {/* Right */}
-                    <div style={{ width: '58%', display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: '5vh 6vw', zIndex: 5 }}>
-                        <div style={{ marginBottom: '4vh', borderLeft: '6px solid #4ade80', paddingLeft: 20 }}>
-                            <h2 style={{ fontSize: 'clamp(1.5rem,3vw,2.2rem)', fontWeight: 900, textTransform: 'uppercase', lineHeight: 1.1, color: '#fff', margin: 0 }}>{campaignName}</h2>
-                            <p style={{ fontSize: 'clamp(0.9rem,1.5vw,1.2rem)', fontWeight: 700, color: '#4ade80', textTransform: 'uppercase', letterSpacing: 2, marginTop: 4 }}>RFID Check-in • Action Timing</p>
-                        </div>
+                        {/* Middle */}
+                        <div className="ce-middle">
+                            <div className="ce-profile-wrapper">
+                                <div className="ce-profile-container">
+                                    <div className="ce-profile-inner">
+                                        <RunnerPhoto photoUrl={runner.photoUrl} />
+                                    </div>
+                                </div>
 
-                        <div style={{ display: 'flex', alignItems: 'flex-end', gap: 10, marginBottom: '5vh' }}>
-                            <div style={{
-                                background: 'rgba(255,255,255,0.04)', borderLeft: '10px solid #4ade80',
-                                padding: '15px 50px', transform: 'skewX(-15deg)', borderRadius: 6,
-                                boxShadow: '15px 15px 30px rgba(0,0,0,0.3)', zIndex: 2,
-                            }}>
-                                <div style={{ transform: 'skewX(15deg)' }}>
-                                    <p style={{ fontSize: '0.9rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: 6, margin: '0 0 2px' }}>BIB</p>
-                                    <h1 style={{
-                                        fontSize: 'clamp(6rem,12vw,10rem)', fontWeight: 900, lineHeight: 0.85,
-                                        color: '#fff', fontStyle: 'italic', textShadow: '0 4px 10px rgba(0,0,0,0.5)',
-                                        fontFamily: "'Exo 2', sans-serif", margin: 0,
-                                    }}>{bibNum}</h1>
+                                {!photoUploaded && !runner.photoUrl && (
+                                    <div className="ce-qr-on-frame">
+                                        {origin && (runner as any)._id ? (
+                                            <QRCodeSVG
+                                                value={`${origin}/upload/${(runner as any)._id}?slug=${campaign?.slug || ''}`}
+                                                size={76} bgColor="#ffffff" fgColor="#0f172a" level="H"
+                                            />
+                                        ) : (
+                                            <div style={{ width: 76, height: 76, background: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                                <i className="fa-solid fa-qrcode" style={{ fontSize: 40, color: '#0f172a' }} />
+                                            </div>
+                                        )}
+                                        <p className="ce-qr-caption">Upload Photo</p>
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="ce-runner-info">
+                                <p className="ce-status-badge">
+                                    <i className="fa-regular fa-circle-check" /> ยืนยันข้อมูล
+                                    {flag && <span style={{ fontSize: '1.1em', marginLeft: 4 }}>{flag}</span>}
+                                </p>
+                                <h2 className="ce-runner-name">{nameTh || nameEn}</h2>
+                                {nameTh && <h3 className="ce-runner-name-en">{nameEn}</h3>}
+                                <div className="ce-bib-group">
+                                    <div className="ce-bib-block">
+                                        <span className="ce-bib-label">BIB</span>
+                                        <span className="ce-bib-text">{bibNum}</span>
+                                    </div>
+                                    <div className="ce-bib-divider" />
+                                    <span className="ce-dist-badge">{distance}</span>
                                 </div>
                             </div>
-                            {/* Distance badge — bigger */}
-                            <div style={{
-                                background: '#ef4444', padding: '10px 34px 10px 48px',
-                                transform: 'skewX(-15deg)', borderRadius: 6,
-                                marginBottom: 15, marginLeft: -35, zIndex: 1,
-                                boxShadow: 'inset 0 0 20px rgba(0,0,0,0.2)',
-                                border: '3px solid rgba(255,255,255,0.15)',
-                            }}>
-                                <div style={{ transform: 'skewX(15deg)' }}>
-                                    <span style={{
-                                        fontSize: 'clamp(1.8rem,3.5vw,2.5rem)', fontWeight: 900, color: '#fff',
-                                        whiteSpace: 'nowrap', fontStyle: 'italic', letterSpacing: 1,
-                                    }}>{distance}</span>
+                        </div>
+
+                        {/* Bottom */}
+                        <div className="ce-bottom">
+                            <div className="ce-info-bar">
+                                <div className="ce-info-item">
+                                    <p className="ce-info-label">Gender</p>
+                                    <p className="ce-info-value">{genderLabel}</p>
+                                </div>
+                                <div className="ce-info-item highlight">
+                                    <p className="ce-info-label">Age Group</p>
+                                    <p className="ce-info-value">{ageGroupLabel}</p>
                                 </div>
                             </div>
                         </div>
 
-                        <div style={{ marginBottom: '4vh' }}>
-                            <div style={{ color: '#4ade80', fontWeight: 800, fontSize: '1.2rem', textTransform: 'uppercase', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 10 }}>
-                                <i className="fa-solid fa-square-check" style={{ fontSize: 24 }} /> Verified Participant
-                                {flag && <span style={{ fontSize: 32 }}>{flag}</span>}
-                            </div>
-                            <h2 style={{ fontSize: 'clamp(2.5rem,5vw,4rem)', fontWeight: 900, lineHeight: 1.1, color: '#fff', margin: '0 0 5px', textShadow: '0 4px 10px rgba(0,0,0,0.5)' }}>
-                                {nameTh || nameEn}
-                            </h2>
-                            {nameTh && (
-                                <h3 style={{ fontSize: 'clamp(1.2rem,2.5vw,1.8rem)', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', margin: 0 }}>{nameEn}</h3>
-                            )}
-                        </div>
-
-                        {/* Bottom bar — 2 items only (no shirt size) */}
-                        <div style={{
-                            display: 'flex', alignItems: 'center',
-                            background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)',
-                            borderRadius: 24, padding: '25px 0', backdropFilter: 'blur(10px)',
-                            boxShadow: '0 10px 30px rgba(0,0,0,0.2)',
-                        }}>
-                            <SplitBarItem label="Gender" value={genderLabel} />
-                            <SplitBarItem label="Age Group" value={ageGroupLabel} highlight />
+                        <div className="ce-seal">
+                            Powered by<br />
+                            <span className="ce-seal-mark">ACTION TIMING</span>
                         </div>
                     </div>
-
-                    <div style={{
-                        position: 'absolute', bottom: 20, right: 40, fontSize: 11, fontWeight: 800,
-                        color: 'rgba(255,255,255,0.2)', textTransform: 'uppercase', letterSpacing: 4, zIndex: 100,
-                    }}>Action Timing System</div>
                 </div>
             )}
-
-            
         </>
     );
 }
 
-function BarItem({ label, value, highlight }: { label: string; value: string; highlight?: boolean }) {
-    return (
-        <div style={{
-            padding: '30px 20px', textAlign: 'center', position: 'relative',
-            ...(highlight ? { background: 'rgba(74,222,128,0.1)' } : {}),
-        }}>
-            <p style={{
-                fontSize: '1.2rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: 2,
-                marginBottom: 5, color: highlight ? '#4ade80' : '#94a3b8',
-            }}>{label}</p>
-            <p style={{
-                fontSize: highlight ? '4rem' : '3rem', fontWeight: 900, lineHeight: 1,
-                color: highlight ? '#4ade80' : '#fff', textTransform: 'uppercase',
-                ...(highlight ? { textShadow: '0 0 20px rgba(74,222,128,0.3)' } : {}),
-            }}>{value}</p>
-        </div>
-    );
-}
-
-function SplitBarItem({ label, value, highlight }: { label: string; value: string; highlight?: boolean }) {
-    return (
-        <div style={{
-            flex: 1, textAlign: 'center', position: 'relative',
-            ...(highlight ? {
-                background: 'rgba(74,222,128,0.06)', borderRadius: 16,
-                margin: '0 15px', padding: '15px 0',
-                border: '1px solid rgba(74,222,128,0.15)',
-            } : {}),
-        }}>
-            <p style={{
-                fontSize: 14, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 2,
-                marginBottom: 8, color: highlight ? '#4ade80' : '#64748b',
-            }}>{label}</p>
-            <p style={{
-                fontSize: highlight ? 'clamp(2.5rem,4.5vw,3.5rem)' : 'clamp(1.8rem,3.5vw,2.5rem)',
-                fontWeight: 900, lineHeight: 1, color: highlight ? '#4ade80' : '#fff',
-                ...(highlight ? { textShadow: '0 0 20px rgba(74,222,128,0.2)' } : {}),
-            }}>{value}</p>
-        </div>
+function RunnerPhoto({ photoUrl }: { photoUrl?: string }) {
+    const [errored, setErrored] = useState(false);
+    const showImage = !!photoUrl && !errored;
+    return showImage ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+            src={photoUrl}
+            alt="runner"
+            className="ce-profile-img"
+            onError={() => setErrored(true)}
+        />
+    ) : (
+        <svg viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg" className="ce-placeholder-svg">
+            <circle cx="60" cy="38" r="22" fill="#475569" />
+            <path d="M10 110 C10 78 30 65 60 65 C90 65 110 78 110 110 Z" fill="#475569" />
+        </svg>
     );
 }

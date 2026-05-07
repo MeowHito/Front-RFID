@@ -63,9 +63,6 @@ const menuSections: MenuSection[] = [
         items: [
             { href: '/admin/live-monitor', label: 'MC Ai', labelEn: 'MC Ai', icon: 'desktop', iconColor: '#00c0ef' },
             { href: '/admin/checkpoint-monitor', label: 'Checkpoint Monitor', labelEn: 'Checkpoint Monitor', icon: 'map-location-dot', iconColor: '#f97316' },
-            { href: '/admin/rfid-config', label: 'ตั้งค่าจุดรับสัญญาณ', labelEn: 'Reader Config', icon: 'server' },
-            { href: '/admin/chip-mapping', label: 'จับคู่บิบ/ชิป', labelEn: 'BIB/Chip Mapping', icon: 'id-card' },
-            { href: '/admin/raw-data', label: 'ข้อมูลดิบ', labelEn: 'Raw Data', icon: 'database' },
         ]
     },
     {

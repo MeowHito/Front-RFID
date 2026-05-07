@@ -12,26 +12,14 @@ interface Campaign {
     scanningBgImage?: string;
 }
 
-const SCANNING_TEMPLATES = [
-    {
-        id: 'classic',
-        name: 'Classic — Top-Down',
-        description: 'แสดงเต็มจอ แบบ Card กลางจอ ชื่อ + BIB + ข้อมูล',
-        previewBg: 'linear-gradient(135deg, #0f172a, #1e293b)',
-        icon: '🎯',
-    },
-    {
-        id: 'split',
-        name: 'Split — Left-Right',
-        description: 'แบ่งซ้ายขวา รูปนักวิ่ง + ข้อมูล + BIB เฉียง',
-        previewBg: 'linear-gradient(135deg, #334155, #020617)',
-        icon: '🖥️',
-    },
-];
+const SCANNING_TEMPLATE = {
+    id: 'athletic',
+    name: 'Athletic Precision — Race Day Display',
+    description: 'แบบใหม่ — การ์ดสีขาวกลางจอ ภาพนักวิ่ง + BIB ขนาดใหญ่ + แถบสถิติด้านล่าง',
+};
 
 export default function BibCheckPage() {
     const [campaign, setCampaign] = useState<Campaign | null>(null);
-    const [selectedTemplate, setSelectedTemplate] = useState('classic');
     const [bgImage, setBgImage] = useState<string | null>(null);
     const [saving, setSaving] = useState(false);
     const [saved, setSaved] = useState(false);
@@ -44,8 +32,6 @@ export default function BibCheckPage() {
                 if (res.ok) {
                     const data = await res.json();
                     setCampaign(data);
-                    const savedTmpl = data.scanningTemplate;
-                    if (savedTmpl) setSelectedTemplate(savedTmpl);
                     if (data.scanningBgImage) setBgImage(data.scanningBgImage);
                 }
             } catch (err) {
@@ -65,7 +51,7 @@ export default function BibCheckPage() {
                 method: 'PUT',
                 headers: authHeaders(),
                 body: JSON.stringify({
-                    scanningTemplate: selectedTemplate,
+                    scanningTemplate: 'athletic',
                     scanningBgImage: bgImage || '',
                 }),
             });
@@ -103,7 +89,7 @@ export default function BibCheckPage() {
                         📡 Check BIB / Scanning Template
                     </h1>
                     <p style={{ fontSize: 14, color: '#64748b', margin: 0 }}>
-                        เลือก Template ที่จะใช้แสดงข้อมูลนักกีฬาเมื่อสแกน RFID — เปิดหน้า Scanning เพื่อเริ่มสแกน
+                        Template ที่ใช้แสดงข้อมูลนักกีฬาเมื่อสแกน RFID — เปิดหน้า Scanning เพื่อเริ่มสแกน
                     </p>
                 </div>
 
@@ -113,104 +99,80 @@ export default function BibCheckPage() {
                     </div>
                 ) : (
                     <>
-
-                        {/* Template Cards with Mini Previews */}
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: 20, marginBottom: 32 }}>
-                            {SCANNING_TEMPLATES.map(tmpl => {
-                                const isSelected = selectedTemplate === tmpl.id;
-                                return (
-                                    <div
-                                        key={tmpl.id}
-                                        onClick={() => setSelectedTemplate(tmpl.id)}
-                                        style={{
-                                            borderRadius: 16, overflow: 'hidden', cursor: 'pointer',
-                                            border: isSelected ? '3px solid #22c55e' : '1px solid #e2e8f0',
-                                            boxShadow: isSelected ? '0 0 0 3px rgba(34,197,94,0.2)' : '0 1px 3px rgba(0,0,0,0.04)',
-                                            transition: 'all 0.2s',
-                                            transform: isSelected ? 'scale(1.02)' : 'scale(1)',
-                                            opacity: isSelected ? 1 : 0.75,
-                                        }}
-                                    >
-                                        {/* Mini Preview */}
-                                        <div style={{
-                                            height: 200, background: tmpl.previewBg,
-                                            position: 'relative', overflow: 'hidden', padding: 16,
-                                        }}>
-                                            {tmpl.id === 'classic' ? (
-                                                /* Classic mini: centered card */
-                                                <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                                    <div style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 12, padding: '12px 20px', display: 'flex', alignItems: 'center', gap: 14, maxWidth: '90%' }}>
-                                                        <div style={{ width: 50, height: 50, borderRadius: 8, border: '2px solid #4ade80', background: '#0f172a', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, flexShrink: 0 }}>🏃</div>
-                                                        <div>
-                                                            <div style={{ fontSize: 7, color: '#4ade80', fontWeight: 800, letterSpacing: 1 }}>✓ VERIFIED</div>
-                                                            <div style={{ fontSize: 13, fontWeight: 900, color: '#fff', lineHeight: 1.1 }}>สมชาย ใจดี</div>
-                                                            <div style={{ fontSize: 8, color: '#94a3b8', fontWeight: 700 }}>Somchai Jaidee</div>
-                                                            <div style={{ display: 'flex', gap: 6, marginTop: 4, alignItems: 'center' }}>
-                                                                <span style={{ background: '#ef4444', color: '#fff', padding: '1px 8px', borderRadius: 4, fontSize: 9, fontWeight: 900 }}>10K</span>
-                                                                <span style={{ fontSize: 18, fontWeight: 900, color: '#fff', fontStyle: 'italic', fontFamily: "'Exo 2', sans-serif" }}>001</span>
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                    <div style={{ position: 'absolute', bottom: 10, left: 16, right: 16, display: 'flex', justifyContent: 'center', gap: 8 }}>
-                                                        <div style={{ background: 'rgba(255,255,255,0.06)', borderRadius: 6, padding: '3px 12px', textAlign: 'center' }}>
-                                                            <div style={{ fontSize: 6, color: '#94a3b8', fontWeight: 800 }}>GENDER</div>
-                                                            <div style={{ fontSize: 10, color: '#fff', fontWeight: 900 }}>Male</div>
-                                                        </div>
-                                                        <div style={{ background: 'rgba(74,222,128,0.1)', borderRadius: 6, padding: '3px 12px', textAlign: 'center' }}>
-                                                            <div style={{ fontSize: 6, color: '#4ade80', fontWeight: 800 }}>AGE GROUP</div>
-                                                            <div style={{ fontSize: 10, color: '#4ade80', fontWeight: 900 }}>30-39</div>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            ) : (
-                                                /* Split mini: left-right */
-                                                <div style={{ width: '100%', height: '100%', display: 'flex' }}>
-                                                    <div style={{ width: '40%', background: '#0f172a', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', overflow: 'hidden' }}>
-                                                        <span style={{ fontSize: 40 }}>🏃</span>
-                                                        <div style={{ position: 'absolute', bottom: 4, left: 4, background: '#fff', borderRadius: 4, padding: 3, border: '1px solid #4ade80' }}>
-                                                            <div style={{ width: 20, height: 20, background: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10 }}>📱</div>
-                                                        </div>
-                                                    </div>
-                                                    <div style={{ width: '60%', paddingLeft: 12, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-                                                        <div style={{ fontSize: 6, color: '#4ade80', fontWeight: 800, borderLeft: '2px solid #4ade80', paddingLeft: 4, marginBottom: 4 }}>EVENT NAME</div>
-                                                        <div style={{ display: 'flex', alignItems: 'flex-end', gap: 4, marginBottom: 6 }}>
-                                                            <div style={{ background: 'rgba(255,255,255,0.05)', borderLeft: '3px solid #4ade80', padding: '2px 8px', transform: 'skewX(-10deg)' }}>
-                                                                <span style={{ transform: 'skewX(10deg)', display: 'block', fontSize: 5, color: '#64748b', fontWeight: 700 }}>BIB</span>
-                                                                <span style={{ transform: 'skewX(10deg)', display: 'block', fontSize: 20, fontWeight: 900, color: '#fff', fontStyle: 'italic', fontFamily: "'Exo 2', sans-serif", lineHeight: 0.9 }}>001</span>
-                                                            </div>
-                                                            <div style={{ background: '#ef4444', padding: '1px 6px', transform: 'skewX(-10deg)', borderRadius: 2 }}>
-                                                                <span style={{ transform: 'skewX(10deg)', display: 'block', fontSize: 8, fontWeight: 900, color: '#fff' }}>10K</span>
-                                                            </div>
-                                                        </div>
-                                                        <div style={{ fontSize: 7, color: '#4ade80', fontWeight: 800, marginBottom: 2 }}>✓ VERIFIED 🇹🇭</div>
-                                                        <div style={{ fontSize: 11, fontWeight: 900, color: '#fff', lineHeight: 1 }}>สมชาย ใจดี</div>
-                                                        <div style={{ fontSize: 7, color: '#94a3b8', fontWeight: 700 }}>SOMCHAI JAIDEE</div>
-                                                        <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
-                                                            <div style={{ background: 'rgba(255,255,255,0.05)', borderRadius: 4, padding: '2px 8px', textAlign: 'center' }}>
-                                                                <div style={{ fontSize: 5, color: '#64748b', fontWeight: 800 }}>GENDER</div>
-                                                                <div style={{ fontSize: 8, color: '#fff', fontWeight: 900 }}>Male</div>
-                                                            </div>
-                                                            <div style={{ background: 'rgba(74,222,128,0.08)', borderRadius: 4, padding: '2px 8px', textAlign: 'center', border: '1px solid rgba(74,222,128,0.15)' }}>
-                                                                <div style={{ fontSize: 5, color: '#4ade80', fontWeight: 800 }}>AGE GROUP</div>
-                                                                <div style={{ fontSize: 8, color: '#4ade80', fontWeight: 900 }}>30-39</div>
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            )}
-                                            {isSelected && (
-                                                <div style={{ position: 'absolute', top: 8, right: 8, background: '#22c55e', color: '#fff', fontSize: 10, fontWeight: 800, padding: '3px 10px', borderRadius: 6 }}>
-                                                    ✓ เลือกใช้งาน
-                                                </div>
-                                            )}
+                        {/* Single Template Preview */}
+                        <div style={{ marginBottom: 32 }}>
+                            <div
+                                style={{
+                                    borderRadius: 16, overflow: 'hidden',
+                                    border: '3px solid #22c55e',
+                                    boxShadow: '0 0 0 3px rgba(34,197,94,0.2)',
+                                    maxWidth: 720,
+                                }}
+                            >
+                                {/* Mini Preview — Athletic Precision */}
+                                <div style={{
+                                    height: 320, background: '#0f172a',
+                                    position: 'relative', overflow: 'hidden', padding: 18,
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                }}>
+                                    <div style={{
+                                        width: '100%', height: '100%', background: '#ffffff',
+                                        borderRadius: 10, display: 'flex', flexDirection: 'column',
+                                        overflow: 'hidden', boxShadow: '0 12px 24px rgba(0,0,0,0.4)',
+                                        position: 'relative',
+                                    }}>
+                                        <div style={{ position: 'absolute', top: 0, left: 0, height: 4, width: '80%', background: '#1e40af' }} />
+                                        {/* Header */}
+                                        <div style={{ padding: '14px 20px 10px', textAlign: 'center', borderBottom: '1px solid #eceef0' }}>
+                                            <div style={{ fontSize: 8, fontWeight: 800, color: '#1e40af', letterSpacing: 3, textTransform: 'uppercase' }}>100 Mile by UTMB® · Global Series</div>
+                                            <div style={{ fontSize: 14, fontWeight: 800, color: '#191c1e', textTransform: 'uppercase', marginTop: 2 }}>Tarawera Ultramarathon 2026</div>
                                         </div>
-                                        <div style={{ padding: 16, background: '#fff' }}>
-                                            <h3 style={{ fontSize: 16, fontWeight: 700, color: '#0f172a', margin: '0 0 4px' }}>{tmpl.name}</h3>
-                                            <p style={{ fontSize: 12, color: '#64748b', margin: 0, lineHeight: 1.5 }}>{tmpl.description}</p>
+                                        {/* Content */}
+                                        <div style={{ flex: 1, display: 'grid', gridTemplateColumns: '1fr 1.2fr', gap: 14, padding: '12px 18px', alignItems: 'center' }}>
+                                            <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                                <div style={{ width: 110, height: 110, background: '#f1f5f9', border: '1px solid #e2e8f0', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                                    <span style={{ fontSize: 38, color: '#cbd5e1' }}>🏃</span>
+                                                </div>
+                                                <div style={{ position: 'absolute', bottom: -6, right: 6, background: '#fff', border: '1px solid #e2e8f0', borderRadius: 4, padding: 3, boxShadow: '0 4px 8px rgba(0,0,0,0.1)' }}>
+                                                    <div style={{ width: 22, height: 22, background: '#0f172a', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 10, fontWeight: 800 }}>QR</div>
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <div style={{ display: 'inline-block', background: '#16a34a', color: '#fff', fontSize: 7, fontWeight: 800, padding: '2px 8px', borderRadius: 999, letterSpacing: 1, marginBottom: 6 }}>VERIFIED ATHLETE</div>
+                                                <div style={{ fontSize: 16, fontWeight: 800, color: '#191c1e', lineHeight: 1.05 }}>สมชาย รักการวิ่ง</div>
+                                                <div style={{ fontSize: 9, color: '#444653', textTransform: 'uppercase', marginTop: 1 }}>Somchai Rakkanwing</div>
+                                                <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginTop: 8, background: '#f8fafc', borderLeft: '4px solid #1e40af', padding: '6px 10px', borderRadius: '0 6px 6px 0' }}>
+                                                    <span style={{ fontSize: 26, fontWeight: 900, color: '#191c1e', fontFamily: "'Roboto Slab', serif", lineHeight: 0.9 }}>5024</span>
+                                                    <span style={{ fontSize: 14, fontWeight: 800, color: '#9d4300' }}>50 KM</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        {/* Footer Stats */}
+                                        <div style={{ background: '#0f172a', color: '#fff', padding: '8px 18px', display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 8 }}>
+                                            {[
+                                                ['GENDER', 'Male'],
+                                                ['CATEGORY', '30-39'],
+                                                ['WAVE', 'A · 05:00'],
+                                                ['SHIRT', 'XL'],
+                                                ['CHECK-IN', '02:50'],
+                                            ].map(([l, v], i) => (
+                                                <div key={l} style={{ borderLeft: i === 0 ? 'none' : '1px solid rgba(255,255,255,0.1)', paddingLeft: i === 0 ? 0 : 8 }}>
+                                                    <div style={{ fontSize: 6, fontWeight: 700, color: '#94a3b8', letterSpacing: 1 }}>{l}</div>
+                                                    <div style={{ fontSize: 10, fontWeight: 800, color: l === 'WAVE' ? '#93c5fd' : '#fff' }}>{v}</div>
+                                                </div>
+                                            ))}
                                         </div>
                                     </div>
-                                );
-                            })}
+
+                                    <div style={{ position: 'absolute', top: 8, right: 8, background: '#22c55e', color: '#fff', fontSize: 10, fontWeight: 800, padding: '3px 10px', borderRadius: 6 }}>
+                                        ✓ ใช้งานอยู่
+                                    </div>
+                                </div>
+                                <div style={{ padding: 16, background: '#fff' }}>
+                                    <h3 style={{ fontSize: 16, fontWeight: 700, color: '#0f172a', margin: '0 0 4px' }}>{SCANNING_TEMPLATE.name}</h3>
+                                    <p style={{ fontSize: 12, color: '#64748b', margin: 0, lineHeight: 1.5 }}>{SCANNING_TEMPLATE.description}</p>
+                                </div>
+                            </div>
                         </div>
 
                         {/* Background Image Upload */}
