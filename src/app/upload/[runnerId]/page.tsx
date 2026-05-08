@@ -4,6 +4,18 @@ import { useEffect, useState, useRef } from 'react';
 import { toJpeg } from 'html-to-image';
 import { useParams, useSearchParams } from 'next/navigation';
 
+interface Runner {
+    bib?: string;
+    firstName?: string;
+    lastName?: string;
+    firstNameTh?: string;
+    lastNameTh?: string;
+    gender?: string;
+    category?: string;
+    ageGroup?: string;
+    medical?: string;
+}
+
 export default function UploadPhotoPage() {
     const params = useParams();
     const runnerId = params.runnerId as string;
@@ -11,13 +23,12 @@ export default function UploadPhotoPage() {
     const searchParams = useSearchParams();
     const campaignSlug = searchParams.get('slug');
 
-    const [runner, setRunner] = useState<any>(null);
+    const [runner, setRunner] = useState<Runner | null>(null);
     const [loading, setLoading] = useState(true);
     const [uploading, setUploading] = useState(false);
     const [success, setSuccess] = useState(false);
     const [error, setError] = useState('');
     const [uploadedPhoto, setUploadedPhoto] = useState<string>('');
-    const [template, setTemplate] = useState<'classic' | 'split'>('classic');
     const [campaignName, setCampaignName] = useState('');
     const fileInputRef = useRef<HTMLInputElement>(null);
     const cardRef = useRef<HTMLDivElement>(null);
@@ -87,7 +98,6 @@ export default function UploadPhotoPage() {
                 const res = await fetch(`/api/campaigns/${encodeURIComponent(campaignSlug)}`);
                 if (res.ok) {
                     const data = await res.json();
-                    if (data.scanningTemplate === 'split') setTemplate('split');
                     if (data.name) setCampaignName(data.name);
                 }
             } catch { /* ignore */ }
@@ -166,117 +176,68 @@ export default function UploadPhotoPage() {
                     const _nen = runner?.firstNameTh ? `${runner.firstName || ''} ${runner.lastName || ''}`.trim().toUpperCase() : '';
                     const _dist = runner?.category || '';
                     const _bib = String(runner?.bib || '-');
+                    const _medical = runner?.medical || '';
+                    const _hasMedical = !!(_medical && _medical.trim() !== '' && _medical !== 'ไม่มี');
                     return (
                         <div ref={wrapperRef} style={{ width: '100%', maxWidth: 420, animation: 'fadeIn 0.5s ease-out' }}>
                             {/* Scaled 1920×1080 card — exact same layout as scanning page */}
                             <div style={{ position: 'relative', width: '100%', height: Math.round(1080 * cardScale), overflow: 'hidden', borderRadius: 14, marginBottom: 14, boxShadow: '0 15px 40px rgba(0,0,0,0.5)', border: '1px solid rgba(74,222,128,0.2)' }}>
                                 <div ref={cardRef} style={{ position: 'absolute', top: 0, left: 0, width: 1920, height: 1080, transformOrigin: '0 0', transform: `scale(${cardScale})` }}>
-                                    {template === 'classic' ? (
-                                        /* ===== CLASSIC 1920×1080 ===== */
-                                        <div style={{ width: 1920, height: 1080, background: 'radial-gradient(circle at center, #1e293b 0%, #020617 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'Prompt', sans-serif", position: 'relative' }}>
-                                            <div style={{ width: 1824, height: 1026, background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 40, display: 'flex', flexDirection: 'column', padding: '40px 60px', boxShadow: '0 30px 60px rgba(0,0,0,0.5)', backdropFilter: 'blur(20px)', position: 'relative', overflow: 'hidden' }}>
-                                                {/* Header */}
-                                                <div style={{ textAlign: 'center', borderBottom: '2px solid rgba(255,255,255,0.1)', paddingBottom: 20, marginBottom: 30 }}>
-                                                    <div style={{ fontSize: 48, fontWeight: 900, textTransform: 'uppercase', letterSpacing: 2, color: '#fff', margin: 0 }}>{campaignName}</div>
-                                                    <div style={{ fontSize: 24, fontWeight: 700, color: '#4ade80', textTransform: 'uppercase', letterSpacing: 4, marginTop: 4 }}>RFID Check-in • Action Timing</div>
-                                                </div>
-                                                {/* Middle */}
-                                                <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 50, padding: '20px 0' }}>
-                                                    <div style={{ position: 'relative', flexShrink: 0, marginRight: 10 }}>
-                                                        <div style={{ width: 340, height: 340, borderRadius: 30, border: '6px solid #4ade80', overflow: 'hidden', boxShadow: '0 20px 40px rgba(74,222,128,0.2)', background: '#0f172a', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                                            <img src={uploadedPhoto} alt="runner" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                                                        </div>
-                                                        <div style={{ position: 'absolute', bottom: -10, right: -10, background: '#fff', padding: 6, borderRadius: 12, border: '3px solid #4ade80', boxShadow: '0 10px 20px rgba(0,0,0,0.4)', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                                                            <div style={{ width: 55, height: 45, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                                                <span style={{ fontSize: 28, fontWeight: 900, color: '#0f172a', fontFamily: "'Exo 2', sans-serif", fontStyle: 'italic' }}>{_bib}</span>
-                                                            </div>
-                                                            <p style={{ color: '#64748b', fontSize: 8, fontWeight: 800, textTransform: 'uppercase', marginTop: 2 }}>BIB</p>
-                                                        </div>
+                                    <div style={{ width: 1920, height: 1080, background: '#0f172a', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'Prompt', sans-serif", position: 'relative', overflow: 'hidden' }}>
+                                        <div style={{ width: 1728, height: 972, background: '#ffffff', color: '#0f172a', borderRadius: 8, display: 'flex', flexDirection: 'column', padding: '66px 88px 54px', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5)', position: 'relative', overflow: 'hidden' }}>
+                                            <div style={{ position: 'absolute', top: 0, left: 0, height: 4, width: '100%', background: '#16a34a' }} />
+                                            <div style={{ textAlign: 'center', borderBottom: '1px solid #cbd5e1', paddingBottom: 26, marginBottom: _hasMedical ? 20 : 38, flexShrink: 0 }}>
+                                                <div style={{ fontSize: 46, fontWeight: 800, letterSpacing: 1, color: '#0f172a', margin: 0, lineHeight: 1.15 }}>{campaignName}</div>
+                                            </div>
+                                            {_hasMedical && (
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: 16, background: '#fef2f2', border: '2px solid #fca5a5', borderRadius: 6, padding: '14px 24px', marginBottom: 26, flexShrink: 0 }}>
+                                                    <div style={{ fontSize: 30, color: '#dc2626', flexShrink: 0 }}>⚠</div>
+                                                    <div>
+                                                        <p style={{ fontSize: 15, fontWeight: 700, color: '#991b1b', textTransform: 'uppercase', letterSpacing: 2, margin: '0 0 2px' }}>⚕ Medical Alert — แจ้งเจ้าหน้าที่</p>
+                                                        <p style={{ fontSize: 22, fontWeight: 600, color: '#dc2626', margin: 0 }}>{_medical}</p>
                                                     </div>
-                                                    <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-                                                        <div style={{ color: '#4ade80', fontWeight: 800, fontSize: 24, textTransform: 'uppercase', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 10 }}>
-                                                            <span>✅</span> Verified Runner
-                                                        </div>
-                                                        <div style={{ fontSize: 80, fontWeight: 900, lineHeight: 1, margin: '0 0 5px', color: '#fff' }}>{_nth}</div>
-                                                        {_nen && <div style={{ fontSize: 32, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', margin: '0 0 30px' }}>{_nen}</div>}
-                                                        <div style={{ display: 'flex', alignItems: 'center', gap: 20, marginTop: _nen ? 0 : 25 }}>
-                                                            {_dist && <div style={{ background: '#ef4444', color: '#fff', padding: '14px 36px', borderRadius: 18, fontSize: 45, fontWeight: 900, boxShadow: '0 10px 25px rgba(239,68,68,0.4)', border: '3px solid rgba(255,255,255,0.2)' }}>{_dist}</div>}
-                                                            <div>
-                                                                <div style={{ fontSize: 16, fontWeight: 700, color: '#64748b', letterSpacing: 3, textTransform: 'uppercase' }}>BIB</div>
-                                                                <div style={{ fontSize: 128, fontWeight: 900, color: '#fff', fontStyle: 'italic', lineHeight: 0.85, textShadow: '0 5px 15px rgba(0,0,0,0.5)', fontFamily: "'Exo 2', sans-serif" }}>{_bib}</div>
-                                                            </div>
+                                                </div>
+                                            )}
+                                            <div style={{ flex: 1, display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 90, minHeight: 0 }}>
+                                                <div style={{ position: 'relative', flexShrink: 0 }}>
+                                                    <div style={{ width: 440, height: 440, borderRadius: 4, border: '1px solid #cbd5e1', padding: 8, background: '#ffffff', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }}>
+                                                        <div style={{ width: '100%', height: '100%', borderRadius: 2, overflow: 'hidden', background: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                                            <img src={uploadedPhoto} alt="runner" style={{ width: '100%', height: '100%', objectFit: 'cover', filter: 'grayscale(20%)' }} />
                                                         </div>
                                                     </div>
                                                 </div>
-                                                {/* Bottom bar */}
-                                                <div style={{ marginTop: 40 }}>
-                                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', background: 'rgba(255,255,255,0.05)', borderRadius: 30, overflow: 'hidden', border: '1px solid rgba(255,255,255,0.1)' }}>
-                                                        <div style={{ padding: '30px 20px', textAlign: 'center' }}>
-                                                            <p style={{ fontSize: 19, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 2, marginBottom: 5, color: '#94a3b8' }}>Gender</p>
-                                                            <p style={{ fontSize: 48, fontWeight: 900, lineHeight: 1, color: '#fff', textTransform: 'uppercase' }}>{_gl}</p>
+                                                <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'flex-start', maxWidth: '58%' }}>
+                                                    <p style={{ color: '#16a34a', fontWeight: 600, fontSize: 18, textTransform: 'uppercase', margin: '0 0 14px', display: 'flex', alignItems: 'center', gap: 8, letterSpacing: 2 }}>✓ ยืนยันข้อมูล</p>
+                                                    <h2 style={{ fontSize: 82, fontWeight: 800, lineHeight: 1.1, margin: '0 0 6px', color: '#0f172a' }}>{_nth}</h2>
+                                                    {_nen && <h3 style={{ fontSize: 30, fontWeight: 400, color: '#64748b', textTransform: 'uppercase', margin: '0 0 32px', letterSpacing: 2 }}>{_nen}</h3>}
+                                                    <div style={{ display: 'flex', alignItems: 'stretch', gap: 18, borderLeft: '4px solid #16a34a', paddingLeft: 18 }}>
+                                                        <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
+                                                            <span style={{ fontSize: 18, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 3 }}>BIB</span>
+                                                            <span style={{ fontSize: 124, fontWeight: 700, color: '#0f172a', lineHeight: 0.9 }}>{_bib}</span>
                                                         </div>
-                                                        <div style={{ padding: '30px 20px', textAlign: 'center', background: 'rgba(74,222,128,0.1)' }}>
-                                                            <p style={{ fontSize: 19, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 2, marginBottom: 5, color: '#4ade80' }}>Age Group</p>
-                                                            <p style={{ fontSize: 64, fontWeight: 900, lineHeight: 1, color: '#4ade80', textShadow: '0 0 20px rgba(74,222,128,0.3)' }}>{_ag}</p>
-                                                        </div>
+                                                        <div style={{ width: 2, alignSelf: 'stretch', background: '#cbd5e1', margin: '8px 4px' }} />
+                                                        {_dist && <span style={{ color: '#ef4444', fontSize: 56, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 2, alignSelf: 'center' }}>{_dist}</span>}
                                                     </div>
                                                 </div>
-                                                <div style={{ position: 'absolute', bottom: 0, left: 0, height: 10, background: '#4ade80', borderRadius: '0 0 40px 40px', width: '100%' }} />
+                                            </div>
+                                            <div style={{ marginTop: 'auto', borderTop: '1px solid #cbd5e1', paddingTop: 24, flexShrink: 0 }}>
+                                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 0 }}>
+                                                    <div style={{ textAlign: 'left', padding: '10px 18px 10px 0' }}>
+                                                        <p style={{ fontSize: 18, fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 2, margin: '0 0 6px' }}>Gender</p>
+                                                        <p style={{ fontSize: 46, fontWeight: 800, color: '#0f172a', lineHeight: 1, margin: 0 }}>{_gl}</p>
+                                                    </div>
+                                                    <div style={{ textAlign: 'left', padding: '10px 18px', borderLeft: '1px solid #e2e8f0' }}>
+                                                        <p style={{ fontSize: 18, fontWeight: 600, color: '#16a34a', textTransform: 'uppercase', letterSpacing: 2, margin: '0 0 6px' }}>Age Group</p>
+                                                        <p style={{ fontSize: 52, fontWeight: 800, color: '#16a34a', lineHeight: 1, margin: 0 }}>{_ag}</p>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div style={{ position: 'absolute', bottom: 18, right: 28, fontSize: 12, color: '#cbd5e1', fontWeight: 700, letterSpacing: 4, textTransform: 'uppercase', textAlign: 'right', lineHeight: 1.4 }}>
+                                                Powered by<br />
+                                                <span style={{ color: '#94a3b8' }}>ACTION TIMING</span>
                                             </div>
                                         </div>
-                                    ) : (
-                                        /* ===== SPLIT 1920×1080 ===== */
-                                        <div style={{ width: 1920, height: 1080, background: 'linear-gradient(135deg, #020617 0%, #0f172a 100%)', display: 'flex', flexDirection: 'row', fontFamily: "'Prompt', sans-serif", position: 'relative', overflow: 'hidden' }}>
-                                            {/* Left — photo */}
-                                            <div style={{ width: '45%', height: '100%', position: 'relative', overflow: 'hidden', background: '#000' }}>
-                                                <div style={{ width: '100%', height: '100%', background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 50%, #020617 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                                    <img src={uploadedPhoto} alt="runner" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                                                </div>
-                                                <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to right, rgba(2,6,23,0) 70%, rgba(2,6,23,1) 100%)' }} />
-                                                <div style={{ position: 'absolute', bottom: 40, left: 40, zIndex: 10, background: '#fff', padding: 8, borderRadius: 12, width: 90, display: 'flex', flexDirection: 'column', alignItems: 'center', border: '3px solid #4ade80', boxShadow: '0 10px 20px rgba(0,0,0,0.4)' }}>
-                                                    <div style={{ width: 70, height: 55, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                                        <span style={{ fontSize: 36, fontWeight: 900, color: '#0f172a', fontFamily: "'Exo 2', sans-serif", fontStyle: 'italic' }}>{_bib}</span>
-                                                    </div>
-                                                    <p style={{ color: '#64748b', fontSize: 9, fontWeight: 800, textTransform: 'uppercase', marginTop: 4, textAlign: 'center' }}>BIB</p>
-                                                </div>
-                                            </div>
-                                            {/* Right */}
-                                            <div style={{ width: '55%', display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: '54px 115px', zIndex: 5 }}>
-                                                <div style={{ marginBottom: 43, borderLeft: '6px solid #4ade80', paddingLeft: 20 }}>
-                                                    <div style={{ fontSize: 35, fontWeight: 900, textTransform: 'uppercase', lineHeight: 1.1, color: '#fff', margin: 0 }}>{campaignName}</div>
-                                                    <p style={{ fontSize: 19, fontWeight: 700, color: '#4ade80', textTransform: 'uppercase', letterSpacing: 2, marginTop: 4 }}>RFID Check-in • Action Timing</p>
-                                                </div>
-                                                <div style={{ display: 'flex', alignItems: 'flex-end', gap: 10, marginBottom: 54 }}>
-                                                    <div style={{ background: 'rgba(255,255,255,0.04)', borderLeft: '10px solid #4ade80', padding: '15px 50px', transform: 'skewX(-15deg)', borderRadius: 6, boxShadow: '15px 15px 30px rgba(0,0,0,0.3)', zIndex: 2 }}>
-                                                        <div style={{ transform: 'skewX(15deg)' }}>
-                                                            <p style={{ fontSize: 14, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: 6, margin: '0 0 2px' }}>BIB</p>
-                                                            <div style={{ fontSize: 160, fontWeight: 900, lineHeight: 0.85, color: '#fff', fontStyle: 'italic', textShadow: '0 4px 10px rgba(0,0,0,0.5)', fontFamily: "'Exo 2', sans-serif", margin: 0 }}>{_bib}</div>
-                                                        </div>
-                                                    </div>
-                                                    {_dist && <div style={{ background: '#ef4444', padding: '10px 34px 10px 48px', transform: 'skewX(-15deg)', borderRadius: 6, marginBottom: 15, marginLeft: -35, zIndex: 1, boxShadow: 'inset 0 0 20px rgba(0,0,0,0.2)', border: '3px solid rgba(255,255,255,0.15)' }}><div style={{ transform: 'skewX(15deg)' }}><span style={{ fontSize: 40, fontWeight: 900, color: '#fff', whiteSpace: 'nowrap', fontStyle: 'italic', letterSpacing: 1 }}>{_dist}</span></div></div>}
-                                                </div>
-                                                <div style={{ marginBottom: 43 }}>
-                                                    <div style={{ color: '#4ade80', fontWeight: 800, fontSize: 19, textTransform: 'uppercase', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 10 }}>
-                                                        <span>✅</span> Verified Participant
-                                                    </div>
-                                                    <div style={{ fontSize: 64, fontWeight: 900, lineHeight: 1.1, color: '#fff', margin: '0 0 5px', textShadow: '0 4px 10px rgba(0,0,0,0.5)' }}>{_nth}</div>
-                                                    {_nen && <div style={{ fontSize: 29, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', margin: 0 }}>{_nen}</div>}
-                                                </div>
-                                                <div style={{ display: 'flex', alignItems: 'center', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 24, padding: '25px 0', backdropFilter: 'blur(10px)', boxShadow: '0 10px 30px rgba(0,0,0,0.2)' }}>
-                                                    <div style={{ flex: 1, textAlign: 'center' }}>
-                                                        <p style={{ fontSize: 14, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 2, marginBottom: 8, color: '#64748b' }}>Gender</p>
-                                                        <p style={{ fontSize: 40, fontWeight: 900, lineHeight: 1, color: '#fff' }}>{_gl}</p>
-                                                    </div>
-                                                    <div style={{ flex: 1, textAlign: 'center', background: 'rgba(74,222,128,0.06)', borderRadius: 16, margin: '0 15px', padding: '15px 0', border: '1px solid rgba(74,222,128,0.15)' }}>
-                                                        <p style={{ fontSize: 14, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 2, marginBottom: 8, color: '#4ade80' }}>Age Group</p>
-                                                        <p style={{ fontSize: 56, fontWeight: 900, lineHeight: 1, color: '#4ade80', textShadow: '0 0 20px rgba(74,222,128,0.2)' }}>{_ag}</p>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                            <div style={{ position: 'absolute', bottom: 0, left: 0, height: 8, background: '#4ade80', width: '100%', zIndex: 100 }} />
-                                            <div style={{ position: 'absolute', bottom: 20, right: 40, fontSize: 11, fontWeight: 800, color: 'rgba(255,255,255,0.2)', textTransform: 'uppercase', letterSpacing: 4, zIndex: 100 }}>Action Timing System</div>
-                                        </div>
-                                    )}
+                                    </div>
                                 </div>
                             </div>
                             <button onClick={handleDownload} style={{ width: '100%', padding: '14px 20px', borderRadius: 14, background: 'linear-gradient(135deg, #3b82f6, #2563eb)', color: '#fff', fontSize: 17, fontWeight: 800, border: 'none', cursor: 'pointer', boxShadow: '0 8px 24px rgba(59,130,246,0.35)', marginBottom: 10 }}>💾 ดาวน์โหลดรูป</button>
