@@ -12,6 +12,32 @@ interface Campaign {
     scanningBgImage?: string;
 }
 
+/** Resize an image file to maxWidth and re-encode as JPEG so the base64 payload
+ *  fits inside the 10 MB API limit. Server still receives a data: URL. */
+async function compressImage(file: File, maxWidth: number, quality: number): Promise<string> {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+            const img = new Image();
+            img.onload = () => {
+                const ratio = img.width > maxWidth ? maxWidth / img.width : 1;
+                const w = Math.round(img.width * ratio);
+                const h = Math.round(img.height * ratio);
+                const canvas = document.createElement('canvas');
+                canvas.width = w; canvas.height = h;
+                const ctx = canvas.getContext('2d');
+                if (!ctx) return reject(new Error('canvas ctx unavailable'));
+                ctx.drawImage(img, 0, 0, w, h);
+                resolve(canvas.toDataURL('image/jpeg', quality));
+            };
+            img.onerror = () => reject(new Error('image decode failed'));
+            img.src = reader.result as string;
+        };
+        reader.onerror = () => reject(new Error('file read failed'));
+        reader.readAsDataURL(file);
+    });
+}
+
 const SCANNING_TEMPLATE = {
     id: 'athletic',
     name: 'Athletic Precision — Race Day Display',
@@ -42,10 +68,13 @@ export default function BibCheckPage() {
         })();
     }, []);
 
+    const [saveError, setSaveError] = useState<string>('');
+
     const handleSave = async () => {
         if (!campaign?._id) return;
         setSaving(true);
         setSaved(false);
+        setSaveError('');
         try {
             const res = await fetch(`/api/campaigns/${campaign._id}`, {
                 method: 'PUT',
@@ -55,12 +84,21 @@ export default function BibCheckPage() {
                     scanningBgImage: bgImage || '',
                 }),
             });
-            if (res.ok) {
-                setSaved(true);
-                setTimeout(() => setSaved(false), 3000);
+            if (!res.ok) {
+                const txt = await res.text();
+                throw new Error(txt || `HTTP ${res.status}`);
             }
-        } catch (err) {
+            // Confirm by re-reading so we know the field actually persisted.
+            const fresh = await fetch(`/api/campaigns/${campaign._id}`, { cache: 'no-store' });
+            if (fresh.ok) {
+                const data = await fresh.json();
+                setCampaign(data);
+            }
+            setSaved(true);
+            setTimeout(() => setSaved(false), 3000);
+        } catch (err: any) {
             console.error('Save error:', err);
+            setSaveError(err?.message || 'Save failed');
         } finally {
             setSaving(false);
         }
@@ -215,12 +253,12 @@ export default function BibCheckPage() {
                                             type="file"
                                             accept="image/*"
                                             style={{ display: 'none' }}
-                                            onChange={(e) => {
+                                            onChange={async (e) => {
                                                 const file = e.target.files?.[0];
                                                 if (!file) return;
-                                                const reader = new FileReader();
-                                                reader.onload = () => setBgImage(reader.result as string);
-                                                reader.readAsDataURL(file);
+                                                // Compress to <=1920px wide JPEG to stay under the 10mb body limit
+                                                const compressed = await compressImage(file, 1920, 0.82);
+                                                setBgImage(compressed);
                                             }}
                                         />
                                     </label>
@@ -248,6 +286,11 @@ export default function BibCheckPage() {
                             {saved && (
                                 <span style={{ fontSize: 14, fontWeight: 700, color: '#16a34a' }}>
                                     ✓ บันทึกสำเร็จ
+                                </span>
+                            )}
+                            {saveError && (
+                                <span style={{ fontSize: 14, fontWeight: 700, color: '#dc2626' }}>
+                                    ✗ {saveError}
                                 </span>
                             )}
                         </div>

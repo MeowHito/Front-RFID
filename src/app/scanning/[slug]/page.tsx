@@ -1,8 +1,23 @@
 'use client';
 
-import { useEffect, useState, useRef, useCallback } from 'react';
+import { useEffect, useState, useRef, useCallback, useLayoutEffect } from 'react';
 import { useParams } from 'next/navigation';
 import { QRCodeSVG } from 'qrcode.react';
+
+/** Shrink font-size of `el` until its scrollWidth fits the parent's clientWidth. */
+function fitNameToWidth(el: HTMLElement | null, baseRem: number, minRem = 1.0) {
+    if (!el || !el.parentElement) return;
+    el.style.fontSize = `${baseRem}rem`;
+    const parent = el.parentElement;
+    const limit = parent.clientWidth;
+    if (limit <= 0) return;
+    let size = baseRem;
+    let guard = 30;
+    while (el.scrollWidth > limit && size > minRem && guard-- > 0) {
+        size -= 0.15;
+        el.style.fontSize = `${size}rem`;
+    }
+}
 
 // Alpha-3 → Alpha-2 map for flag emoji
 const A3: Record<string, string> = {
@@ -49,6 +64,8 @@ export default function ScanningBySlugPage() {
     const [portrait, setPortrait] = useState(false);
     const [checkInTime, setCheckInTime] = useState('');
     const hiddenInputRef = useRef<HTMLInputElement>(null);
+    const nameEnRef = useRef<HTMLHeadingElement>(null);
+    const nameThRef = useRef<HTMLHeadingElement>(null);
 
     // Load campaign by slug
     useEffect(() => {
@@ -80,6 +97,20 @@ export default function ScanningBySlugPage() {
         document.addEventListener('click', keepFocus);
         return () => { clearInterval(interval); document.removeEventListener('click', keepFocus); };
     }, []);
+
+    // Auto-fit names to single line: try base size, shrink if overflow
+    useLayoutEffect(() => {
+        if (!runner) return;
+        const fit = () => {
+            const baseEn = portrait ? 2.6 : 5.2;
+            const baseTh = portrait ? 1.0 : 1.9;
+            fitNameToWidth(nameEnRef.current, baseEn, 1.4);
+            fitNameToWidth(nameThRef.current, baseTh, 0.9);
+        };
+        fit();
+        window.addEventListener('resize', fit);
+        return () => window.removeEventListener('resize', fit);
+    }, [runner, portrait, animKey]);
 
     // Poll for photo updates when runner exists but has no photo
     useEffect(() => {
@@ -193,8 +224,8 @@ export default function ScanningBySlugPage() {
                 .ce-qr-caption { color: #64748b; font-size: 11px; font-weight: 700; text-transform: uppercase; margin-top: 6px; text-align: center; letter-spacing: 1px; font-family: 'Prompt', sans-serif; }
                 .ce-runner-info { display: flex; flex-direction: column; justify-content: center; align-items: flex-start; max-width: 58%; }
                 .ce-status-badge { color: #16a34a; font-weight: 600; font-size: 1rem; text-transform: uppercase; margin: 0 0 14px; display: flex; align-items: center; gap: 8px; letter-spacing: 2px; font-family: 'Prompt', sans-serif; }
-                .ce-runner-name { font-size: clamp(3rem, 5.5vw, 5.2rem); font-weight: 800; line-height: 1.1; margin: 0 0 6px; color: #0f172a; font-family: 'Prompt', sans-serif; }
-                .ce-runner-name-en { font-size: clamp(1.2rem, 2vw, 1.9rem); font-weight: 400; color: #64748b; text-transform: uppercase; margin: 0 0 32px; letter-spacing: 2px; font-family: 'Prompt', sans-serif; }
+                .ce-runner-name { font-size: clamp(3rem, 5.5vw, 5.2rem); font-weight: 800; line-height: 1.1; margin: 0 0 6px; color: #0f172a; font-family: 'Prompt', sans-serif; white-space: nowrap; max-width: 100%; overflow: hidden; }
+                .ce-runner-name-en { font-size: clamp(1.2rem, 2vw, 1.9rem); font-weight: 400; color: #64748b; text-transform: uppercase; margin: 0 0 32px; letter-spacing: 2px; font-family: 'Prompt', sans-serif; white-space: nowrap; max-width: 100%; overflow: hidden; }
                 .ce-bib-group { display: flex; align-items: baseline; gap: 18px; border-left: 4px solid #16a34a; padding-left: 18px; }
                 .ce-bib-block { display: flex; align-items: baseline; gap: 10px; }
                 .ce-bib-label { font-size: 1rem; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: 3px; font-family: 'Prompt', sans-serif; }
@@ -364,8 +395,8 @@ export default function ScanningBySlugPage() {
                                     <i className="fa-regular fa-circle-check" /> ยืนยันข้อมูล
                                     {flag && <span style={{ fontSize: '1.1em', marginLeft: 4 }}>{flag}</span>}
                                 </p>
-                                <h2 className="ce-runner-name">{nameTh || nameEn}</h2>
-                                {nameTh && <h3 className="ce-runner-name-en">{nameEn}</h3>}
+                                <h2 ref={nameEnRef} className="ce-runner-name">{nameEn || nameTh}</h2>
+                                {nameTh && nameEn && <h3 ref={nameThRef} className="ce-runner-name-en">{nameTh}</h3>}
                                 <div className="ce-bib-group">
                                     <div className="ce-bib-block">
                                         <span className="ce-bib-label">BIB</span>

@@ -204,6 +204,7 @@ export default function RunnerProfileClient() {
     const [runnerHits, setRunnerHits] = useState<RunnerHit[]>([]);
     const [selectedCheckpoint, setSelectedCheckpoint] = useState('');
     const [preArrivalBufferSeconds, setPreArrivalBufferSeconds] = useState(5);
+    const [allowDownload, setAllowDownload] = useState(true);
 
     useEffect(() => {
         if (isFollowPage) {
@@ -218,6 +219,9 @@ export default function RunnerProfileClient() {
                 const nextValue = Number(settings?.preArrivalBuffer);
                 if (Number.isFinite(nextValue) && nextValue >= 0) {
                     setPreArrivalBufferSeconds(nextValue);
+                }
+                if (typeof settings?.allowDownload === 'boolean') {
+                    setAllowDownload(settings.allowDownload);
                 }
             })
             .catch(() => {});
@@ -573,12 +577,14 @@ export default function RunnerProfileClient() {
                                                 <div className="font-semibold text-red-600">กำลังถ่ายทอดสดอยู่ ผู้ใช้สามารถกดดูได้ทันทีโดยไม่ต้องรอปิดกิจกรรม</div>
                                             )}
                                         </div>
-                                        <a
-                                            href={downloadUrl}
-                                            className="inline-flex items-center justify-center rounded-2xl bg-emerald-500 px-5 py-3 text-sm font-black text-white transition hover:bg-emerald-600"
-                                        >
-                                            ดาวน์โหลดวิดีโอจุดนี้
-                                        </a>
+                                        {allowDownload && (
+                                            <a
+                                                href={downloadUrl}
+                                                className="inline-flex items-center justify-center rounded-2xl bg-emerald-500 px-5 py-3 text-sm font-black text-white transition hover:bg-emerald-600"
+                                            >
+                                                ดาวน์โหลดวิดีโอจุดนี้
+                                            </a>
+                                        )}
                                     </div>
                                 </div>
                             ) : (
@@ -939,15 +945,17 @@ export default function RunnerProfileClient() {
                                                         <span className="font-black text-white">{formatBytes(selectedHit.recording.fileSize)}</span>
                                                     </div>
                                                 </div>
-                                                <div className="flex flex-col gap-3 sm:items-end sm:justify-center">
-                                                    <a
-                                                        href={downloadUrl}
-                                                        className="inline-flex items-center justify-center rounded-2xl bg-linear-to-r from-rose-500 to-orange-400 px-5 py-3 text-sm font-black text-white transition hover:brightness-110"
-                                                    >
-                                                        ดาวน์โหลดวิดีโอจุดนี้
-                                                    </a>
-                                                    <p className="text-xs text-slate-400">ไฟล์จะถูกดาวน์โหลดจากวิดีโอของ Checkpoint ที่เลือกโดยตรง</p>
-                                                </div>
+                                                {allowDownload && (
+                                                    <div className="flex flex-col gap-3 sm:items-end sm:justify-center">
+                                                        <a
+                                                            href={downloadUrl}
+                                                            className="inline-flex items-center justify-center rounded-2xl bg-linear-to-r from-rose-500 to-orange-400 px-5 py-3 text-sm font-black text-white transition hover:brightness-110"
+                                                        >
+                                                            ดาวน์โหลดวิดีโอจุดนี้
+                                                        </a>
+                                                        <p className="text-xs text-slate-400">ไฟล์จะถูกดาวน์โหลดจากวิดีโอของ Checkpoint ที่เลือกโดยตรง</p>
+                                                    </div>
+                                                )}
                                             </div>
                                         </div>
                                     ) : (

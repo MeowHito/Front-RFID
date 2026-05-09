@@ -59,7 +59,10 @@ export default function CameraPage() {
     const [videoBitrateKbps, setVideoBitrateKbps] = useState(2500);
 
     const videoRef = useRef<HTMLVideoElement>(null);
-    const streamRef = useRef<MediaStream | null>(null);
+    const streamRef = useRef<MediaStream | null>(null);          // raw camera stream
+    const composedStreamRef = useRef<MediaStream | null>(null);  // canvas stream with timestamp burned in
+    const canvasRef = useRef<HTMLCanvasElement | null>(null);
+    const composeRafRef = useRef<number | null>(null);
     const recorderRef = useRef<MediaRecorder | null>(null);
     const socketRef = useRef<Socket | null>(null);
     const elapsedRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -156,6 +159,10 @@ export default function CameraPage() {
             const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false });
             streamRef.current = stream;
             if (videoRef.current) { videoRef.current.srcObject = stream; videoRef.current.muted = true; await videoRef.current.play(); }
+            // Build a parallel canvas stream with the timestamp burned in — this is what gets recorded
+            stopCompose();
+            const composedStream = buildComposedStream(stream);
+            composedStreamRef.current = composedStream;
             const socket = io(`${SOCKET_URL}/cctv`, { path: '/socket.io', transports: ['websocket', 'polling'] });
             socketRef.current = socket;
             await new Promise<void>((resolve, reject) => { socket.on('connect', resolve); socket.on('connect_error', reject); setTimeout(() => reject(new Error('Connection timeout')), 10000); });
@@ -166,7 +173,7 @@ export default function CameraPage() {
             mimeTypeRef.current = mimeType;
             initChunkRef.current = null;
             chunkBufferRef.current = [];
-            const recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: videoBitrateKbps * 1000 });
+            const recorder = new MediaRecorder(composedStream, { mimeType, videoBitsPerSecond: videoBitrateKbps * 1000 });
             recorderRef.current = recorder;
             recorder.ondataavailable = (e) => {
                 if (e.data && e.data.size > 0) {
@@ -205,6 +212,10 @@ export default function CameraPage() {
             const newStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: newFacing, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false });
             streamRef.current = newStream;
             if (videoRef.current) { videoRef.current.srcObject = newStream; await videoRef.current.play(); }
+            // Rebuild composed stream (new source → new canvas pipeline)
+            stopCompose();
+            const composedStream = buildComposedStream(newStream);
+            composedStreamRef.current = composedStream;
             // New recorder on same socket
             initChunkRef.current = null;
             chunkBufferRef.current = [];
@@ -212,7 +223,7 @@ export default function CameraPage() {
             const camId = cameraId;
             const mimeType = getSupportedMimeType();
             mimeTypeRef.current = mimeType;
-            const recorder = new MediaRecorder(newStream, { mimeType, videoBitsPerSecond: videoBitrateKbps * 1000 });
+            const recorder = new MediaRecorder(composedStream, { mimeType, videoBitsPerSecond: videoBitrateKbps * 1000 });
             recorderRef.current = recorder;
             recorder.ondataavailable = (e) => {
                 if (e.data && e.data.size > 0) {
@@ -258,8 +269,67 @@ export default function CameraPage() {
         setTimeout(() => setClipSaveStatus('idle'), 3000);
     }, [status, cameraId, cameraName, campaignId, checkpointName, location, deviceId]);
 
+    /** Build a canvas-backed stream that draws each frame from the LIVE preview element
+     *  plus a real-time timestamp top-right. Returns the raw stream as a fallback if any
+     *  step fails (older Safari/Android may lack canvas.captureStream). */
+    const buildComposedStream = (raw: MediaStream): MediaStream => {
+        try {
+            const track = raw.getVideoTracks()[0];
+            const settings = track?.getSettings();
+            const w = settings?.width || 1280;
+            const h = settings?.height || 720;
+            // Reuse the visible <video> as our pixel source — no detached element gymnastics
+            const sourceVideo = videoRef.current;
+            if (!sourceVideo) return raw;
+
+            const canvas = canvasRef.current || document.createElement('canvas');
+            canvas.width = w; canvas.height = h;
+            canvasRef.current = canvas;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) return raw;
+
+            const draw = () => {
+                try {
+                    if (sourceVideo.readyState >= 2) ctx.drawImage(sourceVideo, 0, 0, w, h);
+                } catch { /* element not ready yet */ }
+                const stamp = new Date().toLocaleString('th-TH', { hour12: false });
+                const fontSize = Math.round(h * 0.038);
+                ctx.font = `700 ${fontSize}px 'Lexend', system-ui, sans-serif`;
+                const padding = Math.round(h * 0.02);
+                const textWidth = ctx.measureText(stamp).width;
+                const boxX = w - textWidth - padding * 3;
+                const boxY = padding;
+                ctx.fillStyle = 'rgba(0,0,0,0.55)';
+                ctx.fillRect(boxX, boxY, textWidth + padding * 2, fontSize + padding);
+                ctx.fillStyle = '#ffffff';
+                ctx.textBaseline = 'top';
+                ctx.fillText(stamp, boxX + padding, boxY + padding * 0.4);
+                composeRafRef.current = requestAnimationFrame(draw);
+            };
+            draw();
+
+            // captureStream is available in Chrome/Edge/Firefox + Safari 16.4+; missing in iOS<16.4
+            const captureFn = (canvas as any).captureStream as (fps: number) => MediaStream;
+            if (typeof captureFn !== 'function') return raw;
+            return captureFn.call(canvas, 30);
+        } catch (err) {
+            console.warn('[timestamp overlay] disabled — falling back to raw stream:', err);
+            return raw;
+        }
+    };
+
+    const stopCompose = () => {
+        if (composeRafRef.current != null) {
+            cancelAnimationFrame(composeRafRef.current);
+            composeRafRef.current = null;
+        }
+        composedStreamRef.current?.getTracks().forEach(t => t.stop());
+        composedStreamRef.current = null;
+    };
+
     const cleanup = () => {
         recorderRef.current?.stop(); recorderRef.current = null;
+        stopCompose();
         streamRef.current?.getTracks().forEach(t => t.stop()); streamRef.current = null;
         socketRef.current?.disconnect(); socketRef.current = null;
         if (elapsedRef.current) clearInterval(elapsedRef.current);
@@ -284,7 +354,17 @@ export default function CameraPage() {
     const HL = F.headline; // shorthand for serif font
 
     return (
-        <div className="flex h-[100dvh] overflow-hidden bg-[#f9f9f9] text-[#2d3435]" style={{ fontFamily: F.body }}>
+        <div
+            className="flex overflow-hidden bg-[#f9f9f9] text-[#2d3435]"
+            style={{
+                fontFamily: F.body,
+                /* dvh keeps it inside the viewport on Android Chrome (URL bar resizes).
+                 * Fallbacks for older WebViews that don't support dvh. */
+                height: '100dvh',
+                minHeight: '-webkit-fill-available',
+                maxHeight: '100vh',
+            }}
+        >
 
             {/* Sidebar overlay backdrop */}
             {sidebarOpen && (
@@ -345,8 +425,11 @@ export default function CameraPage() {
                     </div>
                 </header>
 
-                {/* Camera — fixed height: 38vh keeps proportions on any screen */}
-                <section className="shrink-0 relative bg-[#1a1e1e] overflow-hidden" style={{ height: '38vh' }}>
+                {/* Camera viewport — smaller on portrait/short screens so action buttons stay reachable on Android phones */}
+                <section
+                    className="shrink-0 relative bg-[#1a1e1e] overflow-hidden"
+                    style={{ height: 'min(38vh, 38dvh, 320px)' }}
+                >
                     <video ref={videoRef} autoPlay muted playsInline
                         className="w-full h-full object-contain"
                         style={{ display: isStreaming || isConnecting ? 'block' : 'none' }} />
@@ -386,8 +469,11 @@ export default function CameraPage() {
                     </div>
                 </section>
 
-                {/* Form + actions — fills remaining height, space distributed evenly */}
-                <div className="flex-1 flex flex-col justify-between px-5 py-4 overflow-hidden">
+                {/* Form + actions — fills remaining height; form scrolls, action buttons stay pinned at bottom */}
+                <div className="flex-1 flex flex-col min-h-0 px-5 pt-4 pb-3 overflow-hidden">
+
+                    {/* Scrollable form region (everything except the action buttons) */}
+                    <div className="flex-1 min-h-0 overflow-y-auto pr-1" style={{ WebkitOverflowScrolling: 'touch' }}>
 
                     {/* Section title */}
                     <div>
@@ -444,7 +530,7 @@ export default function CameraPage() {
                     </div>
 
                     {/* Session summary bar */}
-                    <div className="flex flex-wrap items-center gap-2.5 bg-[#f2f4f4] rounded px-4 py-3 my-3">
+                    <div className="flex flex-wrap items-center gap-2.5 bg-[#f2f4f4] rounded px-4 py-3 mt-3 mb-1">
                         <span className="text-[0.65rem] font-bold tracking-widest uppercase text-[#5a6061] mr-1">SESSION</span>
                         <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold ${isStreaming ? 'bg-[#d8e5e6] text-[#475455]' : 'bg-[#e4e9ea] text-[#5a6061]'}`}>
                             {isStreaming ? '🔴 LIVE' : isConnecting ? 'กำลังเชื่อมต่อ' : status === 'stopped' ? 'หยุดแล้ว' : 'เตรียมพร้อม'}
@@ -455,8 +541,10 @@ export default function CameraPage() {
                         <span className="material-symbols-outlined text-[0.875rem] text-[#745c00] ml-auto">verified_user</span>
                     </div>
 
-                    {/* Action buttons */}
-                    <div className="flex gap-2.5">
+                    </div>{/* /scrollable form region */}
+
+                    {/* Action buttons — pinned outside the scroll area, always reachable on small Android screens */}
+                    <div className="shrink-0 flex gap-2.5 pt-3" style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
                         {!isStreaming && !isConnecting ? (
                             <button onClick={startStream} disabled={!campaignId || !cameraName.trim()}
                                 className={`flex-1 py-4 text-sm font-bold tracking-wider uppercase border-none cursor-pointer transition-opacity ${!campaignId || !cameraName.trim() ? 'bg-[#e4e9ea] text-[#adb3b4] cursor-not-allowed' : 'bg-[#745c00] text-[#fff8ef] hover:opacity-90'}`}>

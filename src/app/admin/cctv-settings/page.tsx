@@ -18,6 +18,7 @@ export default function CctvSettingsPage() {
     const [preArrivalBuffer, setPreArrivalBuffer] = useState(30);
     const [clipBufferSeconds, setClipBufferSeconds] = useState(10);
     const [videoBitrateKbps, setVideoBitrateKbps] = useState(800);
+    const [allowDownload, setAllowDownload] = useState(true);
     const [loading, setLoading] = useState(true);
     const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
     const [pairingToken, setPairingToken] = useState('');
@@ -34,6 +35,7 @@ export default function CctvSettingsPage() {
                 if (s.preArrivalBuffer) setPreArrivalBuffer(s.preArrivalBuffer);
                 if (s.clipBufferSeconds) setClipBufferSeconds(s.clipBufferSeconds);
                 if (s.videoBitrateKbps) setVideoBitrateKbps(s.videoBitrateKbps);
+                if (typeof s.allowDownload === 'boolean') setAllowDownload(s.allowDownload);
             })
             .catch(() => {})
             .finally(() => setLoading(false));
@@ -90,6 +92,7 @@ export default function CctvSettingsPage() {
                     preArrivalBuffer,
                     clipBufferSeconds,
                     videoBitrateKbps,
+                    allowDownload,
                 }),
             });
             if (res.status === 401) {
@@ -267,6 +270,28 @@ export default function CctvSettingsPage() {
                                     </div>
                                 )}
                             </div>
+                        </div>
+
+                        {/* Allow Download Toggle — controls whether viewers see the "Download" button on /runner pages */}
+                        <div style={{ padding: '12px 16px', background: allowDownload ? '#eff6ff' : '#fef2f2', borderRadius: 10, border: `1.5px solid ${allowDownload ? '#bfdbfe' : '#fecaca'}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                            <div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                    <span style={{ fontSize: 13 }}>⬇️</span>
+                                    <span style={{ fontWeight: 700, fontSize: 13, color: allowDownload ? '#1e40af' : '#991b1b' }}>
+                                        {th ? 'อนุญาตให้ผู้ชมโหลดวิดีโอ' : 'Allow viewers to download videos'}
+                                    </span>
+                                </div>
+                                <div style={{ fontSize: 11, color: allowDownload ? '#1e40af' : '#991b1b', opacity: 0.75, marginTop: 2 }}>
+                                    {allowDownload
+                                        ? (th ? 'เปิด — ผู้ชม/นักวิ่งกดโหลดวิดีโอจุดของตัวเองได้' : 'ON — viewers/runners can download their checkpoint videos')
+                                        : (th ? 'ปิด — ดูได้อย่างเดียว ปุ่มโหลดจะถูกซ่อน' : 'OFF — viewing only, download button is hidden')}
+                                </div>
+                            </div>
+                            <label style={{ position: 'relative', display: 'inline-block', width: 44, height: 24, cursor: isAdmin ? 'pointer' : 'default', flexShrink: 0 }}>
+                                <input type="checkbox" checked={allowDownload} onChange={e => isAdmin && setAllowDownload(e.target.checked)} disabled={!isAdmin} style={{ opacity: 0, width: 0, height: 0 }} />
+                                <span style={{ position: 'absolute', inset: 0, borderRadius: 12, background: allowDownload ? '#3b82f6' : '#cbd5e1', transition: 'background 0.2s' }} />
+                                <span style={{ position: 'absolute', top: 2, left: allowDownload ? 22 : 2, width: 20, height: 20, borderRadius: '50%', background: '#fff', transition: 'left 0.2s', boxShadow: '0 1px 3px rgba(0,0,0,0.15)' }} />
+                            </label>
                         </div>
 
                         {/* Video Bitrate */}
