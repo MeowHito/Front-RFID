@@ -159,10 +159,11 @@ export default function CameraPage() {
             const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false });
             streamRef.current = stream;
             if (videoRef.current) { videoRef.current.srcObject = stream; videoRef.current.muted = true; await videoRef.current.play(); }
-            // Build a parallel canvas stream with the timestamp burned in — this is what gets recorded
+            // Timestamp is burned in by the server during ffmpeg conversion (using
+            // recording.startTime), so the camera records the raw stream directly.
             stopCompose();
-            const composedStream = buildComposedStream(stream);
-            composedStreamRef.current = composedStream;
+            const composedStream = stream;
+            composedStreamRef.current = null;
             const socket = io(`${SOCKET_URL}/cctv`, { path: '/socket.io', transports: ['websocket', 'polling'] });
             socketRef.current = socket;
             await new Promise<void>((resolve, reject) => { socket.on('connect', resolve); socket.on('connect_error', reject); setTimeout(() => reject(new Error('Connection timeout')), 10000); });
@@ -212,10 +213,10 @@ export default function CameraPage() {
             const newStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: newFacing, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false });
             streamRef.current = newStream;
             if (videoRef.current) { videoRef.current.srcObject = newStream; await videoRef.current.play(); }
-            // Rebuild composed stream (new source → new canvas pipeline)
+            // Server burns timestamp during ffmpeg conversion — record raw stream directly.
             stopCompose();
-            const composedStream = buildComposedStream(newStream);
-            composedStreamRef.current = composedStream;
+            const composedStream = newStream;
+            composedStreamRef.current = null;
             // New recorder on same socket
             initChunkRef.current = null;
             chunkBufferRef.current = [];
