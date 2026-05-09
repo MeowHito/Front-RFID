@@ -1322,8 +1322,9 @@ export default function IdCardImportPage() {
                                 )}
                             </div>
 
-                            {/* Start / Stop buttons */}
+                            {/* Start / Stop / Upload buttons */}
                             {!cameraScanning ? (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                                 <button
                                     onClick={async () => {
                                         setCameraScanning(true);
@@ -1331,12 +1332,24 @@ export default function IdCardImportPage() {
                                         setCameraRunner(null);
                                         setCameraLookupDone(false);
                                         try {
-                                            const { Html5Qrcode } = await import('html5-qrcode');
-                                            const scanner = new Html5Qrcode('camera-barcode-scanner');
+                                            const { Html5Qrcode, Html5QrcodeSupportedFormats } = await import('html5-qrcode');
+                                            // Thai ID cards carry a PDF417 barcode (not QR). Enable all formats
+                                            // ZXing supports so the same scanner reads QR / Code128 / PDF417 / DataMatrix
+                                            // without the user having to choose.
+                                            const formatsToSupport = [
+                                                Html5QrcodeSupportedFormats.QR_CODE,
+                                                Html5QrcodeSupportedFormats.PDF_417,
+                                                Html5QrcodeSupportedFormats.CODE_128,
+                                                Html5QrcodeSupportedFormats.CODE_39,
+                                                Html5QrcodeSupportedFormats.DATA_MATRIX,
+                                                Html5QrcodeSupportedFormats.EAN_13,
+                                            ];
+                                            const scanner = new Html5Qrcode('camera-barcode-scanner', { formatsToSupport, verbose: false } as any);
                                             scannerInstanceRef.current = scanner;
                                             await scanner.start(
                                                 { facingMode: 'environment' },
-                                                { fps: 10, qrbox: { width: 350, height: 150 } },
+                                                // PDF417 is wide and short — give the scan box more horizontal room
+                                                { fps: 10, qrbox: (vw: number, vh: number) => ({ width: Math.min(vw - 20, 480), height: Math.min(vh - 80, 200) }) },
                                                 async (decodedText: string) => {
                                                     const match = decodedText.match(/(\d{13})/);
                                                     const cid = match ? match[1] : decodedText.trim();
@@ -1344,11 +1357,13 @@ export default function IdCardImportPage() {
                                                     scanner.stop().catch(() => {});
                                                     scannerInstanceRef.current = null;
                                                     setCameraScanning(false);
-                                                    // Lookup runner
+                                                    // Lookup runner — scoped to the current event so we don't surface runners from other events
                                                     setCameraLookupLoading(true);
                                                     setCameraLookupDone(false);
                                                     try {
-                                                        const res = await fetch(`/api/runners/lookup?code=${encodeURIComponent(cid)}`);
+                                                        const params = new URLSearchParams({ code: cid });
+                                                        if (campaign?._id) params.set('campaignId', campaign._id);
+                                                        const res = await fetch(`/api/runners/lookup?${params.toString()}`);
                                                         const data = await res.json();
                                                         setCameraRunner(data.runner || null);
                                                     } catch { setCameraRunner(null); }
@@ -1358,6 +1373,10 @@ export default function IdCardImportPage() {
                                             );
                                         } catch (err) {
                                             console.error('Camera error:', err);
+                                            showToast(
+                                                language === 'th' ? 'เปิดกล้องไม่ได้ ตรวจสอบสิทธิ์การเข้าถึงกล้อง' : 'Cannot open camera, check permission',
+                                                'error'
+                                            );
                                             setCameraScanning(false);
                                         }
                                     }}
@@ -1371,6 +1390,64 @@ export default function IdCardImportPage() {
                                 >
                                     📷 {language === 'th' ? 'เปิดกล้องสแกน Barcode' : 'Open Camera Scanner'}
                                 </button>
+
+                                {/* Fallback: scan from a photo file (Android/iPhone gallery or just-shot picture) */}
+                                <label style={{
+                                    width: '100%', padding: '14px 0', borderRadius: 12, border: '2px dashed #f59e0b',
+                                    background: '#fffbeb', color: '#92400e', fontSize: 14, fontWeight: 700,
+                                    cursor: 'pointer', textAlign: 'center', display: 'block',
+                                }}>
+                                    🖼️ {language === 'th' ? 'หรือเลือกรูปจากเครื่อง / ถ่ายรูปบัตร' : 'Or pick a photo / take a picture'}
+                                    <input
+                                        type="file"
+                                        accept="image/*"
+                                        capture="environment"
+                                        style={{ display: 'none' }}
+                                        onChange={async (e) => {
+                                            const file = e.target.files?.[0];
+                                            if (!file) return;
+                                            setCameraResult('');
+                                            setCameraRunner(null);
+                                            setCameraLookupDone(false);
+                                            try {
+                                                const { Html5Qrcode, Html5QrcodeSupportedFormats } = await import('html5-qrcode');
+                                                const formatsToSupport = [
+                                                    Html5QrcodeSupportedFormats.QR_CODE,
+                                                    Html5QrcodeSupportedFormats.PDF_417,
+                                                    Html5QrcodeSupportedFormats.CODE_128,
+                                                    Html5QrcodeSupportedFormats.CODE_39,
+                                                    Html5QrcodeSupportedFormats.DATA_MATRIX,
+                                                    Html5QrcodeSupportedFormats.EAN_13,
+                                                ];
+                                                const fileScanner = new Html5Qrcode('camera-barcode-scanner', { formatsToSupport, verbose: false } as any);
+                                                const decodedText = await fileScanner.scanFile(file, /* showImage= */ false);
+                                                const match = decodedText.match(/(\d{13})/);
+                                                const cid = match ? match[1] : decodedText.trim();
+                                                setCameraResult(cid);
+                                                setCameraLookupLoading(true);
+                                                try {
+                                                    const params = new URLSearchParams({ code: cid });
+                                                    if (campaign?._id) params.set('campaignId', campaign._id);
+                                                    const res = await fetch(`/api/runners/lookup?${params.toString()}`);
+                                                    const data = await res.json();
+                                                    setCameraRunner(data.runner || null);
+                                                } catch { setCameraRunner(null); }
+                                                finally { setCameraLookupLoading(false); setCameraLookupDone(true); }
+                                            } catch (err) {
+                                                console.error('File scan error:', err);
+                                                showToast(
+                                                    language === 'th'
+                                                        ? 'อ่าน Barcode จากรูปไม่ได้ ลองรูปที่ Barcode ชัดและไม่เอียง'
+                                                        : 'Could not decode barcode from this image',
+                                                    'error'
+                                                );
+                                            }
+                                            // reset so selecting the same file twice still triggers onChange
+                                            (e.target as HTMLInputElement).value = '';
+                                        }}
+                                    />
+                                </label>
+                                </div>
                             ) : (
                                 <button
                                     onClick={async () => {
