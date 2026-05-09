@@ -15,11 +15,19 @@ export async function GET(
         const t = request.nextUrl.searchParams.get('t');
         if (t) qp.set('t', t);
         const qs = qp.toString() ? `?${qp.toString()}` : '';
+
+        // Forward Range header so backend can return 206 Partial Content for video seeking
+        const fetchHeaders: Record<string, string> = {};
+        const range = request.headers.get('range');
+        if (range) fetchHeaders['range'] = range;
+
         const backendRes = await fetch(`${BACKEND_URL}/public-api/runner/${id}/cctv/${recordingId}/stream${qs}`, {
             cache: 'no-store',
+            headers: fetchHeaders,
         });
 
-        if (!backendRes.ok) {
+        // Pass through error responses, but accept 206 Partial Content as success
+        if (backendRes.status >= 400) {
             const text = await backendRes.text();
             return new NextResponse(text || 'Failed to stream video', { status: backendRes.status });
         }
@@ -33,6 +41,8 @@ export async function GET(
         if (contentLength) resHeaders['Content-Length'] = contentLength;
         const acceptRanges = backendRes.headers.get('Accept-Ranges');
         if (acceptRanges) resHeaders['Accept-Ranges'] = acceptRanges;
+        const contentRange = backendRes.headers.get('Content-Range');
+        if (contentRange) resHeaders['Content-Range'] = contentRange;
 
         return new NextResponse(backendRes.body, {
             status: backendRes.status,
