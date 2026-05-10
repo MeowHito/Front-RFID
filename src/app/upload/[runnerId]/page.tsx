@@ -30,6 +30,7 @@ export default function UploadPhotoPage() {
     const [error, setError] = useState('');
     const [uploadedPhoto, setUploadedPhoto] = useState<string>('');
     const [campaignName, setCampaignName] = useState('');
+    const [campaignBgImage, setCampaignBgImage] = useState('');
     const fileInputRef = useRef<HTMLInputElement>(null);
     const cardRef = useRef<HTMLDivElement>(null);
     const wrapperRef = useRef<HTMLDivElement>(null);
@@ -99,6 +100,7 @@ export default function UploadPhotoPage() {
                 if (res.ok) {
                     const data = await res.json();
                     if (data.name) setCampaignName(data.name);
+                    if (data.scanningBgImage) setCampaignBgImage(data.scanningBgImage);
                 }
             } catch { /* ignore */ }
         })();
@@ -183,8 +185,8 @@ export default function UploadPhotoPage() {
                             {/* Scaled 1920×1080 card — exact same layout as scanning page */}
                             <div style={{ position: 'relative', width: '100%', height: Math.round(1080 * cardScale), overflow: 'hidden', borderRadius: 14, marginBottom: 14, boxShadow: '0 15px 40px rgba(0,0,0,0.5)', border: '1px solid rgba(74,222,128,0.2)' }}>
                                 <div ref={cardRef} style={{ position: 'absolute', top: 0, left: 0, width: 1920, height: 1080, transformOrigin: '0 0', transform: `scale(${cardScale})` }}>
-                                    <div style={{ width: 1920, height: 1080, background: '#0f172a', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'Prompt', sans-serif", position: 'relative', overflow: 'hidden' }}>
-                                        <div style={{ width: 1728, height: 972, background: '#ffffff', color: '#0f172a', borderRadius: 8, display: 'flex', flexDirection: 'column', padding: '66px 88px 54px', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5)', position: 'relative', overflow: 'hidden' }}>
+                                    <div style={{ width: 1920, height: 1080, background: campaignBgImage ? `url(${campaignBgImage}) center/cover no-repeat` : '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'Prompt', sans-serif", position: 'relative', overflow: 'hidden' }}>
+                                        <div style={{ width: 1728, height: 972, background: '#ffffff', color: '#0f172a', display: 'flex', flexDirection: 'column', padding: '66px 88px 54px', position: 'relative', overflow: 'hidden' }}>
                                             <div style={{ position: 'absolute', top: 0, left: 0, height: 4, width: '100%', background: '#16a34a' }} />
                                             <div style={{ textAlign: 'center', borderBottom: '1px solid #cbd5e1', paddingBottom: 26, marginBottom: _hasMedical ? 20 : 38, flexShrink: 0 }}>
                                                 <div style={{ fontSize: 46, fontWeight: 800, letterSpacing: 1, color: '#0f172a', margin: 0, lineHeight: 1.15 }}>{campaignName}</div>
