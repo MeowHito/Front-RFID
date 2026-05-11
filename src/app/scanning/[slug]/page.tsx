@@ -267,32 +267,41 @@ export default function ScanningBySlugPage() {
                 }
 
                 /* Portrait */
-                .ce-portrait .ce-card { width: min(88vw, 520px); height: 94vh; padding: 32px 32px 24px; }
-                .ce-portrait .ce-header { padding-bottom: 14px; margin-bottom: 16px; }
+                .ce-portrait .ce-card { --ce-profile: clamp(190px, min(58vw, 36vh), 340px); width: min(88vw, 520px); height: min(94vh, 760px); padding: clamp(16px, 3vh, 32px) clamp(18px, 5vw, 32px) clamp(14px, 2.5vh, 24px); }
+                .ce-portrait .ce-header { padding-bottom: clamp(8px, 1.8vh, 14px); margin-bottom: clamp(8px, 2vh, 16px); }
                 .ce-portrait .ce-event-sub { font-size: 0.7rem; letter-spacing: 4px; }
                 .ce-portrait .ce-event-name { font-size: clamp(1.1rem, 5vw, 1.55rem); }
-                .ce-portrait .ce-middle { flex-direction: column; gap: 20px; align-items: center; justify-content: flex-start; }
-                .ce-portrait .ce-profile-container { width: min(70vw, 340px); height: min(70vw, 340px); }
-                .ce-portrait .ce-qr-on-frame { bottom: -14px; right: -14px; }
-                .ce-portrait .ce-runner-info { align-items: center; text-align: center; max-width: 100%; }
-                .ce-portrait .ce-status-badge { justify-content: center; font-size: 0.85rem; margin-bottom: 10px; }
-                .ce-portrait .ce-runner-name { font-size: clamp(2rem, 9vw, 3rem); margin-bottom: 4px; }
-                .ce-portrait .ce-runner-name-en { font-size: clamp(0.85rem, 3vw, 1.1rem); margin-bottom: 18px; }
-                .ce-portrait .ce-bib-group { border-left: none; border-top: 4px solid #16a34a; padding-left: 0; padding-top: 14px; justify-content: center; gap: 12px; }
-                .ce-portrait .ce-bib-text { font-size: clamp(4rem, 17vw, 5.5rem); }
+                .ce-portrait .ce-middle { flex-direction: column; gap: clamp(10px, 2.4vh, 20px); align-items: center; justify-content: flex-start; }
+                .ce-portrait .ce-profile-container { width: var(--ce-profile); height: var(--ce-profile); }
+                .ce-portrait .ce-qr-on-frame { bottom: clamp(-14px, -1.8vh, -8px); right: clamp(-14px, -2.5vw, -8px); }
+                .ce-portrait .ce-qr-on-frame svg { width: clamp(78px, min(20vw, 13vh), 110px); height: clamp(78px, min(20vw, 13vh), 110px); }
+                .ce-portrait .ce-runner-info { align-items: center; text-align: center; max-width: 100%; width: 100%; min-height: 0; }
+                .ce-portrait .ce-status-badge { justify-content: center; font-size: clamp(0.68rem, min(2.4vw, 1.7vh), 0.85rem); margin-bottom: clamp(4px, 1.3vh, 10px); }
+                .ce-portrait .ce-runner-name { font-size: clamp(1.45rem, min(8vw, 4.6vh), 3rem); line-height: 1.05; margin-bottom: 4px; max-width: 100%; }
+                .ce-portrait .ce-runner-name-en { font-size: clamp(0.72rem, min(2.8vw, 2vh), 1.1rem); margin-bottom: clamp(8px, 2.2vh, 18px); }
+                .ce-portrait .ce-bib-group { border-left: none; border-top: 4px solid #16a34a; padding-left: 0; padding-top: clamp(8px, 1.8vh, 14px); justify-content: center; gap: clamp(8px, 2.4vw, 12px); }
+                .ce-portrait .ce-bib-text { font-size: clamp(3rem, min(15vw, 8vh), 5.5rem); }
                 .ce-portrait .ce-bib-label { font-size: 0.75rem; letter-spacing: 2px; }
-                .ce-portrait .ce-dist-badge { font-size: 2.1rem; }
+                .ce-portrait .ce-dist-badge { font-size: clamp(1.35rem, min(6vw, 4.5vh), 2.1rem); }
                 .ce-portrait .ce-info-bar { grid-template-columns: repeat(2, 1fr); gap: 1px; background: #e2e8f0; border-radius: 6px; overflow: hidden; }
-                .ce-portrait .ce-info-item { border-left: none; background: white; padding: 14px 16px; text-align: center; }
+                .ce-portrait .ce-info-item { border-left: none; background: white; padding: clamp(8px, 1.8vh, 14px) clamp(10px, 3vw, 16px); text-align: center; }
                 .ce-portrait .ce-info-item:first-child { padding-left: 16px; }
-                .ce-portrait .ce-info-label { font-size: 0.85rem; letter-spacing: 1.5px; }
-                .ce-portrait .ce-info-value { font-size: 1.85rem; }
-                .ce-portrait .ce-info-item.highlight .ce-info-value { font-size: 2.15rem; }
+                .ce-portrait .ce-info-label { font-size: clamp(0.65rem, min(2.2vw, 1.6vh), 0.85rem); letter-spacing: 1.5px; }
+                .ce-portrait .ce-info-value { font-size: clamp(1.2rem, min(5vw, 3.8vh), 1.85rem); }
+                .ce-portrait .ce-info-item.highlight .ce-info-value { font-size: clamp(1.35rem, min(5.8vw, 4.2vh), 2.15rem); }
                 .ce-portrait .ce-medical { padding: 10px 14px; gap: 10px; margin-bottom: 12px; }
                 .ce-portrait .ce-medical-icon { font-size: 1.3rem; }
                 .ce-portrait .ce-medical-label { font-size: 0.68rem; }
                 .ce-portrait .ce-medical-text { font-size: 0.95rem; }
                 .ce-portrait .ce-seal { bottom: 8px; right: 12px; font-size: 0.52rem; }
+
+                @media (max-height: 720px) and (orientation: portrait), (max-height: 720px) and (max-width: 900px) {
+                    .ce-portrait .ce-card { --ce-profile: clamp(160px, min(54vw, 32vh), 260px); height: 92vh; }
+                    .ce-portrait .ce-qr-caption { display: none; }
+                    .ce-portrait .ce-runner-name-en { display: none; }
+                    .ce-portrait .ce-bottom { padding-top: clamp(6px, 1.4vh, 10px); }
+                    .ce-portrait .ce-seal { display: none; }
+                }
             `}</style>
 
             <input ref={hiddenInputRef} value={scanCode}
