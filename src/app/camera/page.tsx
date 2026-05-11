@@ -8,6 +8,7 @@ const F = { headline: "'Newsreader', Georgia, serif", body: "'Manrope', system-u
 
 interface Checkpoint { _id: string; name: string; orderNum?: number; }
 interface CameraRegisterResult { success?: boolean; cameraId?: string; }
+interface FullscreenVideoElement extends HTMLVideoElement { webkitEnterFullscreen?: () => void; }
 
 type StreamStatus = 'idle' | 'setting-up' | 'connecting' | 'streaming' | 'stopped' | 'error';
 
@@ -35,10 +36,10 @@ export default function CameraPage() {
     const [savedCameraId, setSavedCameraId] = useState('');
     const [, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
 
-    const [clipSaveStatus, setClipSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
     const [videoBitrateKbps, setVideoBitrateKbps] = useState(2500);
 
     const videoRef = useRef<HTMLVideoElement>(null);
+    const previewRef = useRef<HTMLElement>(null);
     const streamRef = useRef<MediaStream | null>(null);          // raw camera stream
     const composedStreamRef = useRef<MediaStream | null>(null);  // canvas stream with timestamp burned in
     const composeRafRef = useRef<number | null>(null);
@@ -236,37 +237,28 @@ export default function CameraPage() {
         } catch (err: unknown) { setErrorMsg('ไม่สามารถสลับกล้องได้: ' + (err instanceof Error ? err.message : '')); }
     }, [facingMode, status, cameraId, videoBitrateKbps, stopCompose]);
 
-    const saveClip = useCallback(async () => {
-        if (status !== 'streaming' || !initChunkRef.current) return;
-        setClipSaveStatus('saving');
-        const mimeType = mimeTypeRef.current || 'video/webm';
-        const allChunks = [initChunkRef.current, ...chunkBufferRef.current];
-        const blob = new Blob(allChunks, { type: mimeType });
+    const openFullscreen = useCallback(async () => {
+        setErrorMsg('');
         try {
-            const arrayBuffer = await blob.arrayBuffer();
-            const uint8 = new Uint8Array(arrayBuffer);
-            let binary = '';
-            const CHUNK = 8192;
-            for (let i = 0; i < uint8.length; i += CHUNK) {
-                binary += String.fromCharCode(...Array.from(uint8.subarray(i, i + CHUNK)));
+            if (document.fullscreenElement) {
+                await document.exitFullscreen();
+                return;
             }
-            const videoBase64 = btoa(binary);
-            const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
-            const res = await fetch('/api/cctv-recordings/clip', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', ...(token ? { 'Authorization': `Bearer ${token}` } : {}) },
-                body: JSON.stringify({
-                    videoBase64, mimeType, cameraId,
-                    cameraName: cameraName.trim(), campaignId, checkpointName, location, deviceId,
-                    durationSeconds: Math.min(chunkBufferRef.current.length * 2, clipBufferSecsRef.current),
-                }),
-            });
-            setClipSaveStatus(res.ok ? 'saved' : 'error');
-        } catch {
-            setClipSaveStatus('error');
+            const target = previewRef.current;
+            if (target?.requestFullscreen) {
+                await target.requestFullscreen();
+                return;
+            }
+            const video = videoRef.current as FullscreenVideoElement | null;
+            if (video?.webkitEnterFullscreen) {
+                video.webkitEnterFullscreen();
+                return;
+            }
+            setErrorMsg('เบราว์เซอร์นี้ไม่รองรับ Full Screen');
+        } catch (err: unknown) {
+            setErrorMsg(err instanceof Error ? err.message : 'ไม่สามารถเปิด Full Screen ได้');
         }
-        setTimeout(() => setClipSaveStatus('idle'), 3000);
-    }, [status, cameraId, cameraName, campaignId, checkpointName, location, deviceId]);
+    }, []);
 
     useEffect(() => () => cleanup(), [cleanup]);
 
@@ -295,8 +287,9 @@ export default function CameraPage() {
 
                 {/* Camera viewport — smaller on portrait/short screens so action buttons stay reachable on Android phones */}
                 <section
+                    ref={previewRef}
                     className="shrink-0 relative bg-[#1a1e1e] overflow-hidden"
-                    style={{ height: 'min(38vh, 38dvh, 320px)' }}
+                    style={{ height: 'min(46vh, 46dvh, 430px)' }}
                 >
                     <video ref={videoRef} autoPlay muted playsInline
                         className="w-full h-full object-contain"
@@ -331,14 +324,18 @@ export default function CameraPage() {
                                     <span className="material-symbols-outlined text-[1.375rem]">cameraswitch</span>
                                 </button>
                                 <span className="material-symbols-outlined text-[1.375rem] text-[#2d3435] cursor-pointer">photo_camera</span>
-                                <span className="material-symbols-outlined text-[1.375rem] text-[#2d3435] cursor-pointer">fullscreen</span>
+                                <button onClick={openFullscreen}
+                                    className="bg-transparent border-none cursor-pointer text-[#2d3435] p-0 flex items-center"
+                                    aria-label="Open fullscreen">
+                                    <span className="material-symbols-outlined text-[1.375rem]">fullscreen</span>
+                                </button>
                             </div>
                         </div>
                     </div>
                 </section>
 
                 {/* Form + actions — fills remaining height; form scrolls, action buttons stay pinned at bottom */}
-                <div className="flex-1 flex flex-col min-h-0 px-5 pt-4 pb-3 overflow-hidden">
+                <div className="flex-1 flex flex-col min-h-0 px-5 pt-5 pb-3 overflow-hidden">
 
                     {/* Scrollable form region (everything except the action buttons) */}
                     <div className="flex-1 min-h-0 overflow-y-auto pr-1" style={{ WebkitOverflowScrolling: 'touch' }}>
@@ -347,7 +344,7 @@ export default function CameraPage() {
                     <div>
                         <div className="flex items-baseline gap-2.5 mb-3">
                             <h3 className="text-xl font-bold text-[#2d3435] m-0" style={{ fontFamily: HL }}>รายละเอียดการบันทึก</h3>
-                            <span className="text-xs text-[#5a6061] opacity-60">กรอกข้อมูลจุดตรวจและอุปกรณ์</span>
+                            
                         </div>
 
                         {/* Error */}
@@ -390,29 +387,17 @@ export default function CameraPage() {
                     <div className="shrink-0 flex gap-2.5 pt-3" style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
                         {!isStreaming && !isConnecting ? (
                             <button onClick={startStream} disabled={!campaignId || !cameraName.trim()}
-                                className={`flex-1 py-4 text-sm font-bold tracking-wider uppercase border-none cursor-pointer transition-opacity ${!campaignId || !cameraName.trim() ? 'bg-[#e4e9ea] text-[#adb3b4] cursor-not-allowed' : 'bg-[#745c00] text-[#fff8ef] hover:opacity-90'}`}>
+                                className={`flex-1 py-4 text-sm font-bold tracking-wider uppercase border-none cursor-pointer transition-opacity ${!campaignId || !cameraName.trim() ? 'bg-[#e4e9ea] text-[#adb3b4] cursor-not-allowed' : 'bg-[#dc2626] text-white hover:opacity-90'}`}>
                                 เริ่มการถ่ายทอดสด (START)
                             </button>
                         ) : isConnecting ? (
-                            <button disabled className="flex-1 py-4 bg-[#92400e] text-[#fff8ef] text-sm font-bold tracking-wider uppercase border-none opacity-80">
+                            <button disabled className="flex-1 py-4 bg-[#dc2626] text-white text-sm font-bold tracking-wider uppercase border-none opacity-80">
                                 กำลังเชื่อมต่อ...
                             </button>
                         ) : (
                             <button onClick={stopStream}
-                                className="flex-1 py-4 bg-transparent text-[#9f403d] text-sm font-bold tracking-wider uppercase cursor-pointer border border-[#9f403d]/35 hover:bg-[#fff7f6] transition-colors">
+                                className="flex-1 py-4 bg-[#dc2626] text-white text-sm font-bold tracking-wider uppercase cursor-pointer border border-[#dc2626] hover:opacity-90 transition-opacity">
                                 หยุดการถ่ายทอด (STOP)
-                            </button>
-                        )}
-                        {isStreaming && (
-                            <button onClick={saveClip} disabled={clipSaveStatus === 'saving'}
-                                className={`shrink-0 px-5 py-4 text-xs font-bold tracking-widest uppercase cursor-pointer border transition-colors whitespace-nowrap ${
-                                    clipSaveStatus === 'saving' ? 'bg-[#e4e9ea] text-[#adb3b4] border-[#adb3b4]/20 cursor-not-allowed'
-                                    : clipSaveStatus === 'saved' ? 'bg-[#166534] text-white border-transparent'
-                                    : clipSaveStatus === 'error' ? 'bg-[#9f403d] text-white border-transparent'
-                                    : 'bg-[#166534]/10 text-[#166534] border-[#166534]/30 hover:bg-[#166534]/20'
-                                }`}
-                            >
-                                {clipSaveStatus === 'saving' ? '⏳ SAVING...' : clipSaveStatus === 'saved' ? '✓ CLIP SAVED' : clipSaveStatus === 'error' ? '✗ ERROR' : `💾 SAVE CLIP (${clipBufferSecsRef.current}s)`}
                             </button>
                         )}
                 </div>
