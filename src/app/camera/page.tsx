@@ -165,8 +165,14 @@ export default function CameraPage() {
             const socket = io(`${SOCKET_URL}/cctv`, { path: '/socket.io', transports: ['websocket', 'polling'] });
             socketRef.current = socket;
             await new Promise<void>((resolve, reject) => { socket.on('connect', resolve); socket.on('connect_error', reject); setTimeout(() => reject(new Error('Connection timeout')), 10000); });
-            const regResult = await new Promise<CameraRegisterResult>(resolve => { socket.emit('camera:register', { campaignId, name: cameraName.trim(), checkpointId: checkpointId || undefined, checkpointName: checkpointName || undefined, location: location || undefined, description: description || undefined, deviceId }, resolve); });
+            const registerData = { campaignId, name: cameraName.trim(), checkpointId: checkpointId || undefined, checkpointName: checkpointName || undefined, location: location || undefined, description: description || undefined, deviceId };
+            const regResult = await new Promise<CameraRegisterResult>(resolve => { socket.emit('camera:register', registerData, resolve); });
             if (!regResult?.success) throw new Error('Registration failed');
+            // Re-register on every subsequent reconnect so the server's camera
+            // map stays populated even when the WebSocket briefly drops. The
+            // server uses deviceId for a stable cameraId so the cameraId we
+            // captured below stays valid across reconnects.
+            socket.on('connect', () => { socket.emit('camera:register', registerData); });
             const camId = regResult.cameraId || '';
             setCameraId(camId);
             const mimeType = getSupportedMimeType();

@@ -136,6 +136,17 @@ export default function CctvRecordingsPage() {
 
     useEffect(() => { if (campaignId) load(); }, [campaignId, load]);
 
+    // Auto-refresh while any recording is still live, so the UI doesn't act on
+    // a stale `recordingStatus === 'recording'` (which would route playback
+    // through the live socket viewer instead of the file stream).
+    useEffect(() => {
+        if (!campaignId) return;
+        const hasLive = recordings.some(r => r.recordingStatus === 'recording');
+        if (!hasLive) return;
+        const t = setInterval(() => { load(); }, 10000);
+        return () => clearInterval(t);
+    }, [campaignId, recordings, load]);
+
     useEffect(() => {
         fetch('/api/campaigns/featured', { cache: 'no-store' })
             .then(r => r.ok ? r.json() : null)
