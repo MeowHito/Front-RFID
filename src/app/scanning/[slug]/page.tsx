@@ -212,45 +212,59 @@ export default function ScanningBySlugPage() {
                 @keyframes scanFadeIn { from { opacity: 0; transform: translateY(30px); } to { opacity: 1; transform: translateY(0); } }
                 @keyframes scanProgress { from { width: 100%; } to { width: 0%; } }
                 @keyframes scanPulse { 0%,100% { opacity: 1; } 50% { opacity: 0.6; } }
-                .ce-card { width: 90vw; height: 90vh; max-width: 1400px; background: #ffffff; color: #0f172a; border-radius: 8px; display: flex; flex-direction: column; padding: 46px 72px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5); position: relative; animation: scanFadeIn 0.6s cubic-bezier(0.16, 1, 0.3, 1); overflow: hidden; }
+                .ce-card, .ce-card * { box-sizing: border-box; }
+                .ce-card { --ce-pad-x: clamp(18px, 5vw, 72px); --ce-pad-y: clamp(16px, 5vh, 46px); --ce-gap: clamp(18px, 5vw, 72px); --ce-profile: clamp(220px, min(35vw, 58vh), 440px); width: min(92vw, 1400px); height: min(90vh, 780px); background: #ffffff; color: #0f172a; border-radius: 8px; display: flex; flex-direction: column; padding: var(--ce-pad-y) var(--ce-pad-x); box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5); position: relative; animation: scanFadeIn 0.6s cubic-bezier(0.16, 1, 0.3, 1); overflow: hidden; }
                 .ce-card > * { position: relative; z-index: 1; }
                 .ce-card-bg { position: absolute; inset: 0; z-index: 0; background-position: center; background-size: cover; background-repeat: no-repeat; opacity: 0.18; filter: saturate(0.9); }
                 .ce-progress { position: absolute; top: 0; left: 0; height: 4px; background: #16a34a; border-radius: 8px 8px 0 0; animation: scanProgress 8s linear forwards; z-index: 5; }
-                .ce-header { text-align: center; border-bottom: 1px solid #cbd5e1; padding-bottom: 22px; margin-bottom: 26px; flex-shrink: 0; }
+                .ce-header { text-align: center; border-bottom: 1px solid #cbd5e1; padding-bottom: clamp(8px, 2.6vh, 22px); margin-bottom: clamp(10px, 3vh, 26px); flex-shrink: 0; }
                 .ce-event-sub { font-family: 'Prompt', sans-serif; font-size: 1rem; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: 6px; margin: 0 0 4px; }
-                .ce-event-name { font-family: 'Prompt', sans-serif; font-size: clamp(1.8rem, 3.3vw, 2.7rem); font-weight: 800; letter-spacing: 1px; color: #0f172a; margin: 0; line-height: 1.15; }
-                .ce-medical { display: flex; align-items: center; gap: 16px; background: #fef2f2; border: 2px solid #fca5a5; border-radius: 6px; padding: 13px 22px; margin-bottom: 22px; flex-shrink: 0; }
+                .ce-event-name { font-family: 'Prompt', sans-serif; font-size: clamp(1.25rem, min(3.1vw, 5vh), 2.7rem); font-weight: 800; letter-spacing: 1px; color: #0f172a; margin: 0; line-height: 1.12; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+                .ce-medical { display: flex; align-items: center; gap: 16px; background: #fef2f2; border: 2px solid #fca5a5; border-radius: 6px; padding: 13px 22px; margin-bottom: clamp(10px, 2.6vh, 22px); flex-shrink: 0; }
                 .ce-medical-icon { font-size: 1.8rem; color: #dc2626; flex-shrink: 0; }
                 .ce-medical-label { font-size: 0.8rem; font-weight: 700; color: #991b1b; text-transform: uppercase; letter-spacing: 2px; margin: 0 0 2px; }
                 .ce-medical-text { font-size: 1.1rem; font-weight: 600; color: #dc2626; margin: 0; }
-                .ce-middle { flex: 1; display: flex; flex-direction: row; align-items: center; justify-content: center; gap: 72px; min-height: 0; }
+                .ce-middle { flex: 1; display: flex; flex-direction: row; align-items: center; justify-content: center; gap: var(--ce-gap); min-height: 0; }
                 .ce-profile-wrapper { position: relative; flex-shrink: 0; }
-                .ce-profile-container { width: 440px; height: 440px; border-radius: 4px; border: 1px solid #cbd5e1; padding: 8px; background: white; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); }
+                .ce-profile-container { width: var(--ce-profile); height: var(--ce-profile); border-radius: 4px; border: 1px solid #cbd5e1; padding: clamp(4px, 1vh, 8px); background: white; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); }
                 .ce-profile-inner { width: 100%; height: 100%; border-radius: 2px; overflow: hidden; background: #f1f5f9; display: flex; align-items: center; justify-content: center; }
                 .ce-profile-img { width: 100%; height: 100%; object-fit: cover; filter: grayscale(20%); }
                 .ce-placeholder-svg { width: 72%; height: 72%; opacity: 0.25; }
-                .ce-qr-on-frame { position: absolute; bottom: -22px; right: -22px; background: white; padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1; box-shadow: 0 8px 16px rgba(0,0,0,0.15); display: flex; flex-direction: column; align-items: center; }
-                .ce-qr-caption { color: #64748b; font-size: 11px; font-weight: 700; text-transform: uppercase; margin-top: 6px; text-align: center; letter-spacing: 1px; font-family: 'Prompt', sans-serif; }
-                .ce-runner-info { display: flex; flex-direction: column; justify-content: center; align-items: flex-start; max-width: 58%; }
-                .ce-status-badge { color: #16a34a; font-weight: 600; font-size: 1rem; text-transform: uppercase; margin: 0 0 14px; display: flex; align-items: center; gap: 8px; letter-spacing: 2px; font-family: 'Prompt', sans-serif; }
-                .ce-runner-name { font-size: clamp(3rem, 5.5vw, 5.2rem); font-weight: 800; line-height: 1.1; margin: 0 0 6px; color: #0f172a; font-family: 'Prompt', sans-serif; white-space: nowrap; max-width: 100%; overflow: hidden; }
-                .ce-runner-name-en { font-size: clamp(1.2rem, 2vw, 1.9rem); font-weight: 400; color: #64748b; text-transform: uppercase; margin: 0 0 32px; letter-spacing: 2px; font-family: 'Prompt', sans-serif; white-space: nowrap; max-width: 100%; overflow: hidden; }
-                .ce-bib-group { display: flex; align-items: baseline; gap: 18px; border-left: 4px solid #16a34a; padding-left: 18px; }
+                .ce-qr-on-frame { position: absolute; bottom: clamp(-22px, -2.4vw, -10px); right: clamp(-22px, -2.4vw, -10px); background: white; padding: clamp(6px, 1.2vw, 10px); border-radius: 6px; border: 1px solid #cbd5e1; box-shadow: 0 8px 16px rgba(0,0,0,0.15); display: flex; flex-direction: column; align-items: center; }
+                .ce-qr-caption { color: #64748b; font-size: clamp(8px, 1.1vw, 11px); font-weight: 700; text-transform: uppercase; margin-top: 6px; text-align: center; letter-spacing: 1px; font-family: 'Prompt', sans-serif; }
+                .ce-runner-info { display: flex; flex-direction: column; justify-content: center; align-items: flex-start; flex: 1 1 0; min-width: 0; max-width: 58%; }
+                .ce-status-badge { color: #16a34a; font-weight: 600; font-size: clamp(0.68rem, 1.5vw, 1rem); text-transform: uppercase; margin: 0 0 clamp(6px, 1.8vh, 14px); display: flex; align-items: center; gap: 8px; letter-spacing: 2px; font-family: 'Prompt', sans-serif; white-space: nowrap; }
+                .ce-runner-name { font-size: clamp(2rem, min(5.2vw, 9vh), 5.2rem); font-weight: 800; line-height: 1.05; margin: 0 0 6px; color: #0f172a; font-family: 'Prompt', sans-serif; white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+                .ce-runner-name-en { font-size: clamp(0.9rem, min(2vw, 3.6vh), 1.9rem); font-weight: 400; color: #64748b; text-transform: uppercase; margin: 0 0 clamp(12px, 4vh, 32px); letter-spacing: 2px; font-family: 'Prompt', sans-serif; white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+                .ce-bib-group { display: flex; align-items: center; gap: clamp(8px, 1.8vw, 18px); border-left: clamp(3px, 0.45vw, 4px) solid #16a34a; padding-left: clamp(10px, 1.8vw, 18px); min-width: 0; max-width: 100%; }
                 .ce-bib-block { display: flex; align-items: baseline; gap: 10px; }
-                .ce-bib-label { font-size: 1rem; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: 3px; font-family: 'Prompt', sans-serif; }
-                .ce-bib-text { font-family: 'Prompt', sans-serif; font-size: clamp(5rem, 8vw, 7.5rem); font-weight: 700; color: #0f172a; line-height: 0.9; }
-                .ce-bib-divider { width: 2px; align-self: stretch; background: #cbd5e1; margin: 8px 4px; }
-                .ce-dist-badge { color: #ef4444; font-size: clamp(2.5rem, 4vw, 3.4rem); font-weight: 800; text-transform: uppercase; letter-spacing: 2px; font-family: 'Prompt', sans-serif; }
-                .ce-bottom { margin-top: auto; border-top: 1px solid #cbd5e1; padding-top: 22px; flex-shrink: 0; }
+                .ce-bib-label { font-size: clamp(0.65rem, 1.5vw, 1rem); font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: 3px; font-family: 'Prompt', sans-serif; }
+                .ce-bib-text { font-family: 'Prompt', sans-serif; font-size: clamp(3rem, min(8vw, 13vh), 7.5rem); font-weight: 700; color: #0f172a; line-height: 0.9; }
+                .ce-bib-divider { width: 1px; height: clamp(36px, 10vh, 74px); flex-shrink: 0; background: #cbd5e1; margin: 0 clamp(2px, 0.6vw, 4px); }
+                .ce-dist-badge { color: #ef4444; font-size: clamp(1.55rem, min(4vw, 7vh), 3.4rem); font-weight: 800; text-transform: uppercase; letter-spacing: 2px; font-family: 'Prompt', sans-serif; white-space: nowrap; }
+                .ce-bottom { margin-top: auto; border-top: 1px solid #cbd5e1; padding-top: clamp(8px, 2.8vh, 22px); flex-shrink: 0; }
                 .ce-info-bar { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0; }
-                .ce-info-item { text-align: left; padding: 10px 18px; border-left: 1px solid #e2e8f0; }
+                .ce-info-item { text-align: left; padding: clamp(6px, 1.5vh, 10px) clamp(10px, 1.6vw, 18px); border-left: 1px solid #e2e8f0; min-width: 0; }
                 .ce-info-item:first-child { border-left: none; padding-left: 0; }
-                .ce-info-label { font-size: 1rem; font-weight: 600; color: #94a3b8; text-transform: uppercase; letter-spacing: 2px; margin: 0 0 6px; font-family: 'Prompt', sans-serif; }
-                .ce-info-value { font-size: 2.4rem; font-weight: 800; color: #0f172a; line-height: 1; margin: 0; font-family: 'Prompt', sans-serif; }
+                .ce-info-label { font-size: clamp(0.65rem, 1.35vw, 1rem); font-weight: 600; color: #94a3b8; text-transform: uppercase; letter-spacing: 2px; margin: 0 0 6px; font-family: 'Prompt', sans-serif; }
+                .ce-info-value { font-size: clamp(1.35rem, min(3vw, 5vh), 2.4rem); font-weight: 800; color: #0f172a; line-height: 1; margin: 0; font-family: 'Prompt', sans-serif; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
                 .ce-info-item.highlight .ce-info-label { color: #16a34a; }
-                .ce-info-item.highlight .ce-info-value { color: #16a34a; font-size: 2.7rem; }
-                .ce-seal { position: absolute; bottom: 18px; right: 28px; font-size: 0.62rem; color: #cbd5e1; font-weight: 700; letter-spacing: 4px; text-transform: uppercase; text-align: right; font-family: 'Prompt', sans-serif; line-height: 1.4; }
+                .ce-info-item.highlight .ce-info-value { color: #16a34a; font-size: clamp(1.55rem, min(3.2vw, 5.5vh), 2.7rem); }
+                .ce-seal { position: absolute; bottom: clamp(8px, 2vh, 18px); right: clamp(12px, 2.5vw, 28px); font-size: clamp(0.42rem, 0.9vw, 0.62rem); color: #cbd5e1; font-weight: 700; letter-spacing: clamp(2px, 0.35vw, 4px); text-transform: uppercase; text-align: right; font-family: 'Prompt', sans-serif; line-height: 1.4; }
                 .ce-seal-mark { color: #94a3b8; }
+
+                @media (max-width: 900px), (max-height: 620px) {
+                    .ce-card { --ce-pad-x: clamp(14px, 3.6vw, 34px); --ce-pad-y: clamp(12px, 3vh, 24px); --ce-gap: clamp(14px, 3.5vw, 34px); --ce-profile: clamp(170px, min(34vw, 50vh), 300px); width: 94vw; height: 88vh; }
+                    .ce-runner-info { max-width: none; }
+                    .ce-qr-on-frame svg { width: clamp(78px, 12vw, 110px); height: clamp(78px, 12vw, 110px); }
+                }
+
+                @media (max-width: 700px) and (orientation: landscape), (max-height: 460px) and (orientation: landscape) {
+                    .ce-card { --ce-profile: clamp(140px, min(30vw, 46vh), 220px); --ce-gap: 14px; height: 92vh; }
+                    .ce-status-badge { letter-spacing: 1px; }
+                    .ce-runner-name-en { display: none; }
+                    .ce-seal { display: none; }
+                }
 
                 /* Portrait */
                 .ce-portrait .ce-card { width: min(88vw, 520px); height: 94vh; padding: 32px 32px 24px; }
