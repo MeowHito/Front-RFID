@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import AdminLayout from '../AdminLayout';
 import { useLanguage } from '@/lib/language-context';
 import { authHeaders } from '@/lib/authHeaders';
+import { io, Socket } from 'socket.io-client';
 
 interface Recording {
     _id: string;
@@ -31,11 +32,13 @@ interface RunnerHit {
     splitTime: number | null;
     recording: {
         _id: string;
+        cameraId: string;
         cameraName: string;
         startTime: string;
         endTime: string;
         duration: number;
         fileSize: number;
+        recordingStatus?: string;
     } | null;
     seekSeconds: number;
 }
@@ -88,9 +91,9 @@ export default function CctvRecordingsPage() {
     const [playingId, setPlayingId] = useState<string | null>(null);
     const [playingName, setPlayingName] = useState('');
     const [videoSrc, setVideoSrc] = useState<string | null>(null);
+    const [liveCameraId, setLiveCameraId] = useState<string | null>(null);
     const [videoLoading, setVideoLoading] = useState(false);
     const [seekTarget, setSeekTarget] = useState<number>(0);
-    const [knownDuration, setKnownDuration] = useState<number>(0);
     const videoRef = useRef<HTMLVideoElement>(null);
     const seekAppliedRef = useRef(false);
 
@@ -115,7 +118,7 @@ export default function CctvRecordingsPage() {
     const [confirmText, setConfirmText] = useState('');
     const [deleting, setDeleting] = useState(false);
 
-    const load = async () => {
+    const load = useCallback(async () => {
         setLoading(true);
         try {
             const qs = campaignId ? `?campaignId=${campaignId}` : '';
@@ -129,17 +132,9 @@ export default function CctvRecordingsPage() {
             setStorage(storData);
         } catch { setRecordings([]); }
         finally { setLoading(false); }
-    };
+    }, [campaignId]);
 
-    useEffect(() => { if (campaignId) load(); }, [campaignId]);
-
-    // Auto-refresh every 10s while any recording is live
-    useEffect(() => {
-        const hasLive = recordings.some(r => r.recordingStatus === 'recording');
-        if (!hasLive) return;
-        const interval = setInterval(load, 10000);
-        return () => clearInterval(interval);
-    }, [recordings]);
+    useEffect(() => { if (campaignId) load(); }, [campaignId, load]);
 
     useEffect(() => {
         fetch('/api/campaigns/featured', { cache: 'no-store' })
@@ -166,7 +161,8 @@ export default function CctvRecordingsPage() {
     const toggleSelect = (id: string) => {
         setSelected(prev => {
             const next = new Set(prev);
-            next.has(id) ? next.delete(id) : next.add(id);
+            if (next.has(id)) next.delete(id);
+            else next.add(id);
             return next;
         });
     };
@@ -198,29 +194,35 @@ export default function CctvRecordingsPage() {
         } finally { setDeleting(false); }
     };
 
-    const openPlayerWithSeek = useCallback((recId: string, name: string, seek: number, duration?: number) => {
-        setPlayingId(recId);
+    const openPlayerWithSeek = useCallback((rec: { _id: string; cameraId: string; recordingStatus?: string }, name: string, seek: number) => {
+        const isLive = rec.recordingStatus === 'recording';
+        setPlayingId(rec._id);
         setPlayingName(name);
         setSeekTarget(seek);
-        setKnownDuration(duration || 0);
         seekAppliedRef.current = false;
         setVideoLoading(true);
+        setLiveCameraId(isLive ? rec.cameraId : null);
+        if (isLive) {
+            setVideoSrc(null);
+            setVideoLoading(false);
+            return;
+        }
         // Use stream URL directly so browser can make Range requests for seeking
         const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
-        const url = `/api/cctv-recordings/${recId}/stream${token ? `?token=${encodeURIComponent(token)}` : ''}`;
+        const url = `/api/cctv-recordings/${rec._id}/stream${token ? `?token=${encodeURIComponent(token)}` : ''}`;
         setVideoSrc(url);
         setVideoLoading(false);
     }, []);
 
     const openPlayer = useCallback((rec: Recording) => {
-        openPlayerWithSeek(rec._id, `${rec.cameraName} — ${fmtDate(rec.startTime)}`, 0, rec.duration);
+        openPlayerWithSeek(rec, `${rec.cameraName} — ${fmtDate(rec.startTime)}`, 0);
     }, [openPlayerWithSeek]);
 
     const closePlayer = () => {
         videoRef.current?.pause();
         setVideoSrc(null);
+        setLiveCameraId(null);
         setPlayingId(null);
-        setKnownDuration(0);
         seekAppliedRef.current = false;
     };
 
@@ -232,7 +234,7 @@ export default function CctvRecordingsPage() {
         <AdminLayout breadcrumbItems={[{ label: 'พื้นที่จัดเก็บวิดีโอ', labelEn: 'Video Storage' }]}>
 
             {/* ── Runner Video Lookup ── */}
-            <div className="bg-white border border-slate-200 rounded-xl p-5 mb-5 shadow-sm">
+            <div className="bg-white border border-slate-200 rounded-xl p-4 sm:p-5 mb-5 shadow-sm">
                 <h2 className="text-base font-extrabold text-slate-900 mb-1">
                     🏃 {th ? 'ค้นหาวิดีโอนักวิ่ง' : 'Runner Video Lookup'}
                 </h2>
@@ -241,17 +243,17 @@ export default function CctvRecordingsPage() {
                         ? 'กรอก BIB เพื่อค้นหาวิดีโอตรงจุดที่นักวิ่งวิ่งผ่าน Checkpoint'
                         : 'Enter BIB to find video at the moment the runner passed each checkpoint'}
                 </p>
-                <div className="flex items-center gap-2 flex-wrap">
+                <div className="flex items-stretch sm:items-center gap-2 flex-col sm:flex-row sm:flex-wrap">
                     <input
                         type="text"
                         value={bibSearch}
                         onChange={e => setBibSearch(e.target.value)}
                         onKeyDown={e => e.key === 'Enter' && searchRunner()}
                         placeholder={th ? 'หมายเลข BIB...' : 'BIB number...'}
-                        className="border-2 border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400 transition-colors w-36"
+                        className="border-2 border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-400 transition-colors w-full sm:w-36"
                     />
                     {campaignName && (
-                        <span className="text-xs bg-blue-50 text-blue-700 font-semibold px-2.5 py-1.5 rounded-lg">
+                        <span className="text-xs bg-blue-50 text-blue-700 font-semibold px-2.5 py-1.5 rounded-lg inline-flex items-center">
                             {campaignName}
                         </span>
                     )}
@@ -266,8 +268,8 @@ export default function CctvRecordingsPage() {
                     >
                         {lookupLoading ? 'กำลังค้นหา...' : (th ? 'ค้นหา' : 'Search')}
                     </button>
-                    <span className="text-slate-300">|</span>
-                    <label className="flex items-center gap-1.5 text-xs text-slate-500 font-semibold">
+                    <span className="hidden sm:inline text-slate-300">|</span>
+                    <label className="flex items-center gap-1.5 text-xs text-slate-500 font-semibold flex-wrap">
                         {th ? 'ถอยหลัง' : 'Rewind'}
                         <input
                             type="number"
@@ -282,7 +284,7 @@ export default function CctvRecordingsPage() {
                 </div>
 
                 {/* Time-based search */}
-                <div className="flex items-center gap-2 flex-wrap mt-3 pt-3 border-t border-slate-100">
+                <div className="flex items-stretch sm:items-center gap-2 flex-col sm:flex-row sm:flex-wrap mt-3 pt-3 border-t border-slate-100">
                     <span className="text-xs font-bold text-slate-500">⏰ {th ? 'ค้นหาตามเวลาจริง' : 'Search by time'}:</span>
                     <input
                         type="datetime-local"
@@ -290,7 +292,7 @@ export default function CctvRecordingsPage() {
                         lang="th-TH-u-hc-h23"
                         value={timeSearch}
                         onChange={e => setTimeSearch(e.target.value)}
-                        className="border-2 border-slate-200 rounded-lg px-3 py-1.5 text-sm outline-none focus:border-blue-400 transition-colors"
+                        className="border-2 border-slate-200 rounded-lg px-3 py-1.5 text-sm outline-none focus:border-blue-400 transition-colors w-full sm:w-auto"
                         style={{ colorScheme: 'light' }}
                     />
                     <button
@@ -386,7 +388,7 @@ export default function CctvRecordingsPage() {
                                                     const seekSec = relation === 'before'
                                                         ? Math.max(0, rec.duration - seekOffsetSec)
                                                         : 0;
-                                                    openPlayerWithSeek(rec._id, `${rec.cameraName} — ${th ? 'ใกล้เคียงที่สุด' : 'Nearest'}`, seekSec, rec.duration);
+                                                    openPlayerWithSeek(rec, `${rec.cameraName} — ${th ? 'ใกล้เคียงที่สุด' : 'Nearest'}`, seekSec);
                                                 }}
                                                 className="text-xs font-bold text-amber-600 hover:text-amber-800 cursor-pointer bg-transparent border-none ml-3 shrink-0"
                                             >
@@ -416,7 +418,7 @@ export default function CctvRecordingsPage() {
                                         <span className="ml-2 text-xs text-slate-400">{fmtDate(rec.startTime)} — {fmtDuration(rec.duration)}</span>
                                     </div>
                                     <button
-                                        onClick={() => openPlayerWithSeek(rec._id, `${rec.cameraName} — ${new Date(timeSearch).toLocaleTimeString('th-TH')}`, seekSec, rec.duration)}
+                                        onClick={() => openPlayerWithSeek(rec, `${rec.cameraName} — ${new Date(timeSearch).toLocaleTimeString('th-TH')}`, seekSec)}
                                         className="text-xs font-bold text-emerald-600 hover:text-emerald-800 cursor-pointer bg-transparent border-none"
                                     >
                                         ▶ {th ? 'ดูตรงเวลา' : 'Watch at time'} ({fmtDuration(seekSec)})
@@ -428,8 +430,8 @@ export default function CctvRecordingsPage() {
                 )}
 
                 {runnerHits.length > 0 && (
-                    <div className="mt-4 border border-slate-100 rounded-lg overflow-hidden">
-                        <table className="w-full text-sm">
+                    <div className="mt-4 border border-slate-100 rounded-lg overflow-x-auto">
+                        <table className="w-full min-w-[720px] text-sm">
                             <thead>
                                 <tr className="bg-slate-50 text-left">
                                     <th className="px-3 py-2 font-bold text-slate-600 text-xs uppercase">{th ? 'จุดตรวจ' : 'Checkpoint'}</th>
@@ -458,10 +460,9 @@ export default function CctvRecordingsPage() {
                                             {hit.recording ? (
                                                 <button
                                                     onClick={() => openPlayerWithSeek(
-                                                        hit.recording!._id,
+                                                        hit.recording!,
                                                         `BIB ${bibSearch} — ${hit.checkpoint} — ${fmtTime(hit.scanTime)}`,
                                                         Math.max(0, hit.seekSeconds - seekOffsetSec),
-                                                        hit.recording!.duration,
                                                     )}
                                                     className="text-xs font-bold text-blue-600 hover:text-blue-800 cursor-pointer bg-transparent border-none"
                                                 >
@@ -508,7 +509,7 @@ export default function CctvRecordingsPage() {
                             onClick={load}
                             className="text-xs font-semibold text-slate-600 border border-slate-200 px-3 py-1.5 rounded-lg hover:bg-slate-50 transition-colors cursor-pointer"
                         >
-                            ↻ {th ? 'รีเฟรช' : 'Refresh'}
+                            ↻ {th ? 'รีเฟรชเอง' : 'Manual refresh'}
                         </button>
                     </div>
                 </div>
@@ -665,7 +666,7 @@ export default function CctvRecordingsPage() {
                         <div className="text-white font-bold text-sm truncate max-w-[80%]">{playingName}</div>
                         <button onClick={closePlayer} className="text-white text-2xl leading-none cursor-pointer bg-transparent border-none">✕</button>
                     </div>
-                    <div className="flex-1 flex items-center justify-center p-4">
+                    <div className="flex-1 flex items-center justify-center p-2 sm:p-4 min-h-0" onClick={e => e.stopPropagation()}>
                         {videoLoading && (
                             <div className="text-white text-sm animate-pulse" onClick={e => e.stopPropagation()}>⏳ กำลังโหลดวิดีโอ...</div>
                         )}
@@ -676,27 +677,24 @@ export default function CctvRecordingsPage() {
                                 controls
                                 autoPlay
                                 preload="auto"
-                                className="max-w-full max-h-full rounded-lg shadow-2xl"
-                                style={{ maxHeight: 'calc(100vh - 80px)' }}
+                                className="w-full h-full rounded-lg shadow-2xl bg-black"
+                                style={{ maxHeight: 'calc(100dvh - 80px)', objectFit: 'contain' }}
                                 onClick={e => e.stopPropagation()}
                                 onLoadedMetadata={() => {
                                     const vid = videoRef.current;
                                     if (!vid) return;
-                                    // WebM from MediaRecorder often has Infinity duration
-                                    // Fix: set a very large currentTime to force the browser to discover the real duration
-                                    if (!isFinite(vid.duration) && knownDuration > 0) {
-                                        vid.currentTime = 1e101;
+                                    if (seekTarget > 0 && isFinite(vid.duration) && !seekAppliedRef.current) {
+                                        seekAppliedRef.current = true;
+                                        vid.currentTime = Math.min(seekTarget, Math.max(0, vid.duration - 0.5));
                                     }
                                 }}
                                 onDurationChange={() => {
                                     const vid = videoRef.current;
                                     if (!vid) return;
-                                    // After the browser discovers the real duration (from the jump trick),
-                                    // apply the seek target
                                     if (isFinite(vid.duration) && !seekAppliedRef.current) {
                                         seekAppliedRef.current = true;
                                         if (seekTarget > 0) {
-                                            vid.currentTime = Math.min(seekTarget, vid.duration - 0.5);
+                                            vid.currentTime = Math.min(seekTarget, Math.max(0, vid.duration - 0.5));
                                         }
                                     }
                                 }}
@@ -707,11 +705,17 @@ export default function CctvRecordingsPage() {
                                     if (isFinite(vid.duration) && !seekAppliedRef.current) {
                                         seekAppliedRef.current = true;
                                         if (seekTarget > 0) {
-                                            vid.currentTime = Math.min(seekTarget, vid.duration - 0.5);
+                                            vid.currentTime = Math.min(seekTarget, Math.max(0, vid.duration - 0.5));
                                         }
                                     }
                                 }}
+                                onCanPlay={() => setVideoLoading(false)}
+                                onWaiting={() => setVideoLoading(true)}
+                                onPlaying={() => setVideoLoading(false)}
                             />
+                        )}
+                        {liveCameraId && (
+                            <LiveRecordingFeed cameraId={liveCameraId} />
                         )}
                     </div>
                 </div>
@@ -765,5 +769,103 @@ export default function CctvRecordingsPage() {
             )}
 
         </AdminLayout>
+    );
+}
+
+function LiveRecordingFeed({ cameraId }: { cameraId: string }) {
+    const videoRef = useRef<HTMLVideoElement>(null);
+    const mediaSourceRef = useRef<MediaSource | null>(null);
+    const sourceBufferRef = useRef<SourceBuffer | null>(null);
+    const socketRef = useRef<Socket | null>(null);
+    const queueRef = useRef<Uint8Array[]>([]);
+    const mimeTypeRef = useRef('video/webm;codecs=vp8');
+
+    const appendNext = useCallback(() => {
+        const sourceBuffer = sourceBufferRef.current;
+        if (!sourceBuffer || sourceBuffer.updating || queueRef.current.length === 0) return;
+        try {
+            if (queueRef.current.length > 30) queueRef.current.splice(0, queueRef.current.length - 30);
+            if (sourceBuffer.buffered.length > 0) {
+                const end = sourceBuffer.buffered.end(sourceBuffer.buffered.length - 1);
+                const start = sourceBuffer.buffered.start(0);
+                if (end - start > 60) {
+                    sourceBuffer.remove(start, end - 30);
+                    return;
+                }
+            }
+            sourceBuffer.appendBuffer(queueRef.current.shift()!);
+        } catch (err: unknown) {
+            if (err instanceof DOMException && err.name === 'QuotaExceededError' && sourceBuffer.buffered.length > 0) {
+                try { sourceBuffer.remove(sourceBuffer.buffered.start(0), sourceBuffer.buffered.start(0) + 10); } catch { }
+            }
+        }
+    }, []);
+
+    useEffect(() => {
+        if (typeof window === 'undefined' || !('MediaSource' in window)) return;
+        const socketUrl = window.location.origin;
+        const socket = io(`${socketUrl}/cctv`, { path: '/socket.io', transports: ['websocket', 'polling'] });
+        const mediaSource = new MediaSource();
+        const objectUrl = URL.createObjectURL(mediaSource);
+        socketRef.current = socket;
+        mediaSourceRef.current = mediaSource;
+        if (videoRef.current) videoRef.current.src = objectUrl;
+
+        const initSourceBuffer = (mimeType: string) => {
+            if (sourceBufferRef.current || mediaSource.readyState !== 'open') return;
+            if (!MediaSource.isTypeSupported(mimeType)) return;
+            const sourceBuffer = mediaSource.addSourceBuffer(mimeType);
+            sourceBufferRef.current = sourceBuffer;
+            sourceBuffer.addEventListener('updateend', appendNext);
+            sourceBuffer.addEventListener('updateend', () => {
+                const video = videoRef.current;
+                if (!video || sourceBuffer.buffered.length === 0) return;
+                const liveEdge = sourceBuffer.buffered.end(sourceBuffer.buffered.length - 1);
+                if (liveEdge - video.currentTime > 8) video.currentTime = Math.max(0, liveEdge - 2);
+                video.play().catch(() => {});
+            });
+            appendNext();
+        };
+
+        const normalizeChunk = (chunk: ArrayBuffer | Uint8Array | number[]) => {
+            if (chunk instanceof ArrayBuffer) return new Uint8Array(chunk);
+            if (chunk instanceof Uint8Array) return chunk;
+            return Uint8Array.from(chunk);
+        };
+
+        const handleChunk = ({ cameraId: incomingCameraId, chunk, mimeType }: { cameraId: string; chunk: ArrayBuffer | Uint8Array | number[]; mimeType?: string }) => {
+            if (incomingCameraId !== cameraId) return;
+            if (mimeType && mimeType !== mimeTypeRef.current) mimeTypeRef.current = mimeType;
+            if (!sourceBufferRef.current && mediaSource.readyState === 'open') initSourceBuffer(mimeTypeRef.current);
+            queueRef.current.push(normalizeChunk(chunk));
+            appendNext();
+        };
+
+        mediaSource.addEventListener('sourceopen', () => initSourceBuffer(mimeTypeRef.current));
+        socket.on('connect', () => socket.emit('viewer:watch', cameraId));
+        socket.on('camera:chunk', handleChunk);
+
+        return () => {
+            socket.off('camera:chunk', handleChunk);
+            socket.emit('viewer:unwatch', cameraId);
+            socket.disconnect();
+            socketRef.current = null;
+            sourceBufferRef.current = null;
+            mediaSourceRef.current = null;
+            queueRef.current = [];
+            URL.revokeObjectURL(objectUrl);
+        };
+    }, [appendNext, cameraId]);
+
+    return (
+        <video
+            ref={videoRef}
+            controls
+            autoPlay
+            muted
+            playsInline
+            className="w-full h-full rounded-lg shadow-2xl bg-black"
+            style={{ maxHeight: 'calc(100dvh - 80px)', objectFit: 'contain' }}
+        />
     );
 }

@@ -20,6 +20,10 @@ interface LiveCameraInfo {
     connectedAt: string;
 }
 
+interface AdminJoinResponse { cameras?: LiveCameraInfo[]; }
+
+interface AdminCamerasEvent { cameras?: LiveCameraInfo[]; }
+
 
 export default function CctvLivePage() {
     const { language } = useLanguage();
@@ -29,8 +33,8 @@ export default function CctvLivePage() {
     const [selectedCampaign, setSelectedCampaign] = useState('');
     const [liveCameras, setLiveCameras] = useState<LiveCameraInfo[]>([]);
     const [offlineCameraIds, setOfflineCameraIds] = useState<Set<string>>(new Set());
-    const socketCctvRef = useRef<Socket | null>(null);
-    const [loading, setLoading] = useState(true);
+    const [cctvSocket, setCctvSocket] = useState<Socket | null>(null);
+    const loading = !selectedCampaign;
 
     // Load featured campaign
     useEffect(() => {
@@ -50,12 +54,16 @@ export default function CctvLivePage() {
         if (!selectedCampaign) return;
         const socketUrl = typeof window !== 'undefined' ? window.location.origin : '';
         const socket = io(`${socketUrl}/cctv`, { path: '/socket.io', transports: ['websocket', 'polling'] });
-        socketCctvRef.current = socket;
         socket.on('connect', () => {
-            socket.emit('admin:join', selectedCampaign, (res: any) => {
+            setCctvSocket(socket);
+            socket.emit('admin:join', selectedCampaign, (res: AdminJoinResponse) => {
                 if (res?.cameras) setLiveCameras(res.cameras);
             });
         });
+        socket.on('admin:cameras', (res: AdminCamerasEvent) => {
+            if (res?.cameras) setLiveCameras(res.cameras);
+        });
+        socket.on('disconnect', () => setCctvSocket(null));
         socket.on('camera:online', (cam: LiveCameraInfo) => {
             setLiveCameras(prev => {
                 const without = prev.filter(c => c.cameraId !== cam.cameraId);
@@ -75,11 +83,7 @@ export default function CctvLivePage() {
                 setOfflineCameraIds(prev => { const next = new Set(prev); next.delete(cameraId); return next; });
             }, 30000);
         });
-        return () => { socket.disconnect(); socketCctvRef.current = null; };
-    }, [selectedCampaign]);
-
-    useEffect(() => {
-        if (selectedCampaign) setLoading(false);
+        return () => { socket.disconnect(); };
     }, [selectedCampaign]);
 
     const n = liveCameras.length;
@@ -117,7 +121,7 @@ export default function CctvLivePage() {
             </div>
 
             {/* ── CCTV Grid: fixed height, fills screen ── */}
-            <div style={{ height: 'calc(100vh - 180px)', background: '#060a0f', borderRadius: 10, overflow: 'hidden', border: '1px solid #1e293b' }}>
+            <div style={{ height: 'clamp(360px, calc(100dvh - 180px), 900px)', background: '#060a0f', borderRadius: 10, overflow: 'auto', border: '1px solid #1e293b', overscrollBehavior: 'contain' }}>
                 {loading && n === 0 ? (
                     <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#334155', flexDirection: 'column', gap: 10 }}>
                         <div style={{ fontSize: 36 }}>📡</div>
@@ -134,9 +138,9 @@ export default function CctvLivePage() {
                 ) : (
                     <div style={{
                         display: 'grid',
-                        gridTemplateColumns: `repeat(${cols}, 1fr)`,
-                        gridTemplateRows: `repeat(${rows}, 1fr)`,
-                        height: '100%',
+                        gridTemplateColumns: n <= 1 ? '1fr' : 'repeat(auto-fit, minmax(min(100%, 320px), 1fr))',
+                        gridAutoRows: n <= 1 ? 'minmax(100%, 1fr)' : 'minmax(220px, 1fr)',
+                        minHeight: '100%',
                         gap: 2,
                         padding: 2,
                         boxSizing: 'border-box',
@@ -144,7 +148,7 @@ export default function CctvLivePage() {
                         {liveCameras.map(cam => {
                             const isOffline = offlineCameraIds.has(cam.cameraId);
                             return (
-                                <LiveVideoFeed key={`live-${cam.cameraId}`} cam={cam} socket={socketCctvRef.current} th={th} isOffline={isOffline} />
+                                <LiveVideoFeed key={`live-${cam.cameraId}`} cam={cam} socket={cctvSocket} th={th} isOffline={isOffline} />
                             );
                         })}
                     </div>
@@ -153,6 +157,9 @@ export default function CctvLivePage() {
 
             <style jsx>{`
                 @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+                @media (max-width: 640px) {
+                    div[style*="minmax(min(100%, 320px)"] { grid-auto-rows: minmax(190px, 1fr) !important; }
+                }
             `}</style>
         </AdminLayout>
     );
@@ -167,7 +174,6 @@ function LiveVideoFeed({ cam, socket, th, isOffline }: { cam: LiveCameraInfo; so
     const mimeTypeRef = useRef<string>('video/webm;codecs=vp8');
     const watchingRef = useRef(false);
     const [feedError, setFeedError] = useState(false);
-    const [hasVideo, setHasVideo] = useState(false);
 
     const safeEndOfStream = useCallback((ms: MediaSource | null) => {
         try {
@@ -179,6 +185,7 @@ function LiveVideoFeed({ cam, socket, th, isOffline }: { cam: LiveCameraInfo; so
         const sb = sbRef.current;
         if (!sb || sb.updating || queueRef.current.length === 0) return;
         try {
+            if (queueRef.current.length > 30) queueRef.current.splice(0, queueRef.current.length - 30);
             // Trim buffer to prevent memory buildup (keep last 30s)
             if (sb.buffered.length > 0) {
                 const end = sb.buffered.end(sb.buffered.length - 1);
@@ -188,9 +195,9 @@ function LiveVideoFeed({ cam, socket, th, isOffline }: { cam: LiveCameraInfo; so
                 }
             }
             sb.appendBuffer(queueRef.current.shift()!);
-        } catch (err: any) {
+        } catch (err: unknown) {
             // QuotaExceededError — drop oldest data
-            if (err?.name === 'QuotaExceededError' && sb.buffered.length > 0) {
+            if (err instanceof DOMException && err.name === 'QuotaExceededError' && sb.buffered.length > 0) {
                 try { sb.remove(sb.buffered.start(0), sb.buffered.start(0) + 10); } catch { /* ignore */ }
             }
         }
@@ -198,8 +205,6 @@ function LiveVideoFeed({ cam, socket, th, isOffline }: { cam: LiveCameraInfo; so
 
     useEffect(() => {
         if (!socket || !cam.cameraId || isOffline) return;
-        setFeedError(false);
-        setHasVideo(false);
 
         // Watch this camera
         socket.emit('viewer:watch', cam.cameraId);
@@ -219,6 +224,13 @@ function LiveVideoFeed({ cam, socket, th, isOffline }: { cam: LiveCameraInfo; so
                 const sb = msRef.current.addSourceBuffer(mime);
                 sbRef.current = sb;
                 sb.addEventListener('updateend', appendNext);
+                sb.addEventListener('updateend', () => {
+                    const video = videoRef.current;
+                    if (!video || sb.buffered.length === 0) return;
+                    const liveEdge = sb.buffered.end(sb.buffered.length - 1);
+                    if (liveEdge - video.currentTime > 8) video.currentTime = Math.max(0, liveEdge - 2);
+                    video.play().catch(() => {});
+                });
                 appendNext();
             } catch {
                 setFeedError(true);
@@ -232,15 +244,16 @@ function LiveVideoFeed({ cam, socket, th, isOffline }: { cam: LiveCameraInfo; so
         ms.addEventListener('sourceended', () => { /* normal end, do nothing */ });
         ms.addEventListener('sourceclose', () => { /* source closed, do nothing */ });
 
-        const handleChunk = ({ cameraId, chunk, mimeType }: { cameraId: string; chunk: ArrayBuffer; mimeType?: string }) => {
+        const handleChunk = ({ cameraId, chunk, mimeType }: { cameraId: string; chunk: ArrayBuffer | Uint8Array; mimeType?: string }) => {
             if (cameraId !== cam.cameraId) return;
             if (mimeType && mimeType !== mimeTypeRef.current) {
                 mimeTypeRef.current = mimeType;
                 if (!sbRef.current) initSourceBuffer(mimeType);
             }
-            const buf = chunk instanceof ArrayBuffer ? chunk : (chunk as any).buffer ?? new Uint8Array(chunk as any).buffer;
+            const buf = chunk instanceof ArrayBuffer
+                ? chunk
+                : new Uint8Array(chunk.buffer, chunk.byteOffset, chunk.byteLength).slice().buffer;
             queueRef.current.push(buf);
-            if (!hasVideo) setHasVideo(true);
             appendNext();
         };
         socket.on('camera:chunk', handleChunk);
