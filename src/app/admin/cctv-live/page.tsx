@@ -206,10 +206,6 @@ function LiveVideoFeed({ cam, socket, th, isOffline }: { cam: LiveCameraInfo; so
     useEffect(() => {
         if (!socket || !cam.cameraId || isOffline) return;
 
-        // Watch this camera
-        socket.emit('viewer:watch', cam.cameraId);
-        watchingRef.current = true;
-
         // Set up MediaSource
         if (typeof window === 'undefined' || !('MediaSource' in window)) return;
         const ms = new MediaSource();
@@ -257,6 +253,8 @@ function LiveVideoFeed({ cam, socket, th, isOffline }: { cam: LiveCameraInfo; so
             appendNext();
         };
         socket.on('camera:chunk', handleChunk);
+        socket.emit('viewer:watch', cam.cameraId);
+        watchingRef.current = true;
 
         return () => {
             socket.off('camera:chunk', handleChunk);

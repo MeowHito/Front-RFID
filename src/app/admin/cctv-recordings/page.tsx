@@ -842,8 +842,8 @@ function LiveRecordingFeed({ cameraId }: { cameraId: string }) {
         };
 
         mediaSource.addEventListener('sourceopen', () => initSourceBuffer(mimeTypeRef.current));
-        socket.on('connect', () => socket.emit('viewer:watch', cameraId));
         socket.on('camera:chunk', handleChunk);
+        socket.on('connect', () => socket.emit('viewer:watch', cameraId));
 
         return () => {
             socket.off('camera:chunk', handleChunk);
