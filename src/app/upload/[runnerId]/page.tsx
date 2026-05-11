@@ -24,7 +24,8 @@ export default function UploadPhotoPage() {
 
     const searchParams = useSearchParams();
     const campaignSlug = searchParams.get('slug');
-    const uploadOrientation = searchParams.get('orientation') === 'portrait' ? 'portrait' : 'landscape';
+    const campaignKey = searchParams.get('campaign') || campaignSlug || 'default';
+    const [uploadOrientation, setUploadOrientation] = useState<'portrait' | 'landscape'>(searchParams.get('orientation') === 'portrait' ? 'portrait' : 'landscape');
     const exportWidth = uploadOrientation === 'portrait' ? 1080 : 1920;
     const exportHeight = uploadOrientation === 'portrait' ? 1920 : 1080;
 
@@ -112,6 +113,23 @@ export default function UploadPhotoPage() {
     }, [campaignSlug]);
 
     useEffect(() => {
+        if (!campaignKey) return;
+        const syncOrientation = async () => {
+            try {
+                const res = await fetch(`/api/scanning-orientation?campaign=${encodeURIComponent(campaignKey)}`, { cache: 'no-store' });
+                if (!res.ok) return;
+                const data = await res.json();
+                if (data.orientation === 'portrait' || data.orientation === 'landscape') {
+                    setUploadOrientation(data.orientation);
+                }
+            } catch { /* ignore */ }
+        };
+        syncOrientation();
+        const interval = setInterval(syncOrientation, 1000);
+        return () => clearInterval(interval);
+    }, [campaignKey]);
+
+    useEffect(() => {
         if (!success) return;
         const compute = () => { if (wrapperRef.current) setCardScale(wrapperRef.current.offsetWidth / exportWidth); };
         compute();
@@ -189,21 +207,21 @@ export default function UploadPhotoPage() {
                     const _medical = runner?.medical || '';
                     const _hasMedical = !!(_medical && _medical.trim() !== '' && _medical !== 'ไม่มี');
                     const _isPortrait = uploadOrientation === 'portrait';
-                    const _cardWidth = _isPortrait ? 972 : 1728;
-                    const _cardHeight = _isPortrait ? 1728 : 972;
-                    const _photoSize = _isPortrait ? 520 : 440;
+                    const _cardWidth = _isPortrait ? 950 : 1728;
+                    const _cardHeight = _isPortrait ? 1805 : 972;
+                    const _photoSize = _isPortrait ? 630 : 440;
                     return (
                         <div ref={wrapperRef} style={{ width: '100%', maxWidth: _isPortrait ? 360 : 420, animation: 'fadeIn 0.5s ease-out' }}>
                             {/* Scaled 1920×1080 card — exact same layout as scanning page */}
                             <div style={{ position: 'relative', width: '100%', height: Math.round(exportHeight * cardScale), overflow: 'hidden', borderRadius: 14, marginBottom: 14, boxShadow: '0 15px 40px rgba(0,0,0,0.5)', border: '1px solid rgba(74,222,128,0.2)' }}>
                                 <div ref={cardRef} style={{ position: 'absolute', top: 0, left: 0, width: exportWidth, height: exportHeight, transformOrigin: '0 0', transform: `scale(${cardScale})` }}>
                                     <div style={{ width: exportWidth, height: exportHeight, background: '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'Prompt', sans-serif", position: 'relative', overflow: 'hidden' }}>
-                                        <div style={{ width: _cardWidth, height: _cardHeight, background: '#ffffff', color: '#0f172a', display: 'flex', flexDirection: 'column', padding: _isPortrait ? '58px 64px 44px' : '66px 88px 54px', position: 'relative', overflow: 'hidden' }}>
+                                        <div style={{ width: _cardWidth, height: _cardHeight, background: '#ffffff', color: '#0f172a', display: 'flex', flexDirection: 'column', padding: _isPortrait ? '66px 58px 44px' : '66px 88px 54px', position: 'relative', overflow: 'hidden' }}>
                                             <div style={{ position: 'absolute', top: 0, left: 0, height: 4, width: '100%', background: '#16a34a', zIndex: 2 }} />
                                             {campaignBgImage && <div style={{ position: 'absolute', inset: 0, background: `url(${campaignBgImage}) center/cover no-repeat`, opacity: 0.18, zIndex: 0 }} />}
                                             <div style={{ position: 'relative', zIndex: 1, display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
-                                            <div style={{ textAlign: 'center', borderBottom: '1px solid #cbd5e1', paddingBottom: _isPortrait ? 22 : 26, marginBottom: _isPortrait ? 26 : (_hasMedical ? 20 : 38), flexShrink: 0 }}>
-                                                <div style={{ fontSize: _isPortrait ? 38 : 46, fontWeight: 800, letterSpacing: 1, color: '#0f172a', margin: 0, lineHeight: 1.15 }}>{_eventName}</div>
+                                            <div style={{ textAlign: 'center', borderBottom: '1px solid #cbd5e1', paddingBottom: _isPortrait ? 26 : 26, marginBottom: _isPortrait ? 30 : (_hasMedical ? 20 : 38), flexShrink: 0 }}>
+                                                <div style={{ fontSize: _isPortrait ? 46 : 46, fontWeight: 800, letterSpacing: 1, color: '#0f172a', margin: 0, lineHeight: 1.15 }}>{_eventName}</div>
                                             </div>
                                             {_hasMedical && (
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: 16, background: '#fef2f2', border: '2px solid #fca5a5', borderRadius: 6, padding: '14px 24px', marginBottom: 26, flexShrink: 0 }}>
@@ -214,7 +232,7 @@ export default function UploadPhotoPage() {
                                                     </div>
                                                 </div>
                                             )}
-                                            <div style={{ flex: 1, display: 'flex', flexDirection: _isPortrait ? 'column' : 'row', alignItems: 'center', justifyContent: _isPortrait ? 'flex-start' : 'center', gap: _isPortrait ? 48 : 90, minHeight: 0 }}>
+                                            <div style={{ flex: 1, display: 'flex', flexDirection: _isPortrait ? 'column' : 'row', alignItems: 'center', justifyContent: _isPortrait ? 'flex-start' : 'center', gap: _isPortrait ? 38 : 90, minHeight: 0 }}>
                                                 <div style={{ position: 'relative', flexShrink: 0 }}>
                                                     <div style={{ width: _photoSize, height: _photoSize, borderRadius: 4, border: '1px solid #cbd5e1', padding: 8, background: '#ffffff', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }}>
                                                         <div style={{ width: '100%', height: '100%', borderRadius: 2, overflow: 'hidden', background: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -223,28 +241,28 @@ export default function UploadPhotoPage() {
                                                     </div>
                                                 </div>
                                                 <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: _isPortrait ? 'center' : 'flex-start', textAlign: _isPortrait ? 'center' : 'left', maxWidth: _isPortrait ? '100%' : '58%' }}>
-                                                    <p style={{ color: '#16a34a', fontWeight: 600, fontSize: _isPortrait ? 20 : 18, textTransform: 'uppercase', margin: '0 0 14px', display: 'flex', alignItems: 'center', gap: 8, letterSpacing: 2 }}>✓ ยืนยันข้อมูล</p>
-                                                    <h2 style={{ fontSize: _isPortrait ? 58 : 82, fontWeight: 800, lineHeight: 1.1, margin: '0 0 6px', color: '#0f172a', maxWidth: _isPortrait ? 844 : 1000, whiteSpace: 'nowrap', overflow: 'hidden' }}>{_nameMain}</h2>
-                                                    {_nameSub && <h3 style={{ fontSize: _isPortrait ? 28 : 30, fontWeight: 400, color: '#64748b', margin: _isPortrait ? '0 0 28px' : '0 0 32px', letterSpacing: 2, maxWidth: _isPortrait ? 844 : 1000, whiteSpace: 'nowrap', overflow: 'hidden' }}>{_nameSub}</h3>}
-                                                    <div style={{ display: 'flex', alignItems: 'stretch', gap: _isPortrait ? 14 : 18, borderLeft: _isPortrait ? 'none' : '4px solid #16a34a', borderTop: _isPortrait ? '4px solid #16a34a' : 'none', paddingLeft: _isPortrait ? 0 : 18, paddingTop: _isPortrait ? 18 : 0 }}>
+                                                    <p style={{ color: '#16a34a', fontWeight: 600, fontSize: _isPortrait ? 16 : 18, textTransform: 'uppercase', margin: _isPortrait ? '0 0 18px' : '0 0 14px', display: 'flex', alignItems: 'center', gap: 8, letterSpacing: 2 }}>✓ ยืนยันข้อมูล</p>
+                                                    <h2 style={{ fontSize: _isPortrait ? 88 : 82, fontWeight: 800, lineHeight: 1.1, margin: '0 0 8px', color: '#0f172a', maxWidth: _isPortrait ? 834 : 1000, whiteSpace: 'nowrap', overflow: 'hidden' }}>{_nameMain}</h2>
+                                                    {_nameSub && <h3 style={{ fontSize: _isPortrait ? 34 : 30, fontWeight: 400, color: '#64748b', margin: _isPortrait ? '0 0 34px' : '0 0 32px', letterSpacing: 2, maxWidth: _isPortrait ? 834 : 1000, whiteSpace: 'nowrap', overflow: 'hidden' }}>{_nameSub}</h3>}
+                                                    <div style={{ display: 'flex', alignItems: 'stretch', gap: _isPortrait ? 24 : 18, borderLeft: _isPortrait ? 'none' : '4px solid #16a34a', borderTop: _isPortrait ? '4px solid #16a34a' : 'none', paddingLeft: _isPortrait ? 0 : 18, paddingTop: _isPortrait ? 26 : 0 }}>
                                                         <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
                                                             <span style={{ fontSize: 18, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 3 }}>BIB</span>
-                                                            <span style={{ fontSize: _isPortrait ? 106 : 124, fontWeight: 700, color: '#0f172a', lineHeight: 0.9 }}>{_bib}</span>
+                                                            <span style={{ fontSize: _isPortrait ? 156 : 124, fontWeight: 700, color: '#0f172a', lineHeight: 0.9 }}>{_bib}</span>
                                                         </div>
                                                         <div style={{ width: 2, alignSelf: 'stretch', background: '#cbd5e1', margin: '8px 4px' }} />
-                                                        {_dist && <span style={{ color: '#ef4444', fontSize: _isPortrait ? 46 : 56, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 2, alignSelf: 'center' }}>{_dist}</span>}
+                                                        {_dist && <span style={{ color: '#ef4444', fontSize: _isPortrait ? 62 : 56, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 2, alignSelf: 'center' }}>{_dist}</span>}
                                                     </div>
                                                 </div>
                                             </div>
                                             <div style={{ marginTop: 'auto', borderTop: '1px solid #cbd5e1', paddingTop: _isPortrait ? 28 : 24, flexShrink: 0 }}>
                                                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 0 }}>
-                                                    <div style={{ textAlign: 'left', padding: '10px 18px 10px 0' }}>
-                                                        <p style={{ fontSize: 18, fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 2, margin: '0 0 6px' }}>Gender</p>
-                                                        <p style={{ fontSize: 46, fontWeight: 800, color: '#0f172a', lineHeight: 1, margin: 0 }}>{_gl}</p>
+                                                    <div style={{ textAlign: _isPortrait ? 'center' : 'left', padding: _isPortrait ? '18px 20px' : '10px 18px 10px 0', background: _isPortrait ? '#ffffff' : 'transparent' }}>
+                                                        <p style={{ fontSize: _isPortrait ? 16 : 18, fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 2, margin: '0 0 6px' }}>Gender</p>
+                                                        <p style={{ fontSize: _isPortrait ? 54 : 46, fontWeight: 800, color: '#0f172a', lineHeight: 1, margin: 0 }}>{_gl}</p>
                                                     </div>
-                                                    <div style={{ textAlign: 'left', padding: '10px 18px', borderLeft: '1px solid #e2e8f0' }}>
-                                                        <p style={{ fontSize: 18, fontWeight: 600, color: '#16a34a', textTransform: 'uppercase', letterSpacing: 2, margin: '0 0 6px' }}>Age Group</p>
-                                                        <p style={{ fontSize: 52, fontWeight: 800, color: '#16a34a', lineHeight: 1, margin: 0 }}>{_ag}</p>
+                                                    <div style={{ textAlign: _isPortrait ? 'center' : 'left', padding: _isPortrait ? '18px 20px' : '10px 18px', borderLeft: _isPortrait ? 'none' : '1px solid #e2e8f0', background: _isPortrait ? '#ffffff' : 'transparent' }}>
+                                                        <p style={{ fontSize: _isPortrait ? 16 : 18, fontWeight: 600, color: '#16a34a', textTransform: 'uppercase', letterSpacing: 2, margin: '0 0 6px' }}>Age Group</p>
+                                                        <p style={{ fontSize: _isPortrait ? 62 : 52, fontWeight: 800, color: '#16a34a', lineHeight: 1, margin: 0 }}>{_ag}</p>
                                                     </div>
                                                 </div>
                                             </div>

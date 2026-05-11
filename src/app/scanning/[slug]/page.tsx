@@ -65,6 +65,7 @@ export default function ScanningBySlugPage() {
     const hiddenInputRef = useRef<HTMLInputElement>(null);
     const nameEnRef = useRef<HTMLHeadingElement>(null);
     const nameThRef = useRef<HTMLHeadingElement>(null);
+    const orientationCampaignKey = campaign?.slug || slug || campaign?._id || 'default';
 
     // Load campaign by slug
     useEffect(() => {
@@ -88,6 +89,18 @@ export default function ScanningBySlugPage() {
     useEffect(() => {
         setOrigin(window.location.origin);
     }, []);
+
+    useEffect(() => {
+        if (!orientationCampaignKey) return;
+        fetch('/api/scanning-orientation', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                campaign: orientationCampaignKey,
+                orientation: portrait ? 'portrait' : 'landscape',
+            }),
+        }).catch(() => {});
+    }, [orientationCampaignKey, portrait]);
 
     useEffect(() => {
         const keepFocus = () => hiddenInputRef.current?.focus();
@@ -370,7 +383,7 @@ export default function ScanningBySlugPage() {
                                     <div className="ce-qr-on-frame">
                                         {origin && runner._id ? (
                                             <QRCodeSVG
-                                                value={`${origin}/upload/${runner._id}?slug=${campaign?.slug || slug || ''}&orientation=${portrait ? 'portrait' : 'landscape'}`}
+                                                value={`${origin}/upload/${runner._id}?slug=${campaign?.slug || slug || ''}&campaign=${orientationCampaignKey}&orientation=${portrait ? 'portrait' : 'landscape'}`}
                                                 size={portrait ? 110 : 140} bgColor="#ffffff" fgColor="#0f172a" level="H"
                                             />
                                         ) : (
