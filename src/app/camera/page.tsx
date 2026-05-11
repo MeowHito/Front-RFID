@@ -149,6 +149,15 @@ export default function CameraPage() {
         if (videoRef.current) videoRef.current.srcObject = null;
     }, [stopCompose]);
 
+    const sendStopSignal = useCallback(() => {
+        const recorder = recorderRef.current;
+        if (recorder && recorder.state !== 'inactive') {
+            try { recorder.requestData(); } catch { /**/ }
+        }
+        const socket = socketRef.current;
+        if (socket?.connected) socket.emit('camera:stop');
+    }, []);
+
     const startStream = async () => {
         if (!campaignId || !cameraName.trim()) { setErrorMsg('กรุณาใส่ชื่อกล้องก่อน'); return; }
         setErrorMsg(''); setStatus('connecting');
@@ -201,7 +210,13 @@ export default function CameraPage() {
         } catch (err: unknown) { setStatus('error'); setErrorMsg(err instanceof Error ? err.message : 'ไม่สามารถเปิดกล้องได้'); cleanup(); }
     };
 
-    const stopStream = () => { socketRef.current?.emit('camera:stop'); cleanup(); setStatus('stopped'); setBytesSent(0); setElapsed(0); };
+    const stopStream = () => {
+        sendStopSignal();
+        setTimeout(() => cleanup(), 200);
+        setStatus('stopped');
+        setBytesSent(0);
+        setElapsed(0);
+    };
 
     const switchCamera = useCallback(async () => {
         const newFacing: 'user' | 'environment' = facingMode === 'environment' ? 'user' : 'environment';
@@ -267,7 +282,31 @@ export default function CameraPage() {
         }
     }, []);
 
-    useEffect(() => () => cleanup(), [cleanup]);
+    useEffect(() => () => { sendStopSignal(); cleanup(); }, [cleanup, sendStopSignal]);
+
+    useEffect(() => {
+        const stopOnExit = () => {
+            if (!recorderRef.current && !socketRef.current) return;
+            sendStopSignal();
+            cleanup();
+            setStatus('stopped');
+            setBytesSent(0);
+            setElapsed(0);
+        };
+        const handleVisibilityChange = () => {
+            if (document.visibilityState === 'hidden') stopOnExit();
+        };
+
+        window.addEventListener('pagehide', stopOnExit);
+        window.addEventListener('beforeunload', stopOnExit);
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+
+        return () => {
+            window.removeEventListener('pagehide', stopOnExit);
+            window.removeEventListener('beforeunload', stopOnExit);
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
+        };
+    }, [cleanup, sendStopSignal]);
 
     const fmt = (s: number) => { const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), ss = s % 60; return h > 0 ? `${h}:${String(m).padStart(2,'0')}:${String(ss).padStart(2,'0')}` : `${String(m).padStart(2,'0')}:${String(ss).padStart(2,'0')}`; };
     const fmtBytes = (b: number) => b < 1024 ? `${b} B` : b < 1048576 ? `${(b/1024).toFixed(1)} KB` : `${(b/1048576).toFixed(2)} MB`;
