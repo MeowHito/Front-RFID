@@ -200,6 +200,8 @@ export default function ScanningBySlugPage() {
                 @keyframes scanProgress { from { width: 100%; } to { width: 0%; } }
                 @keyframes scanPulse { 0%,100% { opacity: 1; } 50% { opacity: 0.6; } }
                 .ce-card { width: 90vw; height: 90vh; max-width: 1400px; background: #ffffff; color: #0f172a; border-radius: 8px; display: flex; flex-direction: column; padding: 46px 72px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5); position: relative; animation: scanFadeIn 0.6s cubic-bezier(0.16, 1, 0.3, 1); overflow: hidden; }
+                .ce-card > * { position: relative; z-index: 1; }
+                .ce-card-bg { position: absolute; inset: 0; z-index: 0; background-position: center; background-size: cover; background-repeat: no-repeat; opacity: 0.18; filter: saturate(0.9); }
                 .ce-progress { position: absolute; top: 0; left: 0; height: 4px; background: #16a34a; border-radius: 8px 8px 0 0; animation: scanProgress 8s linear forwards; z-index: 5; }
                 .ce-header { text-align: center; border-bottom: 1px solid #cbd5e1; padding-bottom: 22px; margin-bottom: 26px; flex-shrink: 0; }
                 .ce-event-sub { font-family: 'Prompt', sans-serif; font-size: 1rem; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: 6px; margin: 0 0 4px; }
@@ -326,19 +328,16 @@ export default function ScanningBySlugPage() {
             {found && runner && (
                 <div key={`a-${animKey}`} className={portrait ? 'ce-portrait' : ''} style={{
                     position: 'fixed', inset: 0, zIndex: 60,
-                    background: campaign?.scanningBgImage
-                        ? `url(${campaign.scanningBgImage}) center/cover no-repeat`
-                        : '#0f172a',
+                    background: '#0f172a',
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                     fontFamily: "'Prompt', sans-serif",
                     overflow: 'hidden',
                 }}>
-                    {campaign?.scanningBgImage && (
-                        <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 0 }} />
-                    )}
-
                     <div className="ce-card">
                         <div className="ce-progress" key={`prog-${animKey}`} />
+                        {campaign?.scanningBgImage && (
+                            <div className="ce-card-bg" style={{ backgroundImage: `url(${campaign.scanningBgImage})` }} />
+                        )}
 
                         {/* Header */}
                         <div className="ce-header">
@@ -371,7 +370,7 @@ export default function ScanningBySlugPage() {
                                     <div className="ce-qr-on-frame">
                                         {origin && runner._id ? (
                                             <QRCodeSVG
-                                                value={`${origin}/upload/${runner._id}?slug=${campaign?.slug || slug || ''}`}
+                                                value={`${origin}/upload/${runner._id}?slug=${campaign?.slug || slug || ''}&orientation=${portrait ? 'portrait' : 'landscape'}`}
                                                 size={portrait ? 110 : 140} bgColor="#ffffff" fgColor="#0f172a" level="H"
                                             />
                                         ) : (
