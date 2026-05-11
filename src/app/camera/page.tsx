@@ -46,6 +46,8 @@ export default function CameraPage() {
     const recorderRef = useRef<MediaRecorder | null>(null);
     const socketRef = useRef<Socket | null>(null);
     const elapsedRef = useRef<ReturnType<typeof setInterval> | null>(null);
+    const rotateRef = useRef<ReturnType<typeof setInterval> | null>(null);
+    const rotatingRef = useRef<boolean>(false);
     const startTimeRef = useRef<number>(0);
     const initChunkRef = useRef<Blob | null>(null);
     const chunkBufferRef = useRef<Blob[]>([]);
@@ -141,6 +143,8 @@ export default function CameraPage() {
     }, []);
 
     const cleanup = useCallback(() => {
+        if (rotateRef.current) { clearInterval(rotateRef.current); rotateRef.current = null; }
+        rotatingRef.current = false;
         recorderRef.current?.stop(); recorderRef.current = null;
         stopCompose();
         streamRef.current?.getTracks().forEach(t => t.stop()); streamRef.current = null;
@@ -207,6 +211,57 @@ export default function CameraPage() {
             recorder.start(2000);
             setStatus('streaming'); startTimeRef.current = Date.now();
             elapsedRef.current = setInterval(() => setElapsed(Math.floor((Date.now() - startTimeRef.current) / 1000)), 1000);
+
+            // Segment rotation: every 10 minutes ask the server to close the
+            // current recording file and start a new one, while we restart the
+            // local MediaRecorder so the next chunk carries a fresh WebM init
+            // segment. This caps each file to ~10 min — small enough that
+            // ffmpeg→MP4 finishes in seconds and seeking is responsive even
+            // after a 12 h+ session.
+            const SEGMENT_MS = 10 * 60 * 1000;
+            const rotateRecorder = async () => {
+                if (rotatingRef.current) return;
+                const sock = socketRef.current;
+                const stream = streamRef.current;
+                const oldRecorder = recorderRef.current;
+                if (!sock?.connected || !stream || !oldRecorder || oldRecorder.state === 'inactive') return;
+                rotatingRef.current = true;
+                try {
+                    // 1. Stop current recorder, wait for final dataavailable + onstop.
+                    await new Promise<void>((resolve) => {
+                        const done = () => resolve();
+                        oldRecorder.onstop = done;
+                        try { oldRecorder.stop(); } catch { resolve(); }
+                        setTimeout(done, 4000); // safety
+                    });
+                    // 2. Tell server to finalize this segment file and open a new one.
+                    await new Promise<void>((resolve) => {
+                        const safety = setTimeout(resolve, 4000);
+                        sock.emit('camera:rotate', null, () => { clearTimeout(safety); resolve(); });
+                    });
+                    // 3. Start a fresh MediaRecorder on the same media stream.
+                    if (!streamRef.current || !socketRef.current?.connected) return;
+                    initChunkRef.current = null;
+                    chunkBufferRef.current = [];
+                    const nextMime = getSupportedMimeType();
+                    mimeTypeRef.current = nextMime;
+                    const nextRecorder = new MediaRecorder(streamRef.current, { mimeType: nextMime, videoBitsPerSecond: videoBitrateKbps * 1000 });
+                    recorderRef.current = nextRecorder;
+                    nextRecorder.ondataavailable = (e) => {
+                        if (e.data && e.data.size > 0) {
+                            const s = socketRef.current;
+                            if (s?.connected) { e.data.arrayBuffer().then(buf => { s.emit('camera:chunk', { cameraId: camId, chunk: buf, mimeType: nextMime }); setBytesSent(prev => prev + buf.byteLength); }); }
+                        }
+                    };
+                    nextRecorder.onerror = () => setStatus('error');
+                    nextRecorder.start(2000);
+                } catch (err) {
+                    console.error('Segment rotation failed:', err);
+                } finally {
+                    rotatingRef.current = false;
+                }
+            };
+            rotateRef.current = setInterval(rotateRecorder, SEGMENT_MS);
         } catch (err: unknown) { setStatus('error'); setErrorMsg(err instanceof Error ? err.message : 'ไม่สามารถเปิดกล้องได้'); cleanup(); }
     };
 

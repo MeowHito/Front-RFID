@@ -174,6 +174,10 @@ function LiveVideoFeed({ cam, socket, th, isOffline }: { cam: LiveCameraInfo; so
     const mimeTypeRef = useRef<string>('video/webm;codecs=vp8');
     const watchingRef = useRef(false);
     const [feedError, setFeedError] = useState(false);
+    // Bumped when the server rotates to a new recording segment (every ~10
+    // min). Forces the MediaSource to rebuild so the fresh WebM init segment
+    // doesn't fail to append onto a buffer initialized from the old file.
+    const [segmentVersion, setSegmentVersion] = useState(0);
 
     const safeEndOfStream = useCallback((ms: MediaSource | null) => {
         try {
@@ -252,12 +256,18 @@ function LiveVideoFeed({ cam, socket, th, isOffline }: { cam: LiveCameraInfo; so
             queueRef.current.push(buf);
             appendNext();
         };
+        const handleSegmentRestart = ({ cameraId }: { cameraId: string }) => {
+            if (cameraId !== cam.cameraId) return;
+            setSegmentVersion(v => v + 1);
+        };
         socket.on('camera:chunk', handleChunk);
+        socket.on('camera:segment-restart', handleSegmentRestart);
         socket.emit('viewer:watch', cam.cameraId);
         watchingRef.current = true;
 
         return () => {
             socket.off('camera:chunk', handleChunk);
+            socket.off('camera:segment-restart', handleSegmentRestart);
             if (watchingRef.current) { socket.emit('viewer:unwatch', cam.cameraId); watchingRef.current = false; }
             safeEndOfStream(msRef.current);
             URL.revokeObjectURL(objUrl);
@@ -265,7 +275,7 @@ function LiveVideoFeed({ cam, socket, th, isOffline }: { cam: LiveCameraInfo; so
             msRef.current = null;
             queueRef.current = [];
         };
-    }, [socket, cam.cameraId, isOffline, appendNext, safeEndOfStream]);
+    }, [socket, cam.cameraId, isOffline, appendNext, safeEndOfStream, segmentVersion]);
 
     return (
         <div style={{ position: 'relative', overflow: 'hidden', background: '#0a0f1a', border: `2px solid ${isOffline ? '#475569' : '#ea580c'}`, borderRadius: 4, opacity: isOffline ? 0.6 : 1, transition: 'opacity 0.3s, border-color 0.3s' }}>

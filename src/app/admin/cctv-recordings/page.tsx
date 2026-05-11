@@ -795,6 +795,7 @@ function LiveRecordingFeed({ cameraId }: { cameraId: string }) {
     const socketRef = useRef<Socket | null>(null);
     const queueRef = useRef<Uint8Array[]>([]);
     const mimeTypeRef = useRef('video/webm;codecs=vp8');
+    const [segmentVersion, setSegmentVersion] = useState(0);
 
     const appendNext = useCallback(() => {
         const sourceBuffer = sourceBufferRef.current;
@@ -857,12 +858,19 @@ function LiveRecordingFeed({ cameraId }: { cameraId: string }) {
             appendNext();
         };
 
+        const handleSegmentRestart = ({ cameraId: incomingCameraId }: { cameraId: string }) => {
+            if (incomingCameraId !== cameraId) return;
+            setSegmentVersion(v => v + 1);
+        };
+
         mediaSource.addEventListener('sourceopen', () => initSourceBuffer(mimeTypeRef.current));
         socket.on('camera:chunk', handleChunk);
+        socket.on('camera:segment-restart', handleSegmentRestart);
         socket.on('connect', () => socket.emit('viewer:watch', cameraId));
 
         return () => {
             socket.off('camera:chunk', handleChunk);
+            socket.off('camera:segment-restart', handleSegmentRestart);
             socket.emit('viewer:unwatch', cameraId);
             socket.disconnect();
             socketRef.current = null;
@@ -871,7 +879,7 @@ function LiveRecordingFeed({ cameraId }: { cameraId: string }) {
             queueRef.current = [];
             URL.revokeObjectURL(objectUrl);
         };
-    }, [appendNext, cameraId]);
+    }, [appendNext, cameraId, segmentVersion]);
 
     return (
         <video
