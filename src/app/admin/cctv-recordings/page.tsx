@@ -78,6 +78,10 @@ function fmtDate(iso: string) {
         + ' ' + d.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
 }
 
+function isLiveRecording(rec: { recordingStatus?: string; endTime?: string | null }) {
+    return String(rec.recordingStatus || '').trim().toLowerCase() === 'recording' || !rec.endTime;
+}
+
 export default function CctvRecordingsPage() {
     const { language } = useLanguage();
     const th = language === 'th';
@@ -141,7 +145,7 @@ export default function CctvRecordingsPage() {
     // through the live socket viewer instead of the file stream).
     useEffect(() => {
         if (!campaignId) return;
-        const hasLive = recordings.some(r => r.recordingStatus === 'recording');
+        const hasLive = recordings.some(isLiveRecording);
         if (!hasLive) return;
         const t = setInterval(() => { load(); }, 10000);
         return () => clearInterval(t);
@@ -205,8 +209,8 @@ export default function CctvRecordingsPage() {
         } finally { setDeleting(false); }
     };
 
-    const openPlayerWithSeek = useCallback((rec: { _id: string; cameraId: string; recordingStatus?: string }, name: string, seek: number) => {
-        const isLive = rec.recordingStatus === 'recording';
+    const openPlayerWithSeek = useCallback((rec: { _id: string; cameraId: string; recordingStatus?: string; endTime?: string | null }, name: string, seek: number) => {
+        const isLive = isLiveRecording(rec);
         setPlayingId(rec._id);
         setPlayingName(name);
         setSeekTarget(seek);
@@ -588,6 +592,7 @@ export default function CctvRecordingsPage() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                     {recordings.map(rec => {
                         const isSel = selected.has(rec._id);
+                        const isLive = isLiveRecording(rec);
                         return (
                             <div
                                 key={rec._id}
@@ -595,16 +600,16 @@ export default function CctvRecordingsPage() {
                             >
                                 {/* Thumbnail area */}
                                 <div
-                                    className={`relative bg-slate-900 cursor-pointer group ${rec.recordingStatus === 'recording' ? 'ring-2 ring-red-500/60' : ''}`}
+                                    className={`relative bg-slate-900 cursor-pointer group ${isLive ? 'ring-2 ring-red-500/60' : ''}`}
                                     style={{ aspectRatio: '16/9' }}
                                     onClick={() => openPlayer(rec)}
                                 >
                                     <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
-                                        <div className="text-4xl opacity-20">{rec.recordingStatus === 'recording' ? '🔴' : '📹'}</div>
+                                        <div className="text-4xl opacity-20">{isLive ? '🔴' : '📹'}</div>
                                         <span className="text-xs text-slate-400 font-mono">{fmtDuration(rec.duration)}</span>
                                     </div>
                                     {/* LIVE badge */}
-                                    {rec.recordingStatus === 'recording' && (
+                                    {isLive && (
                                         <div className="absolute top-2 left-10 flex items-center gap-1.5 bg-red-600 text-white text-[10px] font-extrabold px-2.5 py-0.5 rounded-full animate-pulse">
                                             <span className="w-1.5 h-1.5 bg-white rounded-full inline-block" /> REC
                                         </div>
