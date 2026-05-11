@@ -62,7 +62,6 @@ export default function ScanningBySlugPage() {
     const [photoUploaded, setPhotoUploaded] = useState(false);
     const [origin, setOrigin] = useState('');
     const [portrait, setPortrait] = useState(false);
-    const [checkInTime, setCheckInTime] = useState('');
     const hiddenInputRef = useRef<HTMLInputElement>(null);
     const nameEnRef = useRef<HTMLHeadingElement>(null);
     const nameThRef = useRef<HTMLHeadingElement>(null);
@@ -103,7 +102,7 @@ export default function ScanningBySlugPage() {
         if (!runner) return;
         const fit = () => {
             const baseEn = portrait ? 2.6 : 5.2;
-            const baseTh = portrait ? 1.0 : 1.9;
+            const baseTh = portrait ? 1.1 : 2.05;
             fitNameToWidth(nameEnRef.current, baseEn, 1.4);
             fitNameToWidth(nameThRef.current, baseTh, 0.9);
         };
@@ -115,7 +114,7 @@ export default function ScanningBySlugPage() {
     // Poll for photo updates when runner exists but has no photo
     useEffect(() => {
         if (!runner || runner.photoUrl || photoUploaded) return;
-        const runnerId = (runner as any)._id;
+        const runnerId = runner._id;
         if (!runnerId) return;
         const interval = setInterval(async () => {
             try {
@@ -123,7 +122,7 @@ export default function ScanningBySlugPage() {
                 if (res.ok) {
                     const data = await res.json();
                     if (data.photoUrl) {
-                        setRunner((prev: any) => prev ? { ...prev, photoUrl: data.photoUrl } : prev);
+                        setRunner(prev => prev ? { ...prev, photoUrl: data.photoUrl } : prev);
                         setPhotoUploaded(true);
                     }
                 }
@@ -153,9 +152,6 @@ export default function ScanningBySlugPage() {
             setRunner(foundRunner);
             setFound(!!data.found);
             setAnimKey(k => k + 1);
-            if (data.found) {
-                setCheckInTime(new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }));
-            }
         } catch {
             setRunner(null); setFound(false); setAnimKey(k => k + 1);
         } finally {
@@ -192,8 +188,6 @@ export default function ScanningBySlugPage() {
     const genderLabel = r?.gender === 'M' ? 'Male' : r?.gender === 'F' ? 'Female' : (r?.gender || '-');
     const ageGroupLabel = r?.ageGroup || '-';
     const flag = toFlag(r?.nationality);
-    const waveLabel = r?.wave || '-';
-    const shirtLabel = r?.shirtSize || '-';
     const hasMedical = !!(r?.medical && r.medical.trim() !== '' && r.medical !== 'ไม่มี');
 
     return (
@@ -209,7 +203,7 @@ export default function ScanningBySlugPage() {
                 .ce-progress { position: absolute; top: 0; left: 0; height: 4px; background: #16a34a; border-radius: 8px 8px 0 0; animation: scanProgress 8s linear forwards; z-index: 5; }
                 .ce-header { text-align: center; border-bottom: 1px solid #cbd5e1; padding-bottom: 22px; margin-bottom: 26px; flex-shrink: 0; }
                 .ce-event-sub { font-family: 'Prompt', sans-serif; font-size: 1rem; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: 6px; margin: 0 0 4px; }
-                .ce-event-name { font-family: 'Prompt', sans-serif; font-size: clamp(1.6rem, 3vw, 2.4rem); font-weight: 800; letter-spacing: 1px; color: #0f172a; margin: 0; line-height: 1.15; }
+                .ce-event-name { font-family: 'Prompt', sans-serif; font-size: clamp(1.8rem, 3.3vw, 2.7rem); font-weight: 800; letter-spacing: 1px; color: #0f172a; margin: 0; line-height: 1.15; }
                 .ce-medical { display: flex; align-items: center; gap: 16px; background: #fef2f2; border: 2px solid #fca5a5; border-radius: 6px; padding: 13px 22px; margin-bottom: 22px; flex-shrink: 0; }
                 .ce-medical-icon { font-size: 1.8rem; color: #dc2626; flex-shrink: 0; }
                 .ce-medical-label { font-size: 0.8rem; font-weight: 700; color: #991b1b; text-transform: uppercase; letter-spacing: 2px; margin: 0 0 2px; }
@@ -247,7 +241,7 @@ export default function ScanningBySlugPage() {
                 .ce-portrait .ce-card { width: min(88vw, 520px); height: 94vh; padding: 32px 32px 24px; }
                 .ce-portrait .ce-header { padding-bottom: 14px; margin-bottom: 16px; }
                 .ce-portrait .ce-event-sub { font-size: 0.7rem; letter-spacing: 4px; }
-                .ce-portrait .ce-event-name { font-size: clamp(1rem, 4.5vw, 1.4rem); }
+                .ce-portrait .ce-event-name { font-size: clamp(1.1rem, 5vw, 1.55rem); }
                 .ce-portrait .ce-middle { flex-direction: column; gap: 20px; align-items: center; justify-content: flex-start; }
                 .ce-portrait .ce-profile-container { width: min(70vw, 340px); height: min(70vw, 340px); }
                 .ce-portrait .ce-qr-on-frame { bottom: -14px; right: -14px; }
@@ -375,9 +369,9 @@ export default function ScanningBySlugPage() {
 
                                 {!photoUploaded && !runner.photoUrl && (
                                     <div className="ce-qr-on-frame">
-                                        {origin && (runner as any)._id ? (
+                                        {origin && runner._id ? (
                                             <QRCodeSVG
-                                                value={`${origin}/upload/${(runner as any)._id}?slug=${campaign?.slug || ''}`}
+                                                value={`${origin}/upload/${runner._id}?slug=${campaign?.slug || slug || ''}`}
                                                 size={portrait ? 110 : 140} bgColor="#ffffff" fgColor="#0f172a" level="H"
                                             />
                                         ) : (

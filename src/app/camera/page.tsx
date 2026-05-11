@@ -4,29 +4,10 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import { io, Socket } from 'socket.io-client';
 
-// ── Design tokens ────────────────────────────────────────────────────────────
-const C = {
-    bg: '#f9f9f9',
-    sidebar: '#f2f4f4',
-    containerHigh: '#e4e9ea',
-    containerLow: '#f2f4f4',
-    containerLowest: '#ffffff',
-    onSurface: '#2d3435',
-    onVariant: '#5a6061',
-    primary: '#5f5e5e',
-    tertiary: '#745c00',
-    onTertiary: '#fff8ef',
-    outline: '#adb3b4',
-    secondaryContainer: '#d8e5e6',
-    onSecondaryContainer: '#475455',
-    error: '#9f403d',
-} as const;
 const F = { headline: "'Newsreader', Georgia, serif", body: "'Manrope', system-ui, sans-serif" } as const;
-const labelStyle: React.CSSProperties = { fontFamily: F.body, fontSize: '0.6875rem', fontWeight: 700, letterSpacing: '0.15em', textTransform: 'uppercase', color: C.onSurface, opacity: 0.6, display: 'block', marginBottom: 10 };
-const inputBase: React.CSSProperties = { width: '100%', background: C.containerHigh, border: 'none', outline: 'none', padding: '14px 16px', borderRadius: 2, fontFamily: F.body, fontSize: '0.9375rem', color: C.onSurface, boxSizing: 'border-box', appearance: 'none' };
 
-interface Campaign { _id: string; name: string; nameTh?: string; slug?: string; }
 interface Checkpoint { _id: string; name: string; orderNum?: number; }
+interface CameraRegisterResult { success?: boolean; cameraId?: string; }
 
 type StreamStatus = 'idle' | 'setting-up' | 'connecting' | 'streaming' | 'stopped' | 'error';
 
@@ -37,7 +18,7 @@ export default function CameraPage() {
     const routeCampaign = (params?.campaign as string | undefined) || '';
     const [checkpoints, setCheckpoints] = useState<Checkpoint[]>([]);
     const [campaignId, setCampaignId] = useState('');
-    const [campaignName, setCampaignName] = useState('');
+    const [, setCampaignName] = useState('');
     const [checkpointId, setCheckpointId] = useState('');
     const [checkpointName, setCheckpointName] = useState('');
     const [cameraName, setCameraName] = useState('');
@@ -45,7 +26,6 @@ export default function CameraPage() {
     const [location, setLocation] = useState('');
     const [description, setDescription] = useState('');
     const [facingMode, setFacingMode] = useState<'user' | 'environment'>('environment');
-    const [sidebarOpen, setSidebarOpen] = useState(false);
 
     const [status, setStatus] = useState<StreamStatus>('idle');
     const [cameraId, setCameraId] = useState('');
@@ -53,7 +33,7 @@ export default function CameraPage() {
     const [bytesSent, setBytesSent] = useState(0);
     const [elapsed, setElapsed] = useState(0);
     const [savedCameraId, setSavedCameraId] = useState('');
-    const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+    const [, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
 
     const [clipSaveStatus, setClipSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
     const [videoBitrateKbps, setVideoBitrateKbps] = useState(2500);
@@ -61,7 +41,6 @@ export default function CameraPage() {
     const videoRef = useRef<HTMLVideoElement>(null);
     const streamRef = useRef<MediaStream | null>(null);          // raw camera stream
     const composedStreamRef = useRef<MediaStream | null>(null);  // canvas stream with timestamp burned in
-    const canvasRef = useRef<HTMLCanvasElement | null>(null);
     const composeRafRef = useRef<number | null>(null);
     const recorderRef = useRef<MediaRecorder | null>(null);
     const socketRef = useRef<Socket | null>(null);
@@ -151,6 +130,24 @@ export default function CameraPage() {
         } catch { setSaveStatus('error'); setErrorMsg('ไม่สามารถบันทึกได้'); }
     }, [campaignId, cameraName, checkpointId, checkpointName, location, description, facingMode, deviceId, savedCameraId]);
 
+    const stopCompose = useCallback(() => {
+        if (composeRafRef.current != null) {
+            cancelAnimationFrame(composeRafRef.current);
+            composeRafRef.current = null;
+        }
+        composedStreamRef.current?.getTracks().forEach(t => t.stop());
+        composedStreamRef.current = null;
+    }, []);
+
+    const cleanup = useCallback(() => {
+        recorderRef.current?.stop(); recorderRef.current = null;
+        stopCompose();
+        streamRef.current?.getTracks().forEach(t => t.stop()); streamRef.current = null;
+        socketRef.current?.disconnect(); socketRef.current = null;
+        if (elapsedRef.current) clearInterval(elapsedRef.current);
+        if (videoRef.current) videoRef.current.srcObject = null;
+    }, [stopCompose]);
+
     const startStream = async () => {
         if (!campaignId || !cameraName.trim()) { setErrorMsg('กรุณาใส่ชื่อกล้องก่อน'); return; }
         setErrorMsg(''); setStatus('connecting');
@@ -167,9 +164,10 @@ export default function CameraPage() {
             const socket = io(`${SOCKET_URL}/cctv`, { path: '/socket.io', transports: ['websocket', 'polling'] });
             socketRef.current = socket;
             await new Promise<void>((resolve, reject) => { socket.on('connect', resolve); socket.on('connect_error', reject); setTimeout(() => reject(new Error('Connection timeout')), 10000); });
-            const regResult: any = await new Promise(resolve => { socket.emit('camera:register', { campaignId, name: cameraName.trim(), checkpointId: checkpointId || undefined, checkpointName: checkpointName || undefined, location: location || undefined, description: description || undefined, deviceId }, resolve); });
+            const regResult = await new Promise<CameraRegisterResult>(resolve => { socket.emit('camera:register', { campaignId, name: cameraName.trim(), checkpointId: checkpointId || undefined, checkpointName: checkpointName || undefined, location: location || undefined, description: description || undefined, deviceId }, resolve); });
             if (!regResult?.success) throw new Error('Registration failed');
-            const camId = regResult.cameraId; setCameraId(camId);
+            const camId = regResult.cameraId || '';
+            setCameraId(camId);
             const mimeType = getSupportedMimeType();
             mimeTypeRef.current = mimeType;
             initChunkRef.current = null;
@@ -192,7 +190,7 @@ export default function CameraPage() {
             recorder.start(2000);
             setStatus('streaming'); startTimeRef.current = Date.now();
             elapsedRef.current = setInterval(() => setElapsed(Math.floor((Date.now() - startTimeRef.current) / 1000)), 1000);
-        } catch (err: any) { setStatus('error'); setErrorMsg(err?.message || 'ไม่สามารถเปิดกล้องได้'); cleanup(); }
+        } catch (err: unknown) { setStatus('error'); setErrorMsg(err instanceof Error ? err.message : 'ไม่สามารถเปิดกล้องได้'); cleanup(); }
     };
 
     const stopStream = () => { socketRef.current?.emit('camera:stop'); cleanup(); setStatus('stopped'); setBytesSent(0); setElapsed(0); };
@@ -235,8 +233,8 @@ export default function CameraPage() {
             };
             recorder.onerror = () => setStatus('error');
             recorder.start(2000);
-        } catch (err: any) { setErrorMsg('ไม่สามารถสลับกล้องได้: ' + (err?.message || '')); }
-    }, [facingMode, status, cameraId, videoBitrateKbps]);
+        } catch (err: unknown) { setErrorMsg('ไม่สามารถสลับกล้องได้: ' + (err instanceof Error ? err.message : '')); }
+    }, [facingMode, status, cameraId, videoBitrateKbps, stopCompose]);
 
     const saveClip = useCallback(async () => {
         if (status !== 'streaming' || !initChunkRef.current) return;
@@ -270,87 +268,13 @@ export default function CameraPage() {
         setTimeout(() => setClipSaveStatus('idle'), 3000);
     }, [status, cameraId, cameraName, campaignId, checkpointName, location, deviceId]);
 
-    /** Build a canvas-backed stream that draws each frame from the LIVE preview element
-     *  plus a real-time timestamp top-right. Returns the raw stream as a fallback if any
-     *  step fails (older Safari/Android may lack canvas.captureStream). */
-    const buildComposedStream = (raw: MediaStream): MediaStream => {
-        try {
-            const track = raw.getVideoTracks()[0];
-            const settings = track?.getSettings();
-            const w = settings?.width || 1280;
-            const h = settings?.height || 720;
-            // Reuse the visible <video> as our pixel source — no detached element gymnastics
-            const sourceVideo = videoRef.current;
-            if (!sourceVideo) return raw;
-
-            const canvas = canvasRef.current || document.createElement('canvas');
-            canvas.width = w; canvas.height = h;
-            canvasRef.current = canvas;
-            const ctx = canvas.getContext('2d');
-            if (!ctx) return raw;
-
-            const draw = () => {
-                try {
-                    if (sourceVideo.readyState >= 2) ctx.drawImage(sourceVideo, 0, 0, w, h);
-                } catch { /* element not ready yet */ }
-                const stamp = new Date().toLocaleString('th-TH', { hour12: false });
-                const fontSize = Math.round(h * 0.038);
-                ctx.font = `700 ${fontSize}px 'Lexend', system-ui, sans-serif`;
-                const padding = Math.round(h * 0.02);
-                const textWidth = ctx.measureText(stamp).width;
-                const boxX = w - textWidth - padding * 3;
-                const boxY = padding;
-                ctx.fillStyle = 'rgba(0,0,0,0.55)';
-                ctx.fillRect(boxX, boxY, textWidth + padding * 2, fontSize + padding);
-                ctx.fillStyle = '#ffffff';
-                ctx.textBaseline = 'top';
-                ctx.fillText(stamp, boxX + padding, boxY + padding * 0.4);
-                composeRafRef.current = requestAnimationFrame(draw);
-            };
-            draw();
-
-            // captureStream is available in Chrome/Edge/Firefox + Safari 16.4+; missing in iOS<16.4
-            const captureFn = (canvas as any).captureStream as (fps: number) => MediaStream;
-            if (typeof captureFn !== 'function') return raw;
-            return captureFn.call(canvas, 30);
-        } catch (err) {
-            console.warn('[timestamp overlay] disabled — falling back to raw stream:', err);
-            return raw;
-        }
-    };
-
-    const stopCompose = () => {
-        if (composeRafRef.current != null) {
-            cancelAnimationFrame(composeRafRef.current);
-            composeRafRef.current = null;
-        }
-        composedStreamRef.current?.getTracks().forEach(t => t.stop());
-        composedStreamRef.current = null;
-    };
-
-    const cleanup = () => {
-        recorderRef.current?.stop(); recorderRef.current = null;
-        stopCompose();
-        streamRef.current?.getTracks().forEach(t => t.stop()); streamRef.current = null;
-        socketRef.current?.disconnect(); socketRef.current = null;
-        if (elapsedRef.current) clearInterval(elapsedRef.current);
-        if (videoRef.current) videoRef.current.srcObject = null;
-    };
-
-    useEffect(() => () => cleanup(), []);
+    useEffect(() => () => cleanup(), [cleanup]);
 
     const fmt = (s: number) => { const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), ss = s % 60; return h > 0 ? `${h}:${String(m).padStart(2,'0')}:${String(ss).padStart(2,'0')}` : `${String(m).padStart(2,'0')}:${String(ss).padStart(2,'0')}`; };
     const fmtBytes = (b: number) => b < 1024 ? `${b} B` : b < 1048576 ? `${(b/1024).toFixed(1)} KB` : `${(b/1048576).toFixed(2)} MB`;
 
     const isStreaming = status === 'streaming';
     const isConnecting = status === 'connecting';
-
-    const navItems = [
-        { icon: 'tune', label: 'GENERAL', active: true },
-        { icon: 'videocam', label: 'VIDEO', active: false },
-        { icon: 'mic', label: 'AUDIO', active: false },
-        { icon: 'sensors', label: 'NETWORK', active: false },
-    ];
 
     const HL = F.headline; // shorthand for serif font
 
@@ -366,65 +290,8 @@ export default function CameraPage() {
                 maxHeight: '100vh',
             }}
         >
-
-            {/* Sidebar overlay backdrop */}
-            {sidebarOpen && (
-                <div className="fixed inset-0 bg-black/25 z-30" onClick={() => setSidebarOpen(false)} />
-            )}
-
-            {/* ── Sidebar ── */}
-            <aside className={`fixed inset-y-0 left-0 z-40 w-60 bg-[#f2f4f4] flex flex-col px-7 py-8 transition-transform duration-300 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
-                <div className="mb-7">
-                    <p className="text-[0.65rem] font-bold tracking-widest uppercase text-[#5f5e5e] opacity-60 m-0">Configuration</p>
-                    <p className="text-2xl italic mt-1 text-[#2d3435] m-0" style={{ fontFamily: HL }}>Manual Control</p>
-                    {campaignName && <p className="text-xs font-bold text-[#745c00] mt-1.5">⭐ {campaignName}</p>}
-                </div>
-                <nav className="flex-1 flex flex-col gap-0.5">
-                    {[{ icon: 'tune', label: 'GENERAL', active: true }, { icon: 'videocam', label: 'VIDEO' }, { icon: 'mic', label: 'AUDIO' }, { icon: 'sensors', label: 'NETWORK' }].map(item => (
-                        <div key={item.label} className={`flex items-center gap-3.5 py-2.5 cursor-pointer text-[0.7rem] font-bold tracking-widest uppercase transition-all hover:translate-x-1 ${item.active ? 'text-[#2d3435]' : 'text-[#adb3b4]'}`}>
-                            <span className="material-symbols-outlined text-[1.125rem]">{item.icon}</span>{item.label}
-                        </div>
-                    ))}
-                </nav>
-                <div className="mb-4">
-                    <label className="block text-[0.65rem] font-bold tracking-widest uppercase text-[#5a6061] opacity-60 mb-1.5">รายละเอียดเพิ่มเติม</label>
-                    <textarea value={description} onChange={e => setDescription(e.target.value)} rows={3} placeholder="คำอธิบายเพิ่มเติม..."
-                        className="w-full bg-[#e4e9ea] text-sm text-[#2d3435] px-3 py-2.5 rounded-sm outline-none resize-none border-none" />
-                </div>
-                <div className="border-t border-[#adb3b4]/20 pt-4 flex flex-col gap-1.5">
-                    {[{ icon: 'help_outline', label: 'SUPPORT' }, { icon: 'update', label: 'FIRMWARE' }].map(item => (
-                        <div key={item.label} className="flex items-center gap-3.5 py-1.5 cursor-pointer text-[0.65rem] tracking-widest uppercase text-[#adb3b4] hover:text-[#5f5e5e]">
-                            <span className="material-symbols-outlined text-[1rem]">{item.icon}</span>{item.label}
-                        </div>
-                    ))}
-                    <button onClick={handleSavePreset} className="mt-3 w-full py-3 bg-[#5f5e5e] text-[#faf7f6] text-[0.65rem] font-bold tracking-[0.2em] uppercase cursor-pointer border-none">
-                        {saveStatus === 'saving' ? 'SAVING...' : saveStatus === 'saved' ? '✓ SAVED' : 'SAVE PRESET'}
-                    </button>
-                </div>
-            </aside>
-
             {/* ── Main column ── */}
             <main className="flex-1 flex flex-col overflow-hidden min-w-0">
-
-                {/* Header */}
-                <header className="shrink-0 flex items-center justify-between px-4 py-2.5 bg-[#f9f9f9] border-b border-[#adb3b4]/15">
-                    <div className="flex items-center gap-3">
-                        <button onClick={() => setSidebarOpen(v => !v)} className="bg-transparent border-none cursor-pointer text-[#5a6061] p-0 leading-none">
-                            <span className="material-symbols-outlined text-[1.375rem]">menu</span>
-                        </button>
-                        <span className="text-lg font-bold tracking-tight text-[#2d3435]" style={{ fontFamily: HL }}>ARCHIVIST MK1</span>
-                        <nav className="flex gap-3.5">
-                            {['Status', 'Media', 'Lenses'].map((t, i) => (
-                                <span key={t} className={`text-sm italic cursor-pointer ${i === 0 ? 'text-[#745c00]' : 'text-[#adb3b4]'}`} style={{ fontFamily: HL }}>{t}</span>
-                            ))}
-                        </nav>
-                    </div>
-                    <div className="flex items-center gap-2">
-                        {savedCameraId && <span className="text-[0.6rem] font-bold text-[#745c00]">✓ DB</span>}
-                        <span className="material-symbols-outlined text-[1.125rem] text-[#5f5e5e]">battery_full</span>
-                        <span className="material-symbols-outlined text-[1.125rem] text-[#5f5e5e]">settings</span>
-                    </div>
-                </header>
 
                 {/* Camera viewport — smaller on portrait/short screens so action buttons stay reachable on Android phones */}
                 <section
@@ -492,7 +359,7 @@ export default function CameraPage() {
                         )}
 
                         {/* 2×2 field grid */}
-                        <div className="grid grid-cols-2 gap-x-4 gap-y-3.5">
+                        <div className="grid grid-cols-1 gap-y-3.5">
                             {/* Camera name */}
                             <div>
                                 <label className="block text-xs font-bold tracking-widest uppercase text-[#5a6061] mb-1.5">
@@ -514,32 +381,7 @@ export default function CameraPage() {
                                     <span className="material-symbols-outlined absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none text-[#adb3b4] text-[1rem]">keyboard_arrow_down</span>
                                 </div>
                             </div>
-                            {/* Device ID */}
-                            <div>
-                                <label className="block text-xs font-bold tracking-widest uppercase text-[#5a6061] mb-1.5">รหัสอุปกรณ์</label>
-                                <input value={deviceId} readOnly
-                                    className="w-full bg-[#f2f4f4] text-sm text-[#5a6061] px-3 py-2.5 rounded-sm outline-none border-none opacity-60 cursor-not-allowed" />
-                            </div>
-                            {/* Location */}
-                            <div>
-                                <label className="block text-xs font-bold tracking-widest uppercase text-[#5a6061] mb-1.5">โซน / สถานที่</label>
-                                <input value={location} onChange={e => setLocation(e.target.value)}
-                                    placeholder="เช่น ฝั่งขวา ก่อนถึง CP1"
-                                    className="w-full bg-[#e4e9ea] text-sm text-[#2d3435] px-3 py-2.5 rounded-sm outline-none border-none focus:bg-white transition-colors" />
-                            </div>
                         </div>
-                    </div>
-
-                    {/* Session summary bar */}
-                    <div className="flex flex-wrap items-center gap-2.5 bg-[#f2f4f4] rounded px-4 py-3 mt-3 mb-1">
-                        <span className="text-[0.65rem] font-bold tracking-widest uppercase text-[#5a6061] mr-1">SESSION</span>
-                        <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold ${isStreaming ? 'bg-[#d8e5e6] text-[#475455]' : 'bg-[#e4e9ea] text-[#5a6061]'}`}>
-                            {isStreaming ? '🔴 LIVE' : isConnecting ? 'กำลังเชื่อมต่อ' : status === 'stopped' ? 'หยุดแล้ว' : 'เตรียมพร้อม'}
-                        </span>
-                        <span className="text-sm italic text-[#2d3435]" style={{ fontFamily: HL }}>{fmt(elapsed)}</span>
-                        <span className="text-sm italic text-[#2d3435]" style={{ fontFamily: HL }}>{fmtBytes(bytesSent)}</span>
-                        {savedCameraId && <span className="text-xs font-bold text-[#745c00]">✓ DB</span>}
-                        <span className="material-symbols-outlined text-[0.875rem] text-[#745c00] ml-auto">verified_user</span>
                     </div>
 
                     </div>{/* /scrollable form region */}
@@ -561,23 +403,19 @@ export default function CameraPage() {
                                 หยุดการถ่ายทอด (STOP)
                             </button>
                         )}
-                        {isStreaming ? (
+                        {isStreaming && (
                             <button onClick={saveClip} disabled={clipSaveStatus === 'saving'}
                                 className={`shrink-0 px-5 py-4 text-xs font-bold tracking-widest uppercase cursor-pointer border transition-colors whitespace-nowrap ${
                                     clipSaveStatus === 'saving' ? 'bg-[#e4e9ea] text-[#adb3b4] border-[#adb3b4]/20 cursor-not-allowed'
                                     : clipSaveStatus === 'saved' ? 'bg-[#166534] text-white border-transparent'
                                     : clipSaveStatus === 'error' ? 'bg-[#9f403d] text-white border-transparent'
                                     : 'bg-[#166534]/10 text-[#166534] border-[#166534]/30 hover:bg-[#166534]/20'
-                                }`}>
+                                }`}
+                            >
                                 {clipSaveStatus === 'saving' ? '⏳ SAVING...' : clipSaveStatus === 'saved' ? '✓ CLIP SAVED' : clipSaveStatus === 'error' ? '✗ ERROR' : `💾 SAVE CLIP (${clipBufferSecsRef.current}s)`}
                             </button>
-                        ) : (
-                            <button onClick={handleSavePreset}
-                                className="shrink-0 px-5 py-4 bg-transparent border border-[#adb3b4]/30 text-[#5f5e5e] text-xs font-bold tracking-widest uppercase cursor-pointer hover:bg-[#f2f4f4] transition-colors whitespace-nowrap">
-                                {saveStatus === 'saved' ? '✓ SAVED' : 'SAVE'}
-                            </button>
                         )}
-                    </div>
+                </div>
                 </div>
             </main>
 

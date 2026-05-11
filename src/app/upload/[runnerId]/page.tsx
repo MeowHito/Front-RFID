@@ -14,6 +14,8 @@ interface Runner {
     category?: string;
     ageGroup?: string;
     medical?: string;
+    eventName?: string;
+    campaignName?: string;
 }
 
 export default function UploadPhotoPage() {
@@ -172,10 +174,13 @@ export default function UploadPhotoPage() {
                         <p style={{ color: '#ef4444', fontSize: 20, fontWeight: 800 }}>{error}</p>
                     </div>
                 ) : success ? (() => {
+                    const _eventName = campaignName || runner?.eventName || runner?.campaignName || 'RFID Running Event';
                     const _gl = runner?.gender === 'M' ? 'Male' : runner?.gender === 'F' ? 'Female' : runner?.gender || '-';
                     const _ag = runner?.ageGroup || '-';
-                    const _nth = runner?.firstNameTh ? `${runner.firstNameTh} ${runner.lastNameTh || ''}`.trim() : `${runner?.firstName || ''} ${runner?.lastName || ''}`.trim();
-                    const _nen = runner?.firstNameTh ? `${runner.firstName || ''} ${runner.lastName || ''}`.trim().toUpperCase() : '';
+                    const _nth = `${runner?.firstNameTh || ''} ${runner?.lastNameTh || ''}`.trim();
+                    const _nen = `${runner?.firstName || ''} ${runner?.lastName || ''}`.trim();
+                    const _nameMain = _nen || _nth;
+                    const _nameSub = _nth && _nen ? _nth : '';
                     const _dist = runner?.category || '';
                     const _bib = String(runner?.bib || '-');
                     const _medical = runner?.medical || '';
@@ -185,11 +190,13 @@ export default function UploadPhotoPage() {
                             {/* Scaled 1920×1080 card — exact same layout as scanning page */}
                             <div style={{ position: 'relative', width: '100%', height: Math.round(1080 * cardScale), overflow: 'hidden', borderRadius: 14, marginBottom: 14, boxShadow: '0 15px 40px rgba(0,0,0,0.5)', border: '1px solid rgba(74,222,128,0.2)' }}>
                                 <div ref={cardRef} style={{ position: 'absolute', top: 0, left: 0, width: 1920, height: 1080, transformOrigin: '0 0', transform: `scale(${cardScale})` }}>
-                                    <div style={{ width: 1920, height: 1080, background: campaignBgImage ? `url(${campaignBgImage}) center/cover no-repeat` : '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'Prompt', sans-serif", position: 'relative', overflow: 'hidden' }}>
-                                        <div style={{ width: 1728, height: 972, background: '#ffffff', color: '#0f172a', display: 'flex', flexDirection: 'column', padding: '66px 88px 54px', position: 'relative', overflow: 'hidden' }}>
+                                    <div style={{ width: 1920, height: 1080, background: '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'Prompt', sans-serif", position: 'relative', overflow: 'hidden' }}>
+                                        <div style={{ width: 1728, height: 972, background: campaignBgImage ? `url(${campaignBgImage}) center/cover no-repeat` : '#ffffff', color: '#0f172a', display: 'flex', flexDirection: 'column', padding: '66px 88px 54px', position: 'relative', overflow: 'hidden' }}>
+                                            {campaignBgImage && <div style={{ position: 'absolute', inset: 0, background: 'rgba(255,255,255,0.82)', zIndex: 0 }} />}
+                                            <div style={{ position: 'relative', zIndex: 1, display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
                                             <div style={{ position: 'absolute', top: 0, left: 0, height: 4, width: '100%', background: '#16a34a' }} />
                                             <div style={{ textAlign: 'center', borderBottom: '1px solid #cbd5e1', paddingBottom: 26, marginBottom: _hasMedical ? 20 : 38, flexShrink: 0 }}>
-                                                <div style={{ fontSize: 46, fontWeight: 800, letterSpacing: 1, color: '#0f172a', margin: 0, lineHeight: 1.15 }}>{campaignName}</div>
+                                                <div style={{ fontSize: 46, fontWeight: 800, letterSpacing: 1, color: '#0f172a', margin: 0, lineHeight: 1.15 }}>{_eventName}</div>
                                             </div>
                                             {_hasMedical && (
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: 16, background: '#fef2f2', border: '2px solid #fca5a5', borderRadius: 6, padding: '14px 24px', marginBottom: 26, flexShrink: 0 }}>
@@ -210,8 +217,8 @@ export default function UploadPhotoPage() {
                                                 </div>
                                                 <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'flex-start', maxWidth: '58%' }}>
                                                     <p style={{ color: '#16a34a', fontWeight: 600, fontSize: 18, textTransform: 'uppercase', margin: '0 0 14px', display: 'flex', alignItems: 'center', gap: 8, letterSpacing: 2 }}>✓ ยืนยันข้อมูล</p>
-                                                    <h2 style={{ fontSize: 82, fontWeight: 800, lineHeight: 1.1, margin: '0 0 6px', color: '#0f172a' }}>{_nth}</h2>
-                                                    {_nen && <h3 style={{ fontSize: 30, fontWeight: 400, color: '#64748b', textTransform: 'uppercase', margin: '0 0 32px', letterSpacing: 2 }}>{_nen}</h3>}
+                                                    <h2 style={{ fontSize: 82, fontWeight: 800, lineHeight: 1.1, margin: '0 0 6px', color: '#0f172a' }}>{_nameMain}</h2>
+                                                    {_nameSub && <h3 style={{ fontSize: 30, fontWeight: 400, color: '#64748b', margin: '0 0 32px', letterSpacing: 2 }}>{_nameSub}</h3>}
                                                     <div style={{ display: 'flex', alignItems: 'stretch', gap: 18, borderLeft: '4px solid #16a34a', paddingLeft: 18 }}>
                                                         <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
                                                             <span style={{ fontSize: 18, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 3 }}>BIB</span>
@@ -237,6 +244,7 @@ export default function UploadPhotoPage() {
                                             <div style={{ position: 'absolute', bottom: 18, right: 28, fontSize: 12, color: '#cbd5e1', fontWeight: 700, letterSpacing: 4, textTransform: 'uppercase', textAlign: 'right', lineHeight: 1.4 }}>
                                                 Powered by<br />
                                                 <span style={{ color: '#94a3b8' }}>ACTION TIMING</span>
+                                            </div>
                                             </div>
                                         </div>
                                     </div>

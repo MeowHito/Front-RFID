@@ -32,6 +32,7 @@ interface ReaderStatus {
     readerConnected: boolean;
     cardInserted: boolean;
     mockMode: boolean;
+    pcscError?: string | null;
 }
 
 interface ImportedEntry {
@@ -47,6 +48,27 @@ interface ImportedEntry {
     chipCode: string;
     savedAt: string;
 }
+
+interface CameraRunner {
+    bib?: string;
+    firstName?: string;
+    lastName?: string;
+    firstNameTh?: string;
+    lastNameTh?: string;
+    category?: string;
+    status?: string;
+}
+
+type BarcodeScannerInstance = {
+    start: (
+        cameraConfig: { facingMode: string },
+        configuration: { fps: number; qrbox: (viewfinderWidth: number, viewfinderHeight: number) => { width: number; height: number } },
+        qrCodeSuccessCallback: (decodedText: string) => void | Promise<void>,
+        qrCodeErrorCallback: () => void,
+    ) => Promise<void>;
+    stop: () => Promise<void>;
+    scanFile: (file: File, showImage?: boolean) => Promise<string>;
+};
 
 const READER_SERVICE_URL = 'http://localhost:3005';
 
@@ -89,6 +111,7 @@ export default function IdCardImportPage() {
     const [modalStep, setModalStep] = useState<'waiting' | 'reading' | 'data' | 'error'>('waiting');
     const [cardData, setCardData] = useState<IdCardData | null>(null);
     const [modalError, setModalError] = useState('');
+    const autoReadRef = useRef(false);
 
     // Form state
     const [selectedCategory, setSelectedCategory] = useState('');
@@ -104,9 +127,9 @@ export default function IdCardImportPage() {
     const [cameraScanning, setCameraScanning] = useState(false);
     const [cameraResult, setCameraResult] = useState('');
     const [cameraLookupLoading, setCameraLookupLoading] = useState(false);
-    const [cameraRunner, setCameraRunner] = useState<any>(null);
+    const [cameraRunner, setCameraRunner] = useState<CameraRunner | null>(null);
     const [cameraLookupDone, setCameraLookupDone] = useState(false);
-    const scannerInstanceRef = useRef<any>(null);
+    const scannerInstanceRef = useRef<BarcodeScannerInstance | null>(null);
 
     // Manual entry form state
     const [manualForm, setManualForm] = useState({
@@ -193,7 +216,7 @@ export default function IdCardImportPage() {
                 setModalError(result.error || 'อ่านบัตรไม่สำเร็จ');
                 setModalStep('error');
             }
-        } catch (err) {
+        } catch {
             setModalError(
                 language === 'th'
                     ? 'ไม่สามารถเชื่อมต่อกับเครื่องอ่านบัตร กรุณาตรวจสอบว่า ID Card Reader Service กำลังทำงาน'
@@ -202,6 +225,18 @@ export default function IdCardImportPage() {
             setModalStep('error');
         }
     }, [language]);
+
+    useEffect(() => {
+        if (activeTab !== 'card') return;
+        if (!readerStatus?.readerConnected) return;
+        if (!readerStatus.cardInserted) {
+            autoReadRef.current = false;
+            return;
+        }
+        if (autoReadRef.current || cardData || modalStep === 'reading') return;
+        autoReadRef.current = true;
+        readCard();
+    }, [activeTab, readerStatus, cardData, modalStep, readCard]);
 
 
 
@@ -414,7 +449,7 @@ export default function IdCardImportPage() {
         } finally {
             setSaving(false);
         }
-    }, [campaign, cardData, selectedCategory, bibNumber, language]);
+    }, [campaign, cardData, selectedCategory, bibNumber, chipCode, language]);
 
     // ─── Render ──────────────────────────────────────────────────
 
@@ -546,7 +581,9 @@ export default function IdCardImportPage() {
                                                 : '❌ ID Card Reader Service is not running — run: cd id-card-reader && node server.js'
                                         ) : !readerStatus.readerConnected ? (
                                             readerStatus.mockMode
-                                                ? (language === 'th' ? '⚠️ โหมดทดสอบ (Mock Mode) — ใช้ข้อมูลตัวอย่าง' : '⚠️ Mock Mode — using sample data')
+                                                ? (readerStatus.pcscError
+                                                    ? (language === 'th' ? `⚠️ PC/SC ใช้งานไม่ได้ — ${readerStatus.pcscError}` : `⚠️ PC/SC unavailable — ${readerStatus.pcscError}`)
+                                                    : (language === 'th' ? '⚠️ โหมดทดสอบ (Mock Mode) — ใช้ข้อมูลตัวอย่าง' : '⚠️ Mock Mode — using sample data'))
                                                 : (language === 'th' ? '⚠️ ไม่พบเครื่องอ่านบัตร — กรุณาเสียบเครื่องอ่าน' : '⚠️ No reader detected — please connect reader')
                                         ) : readerStatus.cardInserted ? (
                                             language === 'th' ? '✅ พร้อมอ่านบัตร — มีบัตรอยู่ในเครื่องอ่าน' : '✅ Ready — card is in the reader'
@@ -557,6 +594,11 @@ export default function IdCardImportPage() {
                                     {readerStatus?.reader && (
                                         <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>
                                             Reader: {readerStatus.reader}
+                                        </div>
+                                    )}
+                                    {readerStatus?.pcscError && (
+                                        <div style={{ fontSize: 11, color: '#ef4444', marginTop: 2, maxWidth: 720 }}>
+                                            PC/SC Error: {readerStatus.pcscError}
                                         </div>
                                     )}
                                 </div>
@@ -1344,7 +1386,7 @@ export default function IdCardImportPage() {
                                                 Html5QrcodeSupportedFormats.DATA_MATRIX,
                                                 Html5QrcodeSupportedFormats.EAN_13,
                                             ];
-                                            const scanner = new Html5Qrcode('camera-barcode-scanner', { formatsToSupport, verbose: false } as any);
+                                            const scanner = new Html5Qrcode('camera-barcode-scanner', { formatsToSupport, verbose: false }) as BarcodeScannerInstance;
                                             scannerInstanceRef.current = scanner;
                                             await scanner.start(
                                                 { facingMode: 'environment' },
@@ -1365,7 +1407,7 @@ export default function IdCardImportPage() {
                                                         if (campaign?._id) params.set('campaignId', campaign._id);
                                                         const res = await fetch(`/api/runners/lookup?${params.toString()}`);
                                                         const data = await res.json();
-                                                        setCameraRunner(data.runner || null);
+                                                        setCameraRunner((data.runner as CameraRunner | undefined) || null);
                                                     } catch { setCameraRunner(null); }
                                                     finally { setCameraLookupLoading(false); setCameraLookupDone(true); }
                                                 },
@@ -1419,7 +1461,7 @@ export default function IdCardImportPage() {
                                                     Html5QrcodeSupportedFormats.DATA_MATRIX,
                                                     Html5QrcodeSupportedFormats.EAN_13,
                                                 ];
-                                                const fileScanner = new Html5Qrcode('camera-barcode-scanner', { formatsToSupport, verbose: false } as any);
+                                                const fileScanner = new Html5Qrcode('camera-barcode-scanner', { formatsToSupport, verbose: false }) as BarcodeScannerInstance;
                                                 const decodedText = await fileScanner.scanFile(file, /* showImage= */ false);
                                                 const match = decodedText.match(/(\d{13})/);
                                                 const cid = match ? match[1] : decodedText.trim();
@@ -1430,7 +1472,7 @@ export default function IdCardImportPage() {
                                                     if (campaign?._id) params.set('campaignId', campaign._id);
                                                     const res = await fetch(`/api/runners/lookup?${params.toString()}`);
                                                     const data = await res.json();
-                                                    setCameraRunner(data.runner || null);
+                                                    setCameraRunner((data.runner as CameraRunner | undefined) || null);
                                                 } catch { setCameraRunner(null); }
                                                 finally { setCameraLookupLoading(false); setCameraLookupDone(true); }
                                             } catch (err) {
