@@ -165,7 +165,8 @@ export default function CameraPage() {
             const socket = io(`${SOCKET_URL}/cctv`, { path: '/socket.io', transports: ['websocket', 'polling'] });
             socketRef.current = socket;
             await new Promise<void>((resolve, reject) => { socket.on('connect', resolve); socket.on('connect_error', reject); setTimeout(() => reject(new Error('Connection timeout')), 10000); });
-            const registerData = { campaignId, name: cameraName.trim(), checkpointId: checkpointId || undefined, checkpointName: checkpointName || undefined, location: location || undefined, description: description || undefined, deviceId };
+            const streamSessionId = `S-${Math.random().toString(36).substring(2, 10)}-${Date.now().toString(36)}`;
+            const registerData = { campaignId, name: cameraName.trim(), checkpointId: checkpointId || undefined, checkpointName: checkpointName || undefined, location: location || undefined, description: description || undefined, deviceId, streamSessionId };
             const regResult = await new Promise<CameraRegisterResult>(resolve => { socket.emit('camera:register', registerData, resolve); });
             if (!regResult?.success) throw new Error('Registration failed');
             // Re-register on every subsequent reconnect so the server's camera
