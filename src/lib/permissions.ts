@@ -53,6 +53,9 @@ export const ROUTE_TO_MODULE: Record<string, string> = {
     '/admin/cctv-cameras': 'cctvMonitor',
     '/admin/cctv-live': 'cctvMonitor',
     '/admin/cctv-settings': 'cctvMonitor',
+    '/admin/cctv-beta-cameras': 'cctvMonitor',
+    '/admin/cctv-beta-live': 'cctvMonitor',
+    '/admin/cctv-beta-recordings': 'cctvMonitor',
 
     // Always accessible
     '/admin/profile': '_always',

@@ -75,6 +75,15 @@ const menuSections: MenuSection[] = [
         ]
     },
     {
+        header: 'CCTV BETA (Larix → EC2)',
+        headerEn: 'CCTV BETA (Larix → EC2)',
+        items: [
+            { href: '/admin/cctv-beta-live', label: 'ดูสด (Beta)', labelEn: 'Live Feeds (Beta)', icon: 'signal', iconColor: '#f59e0b', badge: 'BETA' },
+            { href: '/admin/cctv-beta-recordings', label: 'การบันทึก (Beta)', labelEn: 'Recordings (Beta)', icon: 'database', iconColor: '#f59e0b', badge: 'BETA' },
+            { href: '/admin/cctv-beta-cameras', label: 'จัดการกล้อง (Beta)', labelEn: 'Manage Cameras (Beta)', icon: 'video', iconColor: '#f59e0b', badge: 'BETA' },
+        ]
+    },
+    {
         header: 'RESULTS & REPORTS (รายงาน)',
         headerEn: 'RESULTS & REPORTS',
         items: [
