@@ -13,57 +13,99 @@ interface BetaCamera {
     streamKey: string;
 }
 
+interface HlsInstance {
+    loadSource: (src: string) => void;
+    attachMedia: (video: HTMLVideoElement) => void;
+    on: (event: string, handler: (_e: unknown, data: { fatal?: boolean; type?: string }) => void) => void;
+    destroy: () => void;
+    startLoad?: () => void;
+}
+
 declare global {
-    interface Window { Hls?: { isSupported: () => boolean; new (options: { liveSyncDuration: number; lowLatencyMode: boolean }): { loadSource: (src: string) => void; attachMedia: (video: HTMLVideoElement) => void; on: (event: string, handler: (_e: unknown, data: { fatal?: boolean; type?: string }) => void) => void; destroy: () => void; }; Events: { ERROR: string } }; }
+    interface Window { Hls?: { isSupported: () => boolean; new (options: { liveSyncDuration: number; lowLatencyMode: boolean }): HlsInstance; Events: { ERROR: string; MANIFEST_PARSED: string }; ErrorTypes?: { NETWORK_ERROR: string; MEDIA_ERROR: string } }; }
 }
 
 function HlsPlayer({ src, label }: { src: string; label: string }) {
     const videoRef = useRef<HTMLVideoElement>(null);
     const [err, setErr] = useState<string | null>(null);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => { const t = setTimeout(() => { setErr(null); setLoading(true); }, 0); return () => clearTimeout(t); }, [src]);
 
     useEffect(() => {
         const video = videoRef.current;
         if (!video || !src) return;
 
+        const onPlaying = () => { setLoading(false); setErr(null); };
+        video.addEventListener('playing', onPlaying);
+
         // Native HLS (Safari, iOS)
         if (video.canPlayType('application/vnd.apple.mpegurl')) {
             video.src = src;
-            return;
+            video.play().catch(() => {});
+            return () => { video.removeEventListener('playing', onPlaying); };
         }
 
-        // hls.js for others - load from CDN to avoid adding npm dep here
+        let hls: HlsInstance | null = null;
+        let cancelled = false;
         const loadHls = async () => {
             if (!window.Hls) {
                 await new Promise<void>((resolve, reject) => {
+                    const existing = document.querySelector<HTMLScriptElement>('script[data-hls-loader="1"]');
+                    if (existing) {
+                        if (window.Hls) { resolve(); return; }
+                        existing.addEventListener('load', () => resolve());
+                        existing.addEventListener('error', () => reject(new Error('hls.js load failed')));
+                        return;
+                    }
                     const s = document.createElement('script');
                     s.src = 'https://cdn.jsdelivr.net/npm/hls.js@1.5.15/dist/hls.min.js';
+                    s.async = true;
+                    s.dataset.hlsLoader = '1';
                     s.onload = () => resolve();
                     s.onerror = () => reject(new Error('hls.js load failed'));
                     document.head.appendChild(s);
                 });
             }
             const Hls = window.Hls;
+            if (cancelled) return;
             if (!Hls || !Hls.isSupported()) {
                 setErr('HLS not supported');
+                setLoading(false);
                 return;
             }
-            const hls = new Hls({ liveSyncDuration: 2, lowLatencyMode: true });
+            hls = new Hls({ liveSyncDuration: 2, lowLatencyMode: true });
             hls.loadSource(src);
             hls.attachMedia(video);
+            hls.on(Hls.Events.MANIFEST_PARSED, () => { video.play().catch(() => {}); });
             hls.on(Hls.Events.ERROR, (_e: unknown, data: { fatal?: boolean; type?: string }) => {
-                if (data.fatal) setErr(`HLS error: ${data.type}`);
+                if (data.fatal) { setErr(`HLS error: ${data.type}`); setLoading(false); }
             });
-            return () => hls.destroy();
         };
-        const cleanup = loadHls();
-        return () => { void cleanup; };
+        loadHls().catch(e => { setErr(e instanceof Error ? e.message : 'Playback error'); setLoading(false); });
+        return () => {
+            cancelled = true;
+            video.removeEventListener('playing', onPlaying);
+            try { hls?.destroy(); } catch { /* ignore */ }
+        };
     }, [src]);
 
     return (
         <div style={{ background: '#000', borderRadius: 6, overflow: 'hidden', position: 'relative' }}>
-            <video ref={videoRef} controls autoPlay muted playsInline style={{ width: '100%', display: 'block', aspectRatio: '16/9' }} />
+            <video ref={videoRef} controls autoPlay muted playsInline style={{ width: '100%', display: 'block', aspectRatio: '16/9', background: '#000' }} />
+            {loading && !err && (
+                <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', fontSize: 12, pointerEvents: 'none' }}>
+                    กำลังเชื่อมต่อ live…
+                </div>
+            )}
+            {err && (
+                <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#fca5a5', fontSize: 12, background: 'rgba(0,0,0,0.55)', textAlign: 'center', padding: 8 }}>
+                    <div style={{ fontSize: 22, marginBottom: 4 }}>⚠️</div>
+                    <div>{err}</div>
+                </div>
+            )}
             <div style={{ position: 'absolute', bottom: 6, left: 6, background: 'rgba(0,0,0,0.7)', color: '#fff', padding: '2px 8px', fontSize: 11, borderRadius: 4 }}>
-                {label} {err && <span style={{ color: '#fca5a5' }}>· {err}</span>}
+                {label}
             </div>
         </div>
     );
