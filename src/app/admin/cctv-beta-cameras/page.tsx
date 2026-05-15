@@ -51,13 +51,13 @@ function authHeaders(): HeadersInit {
 export default function CctvBetaCamerasPage() {
   const { language } = useLanguage();
   const th = language === "th";
-  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [selectedCampaign, setSelectedCampaign] = useState("");
   const [campaignData, setCampaignData] = useState<Campaign | null>(null);
   const [checkpoints, setCheckpoints] = useState<CheckpointOption[]>([]);
   const [cameras, setCameras] = useState<BetaCamera[]>([]);
   const [loading, setLoading] = useState(false);
   const [showQrFor, setShowQrFor] = useState<BetaCamera | null>(null);
+  const [copiedCameraId, setCopiedCameraId] = useState("");
   const [form, setForm] = useState({
     name: "",
     coverageZone: "",
@@ -72,7 +72,6 @@ export default function CctvBetaCamerasPage() {
       .then((r) => r.json())
       .then((d) => {
         if (d?._id) {
-          setCampaigns([d]);
           setCampaignData(d);
           setSelectedCampaign(d._id);
         }
@@ -145,6 +144,27 @@ export default function CctvBetaCamerasPage() {
     } else {
       const txt = await res.text().catch(() => "");
       alert(`Create failed (${res.status}) ${txt}`);
+    }
+  };
+
+  const copyRtmp = async (cam: BetaCamera) => {
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(cam.ingestRtmpUrl);
+      } else {
+        const textarea = document.createElement("textarea");
+        textarea.value = cam.ingestRtmpUrl;
+        textarea.style.position = "fixed";
+        textarea.style.opacity = "0";
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand("copy");
+        document.body.removeChild(textarea);
+      }
+      setCopiedCameraId(cam._id);
+      setTimeout(() => setCopiedCameraId(""), 1800);
+    } catch {
+      alert(th ? "คัดลอก RTMP ไม่สำเร็จ" : "Failed to copy RTMP");
     }
   };
 
@@ -410,6 +430,12 @@ export default function CctvBetaCamerasPage() {
                   style={btnStyle("#6366f1")}
                 >
                   QR for Larix
+                </button>
+                <button
+                  onClick={() => copyRtmp(cam)}
+                  style={btnStyle(copiedCameraId === cam._id ? "#16a34a" : "#0ea5e9")}
+                >
+                  {copiedCameraId === cam._id ? (th ? "คัดลอกแล้ว" : "Copied") : (th ? "คัดลอก RTMP" : "Copy RTMP")}
                 </button>
                 <button
                   onClick={() => handleRotate(cam._id)}
