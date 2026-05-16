@@ -28,6 +28,7 @@ interface BetaCamera {
   coverageZone?: string;
   streamKey: string;
   ingestRtmpUrl: string;
+  ingestRtmpServer?: string;
   ingestSrtUrl: string;
   hlsUrl: string;
   webrtcUrl: string;
@@ -57,7 +58,8 @@ export default function CctvBetaCamerasPage() {
   const [cameras, setCameras] = useState<BetaCamera[]>([]);
   const [loading, setLoading] = useState(false);
   const [showQrFor, setShowQrFor] = useState<BetaCamera | null>(null);
-  const [copiedCameraId, setCopiedCameraId] = useState("");
+  const [qrApp, setQrApp] = useState<"larix" | "irlpro">("larix");
+  const [copiedKey, setCopiedKey] = useState("");
   const [form, setForm] = useState({
     name: "",
     coverageZone: "",
@@ -147,13 +149,13 @@ export default function CctvBetaCamerasPage() {
     }
   };
 
-  const copyRtmp = async (cam: BetaCamera) => {
+  const copyText = async (value: string): Promise<boolean> => {
     try {
       if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(cam.ingestRtmpUrl);
+        await navigator.clipboard.writeText(value);
       } else {
         const textarea = document.createElement("textarea");
-        textarea.value = cam.ingestRtmpUrl;
+        textarea.value = value;
         textarea.style.position = "fixed";
         textarea.style.opacity = "0";
         document.body.appendChild(textarea);
@@ -161,12 +163,25 @@ export default function CctvBetaCamerasPage() {
         document.execCommand("copy");
         document.body.removeChild(textarea);
       }
-      setCopiedCameraId(cam._id);
-      setTimeout(() => setCopiedCameraId(""), 1800);
+      return true;
     } catch {
-      alert(th ? "คัดลอก RTMP ไม่สำเร็จ" : "Failed to copy RTMP");
+      return false;
     }
   };
+
+  const copyField = async (cam: BetaCamera, field: string, value: string) => {
+    const ok = await copyText(value);
+    if (!ok) {
+      alert(th ? "คัดลอกไม่สำเร็จ" : "Failed to copy");
+      return;
+    }
+    setCopiedKey(`${cam._id}:${field}`);
+    setTimeout(() => setCopiedKey(""), 1800);
+  };
+
+  const rtmpServerOf = (cam: BetaCamera) =>
+    cam.ingestRtmpServer ||
+    cam.ingestRtmpUrl.replace(new RegExp(`/${cam.streamKey}$`), "");
 
   const handleRotate = async (id: string) => {
     if (
@@ -352,7 +367,10 @@ export default function CctvBetaCamerasPage() {
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
+            gridTemplateColumns:
+              cameras.length <= 1
+                ? "1fr"
+                : "repeat(2, minmax(0, 1fr))",
             gap: 12,
           }}
         >
@@ -403,19 +421,58 @@ export default function CctvBetaCamerasPage() {
                 style={{
                   marginTop: 10,
                   fontSize: 11,
-                  fontFamily: "monospace",
                   background: "#f9fafb",
                   padding: 8,
                   borderRadius: 4,
-                  wordBreak: "break-all",
                 }}
               >
-                <div>
-                  <b>SRT:</b> {cam.ingestSrtUrl}
+                <div style={{ fontWeight: 700, color: "#374151", marginBottom: 6 }}>
+                  Larix ({th ? "URL เดียว" : "single URL"})
                 </div>
-                <div style={{ marginTop: 4 }}>
-                  <b>RTMP:</b> {cam.ingestRtmpUrl}
+                <UrlRow
+                  label="SRT"
+                  value={cam.ingestSrtUrl}
+                  copied={copiedKey === `${cam._id}:larixSrt`}
+                  onCopy={() => copyField(cam, "larixSrt", cam.ingestSrtUrl)}
+                />
+                <UrlRow
+                  label="RTMP"
+                  value={cam.ingestRtmpUrl}
+                  copied={copiedKey === `${cam._id}:larixRtmp`}
+                  onCopy={() => copyField(cam, "larixRtmp", cam.ingestRtmpUrl)}
+                />
+              </div>
+              <div
+                style={{
+                  marginTop: 8,
+                  fontSize: 11,
+                  background: "#fef3c7",
+                  padding: 8,
+                  borderRadius: 4,
+                  border: "1px solid #fcd34d",
+                }}
+              >
+                <div style={{ fontWeight: 700, color: "#92400e", marginBottom: 6 }}>
+                  IRL Pro ({th ? "แยก Server + Key" : "split Server + Key"})
                 </div>
+                <UrlRow
+                  label="Server URL"
+                  value={rtmpServerOf(cam)}
+                  copied={copiedKey === `${cam._id}:rtmpServer`}
+                  onCopy={() => copyField(cam, "rtmpServer", rtmpServerOf(cam))}
+                />
+                <UrlRow
+                  label="Stream Key"
+                  value={cam.streamKey}
+                  copied={copiedKey === `${cam._id}:streamKey`}
+                  onCopy={() => copyField(cam, "streamKey", cam.streamKey)}
+                />
+                <UrlRow
+                  label="SRT"
+                  value={cam.ingestSrtUrl}
+                  copied={copiedKey === `${cam._id}:irlSrt`}
+                  onCopy={() => copyField(cam, "irlSrt", cam.ingestSrtUrl)}
+                />
               </div>
               <div
                 style={{
@@ -426,16 +483,22 @@ export default function CctvBetaCamerasPage() {
                 }}
               >
                 <button
-                  onClick={() => setShowQrFor(cam)}
+                  onClick={() => {
+                    setQrApp("larix");
+                    setShowQrFor(cam);
+                  }}
                   style={btnStyle("#6366f1")}
                 >
-                  QR for Larix
+                  QR Larix
                 </button>
                 <button
-                  onClick={() => copyRtmp(cam)}
-                  style={btnStyle(copiedCameraId === cam._id ? "#16a34a" : "#0ea5e9")}
+                  onClick={() => {
+                    setQrApp("irlpro");
+                    setShowQrFor(cam);
+                  }}
+                  style={btnStyle("#7c3aed")}
                 >
-                  {copiedCameraId === cam._id ? (th ? "คัดลอกแล้ว" : "Copied") : (th ? "คัดลอก RTMP" : "Copy RTMP")}
+                  QR IRL Pro
                 </button>
                 <button
                   onClick={() => handleRotate(cam._id)}
@@ -454,55 +517,100 @@ export default function CctvBetaCamerasPage() {
           ))}
         </div>
 
-        {showQrFor && (
-          <div onClick={() => setShowQrFor(null)} style={modalBackdrop}>
-            <div onClick={(e) => e.stopPropagation()} style={modalContent}>
-              <h3 style={{ marginTop: 0 }}>{showQrFor.name} — Larix Setup</h3>
-              <p style={{ fontSize: 13, color: "#6b7280" }}>
-                {th
-                  ? "สแกน QR ในแอป Larix Broadcaster (Settings → Connections → Add URL)"
-                  : "Scan in Larix Broadcaster (Settings → Connections → Add URL)"}
-              </p>
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "center",
-                  padding: 16,
-                  background: "#fff",
-                }}
-              >
-                <QRCodeSVG
-                  value={
-                    showQrFor.preferredProtocol === "srt"
-                      ? showQrFor.ingestSrtUrl
-                      : showQrFor.ingestRtmpUrl
-                  }
-                  size={220}
-                />
+        {showQrFor && (() => {
+          const cam = showQrFor;
+          const isIrl = qrApp === "irlpro";
+          const qrValue =
+            cam.preferredProtocol === "srt" ? cam.ingestSrtUrl : cam.ingestRtmpUrl;
+          const title = isIrl ? "IRL Pro Setup" : "Larix Setup";
+          const instructionsTh = isIrl
+            ? "เปิดแอป IRL Pro → Connections → + → เลือก SRT (แนะนำ) แล้วสแกน QR หรือคัดลอก URL ด้านล่าง. ถ้าใช้ RTMP ให้แยก Server URL และ Stream Key (ดูในการ์ดด้านนอก)"
+            : "สแกน QR ในแอป Larix Broadcaster (Settings → Connections → New connection → URL)";
+          const instructionsEn = isIrl
+            ? "Open IRL Pro → Connections → + → choose SRT (recommended) and scan QR or paste URL below. For RTMP, copy Server URL and Stream Key separately (see card)."
+            : "Scan in Larix Broadcaster (Settings → Connections → New connection → URL)";
+          return (
+            <div onClick={() => setShowQrFor(null)} style={modalBackdrop}>
+              <div onClick={(e) => e.stopPropagation()} style={modalContent}>
+                <h3 style={{ marginTop: 0 }}>
+                  {cam.name} — {title}
+                </h3>
+                <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
+                  <button
+                    onClick={() => setQrApp("larix")}
+                    style={{
+                      ...btnStyle(qrApp === "larix" ? "#6366f1" : "#9ca3af"),
+                      flex: 1,
+                    }}
+                  >
+                    Larix
+                  </button>
+                  <button
+                    onClick={() => setQrApp("irlpro")}
+                    style={{
+                      ...btnStyle(qrApp === "irlpro" ? "#7c3aed" : "#9ca3af"),
+                      flex: 1,
+                    }}
+                  >
+                    IRL Pro
+                  </button>
+                </div>
+                <p style={{ fontSize: 13, color: "#6b7280" }}>
+                  {th ? instructionsTh : instructionsEn}
+                </p>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "center",
+                    padding: 16,
+                    background: "#fff",
+                  }}
+                >
+                  <QRCodeSVG value={qrValue} size={220} />
+                </div>
+                <div
+                  style={{
+                    fontSize: 11,
+                    fontFamily: "monospace",
+                    background: "#f3f4f6",
+                    padding: 8,
+                    borderRadius: 4,
+                    wordBreak: "break-all",
+                  }}
+                >
+                  {qrValue}
+                </div>
+                {isIrl && cam.preferredProtocol === "rtmp" && (
+                  <div
+                    style={{
+                      marginTop: 8,
+                      fontSize: 11,
+                      fontFamily: "monospace",
+                      background: "#fef3c7",
+                      padding: 8,
+                      borderRadius: 4,
+                      wordBreak: "break-all",
+                      border: "1px solid #fcd34d",
+                    }}
+                  >
+                    <div>
+                      <b>Server URL:</b> {rtmpServerOf(cam)}
+                    </div>
+                    <div style={{ marginTop: 4 }}>
+                      <b>Stream Key:</b> {cam.streamKey}
+                    </div>
+                  </div>
+                )}
+                <button
+                  onClick={() => setShowQrFor(null)}
+                  style={{ ...btnStyle("#374151"), marginTop: 12, width: "100%" }}
+                >
+                  Close
+                </button>
               </div>
-              <div
-                style={{
-                  fontSize: 11,
-                  fontFamily: "monospace",
-                  background: "#f3f4f6",
-                  padding: 8,
-                  borderRadius: 4,
-                  wordBreak: "break-all",
-                }}
-              >
-                {showQrFor.preferredProtocol === "srt"
-                  ? showQrFor.ingestSrtUrl
-                  : showQrFor.ingestRtmpUrl}
-              </div>
-              <button
-                onClick={() => setShowQrFor(null)}
-                style={{ ...btnStyle("#374151"), marginTop: 12, width: "100%" }}
-              >
-                Close
-              </button>
             </div>
-          </div>
-        )}
+          );
+        })()}
       </div>
     </AdminLayout>
   );
@@ -541,3 +649,76 @@ const modalContent: React.CSSProperties = {
   maxWidth: 400,
   width: "90%",
 };
+
+function UrlRow({
+  label,
+  value,
+  copied,
+  onCopy,
+}: {
+  label: string;
+  value: string;
+  copied: boolean;
+  onCopy: () => void;
+}) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 6,
+        marginTop: 4,
+        minWidth: 0,
+      }}
+    >
+      <span style={{ fontWeight: 700, fontSize: 11, flexShrink: 0 }}>
+        {label}:
+      </span>
+      <span
+        style={{
+          fontFamily: "monospace",
+          fontSize: 11,
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
+          flex: 1,
+          minWidth: 0,
+          color: "#1f2937",
+        }}
+        title={value}
+      >
+        {value}
+      </span>
+      <button
+        onClick={onCopy}
+        aria-label="Copy"
+        title={copied ? "Copied" : "Copy"}
+        style={{
+          background: copied ? "#16a34a" : "#fff",
+          border: `1px solid ${copied ? "#16a34a" : "#d1d5db"}`,
+          color: copied ? "#fff" : "#374151",
+          borderRadius: 4,
+          width: 26,
+          height: 26,
+          display: "inline-flex",
+          alignItems: "center",
+          justifyContent: "center",
+          cursor: "pointer",
+          flexShrink: 0,
+          transition: "all 0.15s",
+        }}
+      >
+        {copied ? (
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="20 6 9 17 4 12" />
+          </svg>
+        ) : (
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+          </svg>
+        )}
+      </button>
+    </div>
+  );
+}
