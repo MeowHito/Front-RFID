@@ -125,6 +125,11 @@ export default function CctvSettingsPage() {
                 <p style={{ margin: '6px 0 0', fontSize: 14, color: '#64748b' }}>
                     {th ? 'ตั้งค่าคุณภาพ stream, ระดับการเข้าถึง, และการจับคู่อุปกรณ์มือถือ' : 'Configure stream quality, access levels, and mobile device pairing'}
                 </p>
+                <div style={{ marginTop: 10, padding: '8px 14px', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 8, fontSize: 12, color: '#1e40af', display: 'inline-block' }}>
+                    ℹ️ {th
+                        ? 'ค่าด้านล่าง (Buffer / Pre-Arrival Alert / Clip Buffer / Allow Download) ใช้กับทั้ง CCTV ปกติ (Browser) และ CCTV Beta (Larix / IRL Pro)'
+                        : 'Settings below (Buffer / Pre-Arrival / Clip Buffer / Allow Download) apply to BOTH classic CCTV (Browser) and CCTV Beta (Larix / IRL Pro)'}
+                </div>
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 16, alignItems: 'start' }}>

@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
 import { isRunnerFollowed, loadFollowedRunners, saveFollowedRunners, subscribeFollowedRunners, toggleFollowedRunner, type FollowedRunner } from '@/lib/followed-runners';
+import HlsPlayer from '@/components/HlsPlayer';
 
 
 interface RunnerData {
@@ -76,21 +77,35 @@ interface CheckpointMappingData {
     active?: boolean;
 }
 
+interface RecordingInfo {
+    _id: string;
+    cameraName: string;
+    checkpointName?: string;
+    startTime: string;
+    endTime?: string | null;
+    duration: number;
+    fileSize: number;
+    recordingStatus?: string;
+    /** 'classic' = browser-based /camera page (.webm). 'beta' = Larix/IRL Pro HLS. */
+    source?: 'classic' | 'beta';
+    /** Beta only: full HLS .m3u8 URL (S3 archive when finalized, else EC2 hot). */
+    playbackUrl?: string | null;
+    /** Beta only: which playback host the URL points to. */
+    playbackSource?: 's3' | 'ec2' | null;
+    /** Beta only: 'rtmp' | 'srt'. */
+    protocol?: string;
+    /** Per-recording seek offset (some sources may differ even at the same scanTime). */
+    seekSeconds?: number;
+}
+
 interface RunnerHit {
     checkpoint: string;
     scanTime: string;
     elapsedTime: number | null;
     splitTime: number | null;
-    recording: {
-        _id: string;
-        cameraName: string;
-        checkpointName?: string;
-        startTime: string;
-        endTime?: string | null;
-        duration: number;
-        fileSize: number;
-        recordingStatus?: string;
-    } | null;
+    recording: RecordingInfo | null;
+    /** All recordings that cover this scan, across classic + beta sources. */
+    recordings?: RecordingInfo[];
     seekSeconds: number;
 }
 
@@ -283,6 +298,7 @@ export default function RunnerProfilePage() {
     const [lookupLoaded, setLookupLoaded] = useState(false);
     const [runnerHits, setRunnerHits] = useState<RunnerHit[]>([]);
     const [selectedCheckpointKey, setSelectedCheckpointKey] = useState('');
+    const [selectedRecordingId, setSelectedRecordingId] = useState<string>('');
     const [preArrivalBufferSeconds, setPreArrivalBufferSeconds] = useState(5);
     const [clipBufferSeconds, setClipBufferSeconds] = useState(10);
     const [followedRunners, setFollowedRunners] = useState<FollowedRunner[]>([]);
@@ -512,9 +528,21 @@ export default function RunnerProfilePage() {
     const selectedHit = selectedCheckpointKey ? runnerHitMap.get(selectedCheckpointKey) || null : null;
     const hasSelectedCheckpoint = selectedCheckpointKey !== '';
     const selectedCheckpointName = selectedTiming?.checkpoint || selectedFallbackCheckpoint?.name || selectedHit?.checkpoint || '';
+
+    // A single timing scan may have multiple recordings (classic CCTV + Beta).
+    // Default to the first one; user can switch via the tabs in the modal.
+    const availableRecordings: RecordingInfo[] = selectedHit?.recordings?.length
+        ? selectedHit.recordings
+        : (selectedHit?.recording ? [selectedHit.recording] : []);
+    const activeRecording: RecordingInfo | null =
+        availableRecordings.find(r => r._id === selectedRecordingId)
+        || availableRecordings[0]
+        || null;
+    const isBetaRecording = activeRecording?.source === 'beta';
+
     // Clip = exactly clipBufferSeconds, ending at the scan moment
-    const seekSec = selectedHit?.seekSeconds || 0;
-    const recDuration = selectedHit?.recording?.duration || 0;
+    const seekSec = activeRecording?.seekSeconds ?? selectedHit?.seekSeconds ?? 0;
+    const recDuration = activeRecording?.duration || 0;
     let clipEnd = seekSec;
     let clipStart = Math.max(0, clipEnd - clipBufferSeconds);
     // If scan is past recording end, clamp to recording end
@@ -524,25 +552,33 @@ export default function RunnerProfilePage() {
     }
     const trimStart = clipStart;
     const trimDuration = Math.max(1, clipEnd - clipStart);
-    const streamUrl = selectedHit?.recording
-        ? `/api/runner/${runnerId}/cctv/${selectedHit.recording._id}/stream?ss=${trimStart}&t=${trimDuration}`
+
+    // Classic recordings use the server-side ffmpeg trim endpoint.
+    // Beta recordings use the manifest URL directly (HLS player seeks client-side).
+    const streamUrl = activeRecording
+        ? (isBetaRecording
+            ? (activeRecording.playbackUrl || '')
+            : `/api/runner/${runnerId}/cctv/${activeRecording._id}/stream?ss=${trimStart}&t=${trimDuration}`)
         : '';
-    const downloadUrl = selectedHit?.recording
-        ? `/api/runner/${runnerId}/cctv/${selectedHit.recording._id}/stream?download=1&ss=${trimStart}&t=${trimDuration}`
+    // Beta clips cannot be downloaded server-side trimmed yet — hide the button for now.
+    const downloadUrl = activeRecording && !isBetaRecording
+        ? `/api/runner/${runnerId}/cctv/${activeRecording._id}/stream?download=1&ss=${trimStart}&t=${trimDuration}`
         : '';
 
     const openCheckpointVideo = (checkpointKey: string) => {
         setSelectedVideoIsPortrait(false);
         setSelectedCheckpointKey(checkpointKey);
+        setSelectedRecordingId(''); // reset → first available recording
     };
 
     const closeCheckpointVideo = () => {
         setSelectedVideoIsPortrait(false);
         setSelectedCheckpointKey('');
+        setSelectedRecordingId('');
     };
 
     const handleDownloadCheckpointVideo = async () => {
-        if (!downloadUrl || !selectedHit?.recording) return;
+        if (!downloadUrl || !activeRecording) return;
         try {
             setVideoDownloadLoading(true);
             const response = await fetch(downloadUrl, { cache: 'no-store' });
@@ -931,7 +967,7 @@ export default function RunnerProfilePage() {
                     >
                         <div
                             onClick={(event) => event.stopPropagation()}
-                            className={`runner-modal ${selectedHit?.recording ? 'has-video' : 'no-video'}`}
+                            className={`runner-modal ${activeRecording ? 'has-video' : 'no-video'}`}
                             style={{ background: '#fff', borderRadius: 24, border: '1px solid rgba(226,232,240,0.9)', boxShadow: '0 24px 80px rgba(15,23,42,0.38)' }}
                         >
                             <div className="runner-modal-header">
@@ -954,39 +990,96 @@ export default function RunnerProfilePage() {
                                 <div style={{ padding: '40px 24px', textAlign: 'center', color: '#64748b', fontSize: 14 }}>
                                     กำลังค้นหาวิดีโอ CCTV ที่ตรงกับเวลาผ่านจุดของนักวิ่ง...
                                 </div>
-                            ) : selectedHit?.recording ? (
+                            ) : activeRecording ? (
                                 <div className="runner-modal-body">
+                                    {/* Source tabs — shown only when both classic + beta recordings exist for this scan */}
+                                    {availableRecordings.length > 1 && (
+                                        <div style={{ display: 'flex', gap: 6, padding: '0 0 12px', borderBottom: '1px solid #e2e8f0', marginBottom: 12 }}>
+                                            {availableRecordings.map((r) => {
+                                                const isActive = r._id === activeRecording._id;
+                                                const isBeta = r.source === 'beta';
+                                                return (
+                                                    <button
+                                                        key={r._id}
+                                                        onClick={() => setSelectedRecordingId(r._id)}
+                                                        style={{
+                                                            padding: '6px 14px',
+                                                            borderRadius: 8,
+                                                            border: isActive ? `2px solid ${isBeta ? '#7c3aed' : '#0ea5e9'}` : '1px solid #e2e8f0',
+                                                            background: isActive ? (isBeta ? '#f5f3ff' : '#eff6ff') : '#fff',
+                                                            color: isActive ? (isBeta ? '#5b21b6' : '#0c4a6e') : '#475569',
+                                                            fontSize: 12,
+                                                            fontWeight: 700,
+                                                            cursor: 'pointer',
+                                                        }}
+                                                    >
+                                                        {isBeta ? '📱 Mobile (Larix/IRL)' : '📹 CCTV'}
+                                                        <span style={{ marginLeft: 6, fontWeight: 400, fontSize: 10, color: isActive ? 'inherit' : '#94a3b8' }}>
+                                                            {r.cameraName}
+                                                        </span>
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
+
                                     <div className="runner-modal-meta">
-                                        กล้อง <strong style={{ color: '#0f172a' }}>{selectedHit.recording.cameraName}</strong> · เวลาในระบบ <strong style={{ color: '#0f172a' }}>{formatTimeOfDay(selectedHit.scanTime)}</strong> · เริ่มไฟล์ <strong style={{ color: '#0f172a' }}>{formatDateTime(selectedHit.recording.startTime)}</strong>
+                                        {isBetaRecording && (
+                                            <span style={{ display: 'inline-block', marginRight: 8, padding: '2px 8px', borderRadius: 10, background: '#f5f3ff', color: '#7c3aed', fontSize: 10, fontWeight: 700 }}>
+                                                BETA · {activeRecording.protocol?.toUpperCase() || 'HLS'}
+                                            </span>
+                                        )}
+                                        กล้อง <strong style={{ color: '#0f172a' }}>{activeRecording.cameraName}</strong> · เวลาในระบบ <strong style={{ color: '#0f172a' }}>{formatTimeOfDay(selectedHit?.scanTime || '')}</strong> · เริ่มไฟล์ <strong style={{ color: '#0f172a' }}>{formatDateTime(activeRecording.startTime)}</strong>
                                     </div>
 
                                     <div className="runner-modal-video-area">
                                         <div className={`runner-modal-video-shell ${selectedVideoIsPortrait ? 'portrait' : 'landscape'}`}>
-                                        <video
-                                            key={`${selectedHit.recording._id}-${trimStart}-${trimDuration}`}
-                                            src={streamUrl}
-                                            controls
-                                            preload="metadata"
-                                            className={`runner-modal-video ${selectedVideoIsPortrait ? 'portrait' : 'landscape'}`}
-                                            onLoadedMetadata={(event) => {
-                                                const video = event.currentTarget;
-                                                setSelectedVideoIsPortrait(video.videoHeight > video.videoWidth);
-                                            }}
-                                        />
+                                        {isBetaRecording ? (
+                                            streamUrl ? (
+                                                <HlsPlayer
+                                                    key={`hls-${activeRecording._id}-${trimStart}`}
+                                                    src={streamUrl}
+                                                    startSeconds={trimStart}
+                                                    durationSeconds={trimDuration}
+                                                    className={`runner-modal-video ${selectedVideoIsPortrait ? 'portrait' : 'landscape'}`}
+                                                    onLoadedMetadata={(video) => {
+                                                        setSelectedVideoIsPortrait(video.videoHeight > video.videoWidth);
+                                                    }}
+                                                />
+                                            ) : (
+                                                <div style={{ padding: 40, textAlign: 'center', color: '#94a3b8', fontSize: 13 }}>
+                                                    ยังไม่มี playback URL สำหรับ Beta recording นี้ (รอ MediaMTX archive)
+                                                </div>
+                                            )
+                                        ) : (
+                                            <video
+                                                key={`${activeRecording._id}-${trimStart}-${trimDuration}`}
+                                                src={streamUrl}
+                                                controls
+                                                preload="metadata"
+                                                className={`runner-modal-video ${selectedVideoIsPortrait ? 'portrait' : 'landscape'}`}
+                                                onLoadedMetadata={(event) => {
+                                                    const video = event.currentTarget;
+                                                    setSelectedVideoIsPortrait(video.videoHeight > video.videoWidth);
+                                                }}
+                                            />
+                                        )}
                                         </div>
                                     </div>
 
-                                    <div className="runner-modal-download-row">
-                                        <button
-                                            type="button"
-                                            onClick={handleDownloadCheckpointVideo}
-                                            disabled={videoDownloadLoading}
-                                            className="runner-modal-download"
-                                            style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: videoDownloadLoading ? '#86efac' : '#16a34a', color: '#fff', padding: '10px 20px', borderRadius: 12, fontWeight: 700, fontSize: 14, textDecoration: 'none', border: 'none', cursor: videoDownloadLoading ? 'wait' : 'pointer' }}
-                                        >
-                                            {videoDownloadLoading ? 'กำลังเตรียมวิดีโอ...' : 'บันทึกวิดีโอจุดนี้'}
-                                        </button>
-                                    </div>
+                                    {downloadUrl && (
+                                        <div className="runner-modal-download-row">
+                                            <button
+                                                type="button"
+                                                onClick={handleDownloadCheckpointVideo}
+                                                disabled={videoDownloadLoading}
+                                                className="runner-modal-download"
+                                                style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: videoDownloadLoading ? '#86efac' : '#16a34a', color: '#fff', padding: '10px 20px', borderRadius: 12, fontWeight: 700, fontSize: 14, textDecoration: 'none', border: 'none', cursor: videoDownloadLoading ? 'wait' : 'pointer' }}
+                                            >
+                                                {videoDownloadLoading ? 'กำลังเตรียมวิดีโอ...' : 'บันทึกวิดีโอจุดนี้'}
+                                            </button>
+                                        </div>
+                                    )}
                                 </div>
                             ) : (
                                 <div className="runner-modal-empty">
