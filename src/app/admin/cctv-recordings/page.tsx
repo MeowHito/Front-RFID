@@ -5,6 +5,7 @@ import AdminLayout from '../AdminLayout';
 import { useLanguage } from '@/lib/language-context';
 import { authHeaders } from '@/lib/authHeaders';
 import { io, Socket } from 'socket.io-client';
+import HlsPlayer from '@/components/HlsPlayer';
 
 interface Recording {
     _id: string;
@@ -21,6 +22,12 @@ interface Recording {
     fileName: string;
     mimeType: string;
     recordingStatus: string;
+    /** 'classic' = browser-based /camera page (.webm file). 'beta' = Larix/IRL Pro HLS. */
+    source?: 'classic' | 'beta';
+    /** Beta only: full HLS .m3u8 URL when available. */
+    playbackUrl?: string | null;
+    /** Beta only: 'rtmp' | 'srt'. */
+    protocol?: string;
 }
 
 interface StorageInfo { totalSize: number; count: number; }
@@ -39,8 +46,13 @@ interface RunnerHit {
         duration: number;
         fileSize: number;
         recordingStatus?: string;
+        source?: 'classic' | 'beta';
+        playbackUrl?: string | null;
+        protocol?: string;
     } | null;
     seekSeconds: number;
+    /** Which pipeline this hit came from. */
+    source?: 'classic' | 'beta';
 }
 
 function fmtMs(ms: number | null) {
@@ -126,14 +138,62 @@ export default function CctvRecordingsPage() {
         setLoading(true);
         try {
             const qs = campaignId ? `?campaignId=${campaignId}` : '';
-            const [recRes, storRes] = await Promise.all([
+            // Pull from BOTH pipelines in parallel:
+            //   classic = browser-based /camera page → .webm files on disk
+            //   beta    = Larix / IRL Pro → HLS segments on EC2/S3
+            const [recRes, storRes, betaRecRes, betaStorRes] = await Promise.allSettled([
                 fetch(`/api/cctv-recordings${qs}`, { cache: 'no-store', headers: authHeaders() }),
                 fetch(`/api/cctv-recordings/storage${qs}`, { cache: 'no-store', headers: authHeaders() }),
+                fetch(`/api/cctv-beta/recordings${qs}`, { cache: 'no-store', headers: authHeaders() }),
+                fetch(`/api/cctv-beta/recordings/storage${qs}`, { cache: 'no-store', headers: authHeaders() }),
             ]);
-            const recData = await recRes.json();
-            const storData = await storRes.json();
-            setRecordings(Array.isArray(recData) ? recData : []);
-            setStorage(storData);
+
+            const classicRecs: Recording[] = recRes.status === 'fulfilled' && recRes.value.ok
+                ? (await recRes.value.json().catch(() => []))
+                : [];
+            const classicStor = storRes.status === 'fulfilled' && storRes.value.ok
+                ? (await storRes.value.json().catch(() => ({ totalSize: 0, count: 0 })))
+                : { totalSize: 0, count: 0 };
+            const betaRecsRaw: any[] = betaRecRes.status === 'fulfilled' && betaRecRes.value.ok
+                ? (await betaRecRes.value.json().catch(() => []))
+                : [];
+            const betaStor = betaStorRes.status === 'fulfilled' && betaStorRes.value.ok
+                ? (await betaStorRes.value.json().catch(() => ({ totalSize: 0, count: 0 })))
+                : { totalSize: 0, count: 0 };
+
+            // Normalize Beta docs into the Recording shape used by this page.
+            // Beta schema uses serverIngestStart/End and ObjectId cameraId.
+            const betaRecs: Recording[] = (Array.isArray(betaRecsRaw) ? betaRecsRaw : []).map((b: any) => ({
+                _id: String(b._id),
+                cameraId: String(b.cameraId || ''),
+                cameraName: b.cameraName || '(beta camera)',
+                campaignId: String(b.campaignId || ''),
+                checkpointName: b.checkpointName,
+                startTime: b.serverIngestStart,
+                endTime: b.serverIngestEnd,
+                duration: Number(b.duration) || 0,
+                fileSize: Number(b.fileSize) || 0,
+                fileName: `${b.streamKey || b._id}.m3u8`,
+                mimeType: 'application/vnd.apple.mpegurl',
+                recordingStatus: b.recordingStatus,
+                source: 'beta',
+                playbackUrl: b.s3MasterManifestUrl || b.hlsManifestPath || null,
+                protocol: b.protocol,
+            }));
+
+            const annotatedClassic: Recording[] = (Array.isArray(classicRecs) ? classicRecs : [])
+                .map((r: any) => ({ ...r, source: 'classic' as const }));
+
+            // Sort by start time DESC so newest appears first regardless of source
+            const merged = [...annotatedClassic, ...betaRecs].sort(
+                (a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime(),
+            );
+
+            setRecordings(merged);
+            setStorage({
+                totalSize: (classicStor?.totalSize || 0) + (betaStor?.totalSize || 0),
+                count: (classicStor?.count || 0) + (betaStor?.count || 0),
+            });
         } catch { setRecordings([]); }
         finally { setLoading(false); }
     }, [campaignId]);
@@ -163,12 +223,39 @@ export default function CctvRecordingsPage() {
         setLookupLoading(true);
         setLookupDone(false);
         try {
-            const res = await fetch(
-                `/api/cctv-recordings/runner-lookup?bib=${encodeURIComponent(bibSearch.trim())}&campaignId=${encodeURIComponent(campaignId)}`,
-                { headers: authHeaders(), cache: 'no-store' },
-            );
-            const data = await res.json();
-            setRunnerHits(Array.isArray(data) ? data : []);
+            const bib = encodeURIComponent(bibSearch.trim());
+            const cid = encodeURIComponent(campaignId);
+            const [classicRes, betaRes] = await Promise.allSettled([
+                fetch(`/api/cctv-recordings/runner-lookup?bib=${bib}&campaignId=${cid}`,
+                    { headers: authHeaders(), cache: 'no-store' }),
+                fetch(`/api/cctv-beta/recordings/runner-lookup?bib=${bib}&campaignId=${cid}`,
+                    { headers: authHeaders(), cache: 'no-store' }),
+            ]);
+
+            const classicHits: RunnerHit[] = classicRes.status === 'fulfilled' && classicRes.value.ok
+                ? (await classicRes.value.json().catch(() => []))
+                : [];
+            const betaHits: RunnerHit[] = betaRes.status === 'fulfilled' && betaRes.value.ok
+                ? (await betaRes.value.json().catch(() => []))
+                : [];
+
+            const annotated = [
+                ...(Array.isArray(classicHits) ? classicHits : []).map((h: any) => ({
+                    ...h,
+                    source: 'classic' as const,
+                    recording: h.recording ? { ...h.recording, source: 'classic' as const } : null,
+                })),
+                ...(Array.isArray(betaHits) ? betaHits : []).map((h: any) => ({
+                    ...h,
+                    source: 'beta' as const,
+                    recording: h.recording ? { ...h.recording, source: 'beta' as const } : null,
+                })),
+            ];
+
+            // Order by scanTime so the runner's path through checkpoints reads chronologically.
+            // Same checkpoint may now appear twice (one per source) — that's intentional.
+            annotated.sort((a, b) => new Date(a.scanTime).getTime() - new Date(b.scanTime).getTime());
+            setRunnerHits(annotated);
         } catch { setRunnerHits([]); }
         finally { setLookupLoading(false); setLookupDone(true); }
     };
@@ -197,10 +284,17 @@ export default function CctvRecordingsPage() {
         setDeleting(true);
         try {
             if (deleteTarget === 'all') {
+                // Delete-all only affects classic recordings (.webm files on disk).
+                // Beta recordings live on EC2/S3 and must be removed via their own admin tooling.
                 await fetch('/api/cctv-recordings', { method: 'DELETE', headers: authHeaders() });
                 setSelected(new Set());
             } else if (deleteTarget === 'one' && deleteId) {
-                await fetch(`/api/cctv-recordings/${deleteId}`, { method: 'DELETE', headers: authHeaders() });
+                // Route to the right endpoint based on the recording's source.
+                const target = recordings.find(r => r._id === deleteId);
+                const url = target?.source === 'beta'
+                    ? `/api/cctv-beta/recordings/${deleteId}`
+                    : `/api/cctv-recordings/${deleteId}`;
+                await fetch(url, { method: 'DELETE', headers: authHeaders() });
             }
             setDeleteTarget(null);
             setDeleteId(null);
@@ -209,7 +303,7 @@ export default function CctvRecordingsPage() {
         } finally { setDeleting(false); }
     };
 
-    const openPlayerWithSeek = useCallback((rec: { _id: string; cameraId: string; recordingStatus?: string; endTime?: string | null }, name: string, seek: number) => {
+    const openPlayerWithSeek = useCallback((rec: { _id: string; cameraId: string; recordingStatus?: string; endTime?: string | null; source?: 'classic' | 'beta'; playbackUrl?: string | null }, name: string, seek: number) => {
         const isLive = isLiveRecording(rec);
         setPlayingId(rec._id);
         setPlayingName(name);
@@ -217,12 +311,19 @@ export default function CctvRecordingsPage() {
         seekAppliedRef.current = false;
         setVideoLoading(true);
         setLiveCameraId(isLive ? rec.cameraId : null);
-        if (isLive) {
+        if (isLive && rec.source !== 'beta') {
+            // Classic live: use socket viewer (existing behavior)
             setVideoSrc(null);
             setVideoLoading(false);
             return;
         }
-        // Use stream URL directly so browser can make Range requests for seeking
+        if (rec.source === 'beta') {
+            // Beta: HLS manifest URL goes straight into the player (HlsPlayer / native HLS).
+            setVideoSrc(rec.playbackUrl || null);
+            setVideoLoading(false);
+            return;
+        }
+        // Classic completed: use stream URL so browser can make Range requests for seeking
         const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
         const url = `/api/cctv-recordings/${rec._id}/stream${token ? `?token=${encodeURIComponent(token)}` : ''}`;
         setVideoSrc(url);
@@ -469,7 +570,18 @@ export default function CctvRecordingsPage() {
                                         </td>
                                         <td className="px-3 py-2.5 text-slate-700 font-mono text-xs">{fmtTime(hit.scanTime)}</td>
                                         <td className="px-3 py-2.5 text-slate-500 font-mono text-xs">{fmtMs(hit.elapsedTime)}</td>
-                                        <td className="px-3 py-2.5 text-xs text-slate-500">{hit.recording?.cameraName || '—'}</td>
+                                        <td className="px-3 py-2.5 text-xs text-slate-500">
+                                            {hit.recording ? (
+                                                <span className="inline-flex items-center gap-1.5">
+                                                    {hit.source === 'beta' || hit.recording.source === 'beta' ? (
+                                                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-purple-100 text-purple-700 uppercase">📱 Beta</span>
+                                                    ) : (
+                                                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-sky-100 text-sky-700 uppercase">📹 CCTV</span>
+                                                    )}
+                                                    {hit.recording.cameraName}
+                                                </span>
+                                            ) : '—'}
+                                        </td>
                                         <td className="px-3 py-2.5 text-xs font-mono text-slate-500">{hit.recording ? fmtDuration(Math.max(0, hit.seekSeconds - seekOffsetSec)) : '—'}</td>
                                         <td className="px-3 py-2.5 text-right">
                                             {hit.recording ? (
@@ -637,6 +749,20 @@ export default function CctvRecordingsPage() {
 
                                 {/* Card body */}
                                 <div className="p-3">
+                                    <div className="flex items-center gap-2 mb-1">
+                                        {rec.source === 'beta' ? (
+                                            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-purple-100 text-purple-700 uppercase tracking-wider">
+                                                📱 Beta
+                                            </span>
+                                        ) : (
+                                            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-sky-100 text-sky-700 uppercase tracking-wider">
+                                                📹 CCTV
+                                            </span>
+                                        )}
+                                        {rec.protocol && (
+                                            <span className="text-[9px] font-bold text-slate-400 uppercase">{rec.protocol}</span>
+                                        )}
+                                    </div>
                                     <div className="font-bold text-sm text-slate-800 truncate">{rec.cameraName}</div>
                                     {rec.checkpointName && (
                                         <div className="text-xs text-orange-600 font-semibold mt-0.5 truncate">📍 {rec.checkpointName}</div>
@@ -686,7 +812,14 @@ export default function CctvRecordingsPage() {
                         {videoLoading && (
                             <div className="text-white text-sm animate-pulse" onClick={e => e.stopPropagation()}>⏳ กำลังโหลดวิดีโอ...</div>
                         )}
-                        {videoSrc && (
+                        {videoSrc && (videoSrc.includes('.m3u8') ? (
+                            <HlsPlayer
+                                key={videoSrc}
+                                src={videoSrc}
+                                startSeconds={seekTarget}
+                                className="w-full h-full rounded-lg shadow-2xl bg-black"
+                            />
+                        ) : (
                             <video
                                 ref={videoRef}
                                 src={videoSrc}
@@ -729,7 +862,7 @@ export default function CctvRecordingsPage() {
                                 onWaiting={() => setVideoLoading(true)}
                                 onPlaying={() => setVideoLoading(false)}
                             />
-                        )}
+                        ))}
                         {liveCameraId && (
                             <LiveRecordingFeed cameraId={liveCameraId} />
                         )}
