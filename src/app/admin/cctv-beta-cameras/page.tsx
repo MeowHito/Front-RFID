@@ -183,6 +183,55 @@ export default function CctvBetaCamerasPage() {
     cam.ingestRtmpServer ||
     cam.ingestRtmpUrl.replace(new RegExp(`/${cam.streamKey}$`), "");
 
+  /**
+   * Build a `larix://set/v1?...` deep-link for IRL Pro auto-import.
+   *
+   * IRL Pro on Android consumes Larix Grove's URL format — when the system
+   * camera app scans this QR, Android offers to open IRL Pro (or Larix)
+   * which then imports the connection settings automatically.
+   *
+   * See: https://softvelum.com/larix/grove/
+   * See: https://kb.irltoolkit.com/nodrop/3-streaming-devices/1-irlpro
+   */
+  const buildIrlProDeepLink = (cam: BetaCamera): string => {
+    const params = new URLSearchParams();
+    const connName = `${cam.name}${cam.checkpointName ? ` (${cam.checkpointName})` : ""}`;
+
+    if (cam.preferredProtocol === "srt") {
+      // Split SRT URL: send the bare server URL, then streamid as its own param.
+      // IRL Pro/Larix join them back at import time.
+      let bareUrl = cam.ingestSrtUrl;
+      let streamId = `publish:live/${cam.streamKey}`;
+      try {
+        const u = new URL(cam.ingestSrtUrl);
+        const sid = u.searchParams.get("streamid");
+        if (sid) streamId = sid;
+        u.searchParams.delete("streamid");
+        u.searchParams.delete("pkt_size");
+        bareUrl = u.toString();
+      } catch {
+        /* fall back to raw URL */
+      }
+      params.append("conn[][url]", bareUrl);
+      params.append("conn[][name]", connName);
+      params.append("conn[][mode]", "va");
+      params.append("conn[][srtmode]", "c"); // caller / push
+      params.append("conn[][srtstreamid]", streamId);
+      params.append("conn[][srtlatency]", "2000");
+      params.append("conn[][overwrite]", "on");
+      params.append("conn[][active]", "on");
+    } else {
+      // RTMP: server + key are encoded together in the URL (Larix appends key)
+      params.append("conn[][url]", cam.ingestRtmpUrl);
+      params.append("conn[][name]", connName);
+      params.append("conn[][mode]", "va");
+      params.append("conn[][target]", "rtmp");
+      params.append("conn[][overwrite]", "on");
+      params.append("conn[][active]", "on");
+    }
+    return `larix://set/v1?${params.toString()}`;
+  };
+
   const handleRotate = async (id: string) => {
     if (
       !confirm(
@@ -520,15 +569,18 @@ export default function CctvBetaCamerasPage() {
         {showQrFor && (() => {
           const cam = showQrFor;
           const isIrl = qrApp === "irlpro";
-          const qrValue =
+          const plainUrl =
             cam.preferredProtocol === "srt" ? cam.ingestSrtUrl : cam.ingestRtmpUrl;
+          // IRL Pro requires the larix:// deep-link to auto-import.
+          // Larix Broadcaster accepts either, but plain URL is simpler.
+          const qrValue = isIrl ? buildIrlProDeepLink(cam) : plainUrl;
           const title = isIrl ? "IRL Pro Setup" : "Larix Setup";
           const instructionsTh = isIrl
-            ? "เปิดแอป IRL Pro → Connections → + → เลือก SRT (แนะนำ) แล้วสแกน QR หรือคัดลอก URL ด้านล่าง. ถ้าใช้ RTMP ให้แยก Server URL และ Stream Key (ดูในการ์ดด้านนอก)"
-            : "สแกน QR ในแอป Larix Broadcaster (Settings → Connections → New connection → URL)";
+            ? "📱 เปิดแอป กล้อง (Camera) ของระบบ Android แล้วสแกน QR นี้ → Android จะถามว่าเปิดด้วย IRL Pro หรือไม่ → กดยอมรับเพื่อ import การตั้งค่าอัตโนมัติ (อย่าใช้ QR scanner ภายในแอป IRL Pro)"
+            : "📱 สแกน QR ในแอป Larix Broadcaster (Settings → Connections → New connection → URL) หรือคัดลอก URL ด้านล่างไปวางในช่อง URL";
           const instructionsEn = isIrl
-            ? "Open IRL Pro → Connections → + → choose SRT (recommended) and scan QR or paste URL below. For RTMP, copy Server URL and Stream Key separately (see card)."
-            : "Scan in Larix Broadcaster (Settings → Connections → New connection → URL)";
+            ? "📱 Open the system Camera app on Android and scan this QR — Android will offer to open IRL Pro. Accept to auto-import the connection. (Do NOT use the QR scanner inside IRL Pro itself.)"
+            : "📱 Scan in Larix Broadcaster (Settings → Connections → New connection → URL) or copy the URL below into the URL field.";
           return (
             <div onClick={() => setShowQrFor(null)} style={modalBackdrop}>
               <div onClick={(e) => e.stopPropagation()} style={modalContent}>
@@ -568,6 +620,21 @@ export default function CctvBetaCamerasPage() {
                 >
                   <QRCodeSVG value={qrValue} size={220} />
                 </div>
+                {isIrl && (
+                  <div
+                    style={{
+                      fontSize: 10,
+                      color: "#7c3aed",
+                      marginBottom: 6,
+                      textAlign: "center",
+                      fontWeight: 600,
+                    }}
+                  >
+                    {th
+                      ? "QR นี้เป็น larix:// deep-link สำหรับ auto-import"
+                      : "This QR is a larix:// deep-link for auto-import"}
+                  </div>
+                )}
                 <div
                   style={{
                     fontSize: 11,
@@ -576,29 +643,39 @@ export default function CctvBetaCamerasPage() {
                     padding: 8,
                     borderRadius: 4,
                     wordBreak: "break-all",
+                    marginBottom: 6,
                   }}
                 >
+                  <div style={{ fontWeight: 700, fontSize: 10, color: "#374151", marginBottom: 4 }}>
+                    {isIrl ? (th ? "URL ใน QR (deep-link)" : "QR URL (deep-link)") : (th ? "Stream URL" : "Stream URL")}
+                  </div>
                   {qrValue}
                 </div>
-                {isIrl && cam.preferredProtocol === "rtmp" && (
+                {/* For IRL Pro, also show the plain stream URL for manual setup */}
+                {isIrl && (
                   <div
                     style={{
                       marginTop: 8,
                       fontSize: 11,
-                      fontFamily: "monospace",
                       background: "#fef3c7",
                       padding: 8,
                       borderRadius: 4,
-                      wordBreak: "break-all",
                       border: "1px solid #fcd34d",
                     }}
                   >
-                    <div>
-                      <b>Server URL:</b> {rtmpServerOf(cam)}
+                    <div style={{ fontWeight: 700, color: "#92400e", marginBottom: 4 }}>
+                      {th ? "หรือกรอกแบบแมนนวลในแอป IRL Pro" : "Or set up manually in IRL Pro"}
                     </div>
-                    <div style={{ marginTop: 4 }}>
-                      <b>Stream Key:</b> {cam.streamKey}
-                    </div>
+                    {cam.preferredProtocol === "rtmp" ? (
+                      <div style={{ fontFamily: "monospace", wordBreak: "break-all" }}>
+                        <div><b>Server URL:</b> {rtmpServerOf(cam)}</div>
+                        <div style={{ marginTop: 4 }}><b>Stream Key:</b> {cam.streamKey}</div>
+                      </div>
+                    ) : (
+                      <div style={{ fontFamily: "monospace", wordBreak: "break-all" }}>
+                        <div><b>SRT URL:</b> {cam.ingestSrtUrl}</div>
+                      </div>
+                    )}
                   </div>
                 )}
                 <button
