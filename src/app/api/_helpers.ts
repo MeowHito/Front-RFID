@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 
-export const BACKEND_URL = process.env.BACKEND_URL || 'http://3.26.160.149:3001';
+export const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:3001';
 
 /**
  * Build headers for proxying to the backend, forwarding the Authorization header if present.

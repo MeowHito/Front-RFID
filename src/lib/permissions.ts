@@ -1,11 +1,15 @@
 /**
  * Shared permission utilities for frontend route/menu access control.
  *
- * Module keys match the keys stored in user.modulePermissions:
- *   participants, checkpoints, rfidCheckin, photos, certificates, reports, results, settings, userManagement
+ * Module keys match the keys stored in user.modulePermissions and are derived
+ * server-side from the user's role:
+ *   - admin / admin_master  → full access to everything (bypasses these checks)
+ *   - organizer             → view-only across most modules. Cannot create/edit/delete.
+ *   - station               → ONLY `checkpoints` module (Checkpoint Monitor)
+ *   - user                  → no admin panel access
  *
- * Special markers:
- *   _always       → visible to all authenticated users
+ * Special markers in ROUTE_TO_MODULE:
+ *   _always       → visible to all authenticated users (e.g. profile, settings)
  *   _admin_only   → visible only to admin / admin_master
  */
 
@@ -24,12 +28,15 @@ export interface ModulePerm {
 
 export const ROUTE_TO_MODULE: Record<string, string> = {
     // Admin-only pages (hidden & blocked for non-admin)
-    '/admin/events': '_admin_only',
     '/admin/events/create': '_admin_only',
     '/admin/checkpoints': '_admin_only',
     '/admin/checkpoints/create': '_admin_only',
+    '/admin/users': '_admin_only',
+    '/admin/users/create': '_admin_only',
+    '/admin/admin-logs': '_admin_only',
 
     // Module-gated pages
+    '/admin/events': 'results', // organizer can view events (read-only via results module)
     '/admin/participants': 'participants',
     '/admin/categories': 'participants',
     '/admin/bib-check': 'participants',
@@ -47,9 +54,6 @@ export const ROUTE_TO_MODULE: Record<string, string> = {
     '/admin/eslip': 'certificates',
     '/admin/links': 'results',
     '/admin/export': 'reports',
-    '/admin/users': 'userManagement',
-    '/admin/users/create': 'userManagement',
-    '/admin/settings': 'settings',
     '/admin/cctv-cameras': 'cctvMonitor',
     '/admin/cctv-live': 'cctvMonitor',
     '/admin/cctv-settings': 'cctvMonitor',
@@ -57,8 +61,10 @@ export const ROUTE_TO_MODULE: Record<string, string> = {
     '/admin/cctv-beta-live': 'cctvMonitor',
     '/admin/cctv-beta-recordings': 'cctvMonitor',
 
-    // Always accessible
+    // Always accessible (any logged-in user)
     '/admin/profile': '_always',
+    '/admin/settings': '_always',
+    '/admin': '_always', // /admin landing → profile
 };
 
 // ---------------------------------------------------------------------------

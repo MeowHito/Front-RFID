@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-const BACKEND_URL = process.env.BACKEND_URL || 'http://3.26.160.149:3001';
+const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:3001';
 
 export async function POST(
     request: NextRequest,
@@ -20,21 +20,24 @@ export async function POST(
         const backendFormData = new FormData();
         backendFormData.append('avatar', file);
 
+        const headers: Record<string, string> = {};
+        const auth = request.headers.get('authorization');
+        if (auth) headers['Authorization'] = auth;
+
         const res = await fetch(`${BACKEND_URL}/users/avatar/${uuid}`, {
             method: 'POST',
+            headers,
             body: backendFormData,
         });
 
-        if (!res.ok) {
-            const errorData = await res.text();
-            return NextResponse.json(
-                { error: errorData || 'Failed to upload avatar' },
-                { status: res.status }
-            );
+        const text = await res.text();
+        let data: any = {};
+        try {
+            data = text ? JSON.parse(text) : {};
+        } catch {
+            data = { error: text || 'Failed to upload avatar' };
         }
-
-        const data = await res.json();
-        return NextResponse.json(data);
+        return NextResponse.json(data, { status: res.status });
     } catch (error) {
         console.error('Error uploading avatar:', error);
         return NextResponse.json({ error: 'Internal server error' }, { status: 500 });

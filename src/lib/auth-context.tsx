@@ -137,7 +137,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const refreshUser = async () => {
         if (!user) return;
         try {
-            const res = await fetch(`/api/users/profile/${user.uuid}`);
+            const headers: Record<string, string> = {};
+            if (token) headers['Authorization'] = `Bearer ${token}`;
+            const res = await fetch(`/api/users/profile/${user.uuid}`, { headers });
             if (res.ok) {
                 const freshData = await res.json();
                 const updatedUser = {
@@ -164,9 +166,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const updateProfile = async (data: UpdateProfileData) => {
         if (!user) throw new Error('Not authenticated');
 
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+
         const res = await fetch(`/api/users/profile/${user.uuid}`, {
             method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
+            headers,
             body: JSON.stringify(data),
         });
 
@@ -187,8 +192,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const formData = new FormData();
         formData.append('avatar', file);
 
+        const headers: Record<string, string> = {};
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+
         const res = await fetch(`/api/users/avatar/${user.uuid}`, {
             method: 'POST',
+            headers,
             body: formData,
         });
 
@@ -204,17 +213,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
 
     const updatePassword = async (oldPassword: string, newPassword: string) => {
-        if (!user) throw new Error('Not authenticated');
+        if (!user || !token) throw new Error('Not authenticated');
 
-        await fetch('/api/users/update-password', {
+        const res = await fetch('/api/users/update-password', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${token}`,
+            },
             body: JSON.stringify({
                 uuid: user.uuid,
                 opw: oldPassword,
                 npw: newPassword,
             }),
         });
+
+        if (!res.ok) {
+            let message = 'Failed to change password';
+            try {
+                const data = await res.json();
+                message = data?.message || data?.error || message;
+            } catch {
+                /* ignore parse error */
+            }
+            throw new Error(message);
+        }
     };
 
     const logout = () => {

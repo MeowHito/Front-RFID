@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-
-const BACKEND_URL = process.env.BACKEND_URL || 'http://3.26.160.149:3001';
+import { BACKEND_URL, proxyHeaders } from '../../_helpers';
 
 export async function POST(request: NextRequest) {
     try {
@@ -8,20 +7,18 @@ export async function POST(request: NextRequest) {
 
         const res = await fetch(`${BACKEND_URL}/users/update-password`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: proxyHeaders(request),
             body: JSON.stringify(body),
         });
 
-        if (!res.ok) {
-            const errorData = await res.text();
-            return NextResponse.json(
-                { error: errorData || 'Failed to update password' },
-                { status: res.status }
-            );
+        const text = await res.text();
+        let data: any = {};
+        try {
+            data = text ? JSON.parse(text) : {};
+        } catch {
+            data = { error: text || 'Failed to update password' };
         }
-
-        const data = await res.json();
-        return NextResponse.json(data);
+        return NextResponse.json(data, { status: res.status });
     } catch (error) {
         console.error('Error updating password:', error);
         return NextResponse.json({ error: 'Internal server error' }, { status: 500 });

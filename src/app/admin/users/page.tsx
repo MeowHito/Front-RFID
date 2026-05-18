@@ -4,7 +4,6 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useLanguage } from '@/lib/language-context';
 import { useAuth } from '@/lib/auth-context';
-import { usePermissions } from '@/lib/usePermissions';
 import { authHeaders } from '@/lib/authHeaders';
 import AdminLayout from '../AdminLayout';
 
@@ -20,7 +19,7 @@ interface User {
     createdAt?: string;
 }
 
-const ROLE_OPTIONS = ['organizer', 'station', 'admin'];
+const ROLE_OPTIONS = ['user', 'organizer', 'station', 'admin'];
 
 const ROLE_LABELS: Record<string, { th: string; en: string; color: string; bg: string }> = {
     admin_master: { th: 'Admin Master', en: 'Admin Master', color: '#9333ea', bg: '#f3e8ff' },
@@ -32,9 +31,15 @@ const ROLE_LABELS: Record<string, { th: string; en: string; color: string; bg: s
 
 export default function UsersPage() {
     const { language } = useLanguage();
-    const { user: currentUser } = useAuth();
-    const { canCreate, canDelete, readOnly } = usePermissions('userManagement');
+    const { user: currentUser, isLoading: authLoading } = useAuth();
     const router = useRouter();
+    const isCurrentUserAdmin = currentUser?.role === 'admin' || currentUser?.role === 'admin_master';
+
+    // Hard guard — non-admin must never see this page even if they typed the URL
+    useEffect(() => {
+        if (authLoading) return;
+        if (!isCurrentUserAdmin) router.push('/admin');
+    }, [authLoading, isCurrentUserAdmin, router]);
 
     const [users, setUsers] = useState<User[]>([]);
     const [loading, setLoading] = useState(true);
@@ -174,8 +179,6 @@ export default function UsersPage() {
         }
     };
 
-    const isCurrentUserAdmin = currentUser?.role === 'admin' || currentUser?.role === 'admin_master';
-
     // Filter users by search + hide admin from non-admin
     const filteredUsers = users.filter(u => {
         if (!isCurrentUserAdmin && (u.role === 'admin' || u.role === 'admin_master')) return false;
@@ -224,7 +227,7 @@ export default function UsersPage() {
                                 outline: 'none',
                             }}
                         />
-                        {!readOnly && (
+                        {isCurrentUserAdmin && (
                             <button
                                 onClick={() => router.push('/admin/users/create')}
                                 style={{
@@ -270,7 +273,7 @@ export default function UsersPage() {
                                     const roleInfo = getRoleInfo(u.role);
                                     const isAdminMaster = u.role === 'admin_master';
                                     const isSelf = u._id === currentUser?._id || u.email === currentUser?.email;
-                                    const canEdit = !isAdminMaster && !isSelf && !readOnly;
+                                    const canEdit = !isAdminMaster && !isSelf && isCurrentUserAdmin;
 
                                     return (
                                         <tr key={u._id}>
@@ -365,17 +368,19 @@ export default function UsersPage() {
                                             </td>
                                             <td>
                                                 <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-                                                    <button
-                                                        onClick={() => router.push(`/admin/users/create?edit=${u._id}`)}
-                                                        style={{
-                                                            padding: '5px 12px', borderRadius: 8, border: '1px solid #e2e8f0',
-                                                            background: '#f8fafc', color: '#475569', fontSize: 11, fontWeight: 600,
-                                                            cursor: 'pointer', whiteSpace: 'nowrap',
-                                                        }}
-                                                    >
-                                                        {language === 'th' ? '✏️ แก้ไข' : '✏️ Edit'}
-                                                    </button>
-                                                    {canDelete && canEdit && u.role !== 'admin' && u.role !== 'admin_master' && isCurrentUserAdmin && (
+                                                    {canEdit && (
+                                                        <button
+                                                            onClick={() => router.push(`/admin/users/create?edit=${u._id}`)}
+                                                            style={{
+                                                                padding: '5px 12px', borderRadius: 8, border: '1px solid #e2e8f0',
+                                                                background: '#f8fafc', color: '#475569', fontSize: 11, fontWeight: 600,
+                                                                cursor: 'pointer', whiteSpace: 'nowrap',
+                                                            }}
+                                                        >
+                                                            {language === 'th' ? '✏️ แก้ไข' : '✏️ Edit'}
+                                                        </button>
+                                                    )}
+                                                    {canEdit && u.role !== 'admin' && u.role !== 'admin_master' && (
                                                         <button
                                                             onClick={() => setDeletePopup({ userId: u._id, userName: `${u.firstName} ${u.lastName}`.trim(), userEmail: u.email, emailInput: '' })}
                                                             style={{

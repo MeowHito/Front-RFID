@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-
-const BACKEND_URL = process.env.BACKEND_URL || 'http://3.26.160.149:3001';
+import { BACKEND_URL, proxyHeaders } from '../../../_helpers';
 
 export async function PUT(
     request: NextRequest,
@@ -12,20 +11,18 @@ export async function PUT(
         const body = await request.json();
         const res = await fetch(`${BACKEND_URL}/users/profile/${uuid}`, {
             method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
+            headers: proxyHeaders(request),
             body: JSON.stringify(body),
         });
 
-        if (!res.ok) {
-            const errorData = await res.text();
-            return NextResponse.json(
-                { error: errorData || 'Failed to update profile' },
-                { status: res.status }
-            );
+        const text = await res.text();
+        let data: any = {};
+        try {
+            data = text ? JSON.parse(text) : {};
+        } catch {
+            data = { error: text || 'Failed to update profile' };
         }
-
-        const data = await res.json();
-        return NextResponse.json(data);
+        return NextResponse.json(data, { status: res.status });
     } catch (error) {
         console.error('Error updating profile:', error);
         return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
@@ -40,16 +37,18 @@ export async function GET(
 
     try {
         const res = await fetch(`${BACKEND_URL}/users/uuid/${uuid}`, {
-            headers: { 'Content-Type': 'application/json' },
+            headers: proxyHeaders(request),
             cache: 'no-store',
         });
 
-        if (!res.ok) {
-            return NextResponse.json({ error: 'User not found' }, { status: res.status });
+        const text = await res.text();
+        let data: any = {};
+        try {
+            data = text ? JSON.parse(text) : {};
+        } catch {
+            data = { error: text || 'User not found' };
         }
-
-        const data = await res.json();
-        return NextResponse.json(data);
+        return NextResponse.json(data, { status: res.status });
     } catch (error) {
         console.error('Error fetching user:', error);
         return NextResponse.json({ error: 'Internal server error' }, { status: 500 });

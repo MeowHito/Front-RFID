@@ -1,8 +1,9 @@
 'use client';
 
-import { useState, useEffect, useCallback, Suspense } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useLanguage } from '@/lib/language-context';
+import { useAuth } from '@/lib/auth-context';
 import { authHeaders } from '@/lib/authHeaders';
 import AdminLayout from '../../AdminLayout';
 
@@ -13,61 +14,49 @@ interface Campaign {
     status?: string;
 }
 
-interface ModulePerm {
-    view: boolean;
-    create: boolean;
-    delete: boolean;
-}
-
-const MODULE_DEFS = [
-    { key: 'participants', icon: '👥', th: 'ฐานข้อมูลนักกีฬา', en: 'Athlete Database', desc_th: 'ข้อมูลส่วนตัว, BIB, ไซส์เสื้อ', desc_en: 'Personal info, BIB, shirt size' },
-    { key: 'checkpoints', icon: '📍', th: 'จุดเช็คอิน (Checkpoints)', en: 'Checkpoints', desc_th: 'จัดการจุดและข้อมูลเช็คอิน', desc_en: 'Manage checkpoint data' },
-    { key: 'rfidCheckin', icon: '📺', th: 'หน้าจอเช็คอิน (RFID)', en: 'RFID Check-in Display', desc_th: 'รันระบบหน้าจอแสดงผลหน้างาน', desc_en: 'Run on-site display system' },
-    { key: 'photos', icon: '🖼️', th: 'จัดการภาพถ่าย (QR)', en: 'Photo Management (QR)', desc_th: 'ตรวจสอบรูปที่นักวิ่งอัปโหลด', desc_en: 'Review runner uploaded photos' },
-    { key: 'certificates', icon: '🏅', th: 'ใบประกาศ / E-Certificate', en: 'Certificates', desc_th: 'ออกใบประกาศผลการแข่งขัน', desc_en: 'Generate race certificates' },
-    { key: 'reports', icon: '📊', th: 'รายงานสถิติ', en: 'Reports & Statistics', desc_th: 'รายงานยอดผู้เข้าร่วมงาน', desc_en: 'Participant statistics report' },
-    { key: 'results', icon: '🏆', th: 'ผลการแข่งขัน', en: 'Race Results', desc_th: 'จัดการและเผยแพร่ผลลัพธ์', desc_en: 'Manage and publish results' },
-    { key: 'settings', icon: '⚙️', th: 'ตั้งค่าทั่วไป', en: 'General Settings', desc_th: 'จัดการข้อมูลและเครื่องมือระบบ', desc_en: 'System data and tools' },
-    { key: 'userManagement', icon: '🛡️', th: 'จัดการผู้ใช้งานระบบ', en: 'User Management', desc_th: 'สร้าง/แก้ไขบัญชีผู้ใช้และสิทธิ์', desc_en: 'Create/edit user accounts and permissions' },
+const ROLE_OPTIONS: { value: string; label_th: string; label_en: string; description_th: string; description_en: string }[] = [
+    {
+        value: 'admin',
+        label_th: 'Admin (ผู้ดูแลระบบ)',
+        label_en: 'Admin (Full Access)',
+        description_th: 'เข้าถึงและจัดการทุกฟีเจอร์ของระบบได้',
+        description_en: 'Full access — can manage everything',
+    },
+    {
+        value: 'organizer',
+        label_th: 'Organizer (ผู้จัดงาน)',
+        label_en: 'Organizer (View Only)',
+        description_th: 'ดูข้อมูลของอีเวนต์ที่กำหนดให้เท่านั้น (ห้ามแก้ไข/เพิ่ม/ลบ)',
+        description_en: 'View-only access to assigned events. Cannot edit, add, or delete.',
+    },
+    {
+        value: 'station',
+        label_th: 'Station (จุดเช็คอิน)',
+        label_en: 'Station (Checkpoint Monitor)',
+        description_th: 'ใช้งานได้เฉพาะหน้า Checkpoint Monitor ของอีเวนต์ที่กำหนดเท่านั้น',
+        description_en: 'Can ONLY access Checkpoint Monitor for assigned events.',
+    },
+    {
+        value: 'user',
+        label_th: 'User (ผู้ใช้ทั่วไป)',
+        label_en: 'User (Public)',
+        description_th: 'บัญชีผู้ใช้ทั่วไป ไม่มีสิทธิ์เข้าหลังบ้าน',
+        description_en: 'Regular user account. No admin panel access.',
+    },
 ];
 
-const ROLE_TEMPLATES: Record<string, { label_th: string; label_en: string; perms: Record<string, ModulePerm> }> = {
-    custom: { label_th: '-- กำหนดสิทธิ์เอง (Custom) --', label_en: '-- Custom Permissions --', perms: {} },
-    checkin_staff: {
-        label_th: 'เจ้าหน้าที่จุด Check-in (RFID)', label_en: 'Check-in Staff (RFID)',
-        perms: {
-            participants: { view: true, create: false, delete: false },
-            checkpoints: { view: true, create: false, delete: false },
-            rfidCheckin: { view: true, create: true, delete: false },
-        },
-    },
-    photo_admin: {
-        label_th: 'เจ้าหน้าที่ตรวจรูปถ่าย (Photo Admin)', label_en: 'Photo Admin',
-        perms: {
-            participants: { view: true, create: false, delete: false },
-            photos: { view: true, create: true, delete: true },
-        },
-    },
-    organizer_readonly: {
-        label_th: 'ผู้จัดงาน (Organizer - Read Only)', label_en: 'Organizer (Read Only)',
-        perms: {
-            participants: { view: true, create: false, delete: false },
-            checkpoints: { view: true, create: false, delete: false },
-            reports: { view: true, create: false, delete: false },
-            results: { view: true, create: false, delete: false },
-            certificates: { view: true, create: false, delete: false },
-        },
-    },
-};
-
-const DEFAULT_PERM: ModulePerm = { view: false, create: false, delete: false };
+function roleNeedsEvents(role: string): boolean {
+    return role === 'organizer' || role === 'station';
+}
 
 function CreateUserContent() {
     const { language } = useLanguage();
+    const { user: currentUser, isLoading: authLoading } = useAuth();
     const router = useRouter();
     const searchParams = useSearchParams();
     const editId = searchParams.get('edit');
     const isEdit = !!editId;
+    const th = language === 'th';
 
     const [saving, setSaving] = useState(false);
     const [loadingUser, setLoadingUser] = useState(false);
@@ -81,20 +70,26 @@ function CreateUserContent() {
     const [firstName, setFirstName] = useState('');
     const [lastName, setLastName] = useState('');
     const [phone, setPhone] = useState('');
-    const [role, setRole] = useState('user');
-    const [roleTemplate, setRoleTemplate] = useState('custom');
+    const [role, setRole] = useState('organizer');
     const [allEventsAccess, setAllEventsAccess] = useState(false);
     const [selectedCampaigns, setSelectedCampaigns] = useState<string[]>([]);
-    const [modulePerms, setModulePerms] = useState<Record<string, ModulePerm>>({});
 
     // Campaigns dropdown
     const [campaigns, setCampaigns] = useState<Campaign[]>([]);
-    const [campaignDropOpen, setCampaignDropOpen] = useState(false);
     const [campaignSearch, setCampaignSearch] = useState('');
+
+    const isAdminGuard = currentUser?.role === 'admin' || currentUser?.role === 'admin_master';
+    const needEvents = roleNeedsEvents(role);
+
+    // Guard the page client-side — server still enforces this
+    useEffect(() => {
+        if (authLoading) return;
+        if (!isAdminGuard) router.push('/admin');
+    }, [authLoading, isAdminGuard, router]);
 
     // Load campaigns
     useEffect(() => {
-        fetch('/api/campaigns?limit=200', { cache: 'no-store' })
+        fetch('/api/campaigns?limit=200', { cache: 'no-store', headers: authHeaders() })
             .then(r => r.json())
             .then(data => {
                 const list = data?.data || (Array.isArray(data) ? data : []);
@@ -107,7 +102,7 @@ function CreateUserContent() {
     useEffect(() => {
         if (!editId) return;
         setLoadingUser(true);
-        fetch(`/api/users/${editId}`, { cache: 'no-store' })
+        fetch(`/api/users/${editId}`, { cache: 'no-store', headers: authHeaders() })
             .then(r => r.json())
             .then(data => {
                 if (data && data._id) {
@@ -116,15 +111,14 @@ function CreateUserContent() {
                     setFirstName(data.firstName || '');
                     setLastName(data.lastName || '');
                     setPhone(data.phone || '');
-                    setRole(data.role || 'user');
+                    setRole(data.role || 'organizer');
                     setAllEventsAccess(data.allEventsAccess || false);
                     setSelectedCampaigns((data.allowedCampaigns || []).map((c: any) => typeof c === 'string' ? c : c?._id || String(c)));
-                    setModulePerms(data.modulePermissions || {});
                 }
             })
-            .catch(() => { })
+            .catch(() => setToast({ msg: th ? 'โหลดข้อมูลผู้ใช้ไม่สำเร็จ' : 'Failed to load user', type: 'error' }))
             .finally(() => setLoadingUser(false));
-    }, [editId]);
+    }, [editId, th]);
 
     // Toast auto-dismiss
     useEffect(() => {
@@ -134,29 +128,16 @@ function CreateUserContent() {
         }
     }, [toast]);
 
-    const getPerm = useCallback((moduleKey: string): ModulePerm => {
-        return modulePerms[moduleKey] || { ...DEFAULT_PERM };
-    }, [modulePerms]);
-
-    const setPerm = useCallback((moduleKey: string, field: keyof ModulePerm, value: boolean) => {
-        setModulePerms(prev => {
-            const current = prev[moduleKey] || { ...DEFAULT_PERM };
-            return { ...prev, [moduleKey]: { ...current, [field]: value } };
-        });
-        setRoleTemplate('custom');
-    }, []);
-
-    const applyTemplate = (templateKey: string) => {
-        setRoleTemplate(templateKey);
-        if (templateKey === 'custom') return;
-        const t = ROLE_TEMPLATES[templateKey];
-        if (!t) return;
-        const newPerms: Record<string, ModulePerm> = {};
-        MODULE_DEFS.forEach(m => {
-            newPerms[m.key] = t.perms[m.key] || { ...DEFAULT_PERM };
-        });
-        setModulePerms(newPerms);
-    };
+    // When role changes to admin/user, clear event scope (backend will too)
+    useEffect(() => {
+        if (role === 'admin') {
+            setAllEventsAccess(true);
+            setSelectedCampaigns([]);
+        } else if (role === 'user') {
+            setAllEventsAccess(false);
+            setSelectedCampaigns([]);
+        }
+    }, [role]);
 
     const toggleCampaign = (id: string) => {
         setSelectedCampaigns(prev =>
@@ -164,19 +145,29 @@ function CreateUserContent() {
         );
     };
 
+    const validate = (): string | null => {
+        if (!email.trim()) return th ? 'กรุณาระบุอีเมล' : 'Please enter email';
+        if (!isEdit && password.length < 6) {
+            return th ? 'รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร' : 'Password must be at least 6 characters';
+        }
+        if (needEvents && selectedCampaigns.length === 0) {
+            return th
+                ? 'กรุณาเลือกอีเวนต์อย่างน้อย 1 รายการ สำหรับบทบาทนี้'
+                : 'Please assign at least one event for this role';
+        }
+        return null;
+    };
+
     const handleSave = async () => {
-        if (!email) {
-            setToast({ msg: language === 'th' ? 'กรุณาระบุอีเมล' : 'Please enter email', type: 'error' });
+        const err = validate();
+        if (err) {
+            setToast({ msg: err, type: 'error' });
             return;
         }
-        if (!isEdit && !password) {
-            setToast({ msg: language === 'th' ? 'กรุณาระบุรหัสผ่าน' : 'Please enter password', type: 'error' });
-            return;
-        }
+
         setSaving(true);
         try {
             if (isEdit) {
-                // Update user info
                 const updateBody: any = { email, username, firstName, lastName, phone, role };
                 const res1 = await fetch(`/api/users/${editId}`, {
                     method: 'PUT',
@@ -184,27 +175,31 @@ function CreateUserContent() {
                     body: JSON.stringify(updateBody),
                 });
                 if (!res1.ok) {
-                    const err = await res1.json();
-                    throw new Error(err.message || err.error || 'Failed to update user');
+                    const errData = await res1.json().catch(() => ({}));
+                    throw new Error(errData.message || errData.error || 'Failed to update user');
                 }
-                // Update permissions
                 const res2 = await fetch(`/api/users/${editId}/permissions`, {
                     method: 'PUT',
                     headers: authHeaders(),
-                    body: JSON.stringify({ allEventsAccess, allowedCampaigns: selectedCampaigns, modulePermissions: modulePerms }),
+                    body: JSON.stringify({ allowedCampaigns: selectedCampaigns }),
                 });
                 if (!res2.ok) {
-                    const err = await res2.json();
-                    throw new Error(err.message || err.error || 'Failed to update permissions');
+                    const errData = await res2.json().catch(() => ({}));
+                    throw new Error(errData.message || errData.error || 'Failed to update permissions');
                 }
-                setToast({ msg: language === 'th' ? 'บันทึกสำเร็จ' : 'Saved successfully', type: 'success' });
-                setTimeout(() => router.push('/admin/users'), 1000);
+                setToast({ msg: th ? 'บันทึกสำเร็จ' : 'Saved successfully', type: 'success' });
+                setTimeout(() => router.push('/admin/users'), 800);
             } else {
-                // Create new user
                 const createBody: any = {
-                    email, password, username: username || email.split('@')[0],
-                    firstName, lastName, phone, role,
-                    allEventsAccess, allowedCampaigns: selectedCampaigns, modulePermissions: modulePerms,
+                    email,
+                    password,
+                    username: username || email.split('@')[0],
+                    firstName,
+                    lastName,
+                    phone,
+                    role,
+                    allEventsAccess: role === 'admin' ? true : false,
+                    allowedCampaigns: role === 'admin' ? [] : selectedCampaigns,
                 };
                 const res = await fetch('/api/users', {
                     method: 'POST',
@@ -212,11 +207,11 @@ function CreateUserContent() {
                     body: JSON.stringify(createBody),
                 });
                 if (!res.ok) {
-                    const err = await res.json();
-                    throw new Error(err.message || err.error || 'Failed to create user');
+                    const errData = await res.json().catch(() => ({}));
+                    throw new Error(errData.message || errData.error || 'Failed to create user');
                 }
-                setToast({ msg: language === 'th' ? 'สร้างบัญชีสำเร็จ' : 'User created successfully', type: 'success' });
-                setTimeout(() => router.push('/admin/users'), 1000);
+                setToast({ msg: th ? 'สร้างบัญชีสำเร็จ' : 'User created successfully', type: 'success' });
+                setTimeout(() => router.push('/admin/users'), 800);
             }
         } catch (e: any) {
             setToast({ msg: e.message || 'Error', type: 'error' });
@@ -226,15 +221,24 @@ function CreateUserContent() {
     };
 
     const filteredCampaigns = campaigns.filter(c =>
-        !campaignSearch || c.name?.toLowerCase().includes(campaignSearch.toLowerCase()) || c.slug?.toLowerCase().includes(campaignSearch.toLowerCase())
+        !campaignSearch ||
+        c.name?.toLowerCase().includes(campaignSearch.toLowerCase()) ||
+        c.slug?.toLowerCase().includes(campaignSearch.toLowerCase())
     );
 
-    const th = language === 'th';
+    const currentRoleInfo = ROLE_OPTIONS.find(r => r.value === role);
 
-    if (loadingUser) {
+    if (loadingUser || authLoading) {
         return (
-            <AdminLayout breadcrumbItems={[{ label: 'จัดการผู้ใช้งาน', labelEn: 'Users', href: '/admin/users' }, { label: 'กำลังโหลด...', labelEn: 'Loading...' }]}>
-                <div className="admin-card" style={{ padding: 40, textAlign: 'center', color: '#94a3b8' }}>{th ? 'กำลังโหลด...' : 'Loading...'}</div>
+            <AdminLayout
+                breadcrumbItems={[
+                    { label: 'จัดการผู้ใช้งาน', labelEn: 'Users', href: '/admin/users' },
+                    { label: 'กำลังโหลด...', labelEn: 'Loading...' },
+                ]}
+            >
+                <div className="admin-card" style={{ padding: 40, textAlign: 'center', color: '#94a3b8' }}>
+                    {th ? 'กำลังโหลด...' : 'Loading...'}
+                </div>
             </AdminLayout>
         );
     }
@@ -257,7 +261,9 @@ function CreateUserContent() {
                             {isEdit ? (th ? 'แก้ไขบัญชีผู้ใช้งาน' : 'Edit User Account') : (th ? 'สร้างบัญชีผู้ใช้งานใหม่' : 'Create New User Account')}
                         </h1>
                         <p style={{ fontSize: 13, color: '#64748b', margin: '4px 0 0' }}>
-                            {th ? 'กำหนดสิทธิ์การเข้าถึงข้อมูลอย่างละเอียด สำหรับทีมงานหรือผู้จัดงาน' : 'Configure detailed access permissions for staff or organizers'}
+                            {th
+                                ? 'กำหนดบทบาทและขอบเขตอีเวนต์ — สิทธิ์ภายในจะถูกกำหนดอัตโนมัติตามบทบาท'
+                                : 'Assign role and event scope — module permissions are derived automatically from the role.'}
                         </p>
                     </div>
                     <div style={{ display: 'flex', gap: 10 }}>
@@ -265,7 +271,7 @@ function CreateUserContent() {
                             {th ? 'ยกเลิก' : 'Cancel'}
                         </button>
                         <button onClick={handleSave} disabled={saving} style={{ padding: '10px 20px', borderRadius: 10, border: 'none', background: '#22c55e', color: '#fff', fontWeight: 700, fontSize: 13, cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.6 : 1, boxShadow: '0 4px 14px rgba(34,197,94,0.3)' }}>
-                            {saving ? '...' : (th ? '💾 บันทึกข้อมูล' : '💾 Save')}
+                            {saving ? '...' : (th ? '💾 บันทึก' : '💾 Save')}
                         </button>
                     </div>
                 </div>
@@ -282,20 +288,20 @@ function CreateUserContent() {
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: 16 }}>
                         <div>
                             <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#374151', marginBottom: 6 }}>{th ? 'อีเมลเข้าสู่ระบบ' : 'Login Email'} *</label>
-                            <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="staff@action.in.th" disabled={isEdit}
-                                style={{ width: '100%', padding: '10px 14px', borderRadius: 10, border: '1.5px solid #e2e8f0', fontSize: 13, outline: 'none', background: isEdit ? '#f8fafc' : '#fff', boxSizing: 'border-box' }} />
+                            <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="staff@example.com" disabled={isEdit}
+                                style={{ width: '100%', padding: '10px 14px', borderRadius: 10, border: '1.5px solid #e2e8f0', fontSize: 13, outline: 'none', background: isEdit ? '#f8fafc' : '#fff', boxSizing: 'border-box', color: '#0f172a' }} />
                         </div>
                         <div>
                             <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#374151', marginBottom: 6 }}>{th ? 'ชื่อผู้ใช้งาน' : 'Username'}</label>
                             <input type="text" value={username} onChange={e => setUsername(e.target.value)} placeholder={th ? 'ระบุชื่อทีมงาน' : 'Display name'}
-                                style={{ width: '100%', padding: '10px 14px', borderRadius: 10, border: '1.5px solid #e2e8f0', fontSize: 13, outline: 'none', boxSizing: 'border-box' }} />
+                                style={{ width: '100%', padding: '10px 14px', borderRadius: 10, border: '1.5px solid #e2e8f0', fontSize: 13, outline: 'none', boxSizing: 'border-box', color: '#0f172a', background: '#fff' }} />
                         </div>
                         {!isEdit && (
                             <div>
                                 <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#374151', marginBottom: 6 }}>{th ? 'รหัสผ่าน' : 'Password'} *</label>
                                 <div style={{ position: 'relative' }}>
-                                    <input type={showPassword ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)} placeholder="••••••"
-                                        style={{ width: '100%', padding: '10px 44px 10px 14px', borderRadius: 10, border: '1.5px solid #e2e8f0', fontSize: 13, outline: 'none', boxSizing: 'border-box' }} />
+                                    <input type={showPassword ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)} placeholder="อย่างน้อย 6 ตัวอักษร"
+                                        style={{ width: '100%', padding: '10px 44px 10px 14px', borderRadius: 10, border: '1.5px solid #e2e8f0', fontSize: 13, outline: 'none', boxSizing: 'border-box', color: '#0f172a', background: '#fff' }} />
                                     <button type="button" onClick={() => setShowPassword(!showPassword)}
                                         style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', fontSize: 16, color: '#94a3b8', padding: 4 }}>
                                         {showPassword ? '🙈' : '👁'}
@@ -306,176 +312,129 @@ function CreateUserContent() {
                         <div>
                             <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#374151', marginBottom: 6 }}>{th ? 'ชื่อจริง' : 'First Name'}</label>
                             <input type="text" value={firstName} onChange={e => setFirstName(e.target.value)}
-                                style={{ width: '100%', padding: '10px 14px', borderRadius: 10, border: '1.5px solid #e2e8f0', fontSize: 13, outline: 'none', boxSizing: 'border-box' }} />
+                                style={{ width: '100%', padding: '10px 14px', borderRadius: 10, border: '1.5px solid #e2e8f0', fontSize: 13, outline: 'none', boxSizing: 'border-box', color: '#0f172a', background: '#fff' }} />
                         </div>
                         <div>
                             <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#374151', marginBottom: 6 }}>{th ? 'นามสกุล' : 'Last Name'}</label>
                             <input type="text" value={lastName} onChange={e => setLastName(e.target.value)}
-                                style={{ width: '100%', padding: '10px 14px', borderRadius: 10, border: '1.5px solid #e2e8f0', fontSize: 13, outline: 'none', boxSizing: 'border-box' }} />
+                                style={{ width: '100%', padding: '10px 14px', borderRadius: 10, border: '1.5px solid #e2e8f0', fontSize: 13, outline: 'none', boxSizing: 'border-box', color: '#0f172a', background: '#fff' }} />
                         </div>
                         <div>
                             <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#374151', marginBottom: 6 }}>{th ? 'เบอร์โทร' : 'Phone'}</label>
                             <input type="text" value={phone} onChange={e => setPhone(e.target.value)}
-                                style={{ width: '100%', padding: '10px 14px', borderRadius: 10, border: '1.5px solid #e2e8f0', fontSize: 13, outline: 'none', boxSizing: 'border-box' }} />
+                                style={{ width: '100%', padding: '10px 14px', borderRadius: 10, border: '1.5px solid #e2e8f0', fontSize: 13, outline: 'none', boxSizing: 'border-box', color: '#0f172a', background: '#fff' }} />
                         </div>
-                        <div>
-                            <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#374151', marginBottom: 6 }}>{th ? 'บทบาทหลัก (Role)' : 'Main Role'}</label>
+                        <div style={{ gridColumn: '1 / -1' }}>
+                            <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#374151', marginBottom: 6 }}>{th ? 'บทบาทหลัก (Role)' : 'Main Role'} *</label>
                             <select value={role} onChange={e => setRole(e.target.value)}
-                                style={{ width: '100%', padding: '10px 14px', borderRadius: 10, border: '1.5px solid #e2e8f0', fontSize: 13, outline: 'none', cursor: 'pointer', boxSizing: 'border-box', background: '#fff' }}>
-                                <option value="user">User</option>
-                                <option value="organizer">Organizer</option>
-                                <option value="station">Station</option>
-                                <option value="admin">Admin</option>
-                            </select>
-                        </div>
-                        <div>
-                            <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#374151', marginBottom: 6 }}>{th ? 'แม่แบบสิทธิ์ (Template)' : 'Permission Template'}</label>
-                            <select value={roleTemplate} onChange={e => applyTemplate(e.target.value)}
-                                style={{ width: '100%', padding: '10px 14px', borderRadius: 10, border: '1.5px solid #e2e8f0', fontSize: 13, outline: 'none', cursor: 'pointer', boxSizing: 'border-box', background: '#fff' }}>
-                                {Object.entries(ROLE_TEMPLATES).map(([key, tpl]) => (
-                                    <option key={key} value={key}>{th ? tpl.label_th : tpl.label_en}</option>
+                                style={{ width: '100%', padding: '10px 14px', borderRadius: 10, border: '1.5px solid #e2e8f0', fontSize: 13, outline: 'none', cursor: 'pointer', boxSizing: 'border-box', background: '#fff', color: '#0f172a' }}>
+                                {ROLE_OPTIONS.map(opt => (
+                                    <option key={opt.value} value={opt.value}>{th ? opt.label_th : opt.label_en}</option>
                                 ))}
                             </select>
-                        </div>
-                    </div>
-                </section>
-
-                {/* Section 2: Event Access */}
-                <section style={{ background: '#fff', borderRadius: 16, border: '1px solid #e2e8f0', padding: 28, marginBottom: 20, boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20, borderBottom: '1px solid #f1f5f9', paddingBottom: 14 }}>
-                        <div style={{ background: '#f3e8ff', color: '#7c3aed', width: 36, height: 36, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }}>📅</div>
-                        <div style={{ flex: 1 }}>
-                            <h2 style={{ fontSize: 16, fontWeight: 800, color: '#0f172a', margin: 0 }}>2. {th ? 'ขอบเขตอีเวนต์ (Event Access)' : 'Event Access Scope'}</h2>
-                            <p style={{ fontSize: 11, color: '#94a3b8', margin: 0 }}>{th ? 'เลือกงานวิ่งที่อนุญาตให้ผู้ใช้นี้เข้าถึงข้อมูลได้' : 'Select which events this user can access'}</p>
-                        </div>
-                        <label style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#f8fafc', padding: '8px 14px', borderRadius: 10, border: '1px solid #e2e8f0', cursor: 'pointer', fontSize: 13, fontWeight: 700, color: '#334155' }}>
-                            {th ? 'เข้าถึงทุกอีเวนต์' : 'All Events'}
-                            <input type="checkbox" checked={allEventsAccess} onChange={e => setAllEventsAccess(e.target.checked)}
-                                style={{ width: 18, height: 18, accentColor: '#22c55e', cursor: 'pointer' }} />
-                        </label>
-                    </div>
-
-                    {!allEventsAccess && (
-                        <>
-                            <div style={{ position: 'relative', maxWidth: 500 }}>
-                                <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#374151', marginBottom: 6 }}>{th ? 'ค้นหาและเลือกอีเวนต์' : 'Search & select events'}</label>
-                                <div onClick={() => setCampaignDropOpen(!campaignDropOpen)}
-                                    style={{ display: 'flex', alignItems: 'center', border: '1.5px solid #e2e8f0', borderRadius: 10, padding: '10px 14px', cursor: 'pointer', background: '#fff', gap: 8 }}>
-                                    <span style={{ color: '#94a3b8', fontSize: 14 }}>🔍</span>
-                                    <input type="text" value={campaignSearch} onChange={e => { setCampaignSearch(e.target.value); setCampaignDropOpen(true); }}
-                                        onClick={e => { e.stopPropagation(); setCampaignDropOpen(true); }}
-                                        placeholder={th ? 'พิมพ์ชื่ออีเวนต์...' : 'Type event name...'}
-                                        style={{ border: 'none', outline: 'none', flex: 1, fontSize: 13, background: 'transparent' }} />
-                                    <span style={{ color: '#94a3b8', fontSize: 10 }}>▼</span>
-                                </div>
-                                {campaignDropOpen && (
-                                    <div style={{ position: 'absolute', zIndex: 50, width: '100%', marginTop: 4, background: '#fff', border: '1px solid #e2e8f0', borderRadius: 10, boxShadow: '0 10px 30px rgba(0,0,0,0.12)', maxHeight: 240, overflowY: 'auto' }}>
-                                        {filteredCampaigns.length === 0 ? (
-                                            <div style={{ padding: 16, textAlign: 'center', color: '#94a3b8', fontSize: 13 }}>{th ? 'ไม่พบอีเวนต์' : 'No events found'}</div>
-                                        ) : filteredCampaigns.map(c => (
-                                            <label key={c._id} style={{ display: 'flex', alignItems: 'center', padding: '10px 14px', cursor: 'pointer', borderBottom: '1px solid #f1f5f9', gap: 10 }}
-                                                className="hover:bg-slate-50">
-                                                <input type="checkbox" checked={selectedCampaigns.includes(c._id)} onChange={() => toggleCampaign(c._id)}
-                                                    style={{ width: 16, height: 16, accentColor: '#22c55e', cursor: 'pointer' }} />
-                                                <span style={{ fontSize: 13, fontWeight: 500, color: '#334155' }}>{c.name}</span>
-                                            </label>
-                                        ))}
-                                    </div>
-                                )}
-                            </div>
-
-                            {selectedCampaigns.length > 0 && (
-                                <div style={{ marginTop: 16, padding: 16, background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 10 }}>
-                                    <p style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 10 }}>
-                                        {th ? 'อีเวนต์ที่เลือกแล้ว' : 'Selected Events'} ({selectedCampaigns.length})
-                                    </p>
-                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                                        {selectedCampaigns.map(id => {
-                                            const c = campaigns.find(x => x._id === id);
-                                            return (
-                                                <span key={id} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: '#dcfce7', color: '#166534', fontSize: 12, fontWeight: 600, padding: '6px 12px', borderRadius: 20, border: '1px solid #bbf7d0' }}>
-                                                    {c?.name || id}
-                                                    <button onClick={() => toggleCampaign(id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#166534', fontSize: 14, lineHeight: 1, padding: 0 }}>✕</button>
-                                                </span>
-                                            );
-                                        })}
-                                    </div>
+                            {currentRoleInfo && (
+                                <div style={{ marginTop: 8, padding: '10px 14px', borderRadius: 10, background: '#f8fafc', border: '1px solid #e2e8f0', fontSize: 12, color: '#475569' }}>
+                                    <span style={{ fontWeight: 700, color: '#0f172a' }}>{th ? '📋 รายละเอียดสิทธิ์:' : '📋 Permission scope:'}</span>{' '}
+                                    {th ? currentRoleInfo.description_th : currentRoleInfo.description_en}
                                 </div>
                             )}
-                        </>
-                    )}
-                </section>
-
-                {/* Section 3: Module Permissions */}
-                <section style={{ background: '#fff', borderRadius: 16, border: '1px solid #e2e8f0', overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
-                    <div style={{ padding: 28, borderBottom: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', gap: 12 }}>
-                        <div style={{ background: '#fff7ed', color: '#ea580c', width: 36, height: 36, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }}>🔓</div>
-                        <div>
-                            <h2 style={{ fontSize: 16, fontWeight: 800, color: '#0f172a', margin: 0 }}>3. {th ? 'สิทธิ์การใช้งานเมนู (Module Permissions)' : 'Module Permissions'}</h2>
-                            <p style={{ fontSize: 11, color: '#94a3b8', margin: 0 }}>{th ? 'กำหนดความสามารถในการ ดู, แก้ไข, ลบ หรือดึงข้อมูลออก ในแต่ละฟีเจอร์' : 'Set view, create, delete, export per module'}</p>
                         </div>
                     </div>
-                    <div style={{ overflowX: 'auto', padding: '0 16px 16px' }}>
-                        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 600, fontSize: 13 }}>
-                            <thead>
-                                <tr style={{ background: '#f8fafc' }}>
-                                    <th style={{ padding: '14px 16px', textAlign: 'left', fontWeight: 700, color: '#475569', borderRadius: '10px 0 0 10px' }}>{th ? 'เมนู / ฟีเจอร์' : 'Module'}</th>
-                                    <th style={{ padding: '14px 8px', textAlign: 'center', fontWeight: 700, color: '#475569', width: 90 }}>
-                                        {th ? 'เปิดดู' : 'View'}<br /><span style={{ fontSize: 10, fontWeight: 400, color: '#94a3b8' }}>View / Run</span>
-                                    </th>
-                                    <th style={{ padding: '14px 8px', textAlign: 'center', fontWeight: 700, color: '#475569', width: 90 }}>
-                                        {th ? 'เพิ่ม/แก้ไข' : 'Create/Edit'}<br /><span style={{ fontSize: 10, fontWeight: 400, color: '#94a3b8' }}>Create / Edit</span>
-                                    </th>
-                                    <th style={{ padding: '14px 8px', textAlign: 'center', fontWeight: 700, color: '#dc2626', width: 90, borderRadius: '0 10px 10px 0' }}>
-                                        {th ? 'ลบข้อมูล' : 'Delete'}<br /><span style={{ fontSize: 10, fontWeight: 400, color: '#fca5a5' }}>Delete</span>
-                                    </th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {MODULE_DEFS.map(mod => {
-                                    const p = getPerm(mod.key);
-                                    return (
-                                        <tr key={mod.key} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                                            <td style={{ padding: '14px 16px' }}>
-                                                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                                                    <div style={{ background: '#f1f5f9', width: 34, height: 34, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }}>{mod.icon}</div>
-                                                    <div>
-                                                        <div style={{ fontWeight: 700, color: '#0f172a', fontSize: 13 }}>{th ? mod.th : mod.en}</div>
-                                                        <div style={{ fontSize: 11, color: '#94a3b8' }}>{th ? mod.desc_th : mod.desc_en}</div>
-                                                    </div>
-                                                </div>
-                                            </td>
-                                            {(['view', 'create', 'delete'] as const).map(field => (
-                                                <td key={field} style={{ padding: '14px 8px', textAlign: 'center' }}>
-                                                    <input type="checkbox" checked={p[field]} onChange={e => setPerm(mod.key, field, e.target.checked)}
-                                                        style={{ width: 20, height: 20, accentColor: field === 'delete' ? '#dc2626' : '#22c55e', cursor: 'pointer', borderRadius: 4 }} />
-                                                </td>
-                                            ))}
-                                        </tr>
-                                    );
-                                })}
-                            </tbody>
-                        </table>
-                    </div>
                 </section>
+
+                {/* Section 2: Event Access (organizer/station only) */}
+                {needEvents && (
+                    <section style={{ background: '#fff', borderRadius: 16, border: '1px solid #e2e8f0', padding: 28, marginBottom: 20, boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20, borderBottom: '1px solid #f1f5f9', paddingBottom: 14 }}>
+                            <div style={{ background: '#f3e8ff', color: '#7c3aed', width: 36, height: 36, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }}>📅</div>
+                            <div style={{ flex: 1 }}>
+                                <h2 style={{ fontSize: 16, fontWeight: 800, color: '#0f172a', margin: 0 }}>2. {th ? 'ขอบเขตอีเวนต์ (Event Access)' : 'Event Access Scope'}</h2>
+                                <p style={{ fontSize: 11, color: '#94a3b8', margin: 0 }}>
+                                    {th
+                                        ? 'เลือกอีเวนต์ที่อนุญาตให้ผู้ใช้รายนี้เข้าถึง — สามารถเลือกได้หลายรายการ'
+                                        : 'Select which events this user can access — multiple allowed'}
+                                </p>
+                            </div>
+                        </div>
+
+                        <div style={{ marginBottom: 16 }}>
+                            <input
+                                type="text"
+                                value={campaignSearch}
+                                onChange={e => setCampaignSearch(e.target.value)}
+                                placeholder={th ? '🔍 ค้นหาชื่ออีเวนต์...' : '🔍 Search events...'}
+                                style={{ width: '100%', maxWidth: 400, padding: '10px 14px', borderRadius: 10, border: '1.5px solid #e2e8f0', fontSize: 13, outline: 'none', boxSizing: 'border-box', color: '#0f172a', background: '#fff' }}
+                            />
+                        </div>
+
+                        <div style={{ border: '1px solid #e2e8f0', borderRadius: 12, maxHeight: 320, overflowY: 'auto', background: '#fff' }}>
+                            {filteredCampaigns.length === 0 ? (
+                                <div style={{ padding: 24, textAlign: 'center', color: '#94a3b8', fontSize: 13 }}>
+                                    {th ? 'ไม่พบอีเวนต์' : 'No events found'}
+                                </div>
+                            ) : filteredCampaigns.map(c => {
+                                const checked = selectedCampaigns.includes(c._id);
+                                return (
+                                    <label key={c._id}
+                                        style={{ display: 'flex', alignItems: 'center', padding: '12px 16px', cursor: 'pointer', borderBottom: '1px solid #f1f5f9', gap: 12, background: checked ? '#f0fdf4' : '#fff' }}
+                                    >
+                                        <input type="checkbox" checked={checked} onChange={() => toggleCampaign(c._id)}
+                                            style={{ width: 18, height: 18, accentColor: '#22c55e', cursor: 'pointer' }} />
+                                        <span style={{ fontSize: 13, fontWeight: 600, color: '#0f172a', flex: 1 }}>{c.name}</span>
+                                        {c.status && (
+                                            <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 6, background: '#f1f5f9', color: '#64748b', fontWeight: 600 }}>
+                                                {c.status}
+                                            </span>
+                                        )}
+                                    </label>
+                                );
+                            })}
+                        </div>
+
+                        {selectedCampaigns.length > 0 && (
+                            <div style={{ marginTop: 16, padding: '12px 16px', background: '#ecfdf5', border: '1px solid #bbf7d0', borderRadius: 10, fontSize: 12, color: '#166534', fontWeight: 700 }}>
+                                ✅ {th ? `เลือกแล้ว ${selectedCampaigns.length} อีเวนต์` : `${selectedCampaigns.length} event(s) selected`}
+                                {selectedCampaigns.length > 1 && (
+                                    <span style={{ fontWeight: 400, marginLeft: 6 }}>
+                                        — {th
+                                            ? 'ผู้ใช้จะเห็นหน้าเลือกอีเวนต์เพื่อกดดาวเลือกงานเอง'
+                                            : 'User will see an event picker to star their active event'}
+                                    </span>
+                                )}
+                            </div>
+                        )}
+                    </section>
+                )}
+
+                {/* Section info for admin role */}
+                {role === 'admin' && (
+                    <section style={{ background: '#fef2f2', borderRadius: 16, border: '1px solid #fecaca', padding: 20, marginBottom: 20 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 12, color: '#991b1b' }}>
+                            <div style={{ fontSize: 24 }}>🛡️</div>
+                            <div>
+                                <div style={{ fontWeight: 800, fontSize: 14 }}>
+                                    {th ? 'ผู้ใช้นี้จะได้สิทธิ์ Admin เต็มรูปแบบ' : 'This user will receive FULL admin privileges'}
+                                </div>
+                                <div style={{ fontSize: 12, marginTop: 4 }}>
+                                    {th
+                                        ? 'สามารถเข้าถึง/แก้ไข/ลบข้อมูลของทุกอีเวนต์ในระบบได้ — ไม่จำเป็นต้องเลือกอีเวนต์'
+                                        : 'Can view, edit, and delete data across all events. Event scope is not required.'}
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+                )}
             </div>
 
-            {/* Close campaign dropdown on outside click */}
-            {campaignDropOpen && (
-                <div style={{ position: 'fixed', inset: 0, zIndex: 40 }} onClick={() => setCampaignDropOpen(false)} />
-            )}
-
-            {/* Toast */}
             {toast && (
                 <div style={{
                     position: 'fixed', bottom: 24, right: 24, zIndex: 10000, padding: '14px 24px', borderRadius: 14,
                     background: toast.type === 'success' ? '#16a34a' : '#dc2626', color: '#fff', fontWeight: 700, fontSize: 14,
-                    boxShadow: '0 10px 25px rgba(0,0,0,0.2)', animation: 'slideUp 0.3s ease-out',
+                    boxShadow: '0 10px 25px rgba(0,0,0,0.2)',
                 }}>
                     {toast.type === 'success' ? '✅' : '❌'} {toast.msg}
                 </div>
             )}
-            <style>{`@keyframes slideUp { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }`}</style>
         </AdminLayout>
     );
 }
