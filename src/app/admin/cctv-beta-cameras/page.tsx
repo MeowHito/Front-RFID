@@ -575,19 +575,15 @@ export default function CctvBetaCamerasPage() {
           // Larix Broadcaster accepts either, but plain URL is simpler.
           const qrValue = isIrl ? buildIrlProDeepLink(cam) : plainUrl;
           const title = isIrl ? "IRL Pro Setup" : "Larix Setup";
-          const instructionsTh = isIrl
-            ? "📱 เปิดแอป กล้อง (Camera) ของระบบ Android แล้วสแกน QR นี้ → Android จะถามว่าเปิดด้วย IRL Pro หรือไม่ → กดยอมรับเพื่อ import การตั้งค่าอัตโนมัติ (อย่าใช้ QR scanner ภายในแอป IRL Pro)"
-            : "📱 สแกน QR ในแอป Larix Broadcaster (Settings → Connections → New connection → URL) หรือคัดลอก URL ด้านล่างไปวางในช่อง URL";
-          const instructionsEn = isIrl
-            ? "📱 Open the system Camera app on Android and scan this QR — Android will offer to open IRL Pro. Accept to auto-import the connection. (Do NOT use the QR scanner inside IRL Pro itself.)"
-            : "📱 Scan in Larix Broadcaster (Settings → Connections → New connection → URL) or copy the URL below into the URL field.";
+          const copyQrKey = `qr:${cam._id}:${qrApp}`;
+          const copyQrCopied = copiedKey === copyQrKey;
           return (
             <div onClick={() => setShowQrFor(null)} style={modalBackdrop}>
-              <div onClick={(e) => e.stopPropagation()} style={modalContent}>
+              <div onClick={(e) => e.stopPropagation()} style={{ ...modalContent, maxWidth: 460, maxHeight: '90vh', overflowY: 'auto' }}>
                 <h3 style={{ marginTop: 0 }}>
                   {cam.name} — {title}
                 </h3>
-                <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
+                <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
                   <button
                     onClick={() => setQrApp("larix")}
                     style={{
@@ -607,9 +603,7 @@ export default function CctvBetaCamerasPage() {
                     IRL Pro
                   </button>
                 </div>
-                <p style={{ fontSize: 13, color: "#6b7280" }}>
-                  {th ? instructionsTh : instructionsEn}
-                </p>
+
                 <div
                   style={{
                     display: "flex",
@@ -620,64 +614,139 @@ export default function CctvBetaCamerasPage() {
                 >
                   <QRCodeSVG value={qrValue} size={220} />
                 </div>
-                {isIrl && (
-                  <div
-                    style={{
-                      fontSize: 10,
-                      color: "#7c3aed",
-                      marginBottom: 6,
-                      textAlign: "center",
-                      fontWeight: 600,
-                    }}
-                  >
-                    {th
-                      ? "QR นี้เป็น larix:// deep-link สำหรับ auto-import"
-                      : "This QR is a larix:// deep-link for auto-import"}
-                  </div>
-                )}
-                <div
+
+                {/* Copy URL button — primary action */}
+                <button
+                  onClick={() => copyField(cam, `qr:${qrApp}`, qrValue)}
                   style={{
-                    fontSize: 11,
-                    fontFamily: "monospace",
-                    background: "#f3f4f6",
-                    padding: 8,
-                    borderRadius: 4,
-                    wordBreak: "break-all",
-                    marginBottom: 6,
+                    width: "100%",
+                    marginTop: 10,
+                    padding: "12px 0",
+                    borderRadius: 8,
+                    border: "none",
+                    background: copyQrCopied ? "#16a34a" : "#0ea5e9",
+                    color: "#fff",
+                    fontWeight: 700,
+                    fontSize: 14,
+                    cursor: "pointer",
                   }}
                 >
-                  <div style={{ fontWeight: 700, fontSize: 10, color: "#374151", marginBottom: 4 }}>
-                    {isIrl ? (th ? "URL ใน QR (deep-link)" : "QR URL (deep-link)") : (th ? "Stream URL" : "Stream URL")}
-                  </div>
-                  {qrValue}
-                </div>
-                {/* For IRL Pro, also show the plain stream URL for manual setup */}
+                  {copyQrCopied
+                    ? (th ? "✅ คัดลอกแล้ว!" : "✅ Copied!")
+                    : (th ? "📋 คัดลอก URL" : "📋 Copy URL")}
+                </button>
+
+                {/* IRL Pro instructions */}
                 {isIrl && (
-                  <div
-                    style={{
-                      marginTop: 8,
-                      fontSize: 11,
+                  <div style={{ marginTop: 12 }}>
+                    <div style={{
                       background: "#fef3c7",
-                      padding: 8,
-                      borderRadius: 4,
                       border: "1px solid #fcd34d",
-                    }}
-                  >
-                    <div style={{ fontWeight: 700, color: "#92400e", marginBottom: 4 }}>
-                      {th ? "หรือกรอกแบบแมนนวลในแอป IRL Pro" : "Or set up manually in IRL Pro"}
+                      padding: 12,
+                      borderRadius: 8,
+                      fontSize: 12,
+                    }}>
+                      <div style={{ fontWeight: 700, color: "#92400e", marginBottom: 8, fontSize: 13 }}>
+                        {th ? "⚠️ สำหรับ Xiaomi / MIUI / มือถือที่กล้องไม่เปิด IRL Pro ให้:" : "⚠️ For Xiaomi / MIUI / when system camera doesn't open IRL Pro:"}
+                      </div>
+                      <ol style={{ margin: 0, paddingLeft: 18, color: "#78350f", lineHeight: 1.7 }}>
+                        <li>{th ? "กดปุ่ม “คัดลอก URL” ด้านบน" : "Tap “Copy URL” above"}</li>
+                        <li>{th ? "เปิดแอป IRL Pro" : "Open the IRL Pro app"}</li>
+                        <li>{th ? "กดไอคอน ⚙️ (ฟันเฟือง) มุมซ้ายบน" : "Tap the ⚙️ gear icon (top-left)"}</li>
+                        <li>{th ? "เลือก Import/Export Settings → Import Settings" : "Select Import/Export Settings → Import Settings"}</li>
+                        <li>{th ? "วาง URL ที่คัดลอก แล้วกด OK — การตั้งค่าจะถูกเพิ่มอัตโนมัติ" : "Paste the URL and tap OK — connection will be added automatically"}</li>
+                        <li>{th ? "กลับหน้าหลัก → กด Start เพื่อ Live" : "Go back to main screen → tap Start to go Live"}</li>
+                      </ol>
                     </div>
-                    {cam.preferredProtocol === "rtmp" ? (
-                      <div style={{ fontFamily: "monospace", wordBreak: "break-all" }}>
-                        <div><b>Server URL:</b> {rtmpServerOf(cam)}</div>
-                        <div style={{ marginTop: 4 }}><b>Stream Key:</b> {cam.streamKey}</div>
-                      </div>
-                    ) : (
-                      <div style={{ fontFamily: "monospace", wordBreak: "break-all" }}>
-                        <div><b>SRT URL:</b> {cam.ingestSrtUrl}</div>
-                      </div>
-                    )}
+
+                    <div style={{
+                      marginTop: 10,
+                      background: "#ecfdf5",
+                      border: "1px solid #86efac",
+                      padding: 10,
+                      borderRadius: 8,
+                      fontSize: 12,
+                      color: "#166534",
+                    }}>
+                      <b>💡 {th ? "ทางเลือกที่ง่ายกว่า:" : "Easier alternative:"}</b>{" "}
+                      {th
+                        ? "ใช้ Google Lens (อยู่ในแอป Google บนมือถือ Android) สแกน QR นี้ — Google Lens จะเปิด IRL Pro ให้อัตโนมัติ"
+                        : "Use Google Lens (in the Google app on Android) to scan this QR — Google Lens will open IRL Pro automatically"}
+                    </div>
                   </div>
                 )}
+
+                {/* Larix instructions */}
+                {!isIrl && (
+                  <div style={{
+                    marginTop: 12,
+                    background: "#eef2ff",
+                    border: "1px solid #c7d2fe",
+                    padding: 12,
+                    borderRadius: 8,
+                    fontSize: 12,
+                  }}>
+                    <div style={{ fontWeight: 700, color: "#3730a3", marginBottom: 8, fontSize: 13 }}>
+                      {th ? "📱 วิธีใช้กับ Larix Broadcaster" : "📱 How to use with Larix Broadcaster"}
+                    </div>
+                    <ol style={{ margin: 0, paddingLeft: 18, color: "#3730a3", lineHeight: 1.7 }}>
+                      <li>{th ? "เปิดแอป Larix Broadcaster" : "Open Larix Broadcaster"}</li>
+                      <li>{th ? "Settings → Connections → กด + → New connection" : "Settings → Connections → tap + → New connection"}</li>
+                      <li>{th ? "กดสแกน QR ในแอป (ไอคอน QR ที่มุม) แล้วสแกน QR ด้านบน หรือ" : "Scan QR using the in-app QR icon, or"}</li>
+                      <li>{th ? "วาง URL ที่คัดลอกในช่อง URL → Save" : "Paste the copied URL into the URL field → Save"}</li>
+                      <li>{th ? "กลับหน้าหลัก → กดปุ่มแดงเพื่อ Live" : "Go back → tap the red record button to go Live"}</li>
+                    </ol>
+                  </div>
+                )}
+
+                {/* Raw URL display (collapsible-feel) */}
+                <details style={{ marginTop: 10 }}>
+                  <summary style={{ fontSize: 11, color: "#6b7280", cursor: "pointer", fontWeight: 600 }}>
+                    {th ? "▸ ดู URL แบบเต็ม" : "▸ Show full URL"}
+                  </summary>
+                  <div
+                    style={{
+                      marginTop: 6,
+                      fontSize: 10,
+                      fontFamily: "monospace",
+                      background: "#f3f4f6",
+                      padding: 8,
+                      borderRadius: 4,
+                      wordBreak: "break-all",
+                      color: "#374151",
+                    }}
+                  >
+                    {qrValue}
+                  </div>
+                  {/* For IRL Pro, also show the plain stream URL fields for manual setup */}
+                  {isIrl && (
+                    <div
+                      style={{
+                        marginTop: 8,
+                        fontSize: 11,
+                        background: "#fef3c7",
+                        padding: 8,
+                        borderRadius: 4,
+                        border: "1px solid #fcd34d",
+                      }}
+                    >
+                      <div style={{ fontWeight: 700, color: "#92400e", marginBottom: 4 }}>
+                        {th ? "หรือกรอกแบบ manual (ไม่ใช้ Import)" : "Or set up manually (without Import)"}
+                      </div>
+                      {cam.preferredProtocol === "rtmp" ? (
+                        <div style={{ fontFamily: "monospace", wordBreak: "break-all", color: "#451a03" }}>
+                          <div><b>Server URL:</b> {rtmpServerOf(cam)}</div>
+                          <div style={{ marginTop: 4 }}><b>Stream Key:</b> {cam.streamKey}</div>
+                        </div>
+                      ) : (
+                        <div style={{ fontFamily: "monospace", wordBreak: "break-all", color: "#451a03" }}>
+                          <div><b>SRT URL:</b> {cam.ingestSrtUrl}</div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </details>
+
                 <button
                   onClick={() => setShowQrFor(null)}
                   style={{ ...btnStyle("#374151"), marginTop: 12, width: "100%" }}
