@@ -63,7 +63,11 @@ export default function UsersPage() {
         userId: string;
         userName: string;
         userEmail: string;
+        userRole: string;
         emailInput: string;
+        // Secondary admin confirmation (only used when target is admin)
+        confirmAdminEmail: string;
+        confirmAdminPassword: string;
     } | null>(null);
     const [deleting, setDeleting] = useState(false);
 
@@ -159,23 +163,43 @@ export default function UsersPage() {
 
     const handleDeleteUser = async () => {
         if (!deletePopup || deletePopup.emailInput !== deletePopup.userEmail) return;
+        const isDeletingAdmin = deletePopup.userRole === 'admin';
+        if (isDeletingAdmin) {
+            if (!deletePopup.confirmAdminEmail || !deletePopup.confirmAdminPassword) return;
+            if (deletePopup.confirmAdminEmail === currentUser?.email) {
+                setToast({
+                    message: language === 'th'
+                        ? 'ผู้ยืนยันต้องเป็น admin คนละคนกับผู้ลบ'
+                        : 'Confirming admin must be a different person',
+                    type: 'error',
+                });
+                return;
+            }
+        }
         setDeleting(true);
         try {
+            const body = isDeletingAdmin
+                ? JSON.stringify({
+                    confirmAdminEmail: deletePopup.confirmAdminEmail,
+                    confirmAdminPassword: deletePopup.confirmAdminPassword,
+                })
+                : undefined;
             const res = await fetch(`/api/users/${deletePopup.userId}`, {
                 method: 'DELETE',
                 headers: authHeaders(),
+                body,
             });
             if (!res.ok) {
-                const err = await res.json();
-                throw new Error(err.message || 'Failed to delete user');
+                const err = await res.json().catch(() => ({}));
+                throw new Error(err.message || err.error || 'Failed to delete user');
             }
             setUsers(prev => prev.filter(u => u._id !== deletePopup.userId));
             setToast({ message: language === 'th' ? 'ลบผู้ใช้สำเร็จ' : 'User deleted successfully', type: 'success' });
+            setDeletePopup(null);
         } catch (error: any) {
             setToast({ message: error.message || (language === 'th' ? 'เกิดข้อผิดพลาด' : 'An error occurred'), type: 'error' });
         } finally {
             setDeleting(false);
-            setDeletePopup(null);
         }
     };
 
@@ -380,9 +404,17 @@ export default function UsersPage() {
                                                             {language === 'th' ? '✏️ แก้ไข' : '✏️ Edit'}
                                                         </button>
                                                     )}
-                                                    {canEdit && u.role !== 'admin' && u.role !== 'admin_master' && (
+                                                    {canEdit && u.role !== 'admin_master' && (
                                                         <button
-                                                            onClick={() => setDeletePopup({ userId: u._id, userName: `${u.firstName} ${u.lastName}`.trim(), userEmail: u.email, emailInput: '' })}
+                                                            onClick={() => setDeletePopup({
+                                                                userId: u._id,
+                                                                userName: `${u.firstName} ${u.lastName}`.trim(),
+                                                                userEmail: u.email,
+                                                                userRole: u.role,
+                                                                emailInput: '',
+                                                                confirmAdminEmail: '',
+                                                                confirmAdminPassword: '',
+                                                            })}
                                                             style={{
                                                                 padding: '5px 10px', borderRadius: 8, border: '1px solid #fecaca',
                                                                 background: '#fef2f2', color: '#dc2626', fontSize: 11, fontWeight: 600,
@@ -568,6 +600,58 @@ export default function UsersPage() {
                                 {language === 'th' ? 'อีเมลไม่ตรงกัน' : 'Email does not match'}
                             </p>
                         )}
+
+                        {/* Second-admin confirmation block — only when deleting an admin */}
+                        {deletePopup.userRole === 'admin' && deletePopup.emailInput === deletePopup.userEmail && (
+                            <div style={{
+                                marginTop: 18, padding: 16, borderRadius: 12,
+                                background: '#fffbeb', border: '1.5px solid #fcd34d',
+                            }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                                    <span style={{ fontSize: 16 }}>🛡️</span>
+                                    <span style={{ fontSize: 13, fontWeight: 800, color: '#92400e' }}>
+                                        {language === 'th'
+                                            ? 'ต้องมี Admin อีกคนยืนยัน'
+                                            : 'Requires a second admin to confirm'}
+                                    </span>
+                                </div>
+                                <p style={{ fontSize: 11, color: '#92400e', margin: '0 0 12px' }}>
+                                    {language === 'th'
+                                        ? 'การลบ Admin ต้องมี Admin คนอื่น (ที่ไม่ใช่ตัวคุณเอง) กรอกอีเมลและรหัสผ่านยืนยัน'
+                                        : 'Deleting an admin requires another admin (not yourself) to enter their email and password.'}
+                                </p>
+                                <input
+                                    type="email"
+                                    placeholder={language === 'th' ? 'อีเมลของ Admin คนยืนยัน' : "Confirming admin's email"}
+                                    value={deletePopup.confirmAdminEmail}
+                                    onChange={(e) => setDeletePopup(prev => prev ? { ...prev, confirmAdminEmail: e.target.value } : null)}
+                                    style={{
+                                        width: '100%', padding: '10px 14px', borderRadius: 10,
+                                        border: '1.5px solid #fcd34d', fontSize: 13, outline: 'none',
+                                        boxSizing: 'border-box', marginBottom: 8, background: '#fff', color: '#0f172a',
+                                    }}
+                                />
+                                <input
+                                    type="password"
+                                    placeholder={language === 'th' ? 'รหัสผ่านของ Admin คนยืนยัน' : "Confirming admin's password"}
+                                    value={deletePopup.confirmAdminPassword}
+                                    onChange={(e) => setDeletePopup(prev => prev ? { ...prev, confirmAdminPassword: e.target.value } : null)}
+                                    style={{
+                                        width: '100%', padding: '10px 14px', borderRadius: 10,
+                                        border: '1.5px solid #fcd34d', fontSize: 13, outline: 'none',
+                                        boxSizing: 'border-box', background: '#fff', color: '#0f172a',
+                                    }}
+                                />
+                                {deletePopup.confirmAdminEmail && deletePopup.confirmAdminEmail === currentUser?.email && (
+                                    <p style={{ fontSize: 11, color: '#dc2626', marginTop: 6, fontWeight: 600 }}>
+                                        {language === 'th'
+                                            ? '❌ ผู้ยืนยันต้องไม่ใช่บัญชีของคุณเอง'
+                                            : '❌ Confirming admin must be a different account'}
+                                    </p>
+                                )}
+                            </div>
+                        )}
+
                         <div style={{ display: 'flex', gap: 10, marginTop: 20 }}>
                             <button
                                 onClick={() => setDeletePopup(null)}
@@ -579,22 +663,34 @@ export default function UsersPage() {
                             >
                                 {language === 'th' ? 'ยกเลิก' : 'Cancel'}
                             </button>
-                            <button
-                                onClick={handleDeleteUser}
-                                disabled={deletePopup.emailInput !== deletePopup.userEmail || deleting}
-                                style={{
-                                    flex: 1, padding: '12px 0', borderRadius: 12, border: 'none',
-                                    background: deletePopup.emailInput === deletePopup.userEmail
-                                        ? 'linear-gradient(135deg, #dc2626, #b91c1c)' : '#e2e8f0',
-                                    color: deletePopup.emailInput === deletePopup.userEmail ? '#fff' : '#94a3b8',
-                                    fontWeight: 700, fontSize: 14,
-                                    cursor: deletePopup.emailInput === deletePopup.userEmail ? 'pointer' : 'not-allowed',
-                                }}
-                            >
-                                {deleting
-                                    ? (language === 'th' ? 'กำลังลบ...' : 'Deleting...')
-                                    : (language === 'th' ? 'ยืนยันลบผู้ใช้' : 'Delete User')}
-                            </button>
+                            {(() => {
+                                const emailOk = deletePopup.emailInput === deletePopup.userEmail;
+                                const needsSecond = deletePopup.userRole === 'admin';
+                                const secondOk = !needsSecond || (
+                                    !!deletePopup.confirmAdminEmail &&
+                                    !!deletePopup.confirmAdminPassword &&
+                                    deletePopup.confirmAdminEmail !== currentUser?.email
+                                );
+                                const canSubmit = emailOk && secondOk && !deleting;
+                                return (
+                                    <button
+                                        onClick={handleDeleteUser}
+                                        disabled={!canSubmit}
+                                        style={{
+                                            flex: 1, padding: '12px 0', borderRadius: 12, border: 'none',
+                                            background: canSubmit
+                                                ? 'linear-gradient(135deg, #dc2626, #b91c1c)' : '#e2e8f0',
+                                            color: canSubmit ? '#fff' : '#94a3b8',
+                                            fontWeight: 700, fontSize: 14,
+                                            cursor: canSubmit ? 'pointer' : 'not-allowed',
+                                        }}
+                                    >
+                                        {deleting
+                                            ? (language === 'th' ? 'กำลังลบ...' : 'Deleting...')
+                                            : (language === 'th' ? 'ยืนยันลบผู้ใช้' : 'Delete User')}
+                                    </button>
+                                );
+                            })()}
                         </div>
                     </div>
                 </div>
