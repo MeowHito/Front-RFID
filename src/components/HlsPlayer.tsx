@@ -14,6 +14,9 @@ interface HlsPlayerProps {
     /** When false, set controlsList="nodownload" + disable PiP + block context menu so
      *  viewers can't trivially save the video. (Admin enforcement is still via signed URLs.) */
     allowDownload?: boolean;
+    /** Live HLS mode — enables autoplay+muted (autoplay rules), tunes hls.js for
+     *  low-latency live playback, and skips seek/clip logic. Pass `true` for live feeds. */
+    live?: boolean;
     onLoadedMetadata?: (video: HTMLVideoElement) => void;
     className?: string;
 }
@@ -24,8 +27,10 @@ interface HlsPlayerProps {
  * the bundle cost.
  *
  * Optional features:
+ *   - `live` flag for live feeds (autoplay + tuned hls.js config)
  *   - Top-left timestamp overlay (Thailand timezone, ticks every second)
  *   - Download/PiP/context-menu suppression when allowDownload === false
+ *   - Inline fatal-error overlay so debugging doesn't require DevTools
  */
 export default function HlsPlayer({
     src,
@@ -33,22 +38,28 @@ export default function HlsPlayer({
     durationSeconds,
     showTimestamp = false,
     allowDownload = true,
+    live = false,
     onLoadedMetadata,
     className,
 }: HlsPlayerProps) {
     const videoRef = useRef<HTMLVideoElement | null>(null);
     const hlsRef = useRef<Hls | null>(null);
+    const [fatalError, setFatalError] = useState<string | null>(null);
 
     useEffect(() => {
         const video = videoRef.current;
         if (!video || !src) return;
 
         let cancelled = false;
+        setFatalError(null);
 
         // Safari has native HLS — no library needed.
         if (video.canPlayType('application/vnd.apple.mpegurl')) {
             video.src = src;
-            if (startSeconds > 0) {
+            if (live) {
+                video.muted = true; // browsers block unmuted autoplay
+                video.play().catch(() => { /* autoplay blocked — user must tap */ });
+            } else if (startSeconds > 0) {
                 const onMeta = () => {
                     if (!cancelled) video.currentTime = startSeconds;
                     video.removeEventListener('loadedmetadata', onMeta);
@@ -69,22 +80,42 @@ export default function HlsPlayer({
             if (cancelled) return;
             const HlsCtor = mod.default;
             if (!HlsCtor.isSupported()) {
+                setFatalError('Browser does not support MSE/HLS');
                 video.src = src;
                 return;
             }
-            hls = new HlsCtor({
-                lowLatencyMode: false,
-                backBufferLength: 30,
-            });
+            // Live and VOD need different tuning:
+            //   - Live: short liveSyncDuration so player stays near the edge,
+            //           minimal backBufferLength to avoid memory bloat on long sessions,
+            //           lowLatencyMode tries LL-HLS chunked transfer when available.
+            //   - VOD: larger buffer is fine; no live tuning.
+            const config = live
+                ? { lowLatencyMode: true, liveSyncDuration: 2, liveMaxLatencyDuration: 10, backBufferLength: 10 }
+                : { lowLatencyMode: false, backBufferLength: 30 };
+            hls = new HlsCtor(config);
             hls.loadSource(src);
             hls.attachMedia(video);
             hlsRef.current = hls;
 
-            if (startSeconds > 0) {
-                hls.on(HlsCtor.Events.MANIFEST_PARSED, () => {
-                    if (!cancelled) video.currentTime = startSeconds;
-                });
-            }
+            // Wait for the first parsed manifest, then either autoplay (live) or seek (VOD)
+            hls.on(HlsCtor.Events.MANIFEST_PARSED, () => {
+                if (cancelled) return;
+                if (live) {
+                    video.muted = true;
+                    video.play().catch(() => { /* autoplay blocked */ });
+                } else if (startSeconds > 0) {
+                    video.currentTime = startSeconds;
+                }
+            });
+
+            // Surface fatal HLS errors so the user can see what went wrong without DevTools.
+            // Common ones: networkError (CORS / 404 / TLS), mediaError (codec mismatch).
+            hls.on(HlsCtor.Events.ERROR, (_evt: unknown, data: { fatal?: boolean; type?: string; details?: string; reason?: string }) => {
+                if (data?.fatal) {
+                    const msg = [data.type, data.details, data.reason].filter(Boolean).join(' · ');
+                    setFatalError(msg || 'HLS playback error');
+                }
+            });
         })();
 
         return () => {
@@ -97,10 +128,11 @@ export default function HlsPlayer({
             video.removeAttribute('src');
             video.load();
         };
-    }, [src, startSeconds]);
+    }, [src, startSeconds, live]);
 
-    // Best-effort clip end: pause when we hit start + duration.
+    // Best-effort clip end: pause when we hit start + duration. (VOD only)
     useEffect(() => {
+        if (live) return;
         const video = videoRef.current;
         if (!video || !durationSeconds || durationSeconds <= 0) return;
         const stopAt = startSeconds + durationSeconds;
@@ -111,15 +143,17 @@ export default function HlsPlayer({
         };
         video.addEventListener('timeupdate', onTime);
         return () => video.removeEventListener('timeupdate', onTime);
-    }, [startSeconds, durationSeconds]);
+    }, [startSeconds, durationSeconds, live]);
 
     return (
         <div style={{ position: 'relative', width: '100%', height: '100%' }}>
             <video
                 ref={videoRef}
                 controls
-                preload="metadata"
+                preload={live ? 'auto' : 'metadata'}
                 playsInline
+                autoPlay={live || undefined}
+                muted={live || undefined}
                 className={className}
                 controlsList={allowDownload ? undefined : 'nodownload noplaybackrate'}
                 disablePictureInPicture={!allowDownload}
@@ -127,6 +161,23 @@ export default function HlsPlayer({
                 onLoadedMetadata={(e) => onLoadedMetadata?.(e.currentTarget)}
             />
             {showTimestamp && <CctvTimestampOverlay />}
+            {fatalError && (
+                <div style={{
+                    position: 'absolute', inset: 0,
+                    display: 'flex', flexDirection: 'column',
+                    alignItems: 'center', justifyContent: 'center',
+                    background: 'rgba(0,0,0,0.75)',
+                    color: '#fecaca', fontSize: 12, padding: 16, textAlign: 'center',
+                    pointerEvents: 'none',
+                }}>
+                    <div style={{ fontSize: 28, marginBottom: 6 }}>⚠️</div>
+                    <div style={{ fontWeight: 700, marginBottom: 4 }}>HLS Playback Failed</div>
+                    <div style={{ fontFamily: 'monospace', wordBreak: 'break-word' }}>{fatalError}</div>
+                    <div style={{ marginTop: 8, fontSize: 10, color: '#cbd5e1' }}>
+                        ตรวจสอบ: CORS, SSL cert, MediaMTX HLS muxer, network access
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

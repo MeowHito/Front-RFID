@@ -56,14 +56,15 @@ function CameraTile({ cam, th }: { cam: BetaCamera; th: boolean }) {
             </div>
 
             {cam.status === 'publishing' && url ? (
-                <div style={{ background: '#000', borderRadius: 6, overflow: 'hidden', position: 'relative' }}>
+                <div style={{ background: '#000', borderRadius: 6, overflow: 'hidden', position: 'relative', aspectRatio: '16/9' }}>
                     <SharedHlsPlayer
                         key={url}
                         src={url}
-                        className="w-full block bg-black"
+                        live
+                        className="w-full h-full block bg-black object-contain"
                     />
-                    <div style={{ position: 'absolute', bottom: 6, left: 6, background: 'rgba(0,0,0,0.7)', color: '#fff', padding: '2px 8px', fontSize: 11, borderRadius: 4 }}>
-                        {cam.checkpointName || cam.name}
+                    <div style={{ position: 'absolute', bottom: 6, left: 6, background: 'rgba(0,0,0,0.7)', color: '#fff', padding: '2px 8px', fontSize: 11, borderRadius: 4, pointerEvents: 'none' }}>
+                        🔴 LIVE · {cam.checkpointName || cam.name}
                     </div>
                 </div>
             ) : (
