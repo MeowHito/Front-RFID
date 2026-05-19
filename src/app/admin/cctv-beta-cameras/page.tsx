@@ -133,8 +133,7 @@ export default function CctvBetaCamerasPage() {
     const payload: Record<string, unknown> = {
       campaignId: selectedCampaign,
       name: form.name.trim(),
-      // Beta is SRT-only — always send `srt` regardless of legacy form state.
-      preferredProtocol: "srt",
+      preferredProtocol: form.preferredProtocol,
       autoRecord: form.autoRecord,
     };
     if (form.coverageZone) payload.coverageZone = form.coverageZone;
@@ -296,8 +295,7 @@ export default function CctvBetaCamerasPage() {
       coverageZone: cam.coverageZone || "",
       checkpointId: cam.checkpointId || "",
       checkpointName: cam.checkpointName || "",
-      // Always normalize to SRT — Beta is SRT-only as of 2026-05.
-      preferredProtocol: "srt",
+      preferredProtocol: cam.preferredProtocol,
       autoRecord: cam.autoRecord,
     });
   };
@@ -311,8 +309,7 @@ export default function CctvBetaCamerasPage() {
         coverageZone: editForm.coverageZone || undefined,
         checkpointId: editForm.checkpointId || undefined,
         checkpointName: editForm.checkpointName || undefined,
-        // Force-write SRT so legacy RTMP cameras get migrated on next edit
-        preferredProtocol: "srt",
+        preferredProtocol: editForm.preferredProtocol,
         autoRecord: editForm.autoRecord,
       };
       const res = await fetch(`/api/cctv-beta/cameras/${editing._id}`, {
@@ -448,25 +445,19 @@ export default function CctvBetaCamerasPage() {
                 </option>
               ))}
             </select>
-            {/* Protocol is locked to SRT for all Beta cameras — lower latency, better
-                packet recovery on 4G/5G, and identical file size to RTMP. The form
-                value still posts `srt` so the backend stores it correctly. */}
-            <div
-              style={{
-                ...inputStyle,
-                background: '#f0fdf4',
-                border: '1px solid #86efac',
-                color: '#166534',
-                fontWeight: 700,
-                fontSize: 12,
-                display: 'flex',
-                alignItems: 'center',
-                gap: 6,
-              }}
-              title={th ? 'CCTV Beta ใช้ SRT เท่านั้น' : 'CCTV Beta is SRT-only'}
+            <select
+              value={form.preferredProtocol}
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  preferredProtocol: e.target.value as "srt" | "rtmp",
+                })
+              }
+              style={inputStyle}
             >
-              🔒 SRT {th ? '(บังคับ)' : '(locked)'}
-            </div>
+              <option value="srt">SRT (แนะนำสำหรับ 4G/5G)</option>
+              <option value="rtmp">RTMP</option>
+            </select>
             <label
               style={{
                 display: "flex",
@@ -555,25 +546,61 @@ export default function CctvBetaCamerasPage() {
                   {cam.status.toUpperCase()}
                 </span>
               </div>
-              {/* SRT-only — single URL used by both Larix and IRL Pro */}
               <div
                 style={{
                   marginTop: 10,
                   fontSize: 11,
-                  background: "#f0fdf4",
+                  background: "#f9fafb",
                   padding: 8,
                   borderRadius: 4,
-                  border: "1px solid #86efac",
                 }}
               >
-                <div style={{ fontWeight: 700, color: "#166534", marginBottom: 6 }}>
-                  🔒 SRT ({th ? "ใช้ทั้ง Larix และ IRL Pro" : "for Larix and IRL Pro"})
+                <div style={{ fontWeight: 700, color: "#374151", marginBottom: 6 }}>
+                  Larix ({th ? "URL เดียว" : "single URL"})
                 </div>
                 <UrlRow
-                  label="SRT URL"
+                  label="SRT"
                   value={cam.ingestSrtUrl}
-                  copied={copiedKey === `${cam._id}:srt`}
-                  onCopy={() => copyField(cam, "srt", cam.ingestSrtUrl)}
+                  copied={copiedKey === `${cam._id}:larixSrt`}
+                  onCopy={() => copyField(cam, "larixSrt", cam.ingestSrtUrl)}
+                />
+                <UrlRow
+                  label="RTMP"
+                  value={cam.ingestRtmpUrl}
+                  copied={copiedKey === `${cam._id}:larixRtmp`}
+                  onCopy={() => copyField(cam, "larixRtmp", cam.ingestRtmpUrl)}
+                />
+              </div>
+              <div
+                style={{
+                  marginTop: 8,
+                  fontSize: 11,
+                  background: "#fef3c7",
+                  padding: 8,
+                  borderRadius: 4,
+                  border: "1px solid #fcd34d",
+                }}
+              >
+                <div style={{ fontWeight: 700, color: "#92400e", marginBottom: 6 }}>
+                  IRL Pro ({th ? "แยก Server + Key" : "split Server + Key"})
+                </div>
+                <UrlRow
+                  label="Server URL"
+                  value={rtmpServerOf(cam)}
+                  copied={copiedKey === `${cam._id}:rtmpServer`}
+                  onCopy={() => copyField(cam, "rtmpServer", rtmpServerOf(cam))}
+                />
+                <UrlRow
+                  label="Stream Key"
+                  value={cam.streamKey}
+                  copied={copiedKey === `${cam._id}:streamKey`}
+                  onCopy={() => copyField(cam, "streamKey", cam.streamKey)}
+                />
+                <UrlRow
+                  label="SRT"
+                  value={cam.ingestSrtUrl}
+                  copied={copiedKey === `${cam._id}:irlSrt`}
+                  onCopy={() => copyField(cam, "irlSrt", cam.ingestSrtUrl)}
                 />
               </div>
               <div
@@ -688,22 +715,14 @@ export default function CctvBetaCamerasPage() {
                 </div>
                 <div>
                   <label style={editLabel}>{th ? "Protocol" : "Protocol"}</label>
-                  <div
-                    style={{
-                      ...inputStyle,
-                      background: '#f0fdf4',
-                      border: '1px solid #86efac',
-                      color: '#166534',
-                      fontWeight: 700,
-                      fontSize: 13,
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 6,
-                    }}
-                    title={th ? 'CCTV Beta ใช้ SRT เท่านั้น' : 'CCTV Beta is SRT-only'}
+                  <select
+                    value={editForm.preferredProtocol}
+                    onChange={(e) => setEditForm({ ...editForm, preferredProtocol: e.target.value as "srt" | "rtmp" })}
+                    style={inputStyle}
                   >
-                    🔒 SRT {th ? '(บังคับ)' : '(locked)'}
-                  </div>
+                    <option value="srt">SRT (แนะนำ)</option>
+                    <option value="rtmp">RTMP</option>
+                  </select>
                 </div>
                 <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "#374151" }}>
                   <input
@@ -920,10 +939,16 @@ export default function CctvBetaCamerasPage() {
                       <div style={{ fontWeight: 700, color: "#92400e", marginBottom: 4 }}>
                         {th ? "หรือกรอกแบบ manual (ไม่ใช้ Import)" : "Or set up manually (without Import)"}
                       </div>
-                      {/* Beta is SRT-only — always show the SRT URL for manual setup */}
-                      <div style={{ fontFamily: "monospace", wordBreak: "break-all", color: "#451a03" }}>
-                        <div><b>SRT URL:</b> {cam.ingestSrtUrl}</div>
-                      </div>
+                      {cam.preferredProtocol === "rtmp" ? (
+                        <div style={{ fontFamily: "monospace", wordBreak: "break-all", color: "#451a03" }}>
+                          <div><b>Server URL:</b> {rtmpServerOf(cam)}</div>
+                          <div style={{ marginTop: 4 }}><b>Stream Key:</b> {cam.streamKey}</div>
+                        </div>
+                      ) : (
+                        <div style={{ fontFamily: "monospace", wordBreak: "break-all", color: "#451a03" }}>
+                          <div><b>SRT URL:</b> {cam.ingestSrtUrl}</div>
+                        </div>
+                      )}
                     </div>
                   )}
                 </details>
