@@ -14,6 +14,9 @@ interface BetaRecording {
     serverIngestEnd?: string;
     duration: number;
     fileSize: number;
+    /** Backend flag — true when fileSize was estimated from live duration × bitrate
+     *  because the recording is still in progress (real size only known after on-unpublish). */
+    fileSizeEstimated?: boolean;
     s3MasterManifestUrl?: string;
     hlsManifestPath?: string;
     protocol: 'rtmp' | 'srt';
@@ -62,6 +65,7 @@ export default function CctvBetaRecordingsPage() {
     const [selectedCampaign, setSelectedCampaign] = useState('');
     const [items, setItems] = useState<BetaRecording[]>([]);
     const [loading, setLoading] = useState(false);
+    const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
     const [playing, setPlaying] = useState<BetaRecording | null>(null);
     // Shared CCTV settings — apply to Beta too (allowDownload + showTimestampOverlay)
     const [allowDownload, setAllowDownload] = useState(true);
@@ -136,8 +140,12 @@ export default function CctvBetaRecordingsPage() {
             const res = await fetch(`/api/cctv-beta/recordings?campaignId=${selectedCampaign}`, { cache: 'no-store' });
             const data = await res.json();
             setItems(Array.isArray(data) ? data : []);
+            setLastRefresh(new Date());
         } finally { setLoading(false); }
     }, [selectedCampaign]);
+
+    // Quick lookup for the recording-currently-live count → drives the refresh hint copy
+    const liveCount = items.filter(r => r.recordingStatus === 'recording').length;
 
     useEffect(() => { setTimeout(load, 0); }, [load]);
 
@@ -223,8 +231,43 @@ export default function CctvBetaRecordingsPage() {
                     <h1 style={{ margin: 0, fontSize: 22, fontWeight: 700 }}>{th ? 'การบันทึก (Larix Beta)' : 'Recordings (Larix Beta)'}</h1>
                     <span style={{ background: '#f59e0b', color: '#fff', padding: '2px 10px', borderRadius: 12, fontSize: 11, fontWeight: 700 }}>BETA</span>
 
-                    {/* Bulk action buttons — pushed right */}
-                    <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+                    {/* Live indicator + refresh — pushed right */}
+                    <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>
+                        {liveCount > 0 && (
+                            <span style={{
+                                display: 'inline-flex', alignItems: 'center', gap: 6,
+                                padding: '4px 12px', borderRadius: 20,
+                                background: '#fef2f2', border: '1px solid #fecaca',
+                                color: '#dc2626', fontSize: 12, fontWeight: 700,
+                            }}>
+                                <span style={{
+                                    width: 8, height: 8, borderRadius: '50%',
+                                    background: '#dc2626',
+                                    animation: 'pulse-dot 1.2s ease-in-out infinite',
+                                }} />
+                                {th ? `กำลังบันทึก ${liveCount} ตัว` : `${liveCount} live`}
+                            </span>
+                        )}
+                        <button
+                            onClick={load}
+                            disabled={loading}
+                            title={lastRefresh ? `${th ? 'รีเฟรชล่าสุด' : 'Last refreshed'}: ${lastRefresh.toLocaleTimeString('en-GB', { timeZone: 'Asia/Bangkok' })}` : undefined}
+                            style={{
+                                padding: '6px 14px', borderRadius: 6,
+                                border: '1px solid #0ea5e9',
+                                background: loading ? '#e0f2fe' : '#0ea5e9',
+                                color: loading ? '#0c4a6e' : '#fff',
+                                fontSize: 12, fontWeight: 700,
+                                cursor: loading ? 'wait' : 'pointer',
+                            }}
+                        >
+                            {loading ? '⏳' : '🔄'} {th ? 'รีเฟรช' : 'Refresh'}
+                        </button>
+                        {lastRefresh && (
+                            <span style={{ fontSize: 11, color: '#94a3b8', fontFamily: 'monospace' }}>
+                                {lastRefresh.toLocaleTimeString('en-GB', { timeZone: 'Asia/Bangkok' })}
+                            </span>
+                        )}
                         {selected.size > 0 && (
                             <button
                                 onClick={() => openDelete('selected')}
@@ -243,6 +286,7 @@ export default function CctvBetaRecordingsPage() {
                         )}
                     </div>
                 </div>
+                <style>{`@keyframes pulse-dot { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.45;transform:scale(.8)} }`}</style>
 
                 {/* Time search bar */}
                 <div style={{ background: '#fff', padding: 14, borderRadius: 8, border: '1px solid #e5e7eb', marginBottom: 12 }}>
@@ -349,8 +393,19 @@ export default function CctvBetaRecordingsPage() {
                                     <td style={td_}>{r.cameraName}</td>
                                     <td style={td_}>{r.checkpointName || '—'}</td>
                                     <td style={td_}>{new Date(r.serverIngestStart).toLocaleString()}</td>
-                                    <td style={td_}>{fmtDur(r.duration)}</td>
-                                    <td style={td_}>{fmtSize(r.fileSize)}</td>
+                                    <td style={td_}>
+                                        {r.recordingStatus === 'recording' && (
+                                            <span style={{ color: '#dc2626', marginRight: 4, fontSize: 10 }}>🔴 LIVE</span>
+                                        )}
+                                        {fmtDur(r.duration)}
+                                    </td>
+                                    <td style={td_}>
+                                        {r.fileSizeEstimated && (
+                                            <span title={th ? 'ขนาดประมาณการจากระยะเวลาไลฟ์ × bitrate มาตรฐาน' : 'Estimated from live duration × default bitrate'}
+                                                style={{ color: '#f59e0b', marginRight: 2, fontWeight: 700 }}>~</span>
+                                        )}
+                                        {fmtSize(r.fileSize)}
+                                    </td>
                                     <td style={td_}><span style={{ textTransform: 'uppercase', fontSize: 11 }}>{r.protocol}</span></td>
                                     <td style={td_}>
                                         <span style={{
@@ -358,7 +413,8 @@ export default function CctvBetaRecordingsPage() {
                                             background: r.recordingStatus === 'recording' ? '#dc2626'
                                                 : r.recordingStatus === 'archived' ? '#16a34a'
                                                 : r.recordingStatus === 'error' ? '#7f1d1d' : '#0ea5e9',
-                                        }}>{r.recordingStatus}</span>
+                                            ...(r.recordingStatus === 'recording' ? { animation: 'pulse-dot 1.2s ease-in-out infinite' } : {}),
+                                        }}>{r.recordingStatus === 'recording' ? `● ${r.recordingStatus}` : r.recordingStatus}</span>
                                     </td>
                                     <td style={td_}>
                                         {playbackUrl && (
