@@ -1,8 +1,9 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import AdminLayout from '../AdminLayout';
 import { useLanguage } from '@/lib/language-context';
+import HlsPlayer from '@/components/HlsPlayer';
 
 interface BetaRecording {
     _id: string;
@@ -17,17 +18,6 @@ interface BetaRecording {
     hlsManifestPath?: string;
     protocol: 'rtmp' | 'srt';
     recordingStatus: 'recording' | 'completed' | 'archived' | 'error';
-}
-
-declare global {
-    interface Window { Hls?: { isSupported: () => boolean; new (options: { liveSyncDuration: number; lowLatencyMode: boolean }): HlsInstance; Events: { ERROR: string } }; }
-}
-
-interface HlsInstance {
-    loadSource: (src: string) => void;
-    attachMedia: (video: HTMLVideoElement) => void;
-    on: (event: string, handler: (_e: unknown, data: { fatal?: boolean; type?: string }) => void) => void;
-    destroy: () => void;
 }
 
 function authHeaders(): HeadersInit {
@@ -48,63 +38,22 @@ function fmtDur(s: number) {
     return `${m}m ${sec}s`;
 }
 
-function getPlaybackUrl(recording: BetaRecording) {
+/**
+ * Pick the best playback URL for a Beta recording.
+ * Priority: S3 archive (cold, durable) → EC2 hot HLS manifest.
+ *
+ * `hlsManifestPath` may be a relative path like `/hls/{streamKey}/index.m3u8` from
+ * the ingest webhook — prepend the playback host so the browser can fetch it.
+ */
+function getPlaybackUrl(recording: BetaRecording): string {
     if (recording.s3MasterManifestUrl) return recording.s3MasterManifestUrl;
     if (!recording.hlsManifestPath) return '';
     if (recording.hlsManifestPath.startsWith('http')) return recording.hlsManifestPath;
-    return recording.hlsManifestPath;
-}
-
-function HlsPlayer({ src }: { src: string }) {
-    const videoRef = useRef<HTMLVideoElement>(null);
-    const [err, setErr] = useState<string | null>(null);
-
-    useEffect(() => { setTimeout(() => setErr(null), 0); }, [src]);
-
-    useEffect(() => {
-        const video = videoRef.current;
-        if (!video || !src) return;
-
-        if (video.canPlayType('application/vnd.apple.mpegurl')) {
-            video.src = src;
-            return;
-        }
-
-        let hls: HlsInstance | null = null;
-        let cancelled = false;
-        const loadHls = async () => {
-            if (!window.Hls) {
-                await new Promise<void>((resolve, reject) => {
-                    const s = document.createElement('script');
-                    s.src = 'https://cdn.jsdelivr.net/npm/hls.js@1.5.15/dist/hls.min.js';
-                    s.onload = () => resolve();
-                    s.onerror = () => reject(new Error('hls.js load failed'));
-                    document.head.appendChild(s);
-                });
-            }
-            const Hls = window.Hls;
-            if (cancelled) return;
-            if (!Hls || !Hls.isSupported()) {
-                setErr('HLS not supported');
-                return;
-            }
-            hls = new Hls({ liveSyncDuration: 4, lowLatencyMode: false });
-            hls.loadSource(src);
-            hls.attachMedia(video);
-            hls.on(Hls.Events.ERROR, (_e: unknown, data: { fatal?: boolean; type?: string }) => {
-                if (data.fatal) setErr(`HLS error: ${data.type}`);
-            });
-        };
-        loadHls().catch(e => setErr(e instanceof Error ? e.message : 'Playback error'));
-        return () => { cancelled = true; hls?.destroy(); };
-    }, [src]);
-
-    return (
-        <div style={{ width: '100%' }}>
-            <video ref={videoRef} controls autoPlay playsInline style={{ width: '100%', maxHeight: 'calc(100dvh - 150px)', background: '#000', borderRadius: 8 }} />
-            {err && <div style={{ color: '#fecaca', fontSize: 12, marginTop: 8 }}>{err}</div>}
-        </div>
-    );
+    // NEXT_PUBLIC_CCTV_BETA_PLAYBACK_HOST is set in frontend .env.local
+    const host = (process.env.NEXT_PUBLIC_CCTV_BETA_PLAYBACK_HOST || '').replace(/^https?:\/\//, '').replace(/\/$/, '');
+    if (!host) return recording.hlsManifestPath; // relative — will fail unless served from same origin
+    const p = recording.hlsManifestPath.startsWith('/') ? recording.hlsManifestPath : `/${recording.hlsManifestPath}`;
+    return `https://${host}${p}`;
 }
 
 export default function CctvBetaRecordingsPage() {
@@ -203,17 +152,63 @@ export default function CctvBetaRecordingsPage() {
                     </table>
                 </div>
 
-                {playing && (
-                    <div onClick={() => setPlaying(null)} style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.86)', display: 'flex', flexDirection: 'column', padding: 16 }}>
-                        <div onClick={e => e.stopPropagation()} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: '#fff', marginBottom: 12, gap: 12 }}>
-                            <div style={{ fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{playing.cameraName} — {new Date(playing.serverIngestStart).toLocaleString()}</div>
-                            <button onClick={() => setPlaying(null)} style={{ background: 'transparent', border: 'none', color: '#fff', fontSize: 26, cursor: 'pointer' }}>×</button>
+                {playing && (() => {
+                    const url = getPlaybackUrl(playing);
+                    const isS3 = !!playing.s3MasterManifestUrl && url === playing.s3MasterManifestUrl;
+                    return (
+                        <div onClick={() => setPlaying(null)} style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.86)', display: 'flex', flexDirection: 'column', padding: 16 }}>
+                            <div onClick={e => e.stopPropagation()} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: '#fff', marginBottom: 12, gap: 12 }}>
+                                <div style={{ fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                    {playing.cameraName} — {new Date(playing.serverIngestStart).toLocaleString()}
+                                    <span style={{ marginLeft: 10, padding: '2px 8px', borderRadius: 6, background: isS3 ? '#16a34a' : '#0ea5e9', fontSize: 10, fontWeight: 700 }}>
+                                        {isS3 ? 'S3 ARCHIVE' : 'EC2 HOT'}
+                                    </span>
+                                </div>
+                                <button onClick={() => setPlaying(null)} style={{ background: 'transparent', border: 'none', color: '#fff', fontSize: 26, cursor: 'pointer' }}>×</button>
+                            </div>
+
+                            <div onClick={e => e.stopPropagation()} style={{ flex: 1, minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                {url ? (
+                                    <HlsPlayer
+                                        key={url}
+                                        src={url}
+                                        className="w-full"
+                                    />
+                                ) : (
+                                    <div style={{ color: '#fecaca', textAlign: 'center', fontSize: 14 }}>
+                                        {th ? 'ไม่มี playback URL สำหรับการบันทึกนี้' : 'No playback URL available'}
+                                    </div>
+                                )}
+                            </div>
+
+                            <div onClick={e => e.stopPropagation()} style={{ marginTop: 10, color: '#cbd5e1', fontSize: 11 }}>
+                                <div style={{ marginBottom: 4, fontWeight: 700, color: '#fff' }}>{th ? 'ปัญหา? เปิด URL ตรงๆ เพื่อตรวจสอบ:' : 'Trouble? Open the URL directly to debug:'}</div>
+                                <div style={{ wordBreak: 'break-all', padding: '6px 10px', background: 'rgba(255,255,255,0.05)', borderRadius: 4, fontFamily: 'monospace' }}>
+                                    {url || '(no URL)'}
+                                </div>
+                                <div style={{ marginTop: 8, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                                    {url && (
+                                        <a href={url} target="_blank" rel="noreferrer" style={{ color: '#60a5fa', textDecoration: 'underline' }}>
+                                            🔗 {th ? 'เปิด URL ในแท็บใหม่' : 'Open URL in new tab'}
+                                        </a>
+                                    )}
+                                    {playing.s3MasterManifestUrl && playing.hlsManifestPath && (
+                                        <span style={{ color: '#94a3b8' }}>
+                                            ({th ? 'มี EC2 hot URL ด้วย:' : 'EC2 hot also available:'} {playing.hlsManifestPath})
+                                        </span>
+                                    )}
+                                </div>
+                                {isS3 && (
+                                    <div style={{ marginTop: 8, padding: 8, background: 'rgba(234,179,8,0.15)', border: '1px solid rgba(234,179,8,0.3)', borderRadius: 4, color: '#fde68a' }}>
+                                        💡 {th
+                                            ? 'ถ้าวิดีโอเปิดไม่ขึ้น แต่ลิงก์ S3 เปิดในแท็บใหม่ได้: S3 bucket ยังไม่ได้ตั้ง CORS ให้ origin นี้ — ต้องเพิ่ม CORS rule ใน S3 console'
+                                            : 'If the video stays blank but the link opens in a new tab: the S3 bucket needs a CORS rule for this origin — add one in the S3 console.'}
+                                    </div>
+                                )}
+                            </div>
                         </div>
-                        <div onClick={e => e.stopPropagation()} style={{ flex: 1, minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                            <HlsPlayer src={getPlaybackUrl(playing)} />
-                        </div>
-                    </div>
-                )}
+                    );
+                })()}
             </div>
         </AdminLayout>
     );
