@@ -247,35 +247,20 @@ export default function CctvBetaCamerasPage() {
   };
 
   /**
-   * IRL Pro deep link via Android Intent URL — bypasses the app chooser and forces
-   * the OS to launch IRL Pro even when Larix Broadcaster is also installed.
+   * IRL Pro QR contents — just the plain `rtmp://...` or `srt://...` URL.
    *
-   * IRL Pro does NOT support the Larix Grove import format (`larix://set/v1?...`).
-   * It only accepts plain stream URLs: `srt://`, `rtmp(s)://`, `rtsp(s)://`, `rist://`.
-   * (Confirmed by the in-app error: "IRL Pro doesn't support this type of url (intent).
-   *  Please enter rtmp(s), rtsp(s), srt://, rist://".)
+   * IRL Pro on Android registers `rtmp://`, `rtmps://`, `srt://`, `rtsp://`, `rtsps://`,
+   * and `rist://` schemes natively. When the system camera scans a QR encoding one
+   * of these URLs, Android shows an "Open in IRL Pro" prompt (or opens it directly
+   * if it's the default handler for the scheme) and the app accepts the URL as a
+   * stream destination.
    *
-   * Strategy: build an Android intent that delivers the plain stream URL to IRL Pro:
-   *   intent://HOST[:PORT][/PATH][?query]#Intent;scheme=<srt|rtmp>;package=app.irlpro.android;end
-   *
-   * Android parses this as `<scheme>://HOST[:PORT][/PATH][?query]` and dispatches
-   * the corresponding intent to `app.irlpro.android`. IRL Pro receives a plain
-   * `srt://...` (or `rtmp://...`) URL and adds it as a stream destination.
-   *
-   * Falls back to Play Store if the app isn't installed.
+   * (Earlier versions used an Android `intent://` wrapper to force IRL Pro vs Larix,
+   * but IRL Pro rejected those with: "IRL Pro doesn't support this type of url (intent)".
+   * The user only needs the destination URL — IRL Pro handles the rest.)
    */
   const buildIrlProDeepLink = (cam: BetaCamera): string => {
-    const fallback = encodeURIComponent(
-      'https://play.google.com/store/apps/details?id=app.irlpro.android',
-    );
-
-    const rawUrl = cam.preferredProtocol === 'srt' ? cam.ingestSrtUrl : cam.ingestRtmpUrl;
-    const scheme = cam.preferredProtocol === 'srt' ? 'srt' : 'rtmp';
-
-    // Strip "srt://" / "rtmp://" prefix — Android intent puts the scheme in the fragment
-    const afterScheme = rawUrl.replace(/^[a-z]+:\/\//, '');
-
-    return `intent://${afterScheme}#Intent;scheme=${scheme};package=app.irlpro.android;S.browser_fallback_url=${fallback};end`;
+    return cam.preferredProtocol === 'srt' ? cam.ingestSrtUrl : cam.ingestRtmpUrl;
   };
 
   const handleRotate = async (id: string) => {
