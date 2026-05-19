@@ -247,26 +247,35 @@ export default function CctvBetaCamerasPage() {
   };
 
   /**
-   * IRL Pro deep link via Android Intent URL — bypasses the system app chooser
-   * and forces the OS to launch *only* IRL Pro, even if Larix Broadcaster is
-   * also installed (which was causing the previous `larix://` URL to open Larix
-   * instead of IRL Pro). On iOS this falls back to the larix:// scheme since
-   * iOS doesn't honor intent:// URIs.
+   * IRL Pro deep link via Android Intent URL — bypasses the app chooser and forces
+   * the OS to launch IRL Pro even when Larix Broadcaster is also installed.
    *
-   * Intent URL format:
-   *   intent://<path>?<query>#Intent;scheme=larix;package=<irlpro-pkg>;S.browser_fallback_url=<https url>;end
+   * IRL Pro does NOT support the Larix Grove import format (`larix://set/v1?...`).
+   * It only accepts plain stream URLs: `srt://`, `rtmp(s)://`, `rtsp(s)://`, `rist://`.
+   * (Confirmed by the in-app error: "IRL Pro doesn't support this type of url (intent).
+   *  Please enter rtmp(s), rtsp(s), srt://, rist://".)
    *
-   * Package name: `app.irlpro.android` (irlpro.app on Google Play).
-   * Fallback URL opens the Play Store listing if the app isn't installed.
+   * Strategy: build an Android intent that delivers the plain stream URL to IRL Pro:
+   *   intent://HOST[:PORT][/PATH][?query]#Intent;scheme=<srt|rtmp>;package=app.irlpro.android;end
+   *
+   * Android parses this as `<scheme>://HOST[:PORT][/PATH][?query]` and dispatches
+   * the corresponding intent to `app.irlpro.android`. IRL Pro receives a plain
+   * `srt://...` (or `rtmp://...`) URL and adds it as a stream destination.
+   *
+   * Falls back to Play Store if the app isn't installed.
    */
   const buildIrlProDeepLink = (cam: BetaCamera): string => {
-    const query = buildLarixGroveParams(cam);
     const fallback = encodeURIComponent(
       'https://play.google.com/store/apps/details?id=app.irlpro.android',
     );
-    // Note: query is already URL-encoded by URLSearchParams — keep as-is so
-    // Android's intent parser hands the exact same query string to IRL Pro.
-    return `intent://set/v1?${query}#Intent;scheme=larix;package=app.irlpro.android;S.browser_fallback_url=${fallback};end`;
+
+    const rawUrl = cam.preferredProtocol === 'srt' ? cam.ingestSrtUrl : cam.ingestRtmpUrl;
+    const scheme = cam.preferredProtocol === 'srt' ? 'srt' : 'rtmp';
+
+    // Strip "srt://" / "rtmp://" prefix — Android intent puts the scheme in the fragment
+    const afterScheme = rawUrl.replace(/^[a-z]+:\/\//, '');
+
+    return `intent://${afterScheme}#Intent;scheme=${scheme};package=app.irlpro.android;S.browser_fallback_url=${fallback};end`;
   };
 
   const handleRotate = async (id: string) => {
@@ -848,38 +857,42 @@ export default function CctvBetaCamerasPage() {
                 {isIrl && (
                   <div style={{ marginTop: 12 }}>
                     <div style={{
-                      background: "#fef3c7",
-                      border: "1px solid #fcd34d",
+                      background: "#ecfdf5",
+                      border: "1px solid #86efac",
                       padding: 12,
                       borderRadius: 8,
                       fontSize: 12,
                     }}>
-                      <div style={{ fontWeight: 700, color: "#92400e", marginBottom: 8, fontSize: 13 }}>
-                        {th ? "⚠️ สำหรับ Xiaomi / MIUI / มือถือที่กล้องไม่เปิด IRL Pro ให้:" : "⚠️ For Xiaomi / MIUI / when system camera doesn't open IRL Pro:"}
+                      <div style={{ fontWeight: 700, color: "#166534", marginBottom: 8, fontSize: 13 }}>
+                        📱 {th ? "วิธีใช้กับ IRL Pro (Android)" : "How to use with IRL Pro (Android)"}
                       </div>
-                      <ol style={{ margin: 0, paddingLeft: 18, color: "#78350f", lineHeight: 1.7 }}>
-                        <li>{th ? "กดปุ่ม “คัดลอก URL” ด้านบน" : "Tap “Copy URL” above"}</li>
-                        <li>{th ? "เปิดแอป IRL Pro" : "Open the IRL Pro app"}</li>
-                        <li>{th ? "กดไอคอน ⚙️ (ฟันเฟือง) มุมซ้ายบน" : "Tap the ⚙️ gear icon (top-left)"}</li>
-                        <li>{th ? "เลือก Import/Export Settings → Import Settings" : "Select Import/Export Settings → Import Settings"}</li>
-                        <li>{th ? "วาง URL ที่คัดลอก แล้วกด OK — การตั้งค่าจะถูกเพิ่มอัตโนมัติ" : "Paste the URL and tap OK — connection will be added automatically"}</li>
-                        <li>{th ? "กลับหน้าหลัก → กด Start เพื่อ Live" : "Go back to main screen → tap Start to go Live"}</li>
+                      <ol style={{ margin: 0, paddingLeft: 18, color: "#166534", lineHeight: 1.7 }}>
+                        <li>{th ? "เปิดแอป กล้อง (Camera) ของระบบ Android แล้วสแกน QR นี้" : "Open the system Camera app on Android and scan this QR"}</li>
+                        <li>{th ? "Android จะเปิด IRL Pro ขึ้นมาพร้อม stream URL อัตโนมัติ" : "Android opens IRL Pro with the stream URL pre-filled"}</li>
+                        <li>{th ? "ตั้งชื่อ destination แล้วกด Save → Start เพื่อ Live" : "Name the destination, tap Save → Start to go Live"}</li>
                       </ol>
                     </div>
 
                     <div style={{
                       marginTop: 10,
-                      background: "#ecfdf5",
-                      border: "1px solid #86efac",
+                      background: "#fef3c7",
+                      border: "1px solid #fcd34d",
                       padding: 10,
                       borderRadius: 8,
                       fontSize: 12,
-                      color: "#166534",
+                      color: "#78350f",
                     }}>
-                      <b>💡 {th ? "ทางเลือกที่ง่ายกว่า:" : "Easier alternative:"}</b>{" "}
-                      {th
-                        ? "ใช้ Google Lens (อยู่ในแอป Google บนมือถือ Android) สแกน QR นี้ — Google Lens จะเปิด IRL Pro ให้อัตโนมัติ"
-                        : "Use Google Lens (in the Google app on Android) to scan this QR — Google Lens will open IRL Pro automatically"}
+                      <b>⚠️ {th ? "หากสแกนไม่ได้ผล (manual setup):" : "If scan doesn't work (manual setup):"}</b>
+                      <ol style={{ margin: "6px 0 0", paddingLeft: 18, lineHeight: 1.6 }}>
+                        <li>{th ? "เปิด IRL Pro → Destinations → + Add" : "Open IRL Pro → Destinations → + Add"}</li>
+                        <li>
+                          {th ? "วาง URL ของ stream (ดูในการ์ดด้านนอก):" : "Paste the stream URL (see card outside):"}
+                          <div style={{ marginTop: 4, padding: "4px 8px", background: "#fff", borderRadius: 4, fontFamily: "monospace", fontSize: 10, wordBreak: "break-all" }}>
+                            {cam.preferredProtocol === "srt" ? cam.ingestSrtUrl : cam.ingestRtmpUrl}
+                          </div>
+                        </li>
+                        <li>{th ? "กด Save → กลับหน้าหลัก → Start" : "Save → back to main → Start"}</li>
+                      </ol>
                     </div>
                   </div>
                 )}
