@@ -2,6 +2,24 @@
 import React, { useState } from 'react';
 import { useLanguage } from '@/lib/language-context';
 
+/**
+ * Format a race start-time string for display in the categories table.
+ *
+ * Backend sometimes returns plain "HH:MM" (already friendly) and sometimes returns
+ * an ISO-like string "YYYY-MM-DDTHH:MM[:SS]". The ISO form was being shown to
+ * users with the literal "T" character in the middle, which is ugly — convert it
+ * to "YYYY-MM-DD (HH:MM)" instead. Plain time strings pass through untouched.
+ */
+function formatStartTime(raw: string): string {
+    if (!raw) return '-';
+    // ISO-like? "YYYY-MM-DDTHH:MM" or "YYYY-MM-DDTHH:MM:SS" — split at the T
+    const isoMatch = raw.match(/^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})(?::\d{2})?/);
+    if (isoMatch) {
+        return `${isoMatch[1]} (${isoMatch[2]})`;
+    }
+    return raw;
+}
+
 interface EventCategory {
     name: string;      // e.g. 100M
     distance: string;  // e.g. 175 KM
@@ -160,7 +178,7 @@ export default function ActivityCard({
                                         <td className="py-2.5 px-2 align-middle whitespace-nowrap">
                                             <span className="font-medium text-gray-800 dark:text-gray-200 text-sm">{cat.distance}</span>
                                         </td>
-                                        <td className="py-2.5 px-2 align-middle text-center text-sm text-gray-600 dark:text-gray-400">{cat.start}</td>
+                                        <td className="py-2.5 px-2 align-middle text-center text-sm text-gray-600 dark:text-gray-400">{formatStartTime(cat.start)}</td>
                                         <td className="py-2.5 px-2 align-middle text-center text-sm text-gray-600 dark:text-gray-400">{cat.cutoff || '-'}</td>
                                         <td className="py-2.5 px-2 align-middle text-center">
                                             {cat.itra ? (
@@ -225,9 +243,9 @@ export default function ActivityCard({
                     )}
                 </div>
 
-                {/* Middle: Event Details */}
-                <div className="flex flex-col justify-center px-5 py-3 border-r border-gray-100 dark:border-gray-700 shrink-0" style={{ width: '22%' }}>
-                    <h2 className="text-base font-bold mb-1 leading-tight uppercase" style={{ color: color }}>{displayTitle}</h2>
+                {/* Middle: Event Details — wider so long event titles (e.g. "CORE X250 ULTRA TRAIL 2025") wrap naturally */}
+                <div className="flex flex-col justify-center px-5 py-3 border-r border-gray-100 dark:border-gray-700 shrink-0" style={{ width: '30%' }}>
+                    <h2 className="text-base font-bold mb-1 leading-tight uppercase break-words" style={{ color: color }}>{displayTitle}</h2>
                     <p className="text-[0.75rem] text-gray-700 dark:text-gray-300 font-medium mb-0.5 line-clamp-1">📍 {displayLocation}</p>
                     <p className="text-[0.7rem] text-gray-400 mb-2.5">📅 {date}</p>
                     <span className="inline-flex items-center px-3 py-1 border border-gray-300 dark:border-gray-600 rounded text-gray-700 dark:text-gray-200 font-semibold text-[0.7rem] w-fit">
@@ -265,7 +283,7 @@ export default function ActivityCard({
                                         <td className="py-1 pr-2 align-middle whitespace-nowrap">
                                             <span className="text-[0.7rem] font-normal text-gray-800 dark:text-gray-200">{cat.distance}</span>
                                         </td>
-                                        <td className="py-1 pr-2 align-middle text-[0.65rem] text-gray-600 dark:text-gray-400 whitespace-nowrap max-w-[100px] truncate">{cat.start}</td>
+                                        <td className="py-1 pr-2 align-middle text-[0.65rem] text-gray-600 dark:text-gray-400 whitespace-nowrap">{formatStartTime(cat.start)}</td>
                                         <td className="py-1 pr-2 align-middle text-[0.7rem] text-gray-600 dark:text-gray-400 whitespace-nowrap">{cat.cutoff || '-'}</td>
                                         <td className="py-1 pr-2 align-middle text-center">
                                             {cat.itra ? (

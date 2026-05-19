@@ -68,6 +68,26 @@ export default function CctvBetaRecordingsPage() {
     const [showTimestampOverlay, setShowTimestampOverlay] = useState(true);
     const playerWrapperRef = useRef<HTMLDivElement | null>(null);
 
+    // Bulk-select state — Set of recording _ids the admin has ticked
+    const [selected, setSelected] = useState<Set<string>>(new Set());
+
+    // Delete confirmation modal — 'one' deletes deleteOneId, 'selected' the ticked Set,
+    // 'all' wipes the entire campaign. Mirrors classic /admin/cctv-recordings UX.
+    const [deleteMode, setDeleteMode] = useState<'one' | 'selected' | 'all' | null>(null);
+    const [deleteOneId, setDeleteOneId] = useState<string | null>(null);
+    const [confirmText, setConfirmText] = useState('');
+    const [deleting, setDeleting] = useState(false);
+
+    // Time search — admin types/picks a Thailand-local datetime and we ask backend
+    // which recording(s) cover it + nearest before/after for context.
+    const [timeSearch, setTimeSearch] = useState('');
+    const [timeResult, setTimeResult] = useState<{
+        covering: BetaRecording[];
+        nearestBefore: BetaRecording | null;
+        nearestAfter: BetaRecording | null;
+    } | null>(null);
+    const [timeSearching, setTimeSearching] = useState(false);
+
     useEffect(() => {
         fetch('/api/campaigns/featured', { cache: 'no-store' })
             .then(r => r.json())
@@ -121,18 +141,161 @@ export default function CctvBetaRecordingsPage() {
 
     useEffect(() => { setTimeout(load, 0); }, [load]);
 
-    const handleDelete = async (id: string) => {
-        if (!confirm(th ? 'ลบการบันทึก?' : 'Delete recording?')) return;
-        await fetch(`/api/cctv-beta/recordings/${id}`, { method: 'DELETE', headers: authHeaders() });
-        load();
+    const openDelete = (mode: 'one' | 'selected' | 'all', id?: string) => {
+        setDeleteMode(mode);
+        setDeleteOneId(id || null);
+        setConfirmText('');
     };
+
+    const handleConfirmedDelete = async () => {
+        if (confirmText !== 'ยืนยัน') return;
+        setDeleting(true);
+        try {
+            if (deleteMode === 'one' && deleteOneId) {
+                await fetch(`/api/cctv-beta/recordings/${deleteOneId}`, { method: 'DELETE', headers: authHeaders() });
+            } else if (deleteMode === 'selected' && selected.size > 0) {
+                await fetch('/api/cctv-beta/recordings/bulk-delete', {
+                    method: 'POST',
+                    headers: authHeaders(),
+                    body: JSON.stringify({ ids: Array.from(selected) }),
+                });
+                setSelected(new Set());
+            } else if (deleteMode === 'all' && selectedCampaign) {
+                await fetch('/api/cctv-beta/recordings/bulk-delete', {
+                    method: 'POST',
+                    headers: authHeaders(),
+                    body: JSON.stringify({ campaignId: selectedCampaign }),
+                });
+                setSelected(new Set());
+            }
+            setDeleteMode(null);
+            setDeleteOneId(null);
+            setConfirmText('');
+            await load();
+        } finally {
+            setDeleting(false);
+        }
+    };
+
+    const toggleSelect = (id: string) => {
+        setSelected((prev) => {
+            const next = new Set(prev);
+            if (next.has(id)) next.delete(id);
+            else next.add(id);
+            return next;
+        });
+    };
+
+    const toggleSelectAll = () => {
+        setSelected((prev) => prev.size === items.length ? new Set() : new Set(items.map(r => r._id)));
+    };
+
+    const allSelected = items.length > 0 && selected.size === items.length;
+
+    const searchByTime = async () => {
+        if (!timeSearch || !selectedCampaign) return;
+        setTimeSearching(true);
+        try {
+            // datetime-local gives "YYYY-MM-DDTHH:MM" which JS Date parses as local time.
+            const at = new Date(timeSearch).toISOString();
+            const res = await fetch(
+                `/api/cctv-beta/recordings/by-time?campaignId=${encodeURIComponent(selectedCampaign)}&at=${encodeURIComponent(at)}`,
+                { headers: authHeaders(), cache: 'no-store' },
+            );
+            const data = await res.json();
+            setTimeResult(data);
+        } finally {
+            setTimeSearching(false);
+        }
+    };
+
+    // Build a quick lookup for "is this row also in the time-search result" highlighting.
+    const timeHighlightIds = new Set<string>([
+        ...(timeResult?.covering || []).map(r => r._id),
+        ...(timeResult?.nearestBefore ? [timeResult.nearestBefore._id] : []),
+        ...(timeResult?.nearestAfter ? [timeResult.nearestAfter._id] : []),
+    ]);
 
     return (
         <AdminLayout>
             <div style={{ padding: 24 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
                     <h1 style={{ margin: 0, fontSize: 22, fontWeight: 700 }}>{th ? 'การบันทึก (Larix Beta)' : 'Recordings (Larix Beta)'}</h1>
                     <span style={{ background: '#f59e0b', color: '#fff', padding: '2px 10px', borderRadius: 12, fontSize: 11, fontWeight: 700 }}>BETA</span>
+
+                    {/* Bulk action buttons — pushed right */}
+                    <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+                        {selected.size > 0 && (
+                            <button
+                                onClick={() => openDelete('selected')}
+                                style={{ padding: '6px 14px', borderRadius: 6, border: 'none', background: '#dc2626', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}
+                            >
+                                🗑️ {th ? `ลบที่เลือก (${selected.size})` : `Delete selected (${selected.size})`}
+                            </button>
+                        )}
+                        {items.length > 0 && (
+                            <button
+                                onClick={() => openDelete('all')}
+                                style={{ padding: '6px 14px', borderRadius: 6, border: '1px solid #fecaca', background: '#fef2f2', color: '#dc2626', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}
+                            >
+                                {th ? `ลบทั้งหมดของแคมเปญนี้ (${items.length})` : `Delete all in campaign (${items.length})`}
+                            </button>
+                        )}
+                    </div>
+                </div>
+
+                {/* Time search bar */}
+                <div style={{ background: '#fff', padding: 14, borderRadius: 8, border: '1px solid #e5e7eb', marginBottom: 12 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: '#374151', marginBottom: 8 }}>
+                        🕐 {th ? 'ค้นหาตามเวลา (เวลาไทย)' : 'Search by time (Thailand time)'}
+                    </div>
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                        <input
+                            type="datetime-local"
+                            value={timeSearch}
+                            onChange={(e) => setTimeSearch(e.target.value)}
+                            step="1"
+                            style={{ padding: '8px 10px', border: '1px solid #cbd5e1', borderRadius: 6, fontSize: 13 }}
+                        />
+                        <button
+                            onClick={searchByTime}
+                            disabled={!timeSearch || timeSearching}
+                            style={{
+                                padding: '8px 16px', borderRadius: 6, border: 'none',
+                                background: !timeSearch || timeSearching ? '#cbd5e1' : '#0ea5e9',
+                                color: '#fff', fontSize: 12, fontWeight: 700,
+                                cursor: !timeSearch || timeSearching ? 'not-allowed' : 'pointer',
+                            }}
+                        >
+                            {timeSearching ? '⏳' : '🔍'} {th ? 'ค้นหา' : 'Search'}
+                        </button>
+                        {timeResult && (
+                            <button
+                                onClick={() => { setTimeResult(null); setTimeSearch(''); }}
+                                style={{ padding: '8px 12px', borderRadius: 6, border: '1px solid #cbd5e1', background: '#fff', color: '#64748b', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}
+                            >
+                                {th ? 'ล้าง' : 'Clear'}
+                            </button>
+                        )}
+                    </div>
+                    {timeResult && (
+                        <div style={{ marginTop: 10, padding: 10, background: '#f0f9ff', borderRadius: 6, fontSize: 12, color: '#0c4a6e' }}>
+                            {timeResult.covering.length > 0 ? (
+                                <div><b>✅ {th ? 'พบ' : 'Found'} {timeResult.covering.length} {th ? 'คลิปที่ครอบคลุมเวลานี้' : 'recording(s) covering this time'}</b> (highlight ในตาราง)</div>
+                            ) : (
+                                <div>
+                                    <b>❌ {th ? 'ไม่มีคลิปครอบคลุมเวลานี้' : 'No recording covers this exact time'}</b>
+                                    {(timeResult.nearestBefore || timeResult.nearestAfter) && (
+                                        <div style={{ marginTop: 4, fontSize: 11 }}>
+                                            {th ? 'คลิปที่ใกล้ที่สุด:' : 'Nearest:'}
+                                            {timeResult.nearestBefore && <> · ก่อนหน้า: <b>{timeResult.nearestBefore.cameraName}</b> ({new Date(timeResult.nearestBefore.serverIngestStart).toLocaleString('th-TH')})</>}
+                                            {timeResult.nearestAfter && <> · หลังจาก: <b>{timeResult.nearestAfter.cameraName}</b> ({new Date(timeResult.nearestAfter.serverIngestStart).toLocaleString('th-TH')})</>}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    )}
                 </div>
 
                 {loading && <div>Loading…</div>}
@@ -141,6 +304,14 @@ export default function CctvBetaRecordingsPage() {
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                         <thead>
                             <tr style={{ background: '#f9fafb', textAlign: 'left' }}>
+                                <th style={{ ...th_, width: 36 }}>
+                                    <input
+                                        type="checkbox"
+                                        checked={allSelected}
+                                        onChange={toggleSelectAll}
+                                        title={allSelected ? (th ? 'เลิกเลือกทั้งหมด' : 'Deselect all') : (th ? 'เลือกทั้งหมด' : 'Select all')}
+                                    />
+                                </th>
                                 <th style={th_}>Camera</th>
                                 <th style={th_}>Checkpoint</th>
                                 <th style={th_}>{th ? 'เริ่ม' : 'Start'}</th>
@@ -154,8 +325,27 @@ export default function CctvBetaRecordingsPage() {
                         <tbody>
                             {items.map(r => {
                                 const playbackUrl = getPlaybackUrl(r);
+                                const isHighlighted = timeHighlightIds.has(r._id);
+                                const isChecked = selected.has(r._id);
                                 return (
-                                <tr key={r._id} onDoubleClick={() => { if (playbackUrl) setPlaying(r); }} title={playbackUrl ? (th ? 'ดับเบิลคลิกเพื่อเปิดวิดีโอ' : 'Double click to play') : undefined} style={{ borderTop: '1px solid #e5e7eb', cursor: playbackUrl ? 'pointer' : 'default' }}>
+                                <tr
+                                    key={r._id}
+                                    onDoubleClick={() => { if (playbackUrl) setPlaying(r); }}
+                                    title={playbackUrl ? (th ? 'ดับเบิลคลิกเพื่อเปิดวิดีโอ' : 'Double click to play') : undefined}
+                                    style={{
+                                        borderTop: '1px solid #e5e7eb',
+                                        cursor: playbackUrl ? 'pointer' : 'default',
+                                        background: isHighlighted ? '#fef9c3' : (isChecked ? '#eff6ff' : 'transparent'),
+                                    }}
+                                >
+                                    <td style={{ ...td_, width: 36 }} onClick={(e) => e.stopPropagation()}>
+                                        <input
+                                            type="checkbox"
+                                            checked={isChecked}
+                                            onChange={() => toggleSelect(r._id)}
+                                            onClick={(e) => e.stopPropagation()}
+                                        />
+                                    </td>
                                     <td style={td_}>{r.cameraName}</td>
                                     <td style={td_}>{r.checkpointName || '—'}</td>
                                     <td style={td_}>{new Date(r.serverIngestStart).toLocaleString()}</td>
@@ -177,13 +367,13 @@ export default function CctvBetaRecordingsPage() {
                                         {r.s3MasterManifestUrl && (
                                             <a href={r.s3MasterManifestUrl} target="_blank" rel="noreferrer" style={{ marginRight: 8, color: '#2563eb', fontSize: 12 }}>S3</a>
                                         )}
-                                        <button onClick={() => handleDelete(r._id)} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 12 }}>Delete</button>
+                                        <button onClick={() => openDelete('one', r._id)} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 12 }}>Delete</button>
                                     </td>
                                 </tr>
                                 );
                             })}
                             {items.length === 0 && !loading && (
-                                <tr><td colSpan={8} style={{ ...td_, textAlign: 'center', color: '#6b7280', padding: 30 }}>
+                                <tr><td colSpan={9} style={{ ...td_, textAlign: 'center', color: '#6b7280', padding: 30 }}>
                                     {th ? 'ยังไม่มีการบันทึก' : 'No recordings yet.'}
                                 </td></tr>
                             )}
@@ -269,6 +459,61 @@ export default function CctvBetaRecordingsPage() {
                         </div>
                     );
                 })()}
+
+                {/* Delete confirmation modal */}
+                {deleteMode && (
+                    <div style={{ position: 'fixed', inset: 0, zIndex: 1100, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+                        <div style={{ background: '#fff', borderRadius: 16, padding: 24, width: '100%', maxWidth: 400, boxShadow: '0 25px 50px rgba(0,0,0,0.25)' }}>
+                            <div style={{ textAlign: 'center', marginBottom: 16 }}>
+                                <div style={{ fontSize: 36, marginBottom: 8 }}>🗑️</div>
+                                <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: '#0f172a' }}>
+                                    {deleteMode === 'all'
+                                        ? (th ? `ลบทั้งหมด ${items.length} ไฟล์?` : `Delete all ${items.length} recordings?`)
+                                        : deleteMode === 'selected'
+                                        ? (th ? `ลบที่เลือก ${selected.size} ไฟล์?` : `Delete ${selected.size} selected?`)
+                                        : (th ? 'ลบการบันทึกนี้?' : 'Delete this recording?')}
+                                </h3>
+                                <p style={{ fontSize: 12, color: '#64748b', marginTop: 4 }}>
+                                    {th ? 'การลบจะลบเฉพาะ metadata ใน DB เท่านั้น ไฟล์บน S3/EC2 จะถูก prune ตาม lifecycle' : 'Only deletes DB metadata. S3/EC2 files are pruned by lifecycle.'}
+                                </p>
+                            </div>
+                            <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#64748b', marginBottom: 6, textTransform: 'uppercase' }}>
+                                {th ? 'พิมพ์ "ยืนยัน" เพื่อยืนยัน' : 'Type "ยืนยัน" to confirm'}
+                            </label>
+                            <input
+                                value={confirmText}
+                                onChange={(e) => setConfirmText(e.target.value)}
+                                autoFocus
+                                style={{
+                                    width: '100%', padding: '10px 12px', borderRadius: 8,
+                                    border: confirmText === 'ยืนยัน' ? '2px solid #dc2626' : '1.5px solid #cbd5e1',
+                                    fontSize: 14, outline: 'none', boxSizing: 'border-box',
+                                }}
+                            />
+                            <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
+                                <button
+                                    onClick={() => { setDeleteMode(null); setConfirmText(''); }}
+                                    disabled={deleting}
+                                    style={{ flex: 1, padding: '10px 0', borderRadius: 8, border: '1px solid #cbd5e1', background: '#fff', color: '#64748b', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}
+                                >
+                                    {th ? 'ยกเลิก' : 'Cancel'}
+                                </button>
+                                <button
+                                    onClick={handleConfirmedDelete}
+                                    disabled={deleting || confirmText !== 'ยืนยัน'}
+                                    style={{
+                                        flex: 1, padding: '10px 0', borderRadius: 8, border: 'none',
+                                        background: confirmText === 'ยืนยัน' ? '#dc2626' : '#cbd5e1',
+                                        color: '#fff', fontWeight: 700, fontSize: 13,
+                                        cursor: deleting ? 'wait' : (confirmText === 'ยืนยัน' ? 'pointer' : 'not-allowed'),
+                                    }}
+                                >
+                                    {deleting ? (th ? 'กำลังลบ...' : 'Deleting...') : (th ? 'ยืนยันลบ' : 'Confirm Delete')}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
             </div>
         </AdminLayout>
     );

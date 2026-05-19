@@ -68,6 +68,17 @@ export default function CctvBetaCamerasPage() {
     preferredProtocol: "srt" as "srt" | "rtmp",
     autoRecord: true,
   });
+  // Edit modal state. When set, the modal opens populated with this camera's data.
+  const [editing, setEditing] = useState<BetaCamera | null>(null);
+  const [editForm, setEditForm] = useState({
+    name: "",
+    coverageZone: "",
+    checkpointId: "",
+    checkpointName: "",
+    preferredProtocol: "srt" as "srt" | "rtmp",
+    autoRecord: true,
+  });
+  const [editSaving, setEditSaving] = useState(false);
 
   useEffect(() => {
     fetch("/api/campaigns/featured", { cache: "no-store" })
@@ -256,6 +267,55 @@ export default function CctvBetaCamerasPage() {
     });
     load();
   };
+
+  const openEdit = (cam: BetaCamera) => {
+    setEditing(cam);
+    setEditForm({
+      name: cam.name || "",
+      coverageZone: cam.coverageZone || "",
+      checkpointId: cam.checkpointId || "",
+      checkpointName: cam.checkpointName || "",
+      preferredProtocol: cam.preferredProtocol,
+      autoRecord: cam.autoRecord,
+    });
+  };
+
+  const handleUpdate = async () => {
+    if (!editing) return;
+    setEditSaving(true);
+    try {
+      const payload: Record<string, unknown> = {
+        name: editForm.name.trim(),
+        coverageZone: editForm.coverageZone || undefined,
+        checkpointId: editForm.checkpointId || undefined,
+        checkpointName: editForm.checkpointName || undefined,
+        preferredProtocol: editForm.preferredProtocol,
+        autoRecord: editForm.autoRecord,
+      };
+      const res = await fetch(`/api/cctv-beta/cameras/${editing._id}`, {
+        method: "PUT",
+        headers: authHeaders(),
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        const txt = await res.text().catch(() => "");
+        alert(`${th ? "บันทึกไม่สำเร็จ" : "Update failed"} (${res.status}) ${txt}`);
+        return;
+      }
+      setEditing(null);
+      load();
+    } finally {
+      setEditSaving(false);
+    }
+  };
+
+  const editFilteredCheckpoints = editForm.coverageZone
+    ? checkpoints.filter(
+        (cp) =>
+          !cp.distanceMappings?.length ||
+          cp.distanceMappings.includes(editForm.coverageZone),
+      )
+    : checkpoints;
 
   return (
     <AdminLayout>
@@ -550,6 +610,12 @@ export default function CctvBetaCamerasPage() {
                   QR IRL Pro
                 </button>
                 <button
+                  onClick={() => openEdit(cam)}
+                  style={btnStyle("#0ea5e9")}
+                >
+                  ✏️ Edit
+                </button>
+                <button
                   onClick={() => handleRotate(cam._id)}
                   style={btnStyle("#f59e0b")}
                 >
@@ -565,6 +631,121 @@ export default function CctvBetaCamerasPage() {
             </div>
           ))}
         </div>
+
+        {/* ─── Edit camera modal ─────────────────────────────────────── */}
+        {editing && (
+          <div
+            onClick={() => !editSaving && setEditing(null)}
+            style={{
+              position: "fixed", inset: 0, zIndex: 900,
+              background: "rgba(15,23,42,0.55)", backdropFilter: "blur(4px)",
+              display: "flex", alignItems: "center", justifyContent: "center", padding: 16,
+            }}
+          >
+            <div
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                background: "#fff", borderRadius: 16, padding: 24, width: "100%", maxWidth: 520,
+                boxShadow: "0 25px 50px rgba(0,0,0,0.25)",
+              }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+                <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: "#0f172a" }}>
+                  ✏️ {th ? "แก้ไขกล้อง" : "Edit Camera"}
+                </h3>
+                <button
+                  onClick={() => !editSaving && setEditing(null)}
+                  style={{ background: "transparent", border: "none", fontSize: 22, cursor: "pointer", color: "#64748b" }}
+                >✕</button>
+              </div>
+              <div style={{ display: "grid", gap: 12 }}>
+                <div>
+                  <label style={editLabel}>{th ? "ชื่อกล้อง" : "Name"} *</label>
+                  <input value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} style={inputStyle} />
+                </div>
+                <div>
+                  <label style={editLabel}>{th ? "ระยะ (Distance)" : "Distance"}</label>
+                  <select
+                    value={editForm.coverageZone}
+                    onChange={(e) => setEditForm({ ...editForm, coverageZone: e.target.value, checkpointId: "", checkpointName: "" })}
+                    style={inputStyle}
+                  >
+                    <option value="">{th ? "— เลือกระยะ —" : "— Select —"}</option>
+                    {categoryOptions.map((c) => (
+                      <option key={c.name} value={c.name}>{c.name} ({c.distance})</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label style={editLabel}>{th ? "Checkpoint" : "Checkpoint"}</label>
+                  <select
+                    value={editForm.checkpointId}
+                    onChange={(e) => {
+                      const cp = editFilteredCheckpoints.find((x) => x._id === e.target.value);
+                      setEditForm({ ...editForm, checkpointId: e.target.value, checkpointName: cp?.name ?? "" });
+                    }}
+                    disabled={!editForm.coverageZone}
+                    style={inputStyle}
+                  >
+                    <option value="">{th ? "— เลือก checkpoint —" : "— Select —"}</option>
+                    {editFilteredCheckpoints.map((cp) => (
+                      <option key={cp._id} value={cp._id}>{cp.name} ({cp.type})</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label style={editLabel}>{th ? "Protocol" : "Protocol"}</label>
+                  <select
+                    value={editForm.preferredProtocol}
+                    onChange={(e) => setEditForm({ ...editForm, preferredProtocol: e.target.value as "srt" | "rtmp" })}
+                    style={inputStyle}
+                  >
+                    <option value="srt">SRT</option>
+                    <option value="rtmp">RTMP</option>
+                  </select>
+                </div>
+                <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "#374151" }}>
+                  <input
+                    type="checkbox"
+                    checked={editForm.autoRecord}
+                    onChange={(e) => setEditForm({ ...editForm, autoRecord: e.target.checked })}
+                  />
+                  {th ? "บันทึกอัตโนมัติ" : "Auto-record"}
+                </label>
+                {editing.streamKey && (
+                  <div style={{ padding: 10, background: "#f1f5f9", borderRadius: 8, fontSize: 11, color: "#64748b" }}>
+                    <b>Stream key:</b> <span style={{ fontFamily: "monospace" }}>{editing.streamKey}</span>
+                    <div style={{ marginTop: 4 }}>
+                      {th
+                        ? "ถ้าเปลี่ยน Protocol — Larix/IRL Pro บนมือถือต้องตั้งค่าใหม่"
+                        : "If you change Protocol — reconfigure Larix/IRL Pro on the phone"}
+                    </div>
+                  </div>
+                )}
+              </div>
+              <div style={{ display: "flex", gap: 10, marginTop: 18 }}>
+                <button
+                  onClick={() => setEditing(null)}
+                  disabled={editSaving}
+                  style={{ flex: 1, padding: "10px 0", borderRadius: 10, border: "1.5px solid #e2e8f0", background: "#fff", color: "#64748b", fontWeight: 700, fontSize: 13, cursor: "pointer" }}
+                >
+                  {th ? "ยกเลิก" : "Cancel"}
+                </button>
+                <button
+                  onClick={handleUpdate}
+                  disabled={editSaving || !editForm.name.trim()}
+                  style={{
+                    flex: 1, padding: "10px 0", borderRadius: 10, border: "none",
+                    background: editSaving || !editForm.name.trim() ? "#cbd5e1" : "#16a34a",
+                    color: "#fff", fontWeight: 700, fontSize: 13, cursor: editSaving ? "wait" : "pointer",
+                  }}
+                >
+                  {editSaving ? (th ? "กำลังบันทึก..." : "Saving...") : (th ? "💾 บันทึก" : "💾 Save")}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {showQrFor && (() => {
           const cam = showQrFor;
@@ -761,6 +942,16 @@ export default function CctvBetaCamerasPage() {
     </AdminLayout>
   );
 }
+
+const editLabel: React.CSSProperties = {
+  display: "block",
+  fontSize: 11,
+  fontWeight: 700,
+  color: "#374151",
+  marginBottom: 4,
+  textTransform: "uppercase",
+  letterSpacing: 0.3,
+};
 
 const inputStyle: React.CSSProperties = {
   padding: "8px 10px",

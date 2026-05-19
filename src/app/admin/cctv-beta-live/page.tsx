@@ -116,6 +116,10 @@ export default function CctvBetaLivePage() {
     const th = language === 'th';
     const [selectedCampaign, setSelectedCampaign] = useState('');
     const [cameras, setCameras] = useState<BetaCamera[]>([]);
+    const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
+    const [refreshing, setRefreshing] = useState(false);
+    // Auto-refresh toggle — defaults ON so the grid updates as cameras come online
+    const [autoRefresh, setAutoRefresh] = useState(true);
 
     useEffect(() => {
         fetch('/api/campaigns/featured', { cache: 'no-store' })
@@ -125,29 +129,77 @@ export default function CctvBetaLivePage() {
 
     const load = useCallback(async () => {
         if (!selectedCampaign) return;
-        const res = await fetch(`/api/cctv-beta/cameras?campaignId=${selectedCampaign}`, { cache: 'no-store' });
-        const data = await res.json();
-        setCameras(Array.isArray(data) ? data : []);
+        setRefreshing(true);
+        try {
+            const res = await fetch(`/api/cctv-beta/cameras?campaignId=${selectedCampaign}`, { cache: 'no-store' });
+            const data = await res.json();
+            setCameras(Array.isArray(data) ? data : []);
+            setLastRefresh(new Date());
+        } finally {
+            setRefreshing(false);
+        }
     }, [selectedCampaign]);
 
+    // Poll every 5s by default — Beta doesn't have a WebSocket for live events,
+    // so we ping the camera-list endpoint to catch status transitions
+    // (offline → publishing → offline). 5s is a good balance between responsiveness
+    // and load on /api/cctv-beta/cameras.
     useEffect(() => {
-        const t = setInterval(load, 15000);
+        if (!selectedCampaign) return;
         setTimeout(load, 0);
+        if (!autoRefresh) return;
+        const t = setInterval(load, 5000);
         return () => clearInterval(t);
-    }, [load]);
+    }, [load, autoRefresh, selectedCampaign]);
 
     const live = cameras.filter(c => c.status === 'publishing');
 
     return (
         <AdminLayout>
             <div style={{ padding: 24 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
                     <h1 style={{ margin: 0, fontSize: 22, fontWeight: 700 }}>{th ? 'ดูสด (Larix Beta)' : 'Live Feeds (Larix Beta)'}</h1>
                     <span style={{ background: '#f59e0b', color: '#fff', padding: '2px 10px', borderRadius: 12, fontSize: 11, fontWeight: 700 }}>BETA</span>
-                    <span style={{ marginLeft: 'auto', fontSize: 12, color: '#6b7280' }}>
+                    <span style={{ fontSize: 12, color: '#6b7280' }}>
                         {th ? `${live.length}/${cameras.length} กล้อง ออนไลน์` : `${live.length}/${cameras.length} cameras online`}
                     </span>
+
+                    {/* Auto-refresh controls — pushed to the right side */}
+                    <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#374151', cursor: 'pointer' }}>
+                            <input
+                                type="checkbox"
+                                checked={autoRefresh}
+                                onChange={(e) => setAutoRefresh(e.target.checked)}
+                            />
+                            {th ? 'Auto-refresh (5s)' : 'Auto-refresh (5s)'}
+                        </label>
+                        <button
+                            onClick={load}
+                            disabled={refreshing}
+                            style={{
+                                padding: '6px 12px', borderRadius: 6, border: '1px solid #cbd5e1',
+                                background: refreshing ? '#f1f5f9' : '#fff', color: '#0f172a',
+                                fontSize: 12, fontWeight: 700, cursor: refreshing ? 'wait' : 'pointer',
+                            }}
+                        >
+                            {refreshing ? '⏳' : '🔄'} {th ? 'รีเฟรช' : 'Refresh'}
+                        </button>
+                        {lastRefresh && (
+                            <span style={{ fontSize: 11, color: '#94a3b8', fontFamily: 'monospace' }}>
+                                {th ? 'อัพเดตล่าสุด:' : 'Last:'} {lastRefresh.toLocaleTimeString('en-GB', { timeZone: 'Asia/Bangkok' })}
+                            </span>
+                        )}
+                        {autoRefresh && (
+                            <span style={{
+                                width: 8, height: 8, borderRadius: '50%',
+                                background: refreshing ? '#f59e0b' : '#22c55e',
+                                animation: refreshing ? 'none' : 'pulse 2s infinite',
+                            }} />
+                        )}
+                    </div>
                 </div>
+                <style>{`@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }`}</style>
 
                 {cameras.length === 0 && (
                     <div style={{ padding: 40, textAlign: 'center', background: '#fff', borderRadius: 8, color: '#6b7280' }}>
