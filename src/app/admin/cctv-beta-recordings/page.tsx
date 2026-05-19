@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import AdminLayout from '../AdminLayout';
 import { useLanguage } from '@/lib/language-context';
 import HlsPlayer from '@/components/HlsPlayer';
@@ -63,12 +63,51 @@ export default function CctvBetaRecordingsPage() {
     const [items, setItems] = useState<BetaRecording[]>([]);
     const [loading, setLoading] = useState(false);
     const [playing, setPlaying] = useState<BetaRecording | null>(null);
+    // Shared CCTV settings — apply to Beta too (allowDownload + showTimestampOverlay)
+    const [allowDownload, setAllowDownload] = useState(true);
+    const [showTimestampOverlay, setShowTimestampOverlay] = useState(true);
+    const playerWrapperRef = useRef<HTMLDivElement | null>(null);
 
     useEffect(() => {
         fetch('/api/campaigns/featured', { cache: 'no-store' })
             .then(r => r.json())
             .then(d => { if (d?._id) setSelectedCampaign(d._id); }).catch(() => {});
+
+        // Load CCTV settings — same source of truth as /admin/cctv-settings
+        fetch('/api/cctv-settings', { cache: 'no-store' })
+            .then(r => r.ok ? r.json() : null)
+            .then(s => {
+                if (s && typeof s.allowDownload === 'boolean') setAllowDownload(s.allowDownload);
+                if (s && typeof s.showTimestampOverlay === 'boolean') setShowTimestampOverlay(s.showTimestampOverlay);
+            })
+            .catch(() => {});
     }, []);
+
+    // When the modal opens, try to request browser fullscreen on the player wrapper.
+    // Failure is silent — some browsers require a direct user gesture, in which case
+    // the user can still hit the fullscreen button in the video controls.
+    useEffect(() => {
+        if (!playing) return;
+        const id = setTimeout(() => {
+            const el = playerWrapperRef.current;
+            if (el && document.fullscreenEnabled && !document.fullscreenElement) {
+                el.requestFullscreen?.().catch(() => { /* user gesture rule — ignore */ });
+            }
+        }, 50);
+
+        // Esc key closes the player
+        const onKey = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') {
+                if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
+                setPlaying(null);
+            }
+        };
+        window.addEventListener('keydown', onKey);
+        return () => {
+            clearTimeout(id);
+            window.removeEventListener('keydown', onKey);
+        };
+    }, [playing]);
 
     const load = useCallback(async () => {
         if (!selectedCampaign) return;
@@ -155,16 +194,48 @@ export default function CctvBetaRecordingsPage() {
                 {playing && (() => {
                     const url = getPlaybackUrl(playing);
                     const isS3 = !!playing.s3MasterManifestUrl && url === playing.s3MasterManifestUrl;
+                    const handleClose = () => {
+                        if (document.fullscreenElement) {
+                            document.exitFullscreen?.().catch(() => { /* ignore */ });
+                        }
+                        setPlaying(null);
+                    };
                     return (
-                        <div onClick={() => setPlaying(null)} style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.86)', display: 'flex', flexDirection: 'column', padding: 16 }}>
-                            <div onClick={e => e.stopPropagation()} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: '#fff', marginBottom: 12, gap: 12 }}>
-                                <div style={{ fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                    {playing.cameraName} — {new Date(playing.serverIngestStart).toLocaleString()}
-                                    <span style={{ marginLeft: 10, padding: '2px 8px', borderRadius: 6, background: isS3 ? '#16a34a' : '#0ea5e9', fontSize: 10, fontWeight: 700 }}>
-                                        {isS3 ? 'S3 ARCHIVE' : 'EC2 HOT'}
-                                    </span>
-                                </div>
-                                <button onClick={() => setPlaying(null)} style={{ background: 'transparent', border: 'none', color: '#fff', fontSize: 26, cursor: 'pointer' }}>×</button>
+                        <div
+                            ref={playerWrapperRef}
+                            onClick={handleClose}
+                            style={{ position: 'fixed', inset: 0, zIndex: 1000, background: '#000', display: 'flex', flexDirection: 'column' }}
+                        >
+                            {/* Close button — top-right, always visible */}
+                            <button
+                                onClick={(e) => { e.stopPropagation(); handleClose(); }}
+                                aria-label="Close"
+                                title={th ? 'ปิด (Esc)' : 'Close (Esc)'}
+                                style={{
+                                    position: 'absolute', top: 16, right: 16, zIndex: 20,
+                                    width: 44, height: 44, borderRadius: '50%',
+                                    background: 'rgba(0,0,0,0.6)', color: '#fff',
+                                    border: '2px solid rgba(255,255,255,0.4)',
+                                    fontSize: 22, fontWeight: 700, cursor: 'pointer',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    transition: 'all 0.15s',
+                                }}
+                                onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = '#dc2626'; (e.currentTarget as HTMLButtonElement).style.borderColor = '#dc2626'; }}
+                                onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(0,0,0,0.6)'; (e.currentTarget as HTMLButtonElement).style.borderColor = 'rgba(255,255,255,0.4)'; }}
+                            >
+                                ✕
+                            </button>
+
+                            {/* Title bar — top-left under timestamp overlay */}
+                            <div
+                                onClick={e => e.stopPropagation()}
+                                style={{ position: 'absolute', top: 16, left: showTimestampOverlay ? 240 : 16, zIndex: 15, color: '#fff', fontSize: 13, padding: '6px 12px', background: 'rgba(0,0,0,0.5)', borderRadius: 6, maxWidth: 'calc(100% - 320px)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                            >
+                                <strong>{playing.cameraName}</strong>
+                                {playing.checkpointName && <> · 📍 {playing.checkpointName}</>}
+                                <span style={{ marginLeft: 10, padding: '2px 8px', borderRadius: 6, background: isS3 ? '#16a34a' : '#0ea5e9', fontSize: 10, fontWeight: 700 }}>
+                                    {isS3 ? 'S3 ARCHIVE' : 'EC2 HOT'}
+                                </span>
                             </div>
 
                             <div onClick={e => e.stopPropagation()} style={{ flex: 1, minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -172,7 +243,9 @@ export default function CctvBetaRecordingsPage() {
                                     <HlsPlayer
                                         key={url}
                                         src={url}
-                                        className="w-full"
+                                        showTimestamp={showTimestampOverlay}
+                                        allowDownload={allowDownload}
+                                        className="w-full h-full object-contain"
                                     />
                                 ) : (
                                     <div style={{ color: '#fecaca', textAlign: 'center', fontSize: 14 }}>
@@ -181,30 +254,17 @@ export default function CctvBetaRecordingsPage() {
                                 )}
                             </div>
 
-                            <div onClick={e => e.stopPropagation()} style={{ marginTop: 10, color: '#cbd5e1', fontSize: 11 }}>
-                                <div style={{ marginBottom: 4, fontWeight: 700, color: '#fff' }}>{th ? 'ปัญหา? เปิด URL ตรงๆ เพื่อตรวจสอบ:' : 'Trouble? Open the URL directly to debug:'}</div>
-                                <div style={{ wordBreak: 'break-all', padding: '6px 10px', background: 'rgba(255,255,255,0.05)', borderRadius: 4, fontFamily: 'monospace' }}>
-                                    {url || '(no URL)'}
-                                </div>
-                                <div style={{ marginTop: 8, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                            {/* Debug strip at bottom */}
+                            <div onClick={e => e.stopPropagation()} style={{ background: 'rgba(0,0,0,0.7)', padding: '10px 16px', color: '#cbd5e1', fontSize: 11 }}>
+                                <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+                                    <span style={{ fontWeight: 700, color: '#fff' }}>URL:</span>
+                                    <span style={{ fontFamily: 'monospace', wordBreak: 'break-all', flex: 1, minWidth: 200 }}>{url || '(no URL)'}</span>
                                     {url && (
-                                        <a href={url} target="_blank" rel="noreferrer" style={{ color: '#60a5fa', textDecoration: 'underline' }}>
-                                            🔗 {th ? 'เปิด URL ในแท็บใหม่' : 'Open URL in new tab'}
+                                        <a href={url} target="_blank" rel="noreferrer" style={{ color: '#60a5fa', textDecoration: 'underline', whiteSpace: 'nowrap' }}>
+                                            🔗 {th ? 'เปิดในแท็บใหม่' : 'Open in new tab'}
                                         </a>
                                     )}
-                                    {playing.s3MasterManifestUrl && playing.hlsManifestPath && (
-                                        <span style={{ color: '#94a3b8' }}>
-                                            ({th ? 'มี EC2 hot URL ด้วย:' : 'EC2 hot also available:'} {playing.hlsManifestPath})
-                                        </span>
-                                    )}
                                 </div>
-                                {isS3 && (
-                                    <div style={{ marginTop: 8, padding: 8, background: 'rgba(234,179,8,0.15)', border: '1px solid rgba(234,179,8,0.3)', borderRadius: 4, color: '#fde68a' }}>
-                                        💡 {th
-                                            ? 'ถ้าวิดีโอเปิดไม่ขึ้น แต่ลิงก์ S3 เปิดในแท็บใหม่ได้: S3 bucket ยังไม่ได้ตั้ง CORS ให้ origin นี้ — ต้องเพิ่ม CORS rule ใน S3 console'
-                                            : 'If the video stays blank but the link opens in a new tab: the S3 bucket needs a CORS rule for this origin — add one in the S3 console.'}
-                                    </div>
-                                )}
                             </div>
                         </div>
                     );

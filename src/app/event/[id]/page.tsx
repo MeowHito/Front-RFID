@@ -776,7 +776,16 @@ export default function EventLivePage() {
         const configuredToggleKeys = hasSavedAdminCols
             ? adminCols.filter((key: string) => activeToggleableKeys.includes(key))
             : defaultToggleKeys;
-        const publicToggleKeys = isLabMode ? configuredToggleKeys : MARATHON_PUBLIC_DEFAULT_KEYS;
+        // Public viewers see the intersection of:
+        //   1) MARATHON_PUBLIC_DEFAULT_KEYS — the whitelist of columns ever allowed publicly
+        //   2) configuredToggleKeys — what the admin currently has enabled
+        // So if the admin turns OFF a column in /admin/display, public viewers ALSO stop
+        // seeing it (previously the public list was hardcoded and ignored admin toggles —
+        // which is why "Distance" kept showing for non-logged-in users even after admin
+        // disabled it).
+        const publicToggleKeys = isLabMode
+            ? configuredToggleKeys
+            : MARATHON_PUBLIC_DEFAULT_KEYS.filter(k => configuredToggleKeys.includes(k));
         const allowedToggleKeys = isAuthenticated ? configuredToggleKeys : publicToggleKeys;
         // Rebuild full column order from admin settings
         let fullOrder: string[];

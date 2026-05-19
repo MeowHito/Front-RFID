@@ -5,7 +5,7 @@ import AdminLayout from '../AdminLayout';
 import { useLanguage } from '@/lib/language-context';
 import { authHeaders } from '@/lib/authHeaders';
 import { io, Socket } from 'socket.io-client';
-import HlsPlayer from '@/components/HlsPlayer';
+import HlsPlayer, { CctvTimestampOverlay } from '@/components/HlsPlayer';
 
 interface Recording {
     _id: string;
@@ -112,6 +112,11 @@ export default function CctvRecordingsPage() {
     const [seekTarget, setSeekTarget] = useState<number>(0);
     const videoRef = useRef<HTMLVideoElement>(null);
     const seekAppliedRef = useRef(false);
+    const playerWrapperRef = useRef<HTMLDivElement>(null);
+
+    // CCTV settings — applies to BOTH classic and Beta playback
+    const [allowDownload, setAllowDownload] = useState(true);
+    const [showTimestampOverlay, setShowTimestampOverlay] = useState(true);
 
     // Runner lookup
     const [bibSearch, setBibSearch] = useState('');
@@ -216,7 +221,39 @@ export default function CctvRecordingsPage() {
             .then(r => r.ok ? r.json() : null)
             .then(d => { if (d?._id) { setCampaignId(d._id); setCampaignName(d.name || d.nameTh || ''); } })
             .catch(() => {});
+
+        // Load CCTV settings (allowDownload + showTimestampOverlay) and apply to player
+        fetch('/api/cctv-settings', { cache: 'no-store' })
+            .then(r => r.ok ? r.json() : null)
+            .then(s => {
+                if (s && typeof s.allowDownload === 'boolean') setAllowDownload(s.allowDownload);
+                if (s && typeof s.showTimestampOverlay === 'boolean') setShowTimestampOverlay(s.showTimestampOverlay);
+            })
+            .catch(() => {});
     }, []);
+
+    // Auto-request browser fullscreen + Esc-to-close when player opens
+    useEffect(() => {
+        if (!playingId) return;
+        const id = setTimeout(() => {
+            const el = playerWrapperRef.current;
+            if (el && document.fullscreenEnabled && !document.fullscreenElement) {
+                el.requestFullscreen?.().catch(() => { /* needs user gesture — silent */ });
+            }
+        }, 50);
+        const onKey = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') {
+                if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
+                closePlayer();
+            }
+        };
+        window.addEventListener('keydown', onKey);
+        return () => {
+            clearTimeout(id);
+            window.removeEventListener('keydown', onKey);
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [playingId]);
 
     const searchRunner = async () => {
         if (!bibSearch.trim() || !campaignId) return;
@@ -747,8 +784,13 @@ export default function CctvRecordingsPage() {
                                     </div>
                                 </div>
 
-                                {/* Card body */}
-                                <div className="p-3">
+                                {/* Card body — double-click anywhere to play */}
+                                <div
+                                    className="p-3"
+                                    onDoubleClick={() => openPlayer(rec)}
+                                    title={th ? 'ดับเบิลคลิกเพื่อเปิดวิดีโอ' : 'Double-click to play'}
+                                    style={{ cursor: 'pointer' }}
+                                >
                                     <div className="flex items-center gap-2 mb-1">
                                         {rec.source === 'beta' ? (
                                             <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-purple-100 text-purple-700 uppercase tracking-wider">
@@ -798,34 +840,62 @@ export default function CctvRecordingsPage() {
             {/* ── Video Player Modal ── */}
             {playingId && (
                 <div
-                    className="fixed inset-0 z-50 bg-black/90 flex flex-col"
-                    onClick={closePlayer}
+                    ref={playerWrapperRef}
+                    className="fixed inset-0 z-50 bg-black flex flex-col"
+                    onClick={() => { if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {}); closePlayer(); }}
                 >
+                    {/* Big X close button — top-right, always visible */}
+                    <button
+                        onClick={e => { e.stopPropagation(); if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {}); closePlayer(); }}
+                        aria-label="Close"
+                        title={th ? 'ปิด (Esc)' : 'Close (Esc)'}
+                        style={{
+                            position: 'absolute', top: 16, right: 16, zIndex: 60,
+                            width: 44, height: 44, borderRadius: '50%',
+                            background: 'rgba(0,0,0,0.6)', color: '#fff',
+                            border: '2px solid rgba(255,255,255,0.4)',
+                            fontSize: 22, fontWeight: 700, cursor: 'pointer',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            transition: 'all 0.15s',
+                        }}
+                        onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = '#dc2626'; (e.currentTarget as HTMLButtonElement).style.borderColor = '#dc2626'; }}
+                        onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(0,0,0,0.6)'; (e.currentTarget as HTMLButtonElement).style.borderColor = 'rgba(255,255,255,0.4)'; }}
+                    >✕</button>
+
+                    {/* Title — under the timestamp overlay if shown */}
                     <div
-                        className="flex items-center justify-between px-5 py-3 shrink-0"
+                        className="text-white font-bold text-xs truncate"
+                        style={{ position: 'absolute', top: 18, left: showTimestampOverlay ? 240 : 16, zIndex: 55, padding: '6px 12px', background: 'rgba(0,0,0,0.5)', borderRadius: 6, maxWidth: 'calc(100% - 320px)' }}
                         onClick={e => e.stopPropagation()}
                     >
-                        <div className="text-white font-bold text-sm truncate max-w-[80%]">{playingName}</div>
-                        <button onClick={closePlayer} className="text-white text-2xl leading-none cursor-pointer bg-transparent border-none">✕</button>
+                        {playingName}
                     </div>
-                    <div className="flex-1 flex items-center justify-center p-2 sm:p-4 min-h-0" onClick={e => e.stopPropagation()}>
+
+                    <div className="flex-1 flex items-center justify-center p-2 sm:p-4 min-h-0 relative" onClick={e => e.stopPropagation()}>
                         {videoLoading && (
-                            <div className="text-white text-sm animate-pulse" onClick={e => e.stopPropagation()}>⏳ กำลังโหลดวิดีโอ...</div>
+                            <div className="text-white text-sm animate-pulse absolute z-10" onClick={e => e.stopPropagation()}>⏳ กำลังโหลดวิดีโอ...</div>
                         )}
                         {videoSrc && (videoSrc.includes('.m3u8') ? (
                             <HlsPlayer
                                 key={videoSrc}
                                 src={videoSrc}
                                 startSeconds={seekTarget}
-                                className="w-full h-full rounded-lg shadow-2xl bg-black"
+                                showTimestamp={showTimestampOverlay}
+                                allowDownload={allowDownload}
+                                className="w-full h-full object-contain bg-black"
                             />
                         ) : (
+                            <div style={{ position: 'relative', width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                             <video
                                 ref={videoRef}
                                 src={videoSrc}
                                 controls
                                 autoPlay
                                 preload="auto"
+                                playsInline
+                                controlsList={allowDownload ? undefined : 'nodownload noplaybackrate'}
+                                disablePictureInPicture={!allowDownload}
+                                onContextMenu={e => { if (!allowDownload) e.preventDefault(); }}
                                 className="w-full h-full rounded-lg shadow-2xl bg-black"
                                 style={{ maxHeight: 'calc(100dvh - 80px)', objectFit: 'contain' }}
                                 onClick={e => e.stopPropagation()}
@@ -862,6 +932,8 @@ export default function CctvRecordingsPage() {
                                 onWaiting={() => setVideoLoading(true)}
                                 onPlaying={() => setVideoLoading(false)}
                             />
+                            {showTimestampOverlay && <CctvTimestampOverlay />}
+                            </div>
                         ))}
                         {liveCameraId && (
                             <LiveRecordingFeed cameraId={liveCameraId} />
