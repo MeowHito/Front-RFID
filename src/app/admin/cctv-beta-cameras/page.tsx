@@ -195,22 +195,17 @@ export default function CctvBetaCamerasPage() {
     cam.ingestRtmpUrl.replace(new RegExp(`/${cam.streamKey}$`), "");
 
   /**
-   * Build a `larix://set/v1?...` deep-link for IRL Pro auto-import.
-   *
-   * IRL Pro on Android consumes Larix Grove's URL format — when the system
-   * camera app scans this QR, Android offers to open IRL Pro (or Larix)
-   * which then imports the connection settings automatically.
-   *
+   * Build the Larix Grove query string (`conn[][url]=...&conn[][name]=...&...`) that
+   * both Larix Broadcaster and IRL Pro consume for auto-import.
    * See: https://softvelum.com/larix/grove/
    * See: https://kb.irltoolkit.com/nodrop/3-streaming-devices/1-irlpro
    */
-  const buildIrlProDeepLink = (cam: BetaCamera): string => {
+  const buildLarixGroveParams = (cam: BetaCamera): string => {
     const params = new URLSearchParams();
     const connName = `${cam.name}${cam.checkpointName ? ` (${cam.checkpointName})` : ""}`;
 
     if (cam.preferredProtocol === "srt") {
       // Split SRT URL: send the bare server URL, then streamid as its own param.
-      // IRL Pro/Larix join them back at import time.
       let bareUrl = cam.ingestSrtUrl;
       let streamId = `publish:live/${cam.streamKey}`;
       try {
@@ -232,7 +227,7 @@ export default function CctvBetaCamerasPage() {
       params.append("conn[][overwrite]", "on");
       params.append("conn[][active]", "on");
     } else {
-      // RTMP: server + key are encoded together in the URL (Larix appends key)
+      // RTMP: server + key are encoded together in the URL
       params.append("conn[][url]", cam.ingestRtmpUrl);
       params.append("conn[][name]", connName);
       params.append("conn[][mode]", "va");
@@ -240,7 +235,38 @@ export default function CctvBetaCamerasPage() {
       params.append("conn[][overwrite]", "on");
       params.append("conn[][active]", "on");
     }
-    return `larix://set/v1?${params.toString()}`;
+    return params.toString();
+  };
+
+  /**
+   * Larix-only deep link.
+   * If Larix Broadcaster is installed, scanning this QR opens it directly.
+   */
+  const buildLarixDeepLink = (cam: BetaCamera): string => {
+    return `larix://set/v1?${buildLarixGroveParams(cam)}`;
+  };
+
+  /**
+   * IRL Pro deep link via Android Intent URL — bypasses the system app chooser
+   * and forces the OS to launch *only* IRL Pro, even if Larix Broadcaster is
+   * also installed (which was causing the previous `larix://` URL to open Larix
+   * instead of IRL Pro). On iOS this falls back to the larix:// scheme since
+   * iOS doesn't honor intent:// URIs.
+   *
+   * Intent URL format:
+   *   intent://<path>?<query>#Intent;scheme=larix;package=<irlpro-pkg>;S.browser_fallback_url=<https url>;end
+   *
+   * Package name: `app.irlpro.android` (irlpro.app on Google Play).
+   * Fallback URL opens the Play Store listing if the app isn't installed.
+   */
+  const buildIrlProDeepLink = (cam: BetaCamera): string => {
+    const query = buildLarixGroveParams(cam);
+    const fallback = encodeURIComponent(
+      'https://play.google.com/store/apps/details?id=app.irlpro.android',
+    );
+    // Note: query is already URL-encoded by URLSearchParams — keep as-is so
+    // Android's intent parser hands the exact same query string to IRL Pro.
+    return `intent://set/v1?${query}#Intent;scheme=larix;package=app.irlpro.android;S.browser_fallback_url=${fallback};end`;
   };
 
   const handleRotate = async (id: string) => {
@@ -750,11 +776,12 @@ export default function CctvBetaCamerasPage() {
         {showQrFor && (() => {
           const cam = showQrFor;
           const isIrl = qrApp === "irlpro";
-          const plainUrl =
-            cam.preferredProtocol === "srt" ? cam.ingestSrtUrl : cam.ingestRtmpUrl;
-          // IRL Pro requires the larix:// deep-link to auto-import.
-          // Larix Broadcaster accepts either, but plain URL is simpler.
-          const qrValue = isIrl ? buildIrlProDeepLink(cam) : plainUrl;
+          // Each app gets its own QR encoded with a different URL scheme:
+          //   Larix QR     → `larix://set/v1?...`  (opens Larix Broadcaster)
+          //   IRL Pro QR   → `intent://...;package=app.irlpro.android;end`
+          //                  (Android intent URL — forces IRL Pro even when both
+          //                   apps are installed; falls back to Play Store if not)
+          const qrValue = isIrl ? buildIrlProDeepLink(cam) : buildLarixDeepLink(cam);
           const title = isIrl ? "IRL Pro Setup" : "Larix Setup";
           const copyQrKey = `qr:${cam._id}:${qrApp}`;
           const copyQrCopied = copiedKey === copyQrKey;

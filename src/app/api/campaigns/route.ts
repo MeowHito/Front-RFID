@@ -7,6 +7,13 @@ export async function GET(request: NextRequest) {
         const query = new URLSearchParams();
         const search = searchParams.get('search');
         if (search) query.set('search', search);
+        // Forward pagination too — without these the backend defaults to limit=20
+        // and freshly-created campaigns past index 20 get dropped from listings
+        // like /admin/users/create's event-scope picker.
+        const limit = searchParams.get('limit');
+        const page = searchParams.get('page');
+        if (limit) query.set('limit', limit);
+        if (page) query.set('page', page);
         const qs = query.toString();
         const url = `${BACKEND_URL}/campaigns${qs ? `?${qs}` : ''}`;
         const res = await fetch(url, {
