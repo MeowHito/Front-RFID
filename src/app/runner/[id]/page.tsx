@@ -548,18 +548,15 @@ export default function RunnerProfilePage() {
         || null;
     const isBetaRecording = activeRecording?.source === 'beta';
     const isBetaLiveInProgress = isBetaRecording && activeRecording?.recordingStatus === 'recording';
-    // MediaMTX serves LL-HLS for in-progress beta clips with only a few seconds of past
-    // segments in the manifest. Seeking further back than that silently fails and the
-    // engine plays whatever is available — which looks like "live mode" to the user.
-    // Detect that case (still recording AND scan further back than the live window) and
-    // render an explicit "still recording" panel instead of broken playback. After the
-    // stream is unpublished and the on-unpublish webhook archives to S3 the VOD manifest
-    // has every segment, status flips to 'archived', and seek works correctly.
-    const BETA_LIVE_SEEKABLE_WINDOW_SECONDS = 30;
+    // MediaMTX's LL-HLS manifest only keeps a few seconds of past segments, so seeking back
+    // to the scan moment via HLS doesn't work while the clip is still being recorded. The
+    // full fmp4 file is being written to EC2 disk in parallel though — when the clip is
+    // in-progress we point <video> at the backend's file-serving endpoint, which streams
+    // the on-disk file with HTTP Range so seek lands on the correct frame.
+    const isBetaFilePlayback = isBetaLiveInProgress;
 
     // Clip = exactly clipBufferSeconds, ending at the scan moment
     const seekSec = activeRecording?.seekSeconds ?? selectedHit?.seekSeconds ?? 0;
-    const betaSeekUnavailable = isBetaLiveInProgress && seekSec > BETA_LIVE_SEEKABLE_WINDOW_SECONDS;
     const recDuration = activeRecording?.duration || 0;
     let clipEnd = seekSec;
     let clipStart = Math.max(0, clipEnd - clipBufferSeconds);
@@ -572,10 +569,15 @@ export default function RunnerProfilePage() {
     const trimDuration = Math.max(1, clipEnd - clipStart);
 
     // Classic recordings use the server-side ffmpeg trim endpoint.
-    // Beta recordings use the manifest URL directly (HLS player seeks client-side).
+    // Beta recordings:
+    //   • archived → playbackUrl (S3 VOD HLS) handled by HlsPlayer
+    //   • in-progress (live) → on-disk fmp4 served by backend with HTTP Range so the
+    //     <video> tag can seek to the scan moment even while the file is still growing.
     const streamUrl = activeRecording
         ? (isBetaRecording
-            ? (activeRecording.playbackUrl || '')
+            ? (isBetaFilePlayback
+                ? `/api/cctv-beta/recordings/${activeRecording._id}/file`
+                : (activeRecording.playbackUrl || ''))
             : `/api/runner/${runnerId}/cctv/${activeRecording._id}/stream?ss=${trimStart}&t=${trimDuration}`)
         : '';
     // Hide the download button when:
@@ -1059,22 +1061,35 @@ export default function RunnerProfilePage() {
                                         >
                                         {isBetaRecording ? (
                                             streamUrl ? (
-                                                <>
-                                                    {betaSeekUnavailable && (
-                                                        <div style={{ padding: '10px 14px', background: '#fef3c7', borderLeft: '4px solid #d97706', color: '#78350f', fontSize: 12, lineHeight: 1.6, borderRadius: '6px 6px 0 0' }}>
-                                                            <strong style={{ color: '#92400e' }}>⏺ กำลังดูสด</strong> — กล้องยังถ่ายอยู่ ระบบยังไม่สามารถย้อนไปช่วงที่นักวิ่งผ่านจุด (<strong>{formatTimeOfDay(selectedHit?.scanTime || '')}</strong>) ได้ เพราะ buffer ของ live HLS เก็บแค่ไม่กี่วินาที จะดูช่วงนั้นได้หลังกล้องหยุดถ่ายและไฟล์ขึ้น S3 เรียบร้อย
-                                                        </div>
-                                                    )}
-                                                    <HlsPlayer
-                                                        key={`hls-${activeRecording._id}-${betaSeekUnavailable ? 'live' : trimStart}`}
+                                                isBetaFilePlayback ? (
+                                                    // Beta clip is still recording — MediaMTX's LL-HLS only keeps a few
+                                                    // seconds of past segments, so we serve the on-disk fmp4 file via the
+                                                    // backend instead. <video> + HTTP Range gives us proper seek into the
+                                                    // scan moment even while the file is still growing.
+                                                    <video
+                                                        key={`live-file-${activeRecording._id}-${trimStart}`}
                                                         src={streamUrl}
-                                                        // When the scan is older than the LL-HLS window MediaMTX serves, seeking
-                                                        // back simply isn't possible — switch to live mode so the viewer at least
-                                                        // sees the camera now. After the stream ends + archives to S3, the same
-                                                        // recording becomes a full VOD and the normal seek path kicks back in.
-                                                        startSeconds={betaSeekUnavailable ? 0 : trimStart}
-                                                        durationSeconds={betaSeekUnavailable ? undefined : trimDuration}
-                                                        live={betaSeekUnavailable}
+                                                        controls
+                                                        preload="metadata"
+                                                        playsInline
+                                                        controlsList={allowDownload ? undefined : 'nodownload noplaybackrate'}
+                                                        disablePictureInPicture={!allowDownload}
+                                                        onContextMenu={(e) => { if (!allowDownload) e.preventDefault(); }}
+                                                        className={`runner-modal-video ${selectedVideoIsPortrait ? 'portrait' : 'landscape'}`}
+                                                        onLoadedMetadata={(event) => {
+                                                            const video = event.currentTarget;
+                                                            setSelectedVideoIsPortrait(video.videoHeight > video.videoWidth);
+                                                            if (Number.isFinite(trimStart) && trimStart > 0) {
+                                                                try { video.currentTime = trimStart; } catch { /* ignore */ }
+                                                            }
+                                                        }}
+                                                    />
+                                                ) : (
+                                                    <HlsPlayer
+                                                        key={`hls-${activeRecording._id}-${trimStart}`}
+                                                        src={streamUrl}
+                                                        startSeconds={trimStart}
+                                                        durationSeconds={trimDuration}
                                                         showTimestamp={showTimestampOverlay}
                                                         allowDownload={allowDownload}
                                                         className={`runner-modal-video ${selectedVideoIsPortrait ? 'portrait' : 'landscape'}`}
@@ -1082,7 +1097,7 @@ export default function RunnerProfilePage() {
                                                             setSelectedVideoIsPortrait(video.videoHeight > video.videoWidth);
                                                         }}
                                                     />
-                                                </>
+                                                )
                                             ) : (
                                                 <div style={{ padding: 40, textAlign: 'center', color: '#94a3b8', fontSize: 13 }}>
                                                     ยังไม่มี playback URL สำหรับ Beta recording นี้ (รอ MediaMTX archive)
