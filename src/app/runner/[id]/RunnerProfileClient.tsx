@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
+import HlsPlayer from '@/components/HlsPlayer';
 
 interface RunnerData {
     _id: string;
@@ -71,22 +72,32 @@ interface CheckpointMappingData {
     active?: boolean;
 }
 
+interface RunnerHitRecording {
+    _id: string;
+    cameraName: string;
+    checkpointName?: string;
+    startTime: string;
+    endTime: string;
+    duration: number;
+    fileSize: number;
+    recordingStatus?: string;
+    // Set by backend merge: 'classic' = old browser-based CCTV (mp4/webm file on backend),
+    // 'beta' = new Larix/IRL Pro pipeline (HLS via MediaMTX/S3).
+    source?: 'classic' | 'beta';
+    // Beta only — HLS manifest URL that <HlsPlayer> consumes directly.
+    playbackUrl?: string | null;
+    playbackSource?: 's3' | 'ec2' | null;
+}
+
 interface RunnerHit {
     checkpoint: string;
     scanTime: string;
     elapsedTime: number | null;
     splitTime: number | null;
-    recording: {
-        _id: string;
-        cameraName: string;
-        checkpointName?: string;
-        startTime: string;
-        endTime: string;
-        duration: number;
-        fileSize: number;
-        recordingStatus?: string;
-    } | null;
+    recording: RunnerHitRecording | null;
     seekSeconds: number;
+    // Multi-source: when both classic and beta cover the same scan, both are here.
+    recordings?: RunnerHitRecording[];
 }
 
 interface CheckpointOption {
@@ -362,12 +373,19 @@ export default function RunnerProfileClient() {
     const selectedHit = selectedOption?.hit || null;
     const seekOffsetSeconds = preArrivalBufferSeconds;
     const videoSeekSeconds = Math.max(0, (selectedHit?.seekSeconds || 0) - seekOffsetSeconds);
-    const streamUrl = selectedHit?.recording
-        ? `/api/runner/${runnerId}/cctv/${selectedHit.recording._id}/stream`
+    const selectedRecording = selectedHit?.recording || null;
+    const isBetaRecording = selectedRecording?.source === 'beta';
+    const betaPlaybackUrl = isBetaRecording ? (selectedRecording?.playbackUrl || '') : '';
+    const isBetaLive = isBetaRecording && selectedRecording?.recordingStatus === 'recording';
+    const streamUrl = selectedRecording && !isBetaRecording
+        ? `/api/runner/${runnerId}/cctv/${selectedRecording._id}/stream`
         : '';
-    const downloadUrl = selectedHit?.recording
-        ? `/api/runner/${runnerId}/cctv/${selectedHit.recording._id}/stream?download=1`
+    // Beta is HLS via MediaMTX/S3 — no single downloadable file. Hide the download
+    // button for beta clips (the user can still record their screen if they need).
+    const downloadUrl = selectedRecording && !isBetaRecording
+        ? `/api/runner/${runnerId}/cctv/${selectedRecording._id}/stream?download=1`
         : '';
+    const showDownloadButton = allowDownload && !!downloadUrl;
 
     const displayName = `${runner?.firstName || ''} ${runner?.lastName || ''}`.trim() || 'Unknown Runner';
     const initials = `${runner?.firstName?.[0] || ''}${runner?.lastName?.[0] || ''}`.toUpperCase() || '?';
@@ -548,25 +566,39 @@ export default function RunnerProfileClient() {
                                             <span>{selectedOption.name}</span>
                                             <span className={selectedHit.recording.recordingStatus === 'recording' ? 'text-red-400' : 'text-emerald-400'}>
                                                 {selectedHit.recording.recordingStatus === 'recording' ? 'LIVE CCTV' : 'CCTV FEED'}
+                                                {isBetaRecording ? ' • BETA' : ''}
                                             </span>
                                         </div>
-                                        <video
-                                            key={`${selectedHit.recording._id}-${videoSeekSeconds}`}
-                                            src={streamUrl}
-                                            controls
-                                            preload="metadata"
-                                            className="aspect-video w-full bg-black"
-                                            onLoadedMetadata={(event) => {
-                                                const video = event.currentTarget;
-                                                if (Number.isFinite(videoSeekSeconds)) {
-                                                    try {
-                                                        video.currentTime = videoSeekSeconds;
-                                                    } catch {
-                                                        return;
+                                        {isBetaRecording && betaPlaybackUrl ? (
+                                            <div className="aspect-video w-full bg-black">
+                                                <HlsPlayer
+                                                    key={`${selectedHit.recording._id}-${videoSeekSeconds}`}
+                                                    src={betaPlaybackUrl}
+                                                    startSeconds={videoSeekSeconds}
+                                                    live={isBetaLive}
+                                                    allowDownload={allowDownload}
+                                                    className="aspect-video w-full bg-black"
+                                                />
+                                            </div>
+                                        ) : (
+                                            <video
+                                                key={`${selectedHit.recording._id}-${videoSeekSeconds}`}
+                                                src={streamUrl}
+                                                controls
+                                                preload="metadata"
+                                                className="aspect-video w-full bg-black"
+                                                onLoadedMetadata={(event) => {
+                                                    const video = event.currentTarget;
+                                                    if (Number.isFinite(videoSeekSeconds)) {
+                                                        try {
+                                                            video.currentTime = videoSeekSeconds;
+                                                        } catch {
+                                                            return;
+                                                        }
                                                     }
-                                                }
-                                            }}
-                                        />
+                                                }}
+                                            />
+                                        )}
                                     </div>
 
                                     <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600 sm:flex-row sm:items-center sm:justify-between">
@@ -576,8 +608,11 @@ export default function RunnerProfileClient() {
                                             {selectedHit.recording.recordingStatus === 'recording' && (
                                                 <div className="font-semibold text-red-600">กำลังถ่ายทอดสดอยู่ ผู้ใช้สามารถกดดูได้ทันทีโดยไม่ต้องรอปิดกิจกรรม</div>
                                             )}
+                                            {isBetaRecording && (
+                                                <div className="text-xs font-semibold text-slate-500">CCTV Beta (Larix / IRL Pro) — เล่นผ่าน HLS</div>
+                                            )}
                                         </div>
-                                        {allowDownload && (
+                                        {showDownloadButton && (
                                             <a
                                                 href={downloadUrl}
                                                 className="inline-flex items-center justify-center rounded-2xl bg-emerald-500 px-5 py-3 text-sm font-black text-white transition hover:bg-emerald-600"
@@ -910,29 +945,42 @@ export default function RunnerProfileClient() {
                                                     <div className="flex items-center gap-3">
                                                         <span className="inline-flex items-center gap-2 rounded-full border border-rose-400/25 bg-rose-500/10 px-2.5 py-1 text-[10px] font-black text-rose-200">
                                                             <span className="h-2 w-2 animate-pulse rounded-full bg-rose-400" />
-                                                            Live Replay
+                                                            {isBetaLive ? 'Live' : 'Live Replay'}
                                                         </span>
                                                         <span>{selectedOption.name}</span>
                                                     </div>
-                                                    <span className="text-[10px] text-slate-500">CCTV FEED</span>
+                                                    <span className="text-[10px] text-slate-500">{isBetaRecording ? 'CCTV BETA' : 'CCTV FEED'}</span>
                                                 </div>
-                                                <video
-                                                    key={`${selectedHit.recording._id}-${videoSeekSeconds}`}
-                                                    src={streamUrl}
-                                                    controls
-                                                    preload="metadata"
-                                                    className="aspect-video w-full bg-black"
-                                                    onLoadedMetadata={(event) => {
-                                                        const video = event.currentTarget;
-                                                        if (Number.isFinite(videoSeekSeconds)) {
-                                                            try {
-                                                                video.currentTime = videoSeekSeconds;
-                                                            } catch {
-                                                                return;
+                                                {isBetaRecording && betaPlaybackUrl ? (
+                                                    <div className="aspect-video w-full bg-black">
+                                                        <HlsPlayer
+                                                            key={`${selectedHit.recording._id}-${videoSeekSeconds}`}
+                                                            src={betaPlaybackUrl}
+                                                            startSeconds={videoSeekSeconds}
+                                                            live={isBetaLive}
+                                                            allowDownload={allowDownload}
+                                                            className="aspect-video w-full bg-black"
+                                                        />
+                                                    </div>
+                                                ) : (
+                                                    <video
+                                                        key={`${selectedHit.recording._id}-${videoSeekSeconds}`}
+                                                        src={streamUrl}
+                                                        controls
+                                                        preload="metadata"
+                                                        className="aspect-video w-full bg-black"
+                                                        onLoadedMetadata={(event) => {
+                                                            const video = event.currentTarget;
+                                                            if (Number.isFinite(videoSeekSeconds)) {
+                                                                try {
+                                                                    video.currentTime = videoSeekSeconds;
+                                                                } catch {
+                                                                    return;
+                                                                }
                                                             }
-                                                        }
-                                                    }}
-                                                />
+                                                        }}
+                                                    />
+                                                )}
                                             </div>
                                             <div className="grid gap-3 sm:grid-cols-2">
                                                 <div className="rounded-2xl border border-white/10 bg-black/35 p-4 text-sm text-slate-300">
@@ -944,8 +992,11 @@ export default function RunnerProfileClient() {
                                                         <span>ขนาดไฟล์</span>
                                                         <span className="font-black text-white">{formatBytes(selectedHit.recording.fileSize)}</span>
                                                     </div>
+                                                    {isBetaRecording && (
+                                                        <div className="mt-2 text-xs font-semibold text-slate-400">CCTV Beta (Larix / IRL Pro) — HLS</div>
+                                                    )}
                                                 </div>
-                                                {allowDownload && (
+                                                {showDownloadButton ? (
                                                     <div className="flex flex-col gap-3 sm:items-end sm:justify-center">
                                                         <a
                                                             href={downloadUrl}
@@ -955,7 +1006,11 @@ export default function RunnerProfileClient() {
                                                         </a>
                                                         <p className="text-xs text-slate-400">ไฟล์จะถูกดาวน์โหลดจากวิดีโอของ Checkpoint ที่เลือกโดยตรง</p>
                                                     </div>
-                                                )}
+                                                ) : isBetaRecording ? (
+                                                    <div className="flex flex-col gap-3 sm:items-end sm:justify-center">
+                                                        <p className="text-xs text-slate-400">ไม่รองรับการดาวน์โหลดสำหรับ CCTV Beta (HLS)</p>
+                                                    </div>
+                                                ) : null}
                                             </div>
                                         </div>
                                     ) : (
