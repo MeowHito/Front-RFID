@@ -5,7 +5,6 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
 import { isRunnerFollowed, loadFollowedRunners, saveFollowedRunners, subscribeFollowedRunners, toggleFollowedRunner, type FollowedRunner } from '@/lib/followed-runners';
-import HlsPlayer from '@/components/HlsPlayer';
 
 
 interface RunnerData {
@@ -543,13 +542,6 @@ export default function RunnerProfilePage() {
         || availableRecordings[0]
         || null;
     const isBetaRecording = activeRecording?.source === 'beta';
-    const isBetaLiveInProgress = isBetaRecording && activeRecording?.recordingStatus === 'recording';
-    // MediaMTX's LL-HLS manifest only keeps a few seconds of past segments, so seeking back
-    // to the scan moment via HLS doesn't work while the clip is still being recorded. The
-    // full fmp4 file is being written to EC2 disk in parallel though — when the clip is
-    // in-progress we point <video> at the backend's file-serving endpoint, which streams
-    // the on-disk file with HTTP Range so seek lands on the correct frame.
-    const isBetaFilePlayback = isBetaLiveInProgress;
 
     // Clip = exactly clipBufferSeconds, CENTERED on the scan moment with ~2/3 before and ~1/3 after.
     // Example: 15s duration, scan at 09:00:00 → clip runs 08:59:50 → 09:00:05 (10s before + 5s after).
@@ -568,25 +560,14 @@ export default function RunnerProfilePage() {
     const trimStart = clipStart;
     const trimDuration = Math.max(1, clipEnd - clipStart);
 
-    // Classic recordings use the server-side ffmpeg trim endpoint.
-    // Beta recordings:
-    //   • archived → playbackUrl (S3 VOD HLS) handled by HlsPlayer
-    //   • in-progress (live) → on-disk fmp4 served by backend with HTTP Range so the
-    //     <video> tag can seek to the scan moment even while the file is still growing.
-    // `lq=1` asks the backend to transcode at 480p for faster page loads. The download
-    // endpoint (below) deliberately omits this so users still get the original resolution
-    // when they tap "Download" (assuming the admin has enabled downloads).
+    // BOTH classic and beta now go through the same backend trim endpoint, which
+    // pipes ffmpeg output as fragmented mp4 so the <video> tag starts playing within
+    // a second. `lq=1` asks for 480p (in-page viewing); the download URL omits it so
+    // the user gets original resolution when they tap "Download".
     const streamUrl = activeRecording
-        ? (isBetaRecording
-            ? (isBetaFilePlayback
-                ? `/api/cctv-beta/recordings/${activeRecording._id}/file`
-                : (activeRecording.playbackUrl || ''))
-            : `/api/runner/${runnerId}/cctv/${activeRecording._id}/stream?ss=${trimStart}&t=${trimDuration}&lq=1`)
+        ? `/api/runner/${runnerId}/cctv/${activeRecording._id}/stream?ss=${trimStart}&t=${trimDuration}&lq=1`
         : '';
-    // Hide the download button when:
-    //   1) Beta (no server-side trim yet), OR
-    //   2) Admin disabled `allowDownload` in /admin/cctv-settings (applies to both sources)
-    const downloadUrl = activeRecording && !isBetaRecording && allowDownload
+    const downloadUrl = activeRecording && allowDownload
         ? `/api/runner/${runnerId}/cctv/${activeRecording._id}/stream?download=1&ss=${trimStart}&t=${trimDuration}`
         : '';
 
@@ -1062,74 +1043,27 @@ export default function RunnerProfilePage() {
                                             className={`runner-modal-video-shell ${selectedVideoIsPortrait ? 'portrait' : 'landscape'}`}
                                             style={{ position: 'relative' }}
                                         >
-                                        {isBetaRecording ? (
-                                            streamUrl ? (
-                                                isBetaFilePlayback ? (
-                                                    // Beta clip is still recording — MediaMTX's LL-HLS only keeps a few
-                                                    // seconds of past segments, so we serve the on-disk fmp4 file via the
-                                                    // backend instead. <video> + HTTP Range gives us proper seek into the
-                                                    // scan moment even while the file is still growing.
-                                                    <video
-                                                        key={`live-file-${activeRecording._id}-${trimStart}`}
-                                                        src={streamUrl}
-                                                        controls
-                                                        // preload=auto + muted autoplay cuts the spinner from
-                                                        // ~3-6s (waiting for the user to tap play) to immediate.
-                                                        preload="auto"
-                                                        autoPlay
-                                                        muted
-                                                        playsInline
-                                                        controlsList={allowDownload ? undefined : 'nodownload noplaybackrate'}
-                                                        disablePictureInPicture={!allowDownload}
-                                                        onContextMenu={(e) => { if (!allowDownload) e.preventDefault(); }}
-                                                        className={`runner-modal-video ${selectedVideoIsPortrait ? 'portrait' : 'landscape'}`}
-                                                        onLoadedMetadata={(event) => {
-                                                            const video = event.currentTarget;
-                                                            setSelectedVideoIsPortrait(video.videoHeight > video.videoWidth);
-                                                            if (Number.isFinite(trimStart) && trimStart > 0) {
-                                                                try { video.currentTime = trimStart; } catch { /* ignore */ }
-                                                            }
-                                                            video.play().catch(() => { /* autoplay blocked — user clicks */ });
-                                                        }}
-                                                    />
-                                                ) : (
-                                                    <HlsPlayer
-                                                        key={`hls-${activeRecording._id}-${trimStart}`}
-                                                        src={streamUrl}
-                                                        startSeconds={trimStart}
-                                                        durationSeconds={trimDuration}
-                                                        allowDownload={allowDownload}
-                                                        className={`runner-modal-video ${selectedVideoIsPortrait ? 'portrait' : 'landscape'}`}
-                                                        onLoadedMetadata={(video) => {
-                                                            setSelectedVideoIsPortrait(video.videoHeight > video.videoWidth);
-                                                        }}
-                                                    />
-                                                )
-                                            ) : (
-                                                <div style={{ padding: 40, textAlign: 'center', color: '#94a3b8', fontSize: 13 }}>
-                                                    ยังไม่มี playback URL สำหรับ Beta recording นี้ (รอ MediaMTX archive)
-                                                </div>
-                                            )
-                                        ) : (
-                                            <video
-                                                key={`${activeRecording._id}-${trimStart}-${trimDuration}`}
-                                                src={streamUrl}
-                                                controls
-                                                preload="auto"
-                                                autoPlay
-                                                muted
-                                                playsInline
-                                                controlsList={allowDownload ? undefined : 'nodownload noplaybackrate'}
-                                                disablePictureInPicture={!allowDownload}
-                                                onContextMenu={(e) => { if (!allowDownload) e.preventDefault(); }}
-                                                className={`runner-modal-video ${selectedVideoIsPortrait ? 'portrait' : 'landscape'}`}
-                                                onLoadedMetadata={(event) => {
-                                                    const video = event.currentTarget;
-                                                    setSelectedVideoIsPortrait(video.videoHeight > video.videoWidth);
-                                                    video.play().catch(() => { /* autoplay blocked */ });
-                                                }}
-                                            />
-                                        )}
+                                        {/* Both classic and beta clips are now served as plain trimmed mp4 from
+                                            the backend trim endpoint, so a single <video> works for everything.
+                                            The video already starts at the trim window — no manual currentTime seek. */}
+                                        <video
+                                            key={`${activeRecording._id}-${trimStart}-${trimDuration}`}
+                                            src={streamUrl}
+                                            controls
+                                            preload="auto"
+                                            autoPlay
+                                            muted
+                                            playsInline
+                                            controlsList={allowDownload ? undefined : 'nodownload noplaybackrate'}
+                                            disablePictureInPicture={!allowDownload}
+                                            onContextMenu={(e) => { if (!allowDownload) e.preventDefault(); }}
+                                            className={`runner-modal-video ${selectedVideoIsPortrait ? 'portrait' : 'landscape'}`}
+                                            onLoadedMetadata={(event) => {
+                                                const video = event.currentTarget;
+                                                setSelectedVideoIsPortrait(video.videoHeight > video.videoWidth);
+                                                video.play().catch(() => { /* autoplay blocked */ });
+                                            }}
+                                        />
                                         </div>
                                     </div>
 
