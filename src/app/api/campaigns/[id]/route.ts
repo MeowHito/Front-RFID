@@ -6,9 +6,11 @@ export async function GET(
     { params }: { params: Promise<{ id: string }> }
 ) {
     const { id } = await params;
+    const full = request.nextUrl.searchParams.get('full');
+    const qs = full === 'true' || full === '1' ? '?full=true' : '';
 
     try {
-        const res = await fetch(`${BACKEND_URL}/campaigns/${id}`, {
+        const res = await fetch(`${BACKEND_URL}/campaigns/${id}${qs}`, {
             headers: { 'Content-Type': 'application/json' },
             cache: 'no-store',
         });

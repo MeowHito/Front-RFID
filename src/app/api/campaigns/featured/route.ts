@@ -1,10 +1,12 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 
 const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:3001';
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+    const full = request.nextUrl.searchParams.get('full');
+    const qs = full === 'true' || full === '1' ? '?full=true' : '';
     try {
-        const res = await fetch(`${BACKEND_URL}/campaigns/featured`, {
+        const res = await fetch(`${BACKEND_URL}/campaigns/featured${qs}`, {
             headers: { 'Content-Type': 'application/json' },
             cache: 'no-store',
         });

@@ -52,7 +52,7 @@ export default function AdminESlipPage() {
     useEffect(() => {
         (async () => {
             try {
-                const res = await fetch('/api/campaigns/featured');
+                const res = await fetch('/api/campaigns/featured?full=true');
                 if (res.ok) {
                     const data = await res.json();
                     setCampaign(data);

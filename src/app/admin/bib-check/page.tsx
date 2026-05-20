@@ -54,7 +54,7 @@ export default function BibCheckPage() {
     useEffect(() => {
         (async () => {
             try {
-                const res = await fetch('/api/campaigns/featured');
+                const res = await fetch('/api/campaigns/featured?full=true');
                 if (res.ok) {
                     const data = await res.json();
                     setCampaign(data);
@@ -89,7 +89,7 @@ export default function BibCheckPage() {
                 throw new Error(txt || `HTTP ${res.status}`);
             }
             // Confirm by re-reading so we know the field actually persisted.
-            const fresh = await fetch(`/api/campaigns/${campaign._id}`, { cache: 'no-store' });
+            const fresh = await fetch(`/api/campaigns/${campaign._id}?full=true`, { cache: 'no-store' });
             if (fresh.ok) {
                 const data = await fresh.json();
                 setCampaign(data);
