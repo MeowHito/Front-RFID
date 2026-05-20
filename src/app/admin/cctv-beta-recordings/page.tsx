@@ -42,14 +42,10 @@ function fmtDur(s: number) {
 }
 
 /**
- * Pick the best playback URL for a Beta recording.
- * Priority: S3 archive (cold, durable) → EC2 hot HLS manifest.
- *
- * `hlsManifestPath` may be a relative path like `/hls/{streamKey}/index.m3u8` from
- * the ingest webhook — prepend the playback host so the browser can fetch it.
+ * Resolve the EC2 LL-HLS manifest URL (low-latency, ~1-2s delay) — used for live
+ * playback while the stream is still publishing. Returns '' if not resolvable.
  */
-function getPlaybackUrl(recording: BetaRecording): string {
-    if (recording.s3MasterManifestUrl) return recording.s3MasterManifestUrl;
+function getEc2HlsUrl(recording: BetaRecording): string {
     if (!recording.hlsManifestPath) return '';
     if (recording.hlsManifestPath.startsWith('http')) return recording.hlsManifestPath;
     // NEXT_PUBLIC_CCTV_BETA_PLAYBACK_HOST is set in frontend .env.local
@@ -57,6 +53,25 @@ function getPlaybackUrl(recording: BetaRecording): string {
     if (!host) return recording.hlsManifestPath; // relative — will fail unless served from same origin
     const p = recording.hlsManifestPath.startsWith('/') ? recording.hlsManifestPath : `/${recording.hlsManifestPath}`;
     return `https://${host}${p}`;
+}
+
+/**
+ * Pick the best playback URL for a Beta recording.
+ *
+ * Priority:
+ *   • Live (recordingStatus === 'recording')  → EC2 LL-HLS first (fresh ~1s segments).
+ *     S3 sync runs every 15s, so its manifest lags up to 15s behind the live edge —
+ *     using EC2 directly avoids a stale "live" view.
+ *   • Archived (completed/archived/error)    → S3 master manifest (durable, full timeline).
+ *   • Fallback: whichever is available.
+ */
+function getPlaybackUrl(recording: BetaRecording): string {
+    const ec2 = getEc2HlsUrl(recording);
+    const s3 = recording.s3MasterManifestUrl || '';
+    if (recording.recordingStatus === 'recording') {
+        return ec2 || s3;
+    }
+    return s3 || ec2;
 }
 
 export default function CctvBetaRecordingsPage() {
