@@ -377,6 +377,14 @@ export default function RunnerProfileClient() {
     const isBetaRecording = selectedRecording?.source === 'beta';
     const betaPlaybackUrl = isBetaRecording ? (selectedRecording?.playbackUrl || '') : '';
     const isBetaLive = isBetaRecording && selectedRecording?.recordingStatus === 'recording';
+    // MediaMTX serves LL-HLS for in-progress beta clips with only ~10s of past segments,
+    // so any seek further back than the live window can't be honoured — the player would
+    // silently snap to the earliest available segment and look like "live mode". When the
+    // scan is older than this threshold and the clip is still recording, hide the player
+    // and tell the user the full clip lands after the camera stops streaming (then S3
+    // archive holds every segment and seek works correctly).
+    const BETA_LIVE_SEEKABLE_WINDOW_SECONDS = 30;
+    const betaSeekUnavailable = isBetaLive && (selectedHit?.seekSeconds || 0) > BETA_LIVE_SEEKABLE_WINDOW_SECONDS;
     const streamUrl = selectedRecording && !isBetaRecording
         ? `/api/runner/${runnerId}/cctv/${selectedRecording._id}/stream`
         : '';
@@ -569,13 +577,21 @@ export default function RunnerProfileClient() {
                                                 {isBetaRecording ? ' • BETA' : ''}
                                             </span>
                                         </div>
-                                        {isBetaRecording && betaPlaybackUrl ? (
+                                        {isBetaRecording && betaSeekUnavailable ? (
+                                            <div className="aspect-video w-full bg-black flex items-center justify-center px-6 text-center">
+                                                <div className="text-slate-200 space-y-2">
+                                                    <div className="text-3xl">⏺️</div>
+                                                    <div className="text-sm font-bold">วิดีโอกำลังบันทึกอยู่</div>
+                                                    <div className="text-xs text-slate-400">นักวิ่งผ่านจุดเมื่อ {formatClock(selectedHit?.scanTime)} — ระบบจะดูช่วงเวลานั้นได้หลังจากกล้องหยุดถ่ายและบันทึกขึ้น S3 เรียบร้อย</div>
+                                                </div>
+                                            </div>
+                                        ) : isBetaRecording && betaPlaybackUrl ? (
                                             <div className="aspect-video w-full bg-black">
                                                 <HlsPlayer
                                                     key={`${selectedHit.recording._id}-${videoSeekSeconds}`}
                                                     src={betaPlaybackUrl}
                                                     startSeconds={videoSeekSeconds}
-                                                    live={isBetaLive}
+                                                    live={false}
                                                     allowDownload={allowDownload}
                                                     className="aspect-video w-full bg-black"
                                                 />
@@ -951,13 +967,21 @@ export default function RunnerProfileClient() {
                                                     </div>
                                                     <span className="text-[10px] text-slate-500">{isBetaRecording ? 'CCTV BETA' : 'CCTV FEED'}</span>
                                                 </div>
-                                                {isBetaRecording && betaPlaybackUrl ? (
+                                                {isBetaRecording && betaSeekUnavailable ? (
+                                                    <div className="aspect-video w-full bg-black flex items-center justify-center px-6 text-center">
+                                                        <div className="text-slate-200 space-y-2">
+                                                            <div className="text-3xl">⏺️</div>
+                                                            <div className="text-sm font-bold">วิดีโอกำลังบันทึกอยู่</div>
+                                                            <div className="text-xs text-slate-400">นักวิ่งผ่านจุดเมื่อ {formatClock(selectedHit?.scanTime)} — ระบบจะดูช่วงเวลานั้นได้หลังจากกล้องหยุดถ่ายและบันทึกขึ้น S3 เรียบร้อย</div>
+                                                        </div>
+                                                    </div>
+                                                ) : isBetaRecording && betaPlaybackUrl ? (
                                                     <div className="aspect-video w-full bg-black">
                                                         <HlsPlayer
                                                             key={`${selectedHit.recording._id}-${videoSeekSeconds}`}
                                                             src={betaPlaybackUrl}
                                                             startSeconds={videoSeekSeconds}
-                                                            live={isBetaLive}
+                                                            live={false}
                                                             allowDownload={allowDownload}
                                                             className="aspect-video w-full bg-black"
                                                         />

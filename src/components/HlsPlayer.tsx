@@ -88,10 +88,14 @@ export default function HlsPlayer({
             //   - Live: short liveSyncDuration so player stays near the edge,
             //           minimal backBufferLength to avoid memory bloat on long sessions,
             //           lowLatencyMode tries LL-HLS chunked transfer when available.
-            //   - VOD: larger buffer is fine; no live tuning.
+            //   - VOD: larger buffer is fine; no live tuning. Pin startPosition so hls.js
+            //           does NOT snap to the live edge when the underlying manifest is
+            //           still being recorded (no #EXT-X-ENDLIST). Without this, opening a
+            //           still-recording clip would always start at "now" instead of the
+            //           scan moment we asked for.
             const config = live
                 ? { lowLatencyMode: true, liveSyncDuration: 2, liveMaxLatencyDuration: 10, backBufferLength: 10 }
-                : { lowLatencyMode: false, backBufferLength: 30 };
+                : { lowLatencyMode: false, backBufferLength: 30, startPosition: Math.max(0, startSeconds) };
             hls = new HlsCtor(config);
             hls.loadSource(src);
             hls.attachMedia(video);
@@ -104,7 +108,11 @@ export default function HlsPlayer({
                     video.muted = true;
                     video.play().catch(() => { /* autoplay blocked */ });
                 } else if (startSeconds > 0) {
-                    video.currentTime = startSeconds;
+                    // Force the seek even though startPosition was already passed in the
+                    // config — covers VOD streams where the manifest reports duration but
+                    // hls.js still defaults to 0, and live-flagged manifests where the
+                    // engine would otherwise snap to the latest segment.
+                    try { video.currentTime = startSeconds; } catch { /* ignore */ }
                 }
             });
 
