@@ -8,6 +8,9 @@ import AdminLayout from '../AdminLayout';
 
 const CLIP_MIN = 1;
 const CLIP_MAX = 60;
+const PRE_BUFFER_OPTIONS = [5, 10, 15, 20] as const;
+type PreBufferValue = typeof PRE_BUFFER_OPTIONS[number];
+const DEFAULT_PRE_BUFFER: PreBufferValue = 5;
 
 export default function CctvSettingsPage() {
     const { language } = useLanguage();
@@ -20,6 +23,7 @@ export default function CctvSettingsPage() {
     const [bufferMin, setBufferMin] = useState(15);
     const [preArrivalBuffer, setPreArrivalBuffer] = useState(30);
     const [clipBufferSeconds, setClipBufferSeconds] = useState(10);
+    const [clipPreBufferSeconds, setClipPreBufferSeconds] = useState<PreBufferValue>(DEFAULT_PRE_BUFFER);
     const [videoBitrateKbps, setVideoBitrateKbps] = useState(800);
     const [allowDownload, setAllowDownload] = useState(true);
     const [loading, setLoading] = useState(true);
@@ -40,6 +44,12 @@ export default function CctvSettingsPage() {
                     // Clamp legacy values that exceeded the new 1-60s range.
                     const n = Math.floor(Number(s.clipBufferSeconds));
                     if (Number.isFinite(n)) setClipBufferSeconds(Math.max(CLIP_MIN, Math.min(CLIP_MAX, n)));
+                }
+                if (s.clipPreBufferSeconds !== undefined) {
+                    const n = Math.floor(Number(s.clipPreBufferSeconds));
+                    if ((PRE_BUFFER_OPTIONS as readonly number[]).includes(n)) {
+                        setClipPreBufferSeconds(n as PreBufferValue);
+                    }
                 }
                 if (s.videoBitrateKbps) setVideoBitrateKbps(s.videoBitrateKbps);
                 if (typeof s.allowDownload === 'boolean') setAllowDownload(s.allowDownload);
@@ -98,6 +108,7 @@ export default function CctvSettingsPage() {
                     bufferMinutes: bufferMin,
                     preArrivalBuffer,
                     clipBufferSeconds: Math.max(CLIP_MIN, Math.min(CLIP_MAX, Math.floor(clipBufferSeconds))),
+                    clipPreBufferSeconds,
                     videoBitrateKbps,
                     allowDownload,
                 }),
@@ -251,6 +262,41 @@ export default function CctvSettingsPage() {
                                     }}
                                 />
                                 <span style={{ fontSize: 13, fontWeight: 700, color: '#64748b' }}>{th ? 'วิ' : 's'}</span>
+                            </div>
+                        </div>
+
+                        {/* Pre-Scan Buffer — how many seconds BEFORE the runner's checkpoint scan
+                            the clip on /runner/[id] starts playing. Fixed options 5/10/15/20. */}
+                        <div style={{ padding: '12px 16px', background: '#eef2ff', borderRadius: 10, border: '1.5px solid #c7d2fe', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, gap: 12, flexWrap: 'wrap' }}>
+                            <div style={{ flex: 1, minWidth: 200 }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                    <span style={{ fontSize: 13 }}>⏪</span>
+                                    <span style={{ fontWeight: 700, fontSize: 13, color: '#3730a3' }}>{th ? 'เวลาบัฟเฟอร์ก่อนสแกน (วินาที)' : 'Pre-Scan Buffer (Sec)'}</span>
+                                </div>
+                                <div style={{ fontSize: 11, color: '#4338ca', marginTop: 2 }}>
+                                    {th
+                                        ? `คลิปในหน้า /runner จะเริ่มเล่นก่อนเวลาที่นักวิ่งเข้า checkpoint ตามที่ตั้งไว้`
+                                        : `Clip on /runner page starts this many seconds before the runner's checkpoint scan`}
+                                </div>
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <span style={{ padding: '4px 14px', borderRadius: 6, border: '1.5px solid #4f46e5', fontWeight: 800, fontSize: 14, color: '#4f46e5', background: '#fff' }}>{clipPreBufferSeconds}s</span>
+                                {isAdmin && (
+                                    <div style={{ display: 'flex', gap: 4 }}>
+                                        {PRE_BUFFER_OPTIONS.map(v => (
+                                            <button
+                                                key={v}
+                                                onClick={() => setClipPreBufferSeconds(v)}
+                                                style={{
+                                                    padding: '3px 10px', borderRadius: 5, fontSize: 11, fontWeight: 700, cursor: 'pointer',
+                                                    border: clipPreBufferSeconds === v ? 'none' : '1px solid #e2e8f0',
+                                                    background: clipPreBufferSeconds === v ? '#4f46e5' : '#fff',
+                                                    color: clipPreBufferSeconds === v ? '#fff' : '#64748b',
+                                                }}
+                                            >{v}s</button>
+                                        ))}
+                                    </div>
+                                )}
                             </div>
                         </div>
 

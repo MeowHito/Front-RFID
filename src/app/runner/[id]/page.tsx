@@ -300,6 +300,7 @@ export default function RunnerProfilePage() {
     const [selectedRecordingId, setSelectedRecordingId] = useState<string>('');
     const [preArrivalBufferSeconds, setPreArrivalBufferSeconds] = useState(5);
     const [clipBufferSeconds, setClipBufferSeconds] = useState(10);
+    const [clipPreBufferSeconds, setClipPreBufferSeconds] = useState(5);
     const [allowDownload, setAllowDownload] = useState(true);
     const [followedRunners, setFollowedRunners] = useState<FollowedRunner[]>([]);
     const [selectedVideoIsPortrait, setSelectedVideoIsPortrait] = useState(false);
@@ -342,6 +343,10 @@ export default function RunnerProfilePage() {
                     const clipBuf = Number(settings?.clipBufferSeconds);
                     if (Number.isFinite(clipBuf) && clipBuf > 0) {
                         setClipBufferSeconds(clipBuf);
+                    }
+                    const preBuf = Number(settings?.clipPreBufferSeconds);
+                    if (Number.isFinite(preBuf) && preBuf > 0) {
+                        setClipPreBufferSeconds(preBuf);
                     }
                     if (typeof settings?.allowDownload === 'boolean') {
                         setAllowDownload(settings.allowDownload);
@@ -543,13 +548,14 @@ export default function RunnerProfilePage() {
         || null;
     const isBetaRecording = activeRecording?.source === 'beta';
 
-    // Clip = exactly clipBufferSeconds, CENTERED on the scan moment with ~2/3 before and ~1/3 after.
-    // Example: 15s duration, scan at 09:00:00 → clip runs 08:59:50 → 09:00:05 (10s before + 5s after).
+    // Clip starts `clipPreBufferSeconds` BEFORE the scan (admin-configured: 5/10/15/20s)
+    // and runs for `clipBufferSeconds` in total. The remainder plays AFTER the scan.
+    // Example: pre-buffer 5s, duration 15s, scan at 09:00:00 → clip runs 08:59:55 → 09:00:10.
+    // If pre-buffer ≥ total duration, the post window collapses to 1s so the scan is still in-frame.
     const seekSec = activeRecording?.seekSeconds ?? selectedHit?.seekSeconds ?? 0;
     const recDuration = activeRecording?.duration || 0;
     const totalLen = Math.max(1, clipBufferSeconds);
-    const postLen = Math.floor(totalLen / 3);          // time AFTER the scan
-    const preLen = totalLen - postLen;                  // time BEFORE the scan (~2/3)
+    const preLen = Math.min(Math.max(0, clipPreBufferSeconds), totalLen - 1);  // time BEFORE scan
     let clipStart = Math.max(0, seekSec - preLen);
     let clipEnd = clipStart + totalLen;
     // If the window runs past the end of the recording, slide it back so total length is preserved.
