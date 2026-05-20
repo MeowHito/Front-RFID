@@ -1058,28 +1058,31 @@ export default function RunnerProfilePage() {
                                             style={{ position: 'relative' }}
                                         >
                                         {isBetaRecording ? (
-                                            betaSeekUnavailable ? (
-                                                <div style={{ padding: 32, textAlign: 'center', color: '#cbd5e1', fontSize: 13, background: '#0f172a', borderRadius: 8 }}>
-                                                    <div style={{ fontSize: 28, marginBottom: 6 }}>⏺️</div>
-                                                    <div style={{ fontWeight: 800, fontSize: 14, color: '#f8fafc', marginBottom: 6 }}>วิดีโอกำลังบันทึกอยู่</div>
-                                                    <div style={{ fontSize: 12, color: '#94a3b8', lineHeight: 1.6 }}>
-                                                        นักวิ่งผ่านจุดเมื่อ <strong style={{ color: '#fde68a' }}>{formatTimeOfDay(selectedHit?.scanTime || '')}</strong><br />
-                                                        ระบบจะดูช่วงเวลานั้นได้หลังจากกล้องหยุดถ่ายและไฟล์ขึ้น S3 เรียบร้อย
-                                                    </div>
-                                                </div>
-                                            ) : streamUrl ? (
-                                                <HlsPlayer
-                                                    key={`hls-${activeRecording._id}-${trimStart}`}
-                                                    src={streamUrl}
-                                                    startSeconds={trimStart}
-                                                    durationSeconds={trimDuration}
-                                                    showTimestamp={showTimestampOverlay}
-                                                    allowDownload={allowDownload}
-                                                    className={`runner-modal-video ${selectedVideoIsPortrait ? 'portrait' : 'landscape'}`}
-                                                    onLoadedMetadata={(video) => {
-                                                        setSelectedVideoIsPortrait(video.videoHeight > video.videoWidth);
-                                                    }}
-                                                />
+                                            streamUrl ? (
+                                                <>
+                                                    {betaSeekUnavailable && (
+                                                        <div style={{ padding: '10px 14px', background: '#fef3c7', borderLeft: '4px solid #d97706', color: '#78350f', fontSize: 12, lineHeight: 1.6, borderRadius: '6px 6px 0 0' }}>
+                                                            <strong style={{ color: '#92400e' }}>⏺ กำลังดูสด</strong> — กล้องยังถ่ายอยู่ ระบบยังไม่สามารถย้อนไปช่วงที่นักวิ่งผ่านจุด (<strong>{formatTimeOfDay(selectedHit?.scanTime || '')}</strong>) ได้ เพราะ buffer ของ live HLS เก็บแค่ไม่กี่วินาที จะดูช่วงนั้นได้หลังกล้องหยุดถ่ายและไฟล์ขึ้น S3 เรียบร้อย
+                                                        </div>
+                                                    )}
+                                                    <HlsPlayer
+                                                        key={`hls-${activeRecording._id}-${betaSeekUnavailable ? 'live' : trimStart}`}
+                                                        src={streamUrl}
+                                                        // When the scan is older than the LL-HLS window MediaMTX serves, seeking
+                                                        // back simply isn't possible — switch to live mode so the viewer at least
+                                                        // sees the camera now. After the stream ends + archives to S3, the same
+                                                        // recording becomes a full VOD and the normal seek path kicks back in.
+                                                        startSeconds={betaSeekUnavailable ? 0 : trimStart}
+                                                        durationSeconds={betaSeekUnavailable ? undefined : trimDuration}
+                                                        live={betaSeekUnavailable}
+                                                        showTimestamp={showTimestampOverlay}
+                                                        allowDownload={allowDownload}
+                                                        className={`runner-modal-video ${selectedVideoIsPortrait ? 'portrait' : 'landscape'}`}
+                                                        onLoadedMetadata={(video) => {
+                                                            setSelectedVideoIsPortrait(video.videoHeight > video.videoWidth);
+                                                        }}
+                                                    />
+                                                </>
                                             ) : (
                                                 <div style={{ padding: 40, textAlign: 'center', color: '#94a3b8', fontSize: 13 }}>
                                                     ยังไม่มี playback URL สำหรับ Beta recording นี้ (รอ MediaMTX archive)
