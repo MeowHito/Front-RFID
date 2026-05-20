@@ -1,10 +1,165 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useLanguage } from '@/lib/language-context';
 import { useAuth } from '@/lib/auth-context';
 import { authHeaders } from '@/lib/authHeaders';
 import AdminLayout from '../AdminLayout';
+
+/**
+ * Apple-clock-style scroll wheel picker for clip duration (min:sec).
+ *
+ * Two vertical scroll columns (minutes 0-10, seconds 0-59) with CSS scroll-snap so
+ * each integer locks to the highlighted center band. We compute the selected value
+ * from scrollTop / itemHeight on every scroll event (debounced), and call onChange
+ * with the combined total seconds.
+ *
+ * Minimum clamp: 1 second (a 0:00 clip makes no sense).
+ * Maximum clamp: 10:00 (10 minutes — anything longer probably indicates a misconfig).
+ */
+function ClipDurationPicker({
+    totalSeconds,
+    onChange,
+    disabled,
+    th,
+}: {
+    totalSeconds: number;
+    onChange: (next: number) => void;
+    disabled?: boolean;
+    th: boolean;
+}) {
+    const ITEM_H = 36;        // px per row
+    const VISIBLE = 5;        // visible rows (must be odd so center band is one row)
+    const HEIGHT = ITEM_H * VISIBLE;
+    const minutes = Math.min(10, Math.floor(totalSeconds / 60));
+    const seconds = totalSeconds % 60;
+    const minRef = useRef<HTMLDivElement>(null);
+    const secRef = useRef<HTMLDivElement>(null);
+    const programmaticScrollRef = useRef(false);
+
+    // Keep the columns scrolled to the current value (e.g. on first paint or external update).
+    useEffect(() => {
+        if (minRef.current && Math.round(minRef.current.scrollTop / ITEM_H) !== minutes) {
+            programmaticScrollRef.current = true;
+            minRef.current.scrollTop = minutes * ITEM_H;
+        }
+        if (secRef.current && Math.round(secRef.current.scrollTop / ITEM_H) !== seconds) {
+            programmaticScrollRef.current = true;
+            secRef.current.scrollTop = seconds * ITEM_H;
+        }
+    }, [minutes, seconds]);
+
+    const handleScroll = (col: 'min' | 'sec') => () => {
+        if (disabled) return;
+        const ref = col === 'min' ? minRef.current : secRef.current;
+        if (!ref) return;
+        // Ignore the scroll events fired by our own scrollTop = ... above
+        if (programmaticScrollRef.current) {
+            programmaticScrollRef.current = false;
+            return;
+        }
+        const idx = Math.round(ref.scrollTop / ITEM_H);
+        const clamped = col === 'min' ? Math.max(0, Math.min(10, idx)) : Math.max(0, Math.min(59, idx));
+        const next = col === 'min'
+            ? Math.max(1, Math.min(600, clamped * 60 + seconds))
+            : Math.max(1, Math.min(600, minutes * 60 + clamped));
+        if (next !== totalSeconds) onChange(next);
+    };
+
+    const renderColumn = (label: string, ref: React.RefObject<HTMLDivElement | null>, range: number, current: number, col: 'min' | 'sec') => (
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flex: 1 }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: '#94a3b8', letterSpacing: 1, marginBottom: 6 }}>{label}</div>
+            <div
+                ref={ref}
+                onScroll={handleScroll(col)}
+                style={{
+                    height: HEIGHT,
+                    width: '100%',
+                    overflowY: 'scroll',
+                    scrollSnapType: 'y mandatory',
+                    scrollbarWidth: 'none',
+                    msOverflowStyle: 'none',
+                    position: 'relative',
+                    background: '#fff',
+                    borderRadius: 8,
+                    border: '1px solid #e2e8f0',
+                    pointerEvents: disabled ? 'none' : 'auto',
+                    opacity: disabled ? 0.5 : 1,
+                }}
+                className="hide-scrollbar"
+            >
+                {/* Highlight band sits behind the center row */}
+                <div style={{
+                    position: 'sticky',
+                    top: ITEM_H * Math.floor(VISIBLE / 2),
+                    height: ITEM_H,
+                    margin: `-${ITEM_H * Math.floor(VISIBLE / 2)}px 0 0`,
+                    background: 'linear-gradient(to right, rgba(0,6,102,0.04), rgba(0,6,102,0.08), rgba(0,6,102,0.04))',
+                    borderTop: '1px solid #c7d2fe',
+                    borderBottom: '1px solid #c7d2fe',
+                    pointerEvents: 'none',
+                    zIndex: 1,
+                }} />
+                {/* Top spacer so item index 0 lands on the highlight band */}
+                <div style={{ height: ITEM_H * Math.floor(VISIBLE / 2) }} />
+                {Array.from({ length: range + 1 }, (_, i) => (
+                    <div
+                        key={i}
+                        style={{
+                            height: ITEM_H,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            scrollSnapAlign: 'center',
+                            fontSize: i === current ? 22 : 17,
+                            fontWeight: i === current ? 800 : 500,
+                            color: i === current ? '#000666' : '#94a3b8',
+                            transition: 'color 0.15s, font-size 0.15s, font-weight 0.15s',
+                            fontFamily: 'monospace',
+                        }}
+                    >
+                        {String(i).padStart(2, '0')}
+                    </div>
+                ))}
+                {/* Bottom spacer */}
+                <div style={{ height: ITEM_H * Math.floor(VISIBLE / 2) }} />
+            </div>
+        </div>
+    );
+
+    return (
+        <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, position: 'relative' }}>
+                {renderColumn(th ? 'นาที' : 'MIN', minRef, 10, minutes, 'min')}
+                <div style={{ fontSize: 28, fontWeight: 800, color: '#000666', alignSelf: 'flex-end', marginBottom: 32 }}>:</div>
+                {renderColumn(th ? 'วินาที' : 'SEC', secRef, 59, seconds, 'sec')}
+            </div>
+            {/* Quick presets row */}
+            <div style={{ display: 'flex', gap: 6, marginTop: 10, flexWrap: 'wrap', justifyContent: 'center' }}>
+                {[10, 20, 30, 60, 120, 300].map(v => (
+                    <button
+                        key={v}
+                        type="button"
+                        disabled={disabled}
+                        onClick={() => onChange(v)}
+                        style={{
+                            padding: '4px 10px', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: disabled ? 'default' : 'pointer',
+                            border: totalSeconds === v ? 'none' : '1px solid #e2e8f0',
+                            background: totalSeconds === v ? '#000666' : '#fff',
+                            color: totalSeconds === v ? '#fff' : '#64748b',
+                            opacity: disabled ? 0.5 : 1,
+                        }}
+                    >
+                        {Math.floor(v / 60) > 0 ? `${Math.floor(v / 60)}m` : ''}{v % 60 > 0 ? `${v % 60}s` : ''}
+                    </button>
+                ))}
+            </div>
+            <style jsx>{`
+                .hide-scrollbar::-webkit-scrollbar { display: none; }
+            `}</style>
+        </div>
+    );
+}
 
 export default function CctvSettingsPage() {
     const { language } = useLanguage();
@@ -130,8 +285,8 @@ export default function CctvSettingsPage() {
                 </p>
                 <div style={{ marginTop: 10, padding: '8px 14px', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 8, fontSize: 12, color: '#1e40af', display: 'inline-block' }}>
                     ℹ️ {th
-                        ? 'ค่าด้านล่าง (Buffer / Pre-Arrival Alert / Clip Buffer / Allow Download) ใช้กับทั้ง CCTV ปกติ (Browser) และ CCTV Beta (Larix / IRL Pro)'
-                        : 'Settings below (Buffer / Pre-Arrival / Clip Buffer / Allow Download) apply to BOTH classic CCTV (Browser) and CCTV Beta (Larix / IRL Pro)'}
+                        ? 'ค่าด้านล่าง (ตั้งเวลาวิดีโอ / Pre-Arrival Alert / Allow Download / Timestamp Overlay) ใช้กับทั้ง CCTV ปกติ (Browser) และ CCTV Beta (Larix / IRL Pro)'
+                        : 'Settings below (Clip Duration / Pre-Arrival / Allow Download / Timestamp Overlay) apply to BOTH classic CCTV (Browser) and CCTV Beta (Larix / IRL Pro)'}
                 </div>
             </div>
 
@@ -194,26 +349,30 @@ export default function CctvSettingsPage() {
                             </label>
                         </div>
 
-                        {/* Buffer */}
-                        <div style={{ padding: '12px 16px', background: '#f8fafc', borderRadius: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                            <div>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                    <span style={{ fontSize: 13 }}>🕐</span>
-                                    <span style={{ fontWeight: 700, fontSize: 13, color: '#0f172a' }}>{th ? 'บัฟเฟอร์ (นาที)' : 'Rolling Buffer (Min)'}</span>
-                                </div>
-                                <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>
-                                    {th ? 'ระยะเวลา instant replay cache' : 'Duration of instant replay cache'}
-                                </div>
-                            </div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                <span style={{ padding: '4px 12px', borderRadius: 6, border: '1px solid #e2e8f0', fontWeight: 700, fontSize: 13, color: '#0f172a' }}>{bufferMin} MIN</span>
-                                {isAdmin && (
-                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                                        <button onClick={() => setBufferMin(prev => Math.min(prev + 5, 60))} style={{ background: 'none', border: '1px solid #e2e8f0', borderRadius: 3, cursor: 'pointer', fontSize: 8, padding: '1px 4px' }}>▲</button>
-                                        <button onClick={() => setBufferMin(prev => Math.max(prev - 5, 5))} style={{ background: 'none', border: '1px solid #e2e8f0', borderRadius: 3, cursor: 'pointer', fontSize: 8, padding: '1px 4px' }}>▼</button>
+                        {/* Clip Duration (replaces legacy "Rolling Buffer") — Apple alarm style picker.
+                            Value is stored as clipBufferSeconds so /runner/{id} playback shows exactly this
+                            length around each scan moment. Range 0:01 – 10:00. */}
+                        <div style={{ padding: '12px 16px', background: '#f8fafc', borderRadius: 10, marginBottom: 10 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
+                                <div>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                        <span style={{ fontSize: 13 }}>🎬</span>
+                                        <span style={{ fontWeight: 700, fontSize: 13, color: '#0f172a' }}>{th ? 'ตั้งเวลาวิดีโอ' : 'Clip Duration'}</span>
                                     </div>
-                                )}
+                                    <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>
+                                        {th ? `ความยาวคลิปที่แสดงในหน้า /runner/ ต่อ checkpoint` : 'Length of the clip shown on /runner/ per checkpoint'}
+                                    </div>
+                                </div>
+                                <span style={{ padding: '4px 12px', borderRadius: 6, border: '1.5px solid #000666', fontWeight: 800, fontSize: 14, color: '#000666', background: '#fff', fontFamily: 'monospace' }}>
+                                    {String(Math.floor(clipBufferSeconds / 60)).padStart(2, '0')}:{String(clipBufferSeconds % 60).padStart(2, '0')}
+                                </span>
                             </div>
+                            <ClipDurationPicker
+                                totalSeconds={clipBufferSeconds}
+                                onChange={isAdmin ? setClipBufferSeconds : () => {}}
+                                disabled={!isAdmin}
+                                th={th}
+                            />
                         </div>
 
                         {/* Pre-Arrival Alert Buffer */}
@@ -240,38 +399,6 @@ export default function CctvSettingsPage() {
                                                     border: preArrivalBuffer === v ? 'none' : '1px solid #e2e8f0',
                                                     background: preArrivalBuffer === v ? '#ea580c' : '#fff',
                                                     color: preArrivalBuffer === v ? '#fff' : '#64748b',
-                                                }}
-                                            >{v}s</button>
-                                        ))}
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-
-                        {/* Clip Buffer Seconds — Save Clip window */}
-                        <div style={{ padding: '12px 16px', background: '#f0fdf4', borderRadius: 10, border: '1.5px solid #86efac', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                            <div>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                    <span style={{ fontSize: 13 }}>💾</span>
-                                    <span style={{ fontWeight: 700, fontSize: 13, color: '#166534' }}>{th ? 'บัฟเฟอร์บันทึกคลิป (วินาที)' : 'Save Clip Buffer (Sec)'}</span>
-                                </div>
-                                <div style={{ fontSize: 11, color: '#166534', opacity: 0.75, marginTop: 2 }}>
-                                    {th ? `เมื่อ Staff กดปุ่ม SAVE ในหน้า /camera จะบันทึกวิดีโอย้อนหลัง ${clipBufferSeconds} วินาทีก่อนกดบันทึก` : `When staff taps SAVE on /camera, records the last ${clipBufferSeconds}s before the tap`}
-                                </div>
-                            </div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                <span style={{ padding: '4px 14px', borderRadius: 6, border: '1.5px solid #16a34a', fontWeight: 800, fontSize: 14, color: '#16a34a', background: '#fff' }}>{clipBufferSeconds}s</span>
-                                {isAdmin && (
-                                    <div style={{ display: 'flex', gap: 4 }}>
-                                        {[5, 10, 15, 20, 30].map(v => (
-                                            <button
-                                                key={v}
-                                                onClick={() => setClipBufferSeconds(v)}
-                                                style={{
-                                                    padding: '3px 8px', borderRadius: 5, fontSize: 11, fontWeight: 700, cursor: 'pointer',
-                                                    border: clipBufferSeconds === v ? 'none' : '1px solid #e2e8f0',
-                                                    background: clipBufferSeconds === v ? '#16a34a' : '#fff',
-                                                    color: clipBufferSeconds === v ? '#fff' : '#64748b',
                                                 }}
                                             >{v}s</button>
                                         ))}

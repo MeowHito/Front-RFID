@@ -1070,7 +1070,11 @@ export default function RunnerProfilePage() {
                                                         key={`live-file-${activeRecording._id}-${trimStart}`}
                                                         src={streamUrl}
                                                         controls
-                                                        preload="metadata"
+                                                        // preload=auto + muted autoplay cuts the spinner from
+                                                        // ~3-6s (waiting for the user to tap play) to immediate.
+                                                        preload="auto"
+                                                        autoPlay
+                                                        muted
                                                         playsInline
                                                         controlsList={allowDownload ? undefined : 'nodownload noplaybackrate'}
                                                         disablePictureInPicture={!allowDownload}
@@ -1082,6 +1086,7 @@ export default function RunnerProfilePage() {
                                                             if (Number.isFinite(trimStart) && trimStart > 0) {
                                                                 try { video.currentTime = trimStart; } catch { /* ignore */ }
                                                             }
+                                                            video.play().catch(() => { /* autoplay blocked — user clicks */ });
                                                         }}
                                                     />
                                                 ) : (
@@ -1109,7 +1114,9 @@ export default function RunnerProfilePage() {
                                                     key={`${activeRecording._id}-${trimStart}-${trimDuration}`}
                                                     src={streamUrl}
                                                     controls
-                                                    preload="metadata"
+                                                    preload="auto"
+                                                    autoPlay
+                                                    muted
                                                     playsInline
                                                     controlsList={allowDownload ? undefined : 'nodownload noplaybackrate'}
                                                     disablePictureInPicture={!allowDownload}
@@ -1118,6 +1125,7 @@ export default function RunnerProfilePage() {
                                                     onLoadedMetadata={(event) => {
                                                         const video = event.currentTarget;
                                                         setSelectedVideoIsPortrait(video.videoHeight > video.videoWidth);
+                                                        video.play().catch(() => { /* autoplay blocked */ });
                                                     }}
                                                 />
                                                 {showTimestampOverlay && <CctvTimestampOverlay />}

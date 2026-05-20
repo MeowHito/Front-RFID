@@ -53,15 +53,66 @@ export default function HlsPlayer({
         let cancelled = false;
         setFatalError(null);
 
+        // Progressive MP4 (fragmented or otherwise) — let the browser handle it directly.
+        // We detect by extension on the URL path (ignoring querystring). Beta archived
+        // recordings now point s3MasterManifestUrl at the fmp4 file in S3 so the player
+        // gets the full timeline with HTTP Range seeking instead of a 7-second LL-HLS
+        // rolling window that 404s post-unpublish.
+        const urlPath = (() => {
+            try { return new URL(src, window.location.href).pathname.toLowerCase(); }
+            catch { return src.toLowerCase(); }
+        })();
+        const isMp4 = urlPath.endsWith('.mp4') || urlPath.endsWith('.m4v') || urlPath.endsWith('.webm');
+        if (isMp4) {
+            // preload=auto + muted autoPlay so the browser starts fetching + decoding
+            // immediately when the modal opens, instead of waiting for the user to click
+            // play. Removes the multi-second "spinning" delay before playback begins.
+            video.preload = 'auto';
+            video.src = src;
+            const tryPlay = () => {
+                video.muted = true;
+                video.play().catch(() => { /* autoplay blocked → user clicks play manually */ });
+            };
+            if (startSeconds > 0) {
+                const onMeta = () => {
+                    if (!cancelled) {
+                        try { video.currentTime = startSeconds; } catch { /* ignore */ }
+                        tryPlay();
+                    }
+                    video.removeEventListener('loadedmetadata', onMeta);
+                };
+                video.addEventListener('loadedmetadata', onMeta);
+            } else {
+                const onCan = () => {
+                    if (!cancelled) tryPlay();
+                    video.removeEventListener('loadeddata', onCan);
+                };
+                video.addEventListener('loadeddata', onCan);
+            }
+            return () => {
+                cancelled = true;
+                video.removeAttribute('src');
+                video.load();
+            };
+        }
+
         // Safari has native HLS — no library needed.
         if (video.canPlayType('application/vnd.apple.mpegurl')) {
+            video.preload = 'auto';
             video.src = src;
-            if (live) {
-                video.muted = true; // browsers block unmuted autoplay
+            const tryPlay = () => {
+                video.muted = true;
                 video.play().catch(() => { /* autoplay blocked — user must tap */ });
-            } else if (startSeconds > 0) {
+            };
+            if (live) {
+                tryPlay();
+            } else {
                 const onMeta = () => {
-                    if (!cancelled) video.currentTime = startSeconds;
+                    if (cancelled) return;
+                    if (startSeconds > 0) {
+                        try { video.currentTime = startSeconds; } catch { /* ignore */ }
+                    }
+                    tryPlay();
                     video.removeEventListener('loadedmetadata', onMeta);
                 };
                 video.addEventListener('loadedmetadata', onMeta);
@@ -95,7 +146,16 @@ export default function HlsPlayer({
             //           scan moment we asked for.
             const config = live
                 ? { lowLatencyMode: true, liveSyncDuration: 2, liveMaxLatencyDuration: 10, backBufferLength: 10 }
-                : { lowLatencyMode: false, backBufferLength: 30, startPosition: Math.max(0, startSeconds) };
+                : {
+                    lowLatencyMode: false,
+                    backBufferLength: 30,
+                    startPosition: Math.max(0, startSeconds),
+                    // Fetch the first segment without waiting for ABR's initial bandwidth estimate.
+                    // Cuts time-to-first-frame on VOD recordings from ~3-6s to ~0.5-1s.
+                    maxBufferLength: 30,
+                    maxMaxBufferLength: 60,
+                    autoStartLoad: true,
+                };
             hls = new HlsCtor(config);
             hls.loadSource(src);
             hls.attachMedia(video);
@@ -107,12 +167,19 @@ export default function HlsPlayer({
                 if (live) {
                     video.muted = true;
                     video.play().catch(() => { /* autoplay blocked */ });
-                } else if (startSeconds > 0) {
-                    // Force the seek even though startPosition was already passed in the
-                    // config — covers VOD streams where the manifest reports duration but
-                    // hls.js still defaults to 0, and live-flagged manifests where the
-                    // engine would otherwise snap to the latest segment.
-                    try { video.currentTime = startSeconds; } catch { /* ignore */ }
+                } else {
+                    if (startSeconds > 0) {
+                        // Force the seek even though startPosition was already passed in the
+                        // config — covers VOD streams where the manifest reports duration but
+                        // hls.js still defaults to 0, and live-flagged manifests where the
+                        // engine would otherwise snap to the latest segment.
+                        try { video.currentTime = startSeconds; } catch { /* ignore */ }
+                    }
+                    // Muted autoplay so playback begins immediately when the modal opens
+                    // rather than after the user clicks the play button. Browsers allow
+                    // muted autoplay without a gesture.
+                    video.muted = true;
+                    video.play().catch(() => { /* autoplay blocked — user clicks play */ });
                 }
             });
 

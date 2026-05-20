@@ -30,7 +30,7 @@ interface Recording {
     protocol?: string;
 }
 
-interface StorageInfo { totalSize: number; count: number; }
+interface StorageInfo { totalSize: number; count: number; s3Count?: number; s3Size?: number; }
 
 interface RunnerHit {
     checkpoint: string;
@@ -139,6 +139,10 @@ export default function CctvRecordingsPage() {
     const [confirmText, setConfirmText] = useState('');
     const [deleting, setDeleting] = useState(false);
 
+    // Archive-to-S3 progress
+    const [archiving, setArchiving] = useState(false);
+    const [archiveResult, setArchiveResult] = useState<{ uploaded: number; skipped: number; errors: number } | null>(null);
+
     const load = useCallback(async () => {
         setLoading(true);
         try {
@@ -198,6 +202,9 @@ export default function CctvRecordingsPage() {
             setStorage({
                 totalSize: (classicStor?.totalSize || 0) + (betaStor?.totalSize || 0),
                 count: (classicStor?.count || 0) + (betaStor?.count || 0),
+                // Classic-only S3 stats (Beta is S3-native, doesn't need surfacing here).
+                s3Count: classicStor?.s3Count || 0,
+                s3Size: classicStor?.s3Size || 0,
             });
         } catch { setRecordings([]); }
         finally { setLoading(false); }
@@ -308,6 +315,23 @@ export default function CctvRecordingsPage() {
 
     const toggleAll = () => {
         setSelected(prev => prev.size === recordings.length ? new Set() : new Set(recordings.map(r => r._id)));
+    };
+
+    const handleArchiveAll = async () => {
+        setArchiving(true);
+        setArchiveResult(null);
+        try {
+            const res = await fetch('/api/cctv-recordings/archive-all', {
+                method: 'POST',
+                headers: authHeaders(),
+            });
+            if (res.ok) {
+                const data = await res.json().catch(() => null);
+                if (data) setArchiveResult(data);
+            }
+            await load();
+        } catch { /* ignore — UI shows current state */ }
+        finally { setArchiving(false); }
     };
 
     const openDelete = (id: string | null, kind: 'one' | 'all') => {
@@ -666,9 +690,22 @@ export default function CctvRecordingsPage() {
                         <span className="text-xs font-semibold text-slate-500 bg-slate-100 px-3 py-1.5 rounded-lg">
                             {storage?.count ?? 0} {th ? 'ไฟล์' : 'files'}
                         </span>
-                        <span className="text-xs font-bold text-slate-700 bg-slate-100 px-3 py-1.5 rounded-lg">
-                            {storage ? fmtBytes(storage.totalSize) : '—'}
+                        <span className="text-xs font-bold text-slate-700 bg-slate-100 px-3 py-1.5 rounded-lg" title={th ? 'ใช้บนดิสก์ EC2' : 'EC2 disk usage'}>
+                            💾 {storage ? fmtBytes(storage.totalSize) : '—'}
                         </span>
+                        {(storage?.s3Count ?? 0) > 0 && (
+                            <span className="text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-lg" title={th ? 'บน S3 (ไม่กินดิสก์ EC2)' : 'On S3 (no EC2 disk usage)'}>
+                                ☁️ S3: {storage?.s3Count} · {fmtBytes(storage?.s3Size || 0)}
+                            </span>
+                        )}
+                        <button
+                            onClick={handleArchiveAll}
+                            disabled={archiving}
+                            title={th ? 'ย้ายไฟล์วิดีโอที่บันทึกแล้วขึ้น S3 และล้างดิสก์ EC2' : 'Upload completed recordings to S3 and free EC2 disk'}
+                            className={`text-xs font-bold border px-3 py-1.5 rounded-lg transition-colors ${archiving ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-wait' : 'text-emerald-700 border-emerald-300 bg-emerald-50 hover:bg-emerald-100 cursor-pointer'}`}
+                        >
+                            {archiving ? '⏳' : '☁️'} {th ? 'ย้ายไป S3' : 'Archive to S3'}
+                        </button>
                         <button
                             onClick={load}
                             className="text-xs font-semibold text-slate-600 border border-slate-200 px-3 py-1.5 rounded-lg hover:bg-slate-50 transition-colors cursor-pointer"
@@ -677,6 +714,13 @@ export default function CctvRecordingsPage() {
                         </button>
                     </div>
                 </div>
+                {archiveResult && (
+                    <div className="text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-1.5 mb-2">
+                        {th
+                            ? `อัปโหลดสำเร็จ ${archiveResult.uploaded} ไฟล์ · ข้าม ${archiveResult.skipped} · ผิดพลาด ${archiveResult.errors}`
+                            : `Uploaded ${archiveResult.uploaded} · skipped ${archiveResult.skipped} · errors ${archiveResult.errors}`}
+                    </div>
+                )}
                 <div className="w-full bg-slate-100 rounded-full h-2.5 overflow-hidden">
                     <div
                         className="h-full rounded-full transition-all duration-700"
