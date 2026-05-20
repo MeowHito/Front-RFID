@@ -1377,9 +1377,14 @@ export default function EventLivePage() {
                                             case 'rank': {
                                                 const hideRank = ['dnf', 'dns', 'dq', 'not_started'].includes(runner.status);
                                                 const displayRank = runner.overallRank || rank;
+                                                // All ranks (1 → last) are rendered in the primary text color;
+                                                // only DNS/DNF/DQ/not-started fall back to the muted grey "-".
+                                                const rankColor = hideRank
+                                                    ? (isDark ? '#64748b' : '#cbd5e1')
+                                                    : (isDark ? '#f1f5f9' : '#0f172a');
                                                 return (
                                                     <td key={key} className={isMobile ? 'px-0.5 py-1 text-center' : 'px-2 py-1.5 text-center'}>
-                                                        <span className={isMobile ? 'text-sm font-black' : 'text-base font-black'} style={{ color: hideRank ? (isDark ? '#64748b' : '#cbd5e1') : (isMobile ? '#0f172a' : (displayRank <= 3 ? (displayRank === 1 ? '#22c55e' : isDark ? '#94a3b8' : '#334155') : (isDark ? '#64748b' : '#cbd5e1'))) }}>{hideRank ? '-' : displayRank}</span>
+                                                        <span className={isMobile ? 'text-sm font-black' : 'text-base font-black'} style={{ color: rankColor }}>{hideRank ? '-' : displayRank}</span>
                                                     </td>
                                                 );
                                             }
@@ -1413,7 +1418,7 @@ export default function EventLivePage() {
                                                                 </span>
                                                             </span>
                                                             <span className={`flex items-center whitespace-nowrap font-semibold ${isMobile ? 'gap-1 text-[9px]' : 'gap-1.5 text-[10px]'}`} style={{ color: themeStyles.text, lineHeight: 1.15 }}>
-                                                                <span className={`rounded bg-[#666666] px-1.5 py-px font-extrabold tracking-[0.05em] text-white ${isMobile ? 'text-[9px]' : 'text-[10px]'}`}>
+                                                                <span className={`rounded bg-[#dc2626] px-1.5 py-px font-extrabold tracking-[0.05em] text-white ${isMobile ? 'text-[9px]' : 'text-[10px]'}`}>
                                                                     BIB {runner.bib}
                                                                 </span>
                                                                 {(() => { const d = rankDeltas.get(runner.bib); if (!d) return null; return <span className={isMobile ? 'text-[8px] font-extrabold' : 'text-[9px] font-extrabold'} style={{ color: d > 0 ? '#16a34a' : '#dc2626' }}>{d > 0 ? `▲${d}` : `▼${Math.abs(d)}`}</span>; })()}
