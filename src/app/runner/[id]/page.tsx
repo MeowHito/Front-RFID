@@ -551,15 +551,19 @@ export default function RunnerProfilePage() {
     // the on-disk file with HTTP Range so seek lands on the correct frame.
     const isBetaFilePlayback = isBetaLiveInProgress;
 
-    // Clip = exactly clipBufferSeconds, ending at the scan moment
+    // Clip = exactly clipBufferSeconds, CENTERED on the scan moment with ~2/3 before and ~1/3 after.
+    // Example: 15s duration, scan at 09:00:00 → clip runs 08:59:50 → 09:00:05 (10s before + 5s after).
     const seekSec = activeRecording?.seekSeconds ?? selectedHit?.seekSeconds ?? 0;
     const recDuration = activeRecording?.duration || 0;
-    let clipEnd = seekSec;
-    let clipStart = Math.max(0, clipEnd - clipBufferSeconds);
-    // If scan is past recording end, clamp to recording end
+    const totalLen = Math.max(1, clipBufferSeconds);
+    const postLen = Math.floor(totalLen / 3);          // time AFTER the scan
+    const preLen = totalLen - postLen;                  // time BEFORE the scan (~2/3)
+    let clipStart = Math.max(0, seekSec - preLen);
+    let clipEnd = clipStart + totalLen;
+    // If the window runs past the end of the recording, slide it back so total length is preserved.
     if (recDuration > 0 && clipEnd > recDuration) {
         clipEnd = recDuration;
-        clipStart = Math.max(0, clipEnd - clipBufferSeconds);
+        clipStart = Math.max(0, clipEnd - totalLen);
     }
     const trimStart = clipStart;
     const trimDuration = Math.max(1, clipEnd - clipStart);
@@ -569,12 +573,15 @@ export default function RunnerProfilePage() {
     //   • archived → playbackUrl (S3 VOD HLS) handled by HlsPlayer
     //   • in-progress (live) → on-disk fmp4 served by backend with HTTP Range so the
     //     <video> tag can seek to the scan moment even while the file is still growing.
+    // `lq=1` asks the backend to transcode at 480p for faster page loads. The download
+    // endpoint (below) deliberately omits this so users still get the original resolution
+    // when they tap "Download" (assuming the admin has enabled downloads).
     const streamUrl = activeRecording
         ? (isBetaRecording
             ? (isBetaFilePlayback
                 ? `/api/cctv-beta/recordings/${activeRecording._id}/file`
                 : (activeRecording.playbackUrl || ''))
-            : `/api/runner/${runnerId}/cctv/${activeRecording._id}/stream?ss=${trimStart}&t=${trimDuration}`)
+            : `/api/runner/${runnerId}/cctv/${activeRecording._id}/stream?ss=${trimStart}&t=${trimDuration}&lq=1`)
         : '';
     // Hide the download button when:
     //   1) Beta (no server-side trim yet), OR

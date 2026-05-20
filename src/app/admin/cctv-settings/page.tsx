@@ -1,165 +1,13 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useLanguage } from '@/lib/language-context';
 import { useAuth } from '@/lib/auth-context';
 import { authHeaders } from '@/lib/authHeaders';
 import AdminLayout from '../AdminLayout';
 
-/**
- * Apple-clock-style scroll wheel picker for clip duration (min:sec).
- *
- * Two vertical scroll columns (minutes 0-10, seconds 0-59) with CSS scroll-snap so
- * each integer locks to the highlighted center band. We compute the selected value
- * from scrollTop / itemHeight on every scroll event (debounced), and call onChange
- * with the combined total seconds.
- *
- * Minimum clamp: 1 second (a 0:00 clip makes no sense).
- * Maximum clamp: 10:00 (10 minutes — anything longer probably indicates a misconfig).
- */
-function ClipDurationPicker({
-    totalSeconds,
-    onChange,
-    disabled,
-    th,
-}: {
-    totalSeconds: number;
-    onChange: (next: number) => void;
-    disabled?: boolean;
-    th: boolean;
-}) {
-    const ITEM_H = 36;        // px per row
-    const VISIBLE = 5;        // visible rows (must be odd so center band is one row)
-    const HEIGHT = ITEM_H * VISIBLE;
-    const minutes = Math.min(10, Math.floor(totalSeconds / 60));
-    const seconds = totalSeconds % 60;
-    const minRef = useRef<HTMLDivElement>(null);
-    const secRef = useRef<HTMLDivElement>(null);
-    const programmaticScrollRef = useRef(false);
-
-    // Keep the columns scrolled to the current value (e.g. on first paint or external update).
-    useEffect(() => {
-        if (minRef.current && Math.round(minRef.current.scrollTop / ITEM_H) !== minutes) {
-            programmaticScrollRef.current = true;
-            minRef.current.scrollTop = minutes * ITEM_H;
-        }
-        if (secRef.current && Math.round(secRef.current.scrollTop / ITEM_H) !== seconds) {
-            programmaticScrollRef.current = true;
-            secRef.current.scrollTop = seconds * ITEM_H;
-        }
-    }, [minutes, seconds]);
-
-    const handleScroll = (col: 'min' | 'sec') => () => {
-        if (disabled) return;
-        const ref = col === 'min' ? minRef.current : secRef.current;
-        if (!ref) return;
-        // Ignore the scroll events fired by our own scrollTop = ... above
-        if (programmaticScrollRef.current) {
-            programmaticScrollRef.current = false;
-            return;
-        }
-        const idx = Math.round(ref.scrollTop / ITEM_H);
-        const clamped = col === 'min' ? Math.max(0, Math.min(10, idx)) : Math.max(0, Math.min(59, idx));
-        const next = col === 'min'
-            ? Math.max(1, Math.min(600, clamped * 60 + seconds))
-            : Math.max(1, Math.min(600, minutes * 60 + clamped));
-        if (next !== totalSeconds) onChange(next);
-    };
-
-    const renderColumn = (label: string, ref: React.RefObject<HTMLDivElement | null>, range: number, current: number, col: 'min' | 'sec') => (
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flex: 1 }}>
-            <div style={{ fontSize: 10, fontWeight: 700, color: '#94a3b8', letterSpacing: 1, marginBottom: 6 }}>{label}</div>
-            <div
-                ref={ref}
-                onScroll={handleScroll(col)}
-                style={{
-                    height: HEIGHT,
-                    width: '100%',
-                    overflowY: 'scroll',
-                    scrollSnapType: 'y mandatory',
-                    scrollbarWidth: 'none',
-                    msOverflowStyle: 'none',
-                    position: 'relative',
-                    background: '#fff',
-                    borderRadius: 8,
-                    border: '1px solid #e2e8f0',
-                    pointerEvents: disabled ? 'none' : 'auto',
-                    opacity: disabled ? 0.5 : 1,
-                }}
-                className="hide-scrollbar"
-            >
-                {/* Highlight band sits behind the center row */}
-                <div style={{
-                    position: 'sticky',
-                    top: ITEM_H * Math.floor(VISIBLE / 2),
-                    height: ITEM_H,
-                    margin: `-${ITEM_H * Math.floor(VISIBLE / 2)}px 0 0`,
-                    background: 'linear-gradient(to right, rgba(0,6,102,0.04), rgba(0,6,102,0.08), rgba(0,6,102,0.04))',
-                    borderTop: '1px solid #c7d2fe',
-                    borderBottom: '1px solid #c7d2fe',
-                    pointerEvents: 'none',
-                    zIndex: 1,
-                }} />
-                {/* Top spacer so item index 0 lands on the highlight band */}
-                <div style={{ height: ITEM_H * Math.floor(VISIBLE / 2) }} />
-                {Array.from({ length: range + 1 }, (_, i) => (
-                    <div
-                        key={i}
-                        style={{
-                            height: ITEM_H,
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            scrollSnapAlign: 'center',
-                            fontSize: i === current ? 22 : 17,
-                            fontWeight: i === current ? 800 : 500,
-                            color: i === current ? '#000666' : '#94a3b8',
-                            transition: 'color 0.15s, font-size 0.15s, font-weight 0.15s',
-                            fontFamily: 'monospace',
-                        }}
-                    >
-                        {String(i).padStart(2, '0')}
-                    </div>
-                ))}
-                {/* Bottom spacer */}
-                <div style={{ height: ITEM_H * Math.floor(VISIBLE / 2) }} />
-            </div>
-        </div>
-    );
-
-    return (
-        <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, position: 'relative' }}>
-                {renderColumn(th ? 'นาที' : 'MIN', minRef, 10, minutes, 'min')}
-                <div style={{ fontSize: 28, fontWeight: 800, color: '#000666', alignSelf: 'flex-end', marginBottom: 32 }}>:</div>
-                {renderColumn(th ? 'วินาที' : 'SEC', secRef, 59, seconds, 'sec')}
-            </div>
-            {/* Quick presets row */}
-            <div style={{ display: 'flex', gap: 6, marginTop: 10, flexWrap: 'wrap', justifyContent: 'center' }}>
-                {[10, 20, 30, 60, 120, 300].map(v => (
-                    <button
-                        key={v}
-                        type="button"
-                        disabled={disabled}
-                        onClick={() => onChange(v)}
-                        style={{
-                            padding: '4px 10px', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: disabled ? 'default' : 'pointer',
-                            border: totalSeconds === v ? 'none' : '1px solid #e2e8f0',
-                            background: totalSeconds === v ? '#000666' : '#fff',
-                            color: totalSeconds === v ? '#fff' : '#64748b',
-                            opacity: disabled ? 0.5 : 1,
-                        }}
-                    >
-                        {Math.floor(v / 60) > 0 ? `${Math.floor(v / 60)}m` : ''}{v % 60 > 0 ? `${v % 60}s` : ''}
-                    </button>
-                ))}
-            </div>
-            <style jsx>{`
-                .hide-scrollbar::-webkit-scrollbar { display: none; }
-            `}</style>
-        </div>
-    );
-}
+const CLIP_MIN = 1;
+const CLIP_MAX = 60;
 
 export default function CctvSettingsPage() {
     const { language } = useLanguage();
@@ -188,7 +36,11 @@ export default function CctvSettingsPage() {
                 if (s.autoScale !== undefined) setAutoScale(s.autoScale);
                 if (s.bufferMinutes) setBufferMin(s.bufferMinutes);
                 if (s.preArrivalBuffer) setPreArrivalBuffer(s.preArrivalBuffer);
-                if (s.clipBufferSeconds) setClipBufferSeconds(s.clipBufferSeconds);
+                if (s.clipBufferSeconds) {
+                    // Clamp legacy values that exceeded the new 1-60s range.
+                    const n = Math.floor(Number(s.clipBufferSeconds));
+                    if (Number.isFinite(n)) setClipBufferSeconds(Math.max(CLIP_MIN, Math.min(CLIP_MAX, n)));
+                }
                 if (s.videoBitrateKbps) setVideoBitrateKbps(s.videoBitrateKbps);
                 if (typeof s.allowDownload === 'boolean') setAllowDownload(s.allowDownload);
             })
@@ -245,7 +97,7 @@ export default function CctvSettingsPage() {
                     autoScale,
                     bufferMinutes: bufferMin,
                     preArrivalBuffer,
-                    clipBufferSeconds,
+                    clipBufferSeconds: Math.max(CLIP_MIN, Math.min(CLIP_MAX, Math.floor(clipBufferSeconds))),
                     videoBitrateKbps,
                     allowDownload,
                 }),
@@ -346,30 +198,60 @@ export default function CctvSettingsPage() {
                             </label>
                         </div>
 
-                        {/* Clip Duration (replaces legacy "Rolling Buffer") — Apple alarm style picker.
-                            Value is stored as clipBufferSeconds so /runner/{id} playback shows exactly this
-                            length around each scan moment. Range 0:01 – 10:00. */}
-                        <div style={{ padding: '12px 16px', background: '#f8fafc', borderRadius: 10, marginBottom: 10 }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
-                                <div>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                        <span style={{ fontSize: 13 }}>🎬</span>
-                                        <span style={{ fontWeight: 700, fontSize: 13, color: '#0f172a' }}>{th ? 'ตั้งเวลาวิดีโอ' : 'Clip Duration'}</span>
-                                    </div>
-                                    <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>
-                                        {th ? `ความยาวคลิปที่แสดงในหน้า /runner/ ต่อ checkpoint` : 'Length of the clip shown on /runner/ per checkpoint'}
-                                    </div>
+                        {/* Clip Duration — simple number input, 1-60 seconds.
+                            The clip on /runner/{id} is built around each scan moment, with ~2/3
+                            of the duration BEFORE the scan and ~1/3 AFTER (e.g. 15s → 10s before + 5s after). */}
+                        <div style={{ padding: '12px 16px', background: '#f8fafc', borderRadius: 10, marginBottom: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                            <div style={{ flex: 1, minWidth: 200 }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                    <span style={{ fontSize: 13 }}>🎬</span>
+                                    <span style={{ fontWeight: 700, fontSize: 13, color: '#0f172a' }}>{th ? 'ตั้งเวลาวิดีโอ (วินาที)' : 'Clip Duration (sec)'}</span>
                                 </div>
-                                <span style={{ padding: '4px 12px', borderRadius: 6, border: '1.5px solid #000666', fontWeight: 800, fontSize: 14, color: '#000666', background: '#fff', fontFamily: 'monospace' }}>
-                                    {String(Math.floor(clipBufferSeconds / 60)).padStart(2, '0')}:{String(clipBufferSeconds % 60).padStart(2, '0')}
-                                </span>
+                                <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>
+                                    {th
+                                        ? `กรอก ${CLIP_MIN}–${CLIP_MAX} วินาที • คลิปจะเริ่มก่อนเวลาที่นักวิ่งเข้า checkpoint และจบหลังจากนั้น`
+                                        : `Enter ${CLIP_MIN}–${CLIP_MAX} seconds • clip starts before the scan and ends after it`}
+                                </div>
                             </div>
-                            <ClipDurationPicker
-                                totalSeconds={clipBufferSeconds}
-                                onChange={isAdmin ? setClipBufferSeconds : () => {}}
-                                disabled={!isAdmin}
-                                th={th}
-                            />
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <input
+                                    type="number"
+                                    min={CLIP_MIN}
+                                    max={CLIP_MAX}
+                                    step={1}
+                                    value={clipBufferSeconds}
+                                    onChange={e => {
+                                        if (!isAdmin) return;
+                                        const raw = e.target.value;
+                                        if (raw === '') { setClipBufferSeconds(CLIP_MIN); return; }
+                                        const n = Math.floor(Number(raw));
+                                        if (!Number.isFinite(n)) return;
+                                        setClipBufferSeconds(Math.max(CLIP_MIN, Math.min(CLIP_MAX, n)));
+                                    }}
+                                    onBlur={e => {
+                                        // Re-clamp on blur in case the user typed something out of range.
+                                        const n = Math.floor(Number(e.target.value));
+                                        if (!Number.isFinite(n)) { setClipBufferSeconds(CLIP_MIN); return; }
+                                        setClipBufferSeconds(Math.max(CLIP_MIN, Math.min(CLIP_MAX, n)));
+                                    }}
+                                    disabled={!isAdmin}
+                                    style={{
+                                        width: 90,
+                                        padding: '8px 12px',
+                                        borderRadius: 8,
+                                        border: '1.5px solid #000666',
+                                        fontWeight: 800,
+                                        fontSize: 18,
+                                        color: '#000666',
+                                        background: '#fff',
+                                        fontFamily: 'monospace',
+                                        textAlign: 'center',
+                                        outline: 'none',
+                                        opacity: isAdmin ? 1 : 0.6,
+                                    }}
+                                />
+                                <span style={{ fontSize: 13, fontWeight: 700, color: '#64748b' }}>{th ? 'วิ' : 's'}</span>
+                            </div>
                         </div>
 
                         {/* Pre-Arrival Alert Buffer */}

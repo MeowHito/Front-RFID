@@ -14,6 +14,9 @@ export async function GET(
         if (ss) qp.set('ss', ss);
         const t = request.nextUrl.searchParams.get('t');
         if (t) qp.set('t', t);
+        // Low-quality (480p) flag for in-page viewing; downloads omit this for full quality.
+        const lq = request.nextUrl.searchParams.get('lq');
+        if (lq) qp.set('lq', lq);
         const qs = qp.toString() ? `?${qp.toString()}` : '';
 
         // Forward Range header so backend can return 206 Partial Content for video seeking
