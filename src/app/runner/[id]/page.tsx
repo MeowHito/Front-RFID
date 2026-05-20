@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
 import { isRunnerFollowed, loadFollowedRunners, saveFollowedRunners, subscribeFollowedRunners, toggleFollowedRunner, type FollowedRunner } from '@/lib/followed-runners';
-import HlsPlayer, { CctvTimestampOverlay } from '@/components/HlsPlayer';
+import HlsPlayer from '@/components/HlsPlayer';
 
 
 interface RunnerData {
@@ -302,7 +302,6 @@ export default function RunnerProfilePage() {
     const [preArrivalBufferSeconds, setPreArrivalBufferSeconds] = useState(5);
     const [clipBufferSeconds, setClipBufferSeconds] = useState(10);
     const [allowDownload, setAllowDownload] = useState(true);
-    const [showTimestampOverlay, setShowTimestampOverlay] = useState(true);
     const [followedRunners, setFollowedRunners] = useState<FollowedRunner[]>([]);
     const [selectedVideoIsPortrait, setSelectedVideoIsPortrait] = useState(false);
     const [videoDownloadLoading, setVideoDownloadLoading] = useState(false);
@@ -347,9 +346,6 @@ export default function RunnerProfilePage() {
                     }
                     if (typeof settings?.allowDownload === 'boolean') {
                         setAllowDownload(settings.allowDownload);
-                    }
-                    if (typeof settings?.showTimestampOverlay === 'boolean') {
-                        setShowTimestampOverlay(settings.showTimestampOverlay);
                     }
                 }
             } catch (err: any) {
@@ -1095,7 +1091,6 @@ export default function RunnerProfilePage() {
                                                         src={streamUrl}
                                                         startSeconds={trimStart}
                                                         durationSeconds={trimDuration}
-                                                        showTimestamp={showTimestampOverlay}
                                                         allowDownload={allowDownload}
                                                         className={`runner-modal-video ${selectedVideoIsPortrait ? 'portrait' : 'landscape'}`}
                                                         onLoadedMetadata={(video) => {
@@ -1109,27 +1104,24 @@ export default function RunnerProfilePage() {
                                                 </div>
                                             )
                                         ) : (
-                                            <>
-                                                <video
-                                                    key={`${activeRecording._id}-${trimStart}-${trimDuration}`}
-                                                    src={streamUrl}
-                                                    controls
-                                                    preload="auto"
-                                                    autoPlay
-                                                    muted
-                                                    playsInline
-                                                    controlsList={allowDownload ? undefined : 'nodownload noplaybackrate'}
-                                                    disablePictureInPicture={!allowDownload}
-                                                    onContextMenu={(e) => { if (!allowDownload) e.preventDefault(); }}
-                                                    className={`runner-modal-video ${selectedVideoIsPortrait ? 'portrait' : 'landscape'}`}
-                                                    onLoadedMetadata={(event) => {
-                                                        const video = event.currentTarget;
-                                                        setSelectedVideoIsPortrait(video.videoHeight > video.videoWidth);
-                                                        video.play().catch(() => { /* autoplay blocked */ });
-                                                    }}
-                                                />
-                                                {showTimestampOverlay && <CctvTimestampOverlay />}
-                                            </>
+                                            <video
+                                                key={`${activeRecording._id}-${trimStart}-${trimDuration}`}
+                                                src={streamUrl}
+                                                controls
+                                                preload="auto"
+                                                autoPlay
+                                                muted
+                                                playsInline
+                                                controlsList={allowDownload ? undefined : 'nodownload noplaybackrate'}
+                                                disablePictureInPicture={!allowDownload}
+                                                onContextMenu={(e) => { if (!allowDownload) e.preventDefault(); }}
+                                                className={`runner-modal-video ${selectedVideoIsPortrait ? 'portrait' : 'landscape'}`}
+                                                onLoadedMetadata={(event) => {
+                                                    const video = event.currentTarget;
+                                                    setSelectedVideoIsPortrait(video.videoHeight > video.videoWidth);
+                                                    video.play().catch(() => { /* autoplay blocked */ });
+                                                }}
+                                            />
                                         )}
                                         </div>
                                     </div>

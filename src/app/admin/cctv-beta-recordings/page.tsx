@@ -82,9 +82,8 @@ export default function CctvBetaRecordingsPage() {
     const [loading, setLoading] = useState(false);
     const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
     const [playing, setPlaying] = useState<BetaRecording | null>(null);
-    // Shared CCTV settings — apply to Beta too (allowDownload + showTimestampOverlay)
+    // Shared CCTV settings — apply to Beta too
     const [allowDownload, setAllowDownload] = useState(true);
-    const [showTimestampOverlay, setShowTimestampOverlay] = useState(true);
     const playerWrapperRef = useRef<HTMLDivElement | null>(null);
 
     // Bulk-select state — Set of recording _ids the admin has ticked
@@ -117,7 +116,6 @@ export default function CctvBetaRecordingsPage() {
             .then(r => r.ok ? r.json() : null)
             .then(s => {
                 if (s && typeof s.allowDownload === 'boolean') setAllowDownload(s.allowDownload);
-                if (s && typeof s.showTimestampOverlay === 'boolean') setShowTimestampOverlay(s.showTimestampOverlay);
             })
             .catch(() => {});
     }, []);
@@ -487,10 +485,9 @@ export default function CctvBetaRecordingsPage() {
                                 ✕
                             </button>
 
-                            {/* Title bar — top-left under timestamp overlay */}
                             <div
                                 onClick={e => e.stopPropagation()}
-                                style={{ position: 'absolute', top: 16, left: showTimestampOverlay ? 240 : 16, zIndex: 15, color: '#fff', fontSize: 13, padding: '6px 12px', background: 'rgba(0,0,0,0.5)', borderRadius: 6, maxWidth: 'calc(100% - 320px)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                                style={{ position: 'absolute', top: 16, left: 16, zIndex: 15, color: '#fff', fontSize: 13, padding: '6px 12px', background: 'rgba(0,0,0,0.5)', borderRadius: 6, maxWidth: 'calc(100% - 320px)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
                             >
                                 <strong>{playing.cameraName}</strong>
                                 {playing.checkpointName && <> · 📍 {playing.checkpointName}</>}
@@ -504,7 +501,6 @@ export default function CctvBetaRecordingsPage() {
                                     <HlsPlayer
                                         key={url}
                                         src={url}
-                                        showTimestamp={showTimestampOverlay}
                                         allowDownload={allowDownload}
                                         className="w-full h-full object-contain"
                                     />

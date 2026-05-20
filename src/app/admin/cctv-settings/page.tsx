@@ -174,7 +174,6 @@ export default function CctvSettingsPage() {
     const [clipBufferSeconds, setClipBufferSeconds] = useState(10);
     const [videoBitrateKbps, setVideoBitrateKbps] = useState(800);
     const [allowDownload, setAllowDownload] = useState(true);
-    const [showTimestampOverlay, setShowTimestampOverlay] = useState(true);
     const [loading, setLoading] = useState(true);
     const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
     const [pairingToken, setPairingToken] = useState('');
@@ -192,7 +191,6 @@ export default function CctvSettingsPage() {
                 if (s.clipBufferSeconds) setClipBufferSeconds(s.clipBufferSeconds);
                 if (s.videoBitrateKbps) setVideoBitrateKbps(s.videoBitrateKbps);
                 if (typeof s.allowDownload === 'boolean') setAllowDownload(s.allowDownload);
-                if (typeof s.showTimestampOverlay === 'boolean') setShowTimestampOverlay(s.showTimestampOverlay);
             })
             .catch(() => {})
             .finally(() => setLoading(false));
@@ -250,7 +248,6 @@ export default function CctvSettingsPage() {
                     clipBufferSeconds,
                     videoBitrateKbps,
                     allowDownload,
-                    showTimestampOverlay,
                 }),
             });
             if (res.status === 401) {
@@ -285,8 +282,8 @@ export default function CctvSettingsPage() {
                 </p>
                 <div style={{ marginTop: 10, padding: '8px 14px', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 8, fontSize: 12, color: '#1e40af', display: 'inline-block' }}>
                     ℹ️ {th
-                        ? 'ค่าด้านล่าง (ตั้งเวลาวิดีโอ / Pre-Arrival Alert / Allow Download / Timestamp Overlay) ใช้กับทั้ง CCTV ปกติ (Browser) และ CCTV Beta (Larix / IRL Pro)'
-                        : 'Settings below (Clip Duration / Pre-Arrival / Allow Download / Timestamp Overlay) apply to BOTH classic CCTV (Browser) and CCTV Beta (Larix / IRL Pro)'}
+                        ? 'ค่าด้านล่าง (ตั้งเวลาวิดีโอ / Pre-Arrival Alert / Allow Download) ใช้กับทั้ง CCTV ปกติ (Browser) และ CCTV Beta (Larix / IRL Pro)'
+                        : 'Settings below (Clip Duration / Pre-Arrival / Allow Download) apply to BOTH classic CCTV (Browser) and CCTV Beta (Larix / IRL Pro)'}
                 </div>
             </div>
 
@@ -426,28 +423,6 @@ export default function CctvSettingsPage() {
                                 <input type="checkbox" checked={allowDownload} onChange={e => isAdmin && setAllowDownload(e.target.checked)} disabled={!isAdmin} style={{ opacity: 0, width: 0, height: 0 }} />
                                 <span style={{ position: 'absolute', inset: 0, borderRadius: 12, background: allowDownload ? '#3b82f6' : '#cbd5e1', transition: 'background 0.2s' }} />
                                 <span style={{ position: 'absolute', top: 2, left: allowDownload ? 22 : 2, width: 20, height: 20, borderRadius: '50%', background: '#fff', transition: 'left 0.2s', boxShadow: '0 1px 3px rgba(0,0,0,0.15)' }} />
-                            </label>
-                        </div>
-
-                        {/* Timestamp Overlay Toggle — applies to BOTH classic CCTV and CCTV Beta */}
-                        <div style={{ padding: '12px 16px', background: showTimestampOverlay ? '#f0fdf4' : '#f8fafc', borderRadius: 10, border: `1.5px solid ${showTimestampOverlay ? '#86efac' : '#e2e8f0'}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                            <div>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                    <span style={{ fontSize: 13 }}>🕐</span>
-                                    <span style={{ fontWeight: 700, fontSize: 13, color: showTimestampOverlay ? '#166534' : '#0f172a' }}>
-                                        {th ? 'แสดงเวลามุมซ้ายบนของวิดีโอ' : 'Show timestamp overlay (top-left)'}
-                                    </span>
-                                </div>
-                                <div style={{ fontSize: 11, color: showTimestampOverlay ? '#166534' : '#94a3b8', opacity: 0.85, marginTop: 2 }}>
-                                    {showTimestampOverlay
-                                        ? (th ? 'เปิด — แสดงเวลาไทยปัจจุบันแบบ realtime ทุกวิดีโอ (เหมือนกล้องวงจรปิด)' : 'ON — show live Thailand time on every video (like a security camera)')
-                                        : (th ? 'ปิด — ไม่แสดง overlay เวลาบนวิดีโอ' : 'OFF — no time overlay on videos')}
-                                </div>
-                            </div>
-                            <label style={{ position: 'relative', display: 'inline-block', width: 44, height: 24, cursor: isAdmin ? 'pointer' : 'default', flexShrink: 0 }}>
-                                <input type="checkbox" checked={showTimestampOverlay} onChange={e => isAdmin && setShowTimestampOverlay(e.target.checked)} disabled={!isAdmin} style={{ opacity: 0, width: 0, height: 0 }} />
-                                <span style={{ position: 'absolute', inset: 0, borderRadius: 12, background: showTimestampOverlay ? '#16a34a' : '#cbd5e1', transition: 'background 0.2s' }} />
-                                <span style={{ position: 'absolute', top: 2, left: showTimestampOverlay ? 22 : 2, width: 20, height: 20, borderRadius: '50%', background: '#fff', transition: 'left 0.2s', boxShadow: '0 1px 3px rgba(0,0,0,0.15)' }} />
                             </label>
                         </div>
 

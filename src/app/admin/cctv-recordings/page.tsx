@@ -5,7 +5,7 @@ import AdminLayout from '../AdminLayout';
 import { useLanguage } from '@/lib/language-context';
 import { authHeaders } from '@/lib/authHeaders';
 import { io, Socket } from 'socket.io-client';
-import HlsPlayer, { CctvTimestampOverlay } from '@/components/HlsPlayer';
+import HlsPlayer from '@/components/HlsPlayer';
 
 interface Recording {
     _id: string;
@@ -116,7 +116,6 @@ export default function CctvRecordingsPage() {
 
     // CCTV settings — applies to BOTH classic and Beta playback
     const [allowDownload, setAllowDownload] = useState(true);
-    const [showTimestampOverlay, setShowTimestampOverlay] = useState(true);
 
     // Runner lookup
     const [bibSearch, setBibSearch] = useState('');
@@ -229,12 +228,11 @@ export default function CctvRecordingsPage() {
             .then(d => { if (d?._id) { setCampaignId(d._id); setCampaignName(d.name || d.nameTh || ''); } })
             .catch(() => {});
 
-        // Load CCTV settings (allowDownload + showTimestampOverlay) and apply to player
+        // Load CCTV settings (allowDownload) and apply to player
         fetch('/api/cctv-settings', { cache: 'no-store' })
             .then(r => r.ok ? r.json() : null)
             .then(s => {
                 if (s && typeof s.allowDownload === 'boolean') setAllowDownload(s.allowDownload);
-                if (s && typeof s.showTimestampOverlay === 'boolean') setShowTimestampOverlay(s.showTimestampOverlay);
             })
             .catch(() => {});
     }, []);
@@ -906,10 +904,9 @@ export default function CctvRecordingsPage() {
                         onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(0,0,0,0.6)'; (e.currentTarget as HTMLButtonElement).style.borderColor = 'rgba(255,255,255,0.4)'; }}
                     >✕</button>
 
-                    {/* Title — under the timestamp overlay if shown */}
                     <div
                         className="text-white font-bold text-xs truncate"
-                        style={{ position: 'absolute', top: 18, left: showTimestampOverlay ? 240 : 16, zIndex: 55, padding: '6px 12px', background: 'rgba(0,0,0,0.5)', borderRadius: 6, maxWidth: 'calc(100% - 320px)' }}
+                        style={{ position: 'absolute', top: 18, left: 16, zIndex: 55, padding: '6px 12px', background: 'rgba(0,0,0,0.5)', borderRadius: 6, maxWidth: 'calc(100% - 320px)' }}
                         onClick={e => e.stopPropagation()}
                     >
                         {playingName}
@@ -924,7 +921,6 @@ export default function CctvRecordingsPage() {
                                 key={videoSrc}
                                 src={videoSrc}
                                 startSeconds={seekTarget}
-                                showTimestamp={showTimestampOverlay}
                                 allowDownload={allowDownload}
                                 className="w-full h-full object-contain bg-black"
                             />
@@ -976,7 +972,6 @@ export default function CctvRecordingsPage() {
                                 onWaiting={() => setVideoLoading(true)}
                                 onPlaying={() => setVideoLoading(false)}
                             />
-                            {showTimestampOverlay && <CctvTimestampOverlay />}
                             </div>
                         ))}
                         {liveCameraId && (
