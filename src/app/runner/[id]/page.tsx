@@ -560,12 +560,11 @@ export default function RunnerProfilePage() {
     const trimStart = clipStart;
     const trimDuration = Math.max(1, clipEnd - clipStart);
 
-    // BOTH classic and beta now go through the same backend trim endpoint, which
-    // pipes ffmpeg output as fragmented mp4 so the <video> tag starts playing within
-    // a second. `lq=1` asks for 480p (in-page viewing); the download URL omits it so
-    // the user gets original resolution when they tap "Download".
+    // BOTH classic and beta go through the same backend trim endpoint. The backend
+    // uses ffmpeg stream-copy + fragmented mp4 so playback starts within ~1s — no
+    // re-encoding, and view/download share the same cached output.
     const streamUrl = activeRecording
-        ? `/api/runner/${runnerId}/cctv/${activeRecording._id}/stream?ss=${trimStart}&t=${trimDuration}&lq=1`
+        ? `/api/runner/${runnerId}/cctv/${activeRecording._id}/stream?ss=${trimStart}&t=${trimDuration}`
         : '';
     const downloadUrl = activeRecording && allowDownload
         ? `/api/runner/${runnerId}/cctv/${activeRecording._id}/stream?download=1&ss=${trimStart}&t=${trimDuration}`
