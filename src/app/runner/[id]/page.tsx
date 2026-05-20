@@ -547,9 +547,19 @@ export default function RunnerProfilePage() {
         || availableRecordings[0]
         || null;
     const isBetaRecording = activeRecording?.source === 'beta';
+    const isBetaLiveInProgress = isBetaRecording && activeRecording?.recordingStatus === 'recording';
+    // MediaMTX serves LL-HLS for in-progress beta clips with only a few seconds of past
+    // segments in the manifest. Seeking further back than that silently fails and the
+    // engine plays whatever is available — which looks like "live mode" to the user.
+    // Detect that case (still recording AND scan further back than the live window) and
+    // render an explicit "still recording" panel instead of broken playback. After the
+    // stream is unpublished and the on-unpublish webhook archives to S3 the VOD manifest
+    // has every segment, status flips to 'archived', and seek works correctly.
+    const BETA_LIVE_SEEKABLE_WINDOW_SECONDS = 30;
 
     // Clip = exactly clipBufferSeconds, ending at the scan moment
     const seekSec = activeRecording?.seekSeconds ?? selectedHit?.seekSeconds ?? 0;
+    const betaSeekUnavailable = isBetaLiveInProgress && seekSec > BETA_LIVE_SEEKABLE_WINDOW_SECONDS;
     const recDuration = activeRecording?.duration || 0;
     let clipEnd = seekSec;
     let clipStart = Math.max(0, clipEnd - clipBufferSeconds);
@@ -1048,7 +1058,16 @@ export default function RunnerProfilePage() {
                                             style={{ position: 'relative' }}
                                         >
                                         {isBetaRecording ? (
-                                            streamUrl ? (
+                                            betaSeekUnavailable ? (
+                                                <div style={{ padding: 32, textAlign: 'center', color: '#cbd5e1', fontSize: 13, background: '#0f172a', borderRadius: 8 }}>
+                                                    <div style={{ fontSize: 28, marginBottom: 6 }}>⏺️</div>
+                                                    <div style={{ fontWeight: 800, fontSize: 14, color: '#f8fafc', marginBottom: 6 }}>วิดีโอกำลังบันทึกอยู่</div>
+                                                    <div style={{ fontSize: 12, color: '#94a3b8', lineHeight: 1.6 }}>
+                                                        นักวิ่งผ่านจุดเมื่อ <strong style={{ color: '#fde68a' }}>{formatTimeOfDay(selectedHit?.scanTime || '')}</strong><br />
+                                                        ระบบจะดูช่วงเวลานั้นได้หลังจากกล้องหยุดถ่ายและไฟล์ขึ้น S3 เรียบร้อย
+                                                    </div>
+                                                </div>
+                                            ) : streamUrl ? (
                                                 <HlsPlayer
                                                     key={`hls-${activeRecording._id}-${trimStart}`}
                                                     src={streamUrl}
