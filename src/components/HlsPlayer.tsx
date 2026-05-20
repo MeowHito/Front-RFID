@@ -64,10 +64,20 @@ export default function HlsPlayer({
         })();
         const isMp4 = urlPath.endsWith('.mp4') || urlPath.endsWith('.m4v') || urlPath.endsWith('.webm');
         if (isMp4) {
-            // preload=auto + muted autoPlay so the browser starts fetching + decoding
-            // immediately when the modal opens, instead of waiting for the user to click
-            // play. Removes the multi-second "spinning" delay before playback begins.
-            video.preload = 'auto';
+            // preload strategy when startSeconds > 0 (Beta fmp4 from S3, typical for the
+            // /runner/[id] flow): MediaMTX writes fragmented mp4 with no seek index, so
+            // preload="auto" makes the browser greedily download from byte 0 forward
+            // until it reaches the requested time — that can mean pulling tens of MB
+            // before playback starts on a 95 MB clip.
+            //
+            // preload="metadata" makes the browser fetch ftyp+moov first, then issue
+            // a targeted Range for the fragment near the requested seek position. On
+            // a 100 MB / 6-minute fmp4 that drops time-to-first-frame from 30+ seconds
+            // to a couple of seconds.
+            //
+            // For startSeconds == 0 (live preview from the modal open) we keep "auto"
+            // so playback begins as soon as decoding can.
+            video.preload = startSeconds > 0 ? 'metadata' : 'auto';
             video.src = src;
             const tryPlay = () => {
                 video.muted = true;
