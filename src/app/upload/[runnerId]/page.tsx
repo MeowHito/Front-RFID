@@ -218,7 +218,7 @@ export default function UploadPhotoPage() {
                                     <div style={{ width: exportWidth, height: exportHeight, background: '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'Prompt', sans-serif", position: 'relative', overflow: 'hidden' }}>
                                         <div style={{ width: _cardWidth, height: _cardHeight, background: '#ffffff', color: '#0f172a', display: 'flex', flexDirection: 'column', padding: _isPortrait ? '66px 58px 44px' : '66px 88px 54px', position: 'relative', overflow: 'hidden' }}>
                                             <div style={{ position: 'absolute', top: 0, left: 0, height: 4, width: '100%', background: '#16a34a', zIndex: 2 }} />
-                                            {campaignBgImage && <div style={{ position: 'absolute', inset: 0, background: `url(${campaignBgImage}) center/cover no-repeat`, opacity: 0.18, zIndex: 0 }} />}
+                                            {campaignBgImage && <div style={{ position: 'absolute', inset: 0, background: `url(${campaignBgImage}) center/cover no-repeat`, opacity: 0.24, zIndex: 0 }} />}
                                             <div style={{ position: 'relative', zIndex: 1, display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
                                             <div style={{ textAlign: 'center', borderBottom: '1px solid #cbd5e1', paddingBottom: _isPortrait ? 26 : 26, marginBottom: _isPortrait ? 30 : (_hasMedical ? 20 : 38), flexShrink: 0 }}>
                                                 <div style={{ fontSize: _isPortrait ? 46 : 46, fontWeight: 800, letterSpacing: 1, color: '#0f172a', margin: 0, lineHeight: 1.15 }}>{_eventName}</div>

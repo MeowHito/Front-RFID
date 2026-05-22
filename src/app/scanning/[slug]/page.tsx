@@ -215,7 +215,7 @@ export default function ScanningBySlugPage() {
                 .ce-card, .ce-card * { box-sizing: border-box; }
                 .ce-card { --ce-pad-x: clamp(18px, 5vw, 72px); --ce-pad-y: clamp(16px, 5vh, 46px); --ce-gap: clamp(18px, 5vw, 72px); --ce-profile: clamp(220px, min(35vw, 58vh), 440px); width: min(92vw, 1400px); height: min(90vh, 780px); background: #ffffff; color: #0f172a; border-radius: 8px; display: flex; flex-direction: column; padding: var(--ce-pad-y) var(--ce-pad-x); box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5); position: relative; animation: scanFadeIn 0.6s cubic-bezier(0.16, 1, 0.3, 1); overflow: hidden; }
                 .ce-card > * { position: relative; z-index: 1; }
-                .ce-card-bg { position: absolute; inset: 0; z-index: 0; background-position: center; background-size: cover; background-repeat: no-repeat; opacity: 0.18; filter: saturate(0.9); }
+                .ce-card-bg { position: absolute; inset: 0; z-index: 0; background-position: center; background-size: cover; background-repeat: no-repeat; opacity: 0.24; filter: saturate(0.9); }
                 .ce-progress { position: absolute; top: 0; left: 0; height: 4px; background: #16a34a; border-radius: 8px 8px 0 0; animation: scanProgress 8s linear forwards; z-index: 5; }
                 .ce-header { text-align: center; border-bottom: 1px solid #cbd5e1; padding-bottom: clamp(8px, 2.6vh, 22px); margin-bottom: clamp(10px, 3vh, 26px); flex-shrink: 0; }
                 .ce-event-sub { font-family: 'Prompt', sans-serif; font-size: 1rem; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: 6px; margin: 0 0 4px; }
