@@ -92,11 +92,19 @@ export default function Scanning2BySlugPage() {
 
     useEffect(() => {
         if (!orientationCampaignKey) return;
-        fetch('/api/scanning-orientation', {
+        const post = () => fetch('/api/scanning-orientation', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ campaign: orientationCampaignKey, orientation: portrait ? 'portrait' : 'landscape' }),
         }).catch(() => {});
+        post();
+        const heartbeat = setInterval(post, 30000);
+        const onVisible = () => { if (document.visibilityState === 'visible') post(); };
+        document.addEventListener('visibilitychange', onVisible);
+        return () => {
+            clearInterval(heartbeat);
+            document.removeEventListener('visibilitychange', onVisible);
+        };
     }, [orientationCampaignKey, portrait]);
 
     useEffect(() => {

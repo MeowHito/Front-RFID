@@ -119,7 +119,12 @@ export default function UploadPhotoPage() {
         };
         syncOrientation();
         const interval = setInterval(syncOrientation, 1000);
-        return () => clearInterval(interval);
+        const onVisible = () => { if (document.visibilityState === 'visible') syncOrientation(); };
+        document.addEventListener('visibilitychange', onVisible);
+        return () => {
+            clearInterval(interval);
+            document.removeEventListener('visibilitychange', onVisible);
+        };
     }, [campaignKey]);
 
     useEffect(() => {
