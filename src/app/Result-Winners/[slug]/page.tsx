@@ -195,6 +195,9 @@ export default function ResultWinnersBySlugPage() {
     const campaignCategoriesRef = useRef<{ name: string; distance?: string }[]>([]);
     const [dropdownOpen, setDropdownOpen] = useState(false);
     const dropdownRef = useRef<HTMLDivElement>(null);
+    const [volume, setVolume] = useState(1);
+    const volumeRef = useRef(1);
+    const prevFinishedIdsRef = useRef<Set<string> | null>(null);
 
     useEffect(() => {
         const check = () => setIsMobile(window.innerWidth < 768);
@@ -303,6 +306,35 @@ export default function ResultWinnersBySlugPage() {
             if (autoCountdownRef.current) clearInterval(autoCountdownRef.current);
         };
     }, [autoMode]);
+
+    // Sync volumeRef so sound effect always uses latest volume
+    useEffect(() => { volumeRef.current = volume; }, [volume]);
+
+    // Reset finished tracking when category changes (don't play sounds on category switch)
+    useEffect(() => { prevFinishedIdsRef.current = null; }, [selectedCategory]);
+
+    // Detect new finished runners and play sound
+    useEffect(() => {
+        const finishedNow = new Set(
+            runners
+                .filter(r => r.status === 'finished' && (r.netTime || r.gunTime))
+                .map(r => r._id)
+        );
+        if (prevFinishedIdsRef.current === null) {
+            prevFinishedIdsRef.current = finishedNow;
+            return;
+        }
+        const newIds = [...finishedNow].filter(id => !prevFinishedIdsRef.current!.has(id));
+        prevFinishedIdsRef.current = finishedNow;
+        if (newIds.length === 0) return;
+        newIds.forEach((_, i) => {
+            setTimeout(() => {
+                const audio = new Audio('/paysound.mp3');
+                audio.volume = volumeRef.current;
+                audio.play().catch(() => {});
+            }, i * 400);
+        });
+    }, [runners]);
 
     // Close dropdown on outside click
     useEffect(() => {
@@ -448,12 +480,28 @@ export default function ResultWinnersBySlugPage() {
                     </div>
                 </div>
 
-                {/* Right: Campaign name + category dropdown + auto button */}
+                {/* Right: Campaign name + volume slider + category dropdown + auto button */}
                 <div style={{ display: 'flex', alignItems: isMobile ? 'stretch' : 'center', gap: isMobile ? 6 : '1vw', flexDirection: isMobile ? 'column' : 'row' }}>
                     {campaign && (
-                        <span style={{ fontSize: isMobile ? 11 : '1.3vh', fontWeight: 700, color: '#94a3b8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: isMobile ? '100%' : '25vw' }}>
-                            {campaign.name}
-                        </span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, overflow: 'hidden', flexShrink: 1 }}>
+                            <span style={{ fontSize: isMobile ? 11 : '1.3vh', fontWeight: 700, color: '#94a3b8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: isMobile ? '100%' : '20vw' }}>
+                                {campaign.name}
+                            </span>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+                                <span style={{ fontSize: isMobile ? 11 : '1.2vh', color: volume === 0 ? '#475569' : '#22c55e' }}>
+                                    {volume === 0 ? '🔇' : '🔊'}
+                                </span>
+                                <input
+                                    type="range"
+                                    min={0}
+                                    max={1}
+                                    step={0.05}
+                                    value={volume}
+                                    onChange={e => setVolume(parseFloat(e.target.value))}
+                                    style={{ width: isMobile ? 64 : '4.5vw', minWidth: 48, accentColor: '#22c55e', cursor: 'pointer', verticalAlign: 'middle' }}
+                                />
+                            </div>
+                        </div>
                     )}
 
                     {campaign?.categories && campaign.categories.length > 0 && (
