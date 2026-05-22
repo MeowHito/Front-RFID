@@ -46,6 +46,8 @@ interface Campaign {
   cardColor?: string;
 }
 
+type CategoryStatus = 'live' | 'wait' | 'finished';
+
 
 export default function Home() {
   const { theme, toggleTheme } = useTheme();
@@ -149,8 +151,77 @@ export default function Home() {
     }
   };
 
+  const parseLocalDateTime = (dateString: string, timeString?: string) => {
+    if (!dateString) return undefined;
+
+    if (timeString) {
+      const isoDateTimeMatch = timeString.match(/^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})(?::\d{2})?/);
+      if (isoDateTimeMatch) {
+        const parsed = new Date(`${isoDateTimeMatch[1]}T${isoDateTimeMatch[2]}:00`);
+        return Number.isNaN(parsed.getTime()) ? undefined : parsed;
+      }
+
+      const timeMatch = timeString.match(/^(\d{1,2}):(\d{2})/);
+      if (timeMatch) {
+        const datePart = dateString.split('T')[0];
+        const parsed = new Date(`${datePart}T${timeMatch[1].padStart(2, '0')}:${timeMatch[2]}:00`);
+        return Number.isNaN(parsed.getTime()) ? undefined : parsed;
+      }
+    }
+
+    const parsed = new Date(dateString);
+    return Number.isNaN(parsed.getTime()) ? undefined : parsed;
+  };
+
+  const parseCutoffMs = (cutoff: string) => {
+    if (!cutoff) return undefined;
+
+    const normalized = cutoff.toLowerCase();
+    const hourMatch = normalized.match(/(\d+(?:\.\d+)?)\s*(?:ชม|ชั่วโมง|hr|hrs|hour|hours|h\b)/);
+    const minuteMatch = normalized.match(/(\d+(?:\.\d+)?)\s*(?:นาที|min|mins|minute|minutes|m\b)/);
+    const timeMatch = normalized.match(/^(\d{1,3}):(\d{2})$/);
+
+    if (timeMatch) {
+      return (Number(timeMatch[1]) * 60 + Number(timeMatch[2])) * 60 * 1000;
+    }
+
+    if (hourMatch || minuteMatch) {
+      const hours = hourMatch ? Number(hourMatch[1]) : 0;
+      const minutes = minuteMatch ? Number(minuteMatch[1]) : 0;
+      return (hours * 60 + minutes) * 60 * 1000;
+    }
+
+    const numeric = normalized.match(/^\s*(\d+(?:\.\d+)?)\s*$/);
+    if (numeric) {
+      return Number(numeric[1]) * 60 * 60 * 1000;
+    }
+
+    return undefined;
+  };
+
+  const resolveCategoryStatus = (cat: RaceCategory, campaign: Campaign): CategoryStatus => {
+    const start = parseLocalDateTime(campaign.eventDate, cat.startTime);
+    const fallbackStatus = (cat.status === 'live' || cat.status === 'finished') ? cat.status : 'wait';
+
+    if (!start) return fallbackStatus;
+
+    const now = new Date();
+    if (now.getTime() < start.getTime()) return 'wait';
+
+    const cutoffMs = parseCutoffMs(cat.cutoff);
+    const cutoffFinish = cutoffMs ? new Date(start.getTime() + cutoffMs) : undefined;
+    const endFinish = campaign.eventEndDate ? parseLocalDateTime(campaign.eventEndDate, '23:59') : undefined;
+    const finish = cutoffFinish || endFinish;
+
+    if (finish && now.getTime() >= finish.getTime()) return 'finished';
+    if (cat.status === 'finished') return 'finished';
+
+    return 'live';
+  };
+
   // Transform backend categories to ActivityCard format
-  const transformCategories = (categories: RaceCategory[]) => {
+  const transformCategories = (campaign: Campaign) => {
+    const categories = campaign.categories || [];
     return categories.map(cat => ({
       name: cat.name,
       distance: cat.distance,
@@ -159,7 +230,7 @@ export default function Home() {
       elevation: cat.elevation,
       type: cat.raceType,
       badgeColor: cat.badgeColor,
-      status: cat.status as 'live' | 'wait' | 'finished',
+      status: resolveCategoryStatus(cat, campaign),
       itra: cat.itra,
       index: cat.utmbIndex
     }));
@@ -402,7 +473,7 @@ export default function Home() {
                   link={`/event/${campaign.slug || campaign._id}`}
                   status={getStatusInfo(campaign.status)}
                   countdown={campaign.status === 'upcoming' ? calculateCountdown(campaign.countdownDate || campaign.eventDate) : undefined}
-                  categories={transformCategories(campaign.categories)}
+                  categories={transformCategories(campaign)}
                 />
               ))
             )}
