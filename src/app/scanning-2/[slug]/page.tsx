@@ -111,13 +111,13 @@ export default function Scanning2BySlugPage() {
         if (!runner) return;
         const fit = () => {
             const baseEn = portrait
-                ? Math.min(8.5, Math.max(4.8, window.innerWidth / 100))
+                ? Math.min(9, Math.max(5, window.innerWidth / 90))
                 : Math.min(11, Math.max(6, window.innerWidth / 280));
             const baseTh = portrait
                 ? Math.min(4, Math.max(1.4, window.innerWidth / 300))
                 : Math.min(4.2, Math.max(2.2, window.innerWidth / 700));
-            fitNameToWidth(nameEnRef.current, baseEn, 1.4);
-            fitNameToWidth(nameThRef.current, baseTh, 0.9);
+            fitNameToWidth(nameEnRef.current, baseEn, portrait ? 0.8 : 1.4);
+            fitNameToWidth(nameThRef.current, baseTh, 0.7);
         };
         fit();
         window.addEventListener('resize', fit);
@@ -260,9 +260,9 @@ export default function Scanning2BySlugPage() {
                 .s2-hero {
                     display: flex; align-items: stretch;
                     gap: 0;
-                    background: rgba(255,255,255,0.14);
+                    background: rgba(255,255,255,0.26);
                     border-radius: 10px;
-                    border: 1px solid rgba(255,255,255,0.28);
+                    border: 1px solid rgba(255,255,255,0.6);
                     overflow: hidden;
                     flex-shrink: 0;
                 }
@@ -270,7 +270,7 @@ export default function Scanning2BySlugPage() {
                     display: flex; flex-direction: column;
                     align-items: center; justify-content: center;
                     padding: clamp(14px, 2.5vh, 36px) clamp(28px, 4vw, 72px);
-                    border-right: 1px solid rgba(255,255,255,0.28);
+                    border-right: 1px solid rgba(255,255,255,0.6);
                     flex: 1; min-width: 0;
                     background: transparent;
                 }

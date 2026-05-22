@@ -37,6 +37,8 @@ export default function UploadPhotoPage() {
     const [uploadedPhoto, setUploadedPhoto] = useState<string>('');
     const [campaignName, setCampaignName] = useState('');
     const [campaignBgImage, setCampaignBgImage] = useState('');
+    const [generatedCardUrl, setGeneratedCardUrl] = useState<string>('');
+    const [generating, setGenerating] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const cardRef = useRef<HTMLDivElement>(null);
     const wrapperRef = useRef<HTMLDivElement>(null);
@@ -136,6 +138,29 @@ export default function UploadPhotoPage() {
         window.addEventListener('resize', compute);
         return () => window.removeEventListener('resize', compute);
     }, [success, exportWidth]);
+
+    // Auto-generate card image for LINE long-press save
+    useEffect(() => {
+        if (!success || !cardRef.current) return;
+        let cancelled = false;
+        setGeneratedCardUrl('');
+        setGenerating(true);
+        (async () => {
+            await new Promise(r => setTimeout(r, 400));
+            if (cancelled || !cardRef.current) return;
+            try {
+                await document.fonts.ready;
+                const opts = { quality: 0.92, width: exportWidth, height: exportHeight, pixelRatio: 1, cacheBust: true, style: { transform: 'none', position: 'relative' as const } };
+                await toJpeg(cardRef.current, opts).catch(() => {});
+                if (cancelled) return;
+                const url = await toJpeg(cardRef.current, opts);
+                if (!cancelled) setGeneratedCardUrl(url);
+            } catch { /* ignore */ } finally {
+                if (!cancelled) setGenerating(false);
+            }
+        })();
+        return () => { cancelled = true; };
+    }, [success, exportWidth, exportHeight]);
 
     const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
@@ -279,8 +304,28 @@ export default function UploadPhotoPage() {
                                     </div>
                                 </div>
                             </div>
+                            {/* Generated image for long-press save (LINE / Safari) */}
+                            {generating && (
+                                <div style={{ textAlign: 'center', padding: '16px 0', color: '#94a3b8', fontSize: 13 }}>
+                                    <div style={{ width: 24, height: 24, border: '3px solid #334155', borderTopColor: '#4ade80', borderRadius: '50%', animation: 'spin 0.8s linear infinite', margin: '0 auto 8px' }} />
+                                    กำลังสร้างรูป...
+                                </div>
+                            )}
+                            {generatedCardUrl && (
+                                <div style={{ marginBottom: 10 }}>
+                                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                                    <img
+                                        src={generatedCardUrl}
+                                        alt="runner card"
+                                        style={{ width: '100%', borderRadius: 10, display: 'block', WebkitTouchCallout: 'default' }}
+                                    />
+                                    <p style={{ color: '#4ade80', fontSize: 12, textAlign: 'center', marginTop: 6, fontWeight: 700 }}>
+                                        📱 กดค้างที่รูปเพื่อบันทึก (สำหรับ LINE)
+                                    </p>
+                                </div>
+                            )}
                             <button onClick={handleDownload} style={{ width: '100%', padding: '14px 20px', borderRadius: 14, background: 'linear-gradient(135deg, #3b82f6, #2563eb)', color: '#fff', fontSize: 17, fontWeight: 800, border: 'none', cursor: 'pointer', boxShadow: '0 8px 24px rgba(59,130,246,0.35)', marginBottom: 10 }}>💾 ดาวน์โหลดรูป</button>
-                            <button onClick={() => { setSuccess(false); setUploadedPhoto(''); if (fileInputRef.current) fileInputRef.current.value = ''; }} style={{ width: '100%', padding: '12px 20px', borderRadius: 14, background: 'rgba(255,255,255,0.08)', color: '#94a3b8', fontSize: 14, fontWeight: 700, border: '1px solid rgba(255,255,255,0.12)', cursor: 'pointer' }}>📸 อัปโหลดรูปใหม่</button>
+                            <button onClick={() => { setSuccess(false); setUploadedPhoto(''); setGeneratedCardUrl(''); if (fileInputRef.current) fileInputRef.current.value = ''; }} style={{ width: '100%', padding: '12px 20px', borderRadius: 14, background: 'rgba(255,255,255,0.08)', color: '#94a3b8', fontSize: 14, fontWeight: 700, border: '1px solid rgba(255,255,255,0.12)', cursor: 'pointer' }}>📸 อัปโหลดรูปใหม่</button>
                         </div>
                     );
                 })() : (
