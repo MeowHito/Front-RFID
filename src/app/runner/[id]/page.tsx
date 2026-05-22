@@ -675,6 +675,8 @@ export default function RunnerProfilePage() {
                 .runner-modal-video.landscape { height: auto; max-height: min(58vh, 540px); aspect-ratio: 16 / 9; object-fit: contain; }
                 .runner-modal-download-row { margin-top: 0; flex: 0 0 auto; display: flex; justify-content: center; }
                 .runner-modal-empty { padding: 28px 24px 30px; text-align: center; }
+                .runner-cert-desktop { display: flex; }
+                .runner-cert-mobile { display: none !important; }
                 @media (max-width: 640px) {
                     .runner-header { padding: 6px 10px !important; }
                     .runner-info-section { padding: 12px !important; gap: 12px !important; }
@@ -687,6 +689,8 @@ export default function RunnerProfilePage() {
                     .runner-cp-table-header { padding: 10px 14px !important; }
                     .runner-actions { gap: 6px !important; margin-left: 0 !important; align-items: stretch !important; width: 100% !important; }
                     .runner-action-btn { width: 100% !important; padding: 8px 14px !important; font-size: 12px !important; min-width: 0 !important; min-height: 36px !important; border-radius: 10px !important; box-sizing: border-box !important; }
+                    .runner-cert-desktop { display: none !important; }
+                    .runner-cert-mobile { display: flex !important; }
                     .runner-footer { padding: 16px !important; margin-top: 16px !important; }
                     .runner-modal-overlay { padding: 8px !important; }
                     .runner-modal { width: 100% !important; height: calc(100vh - 16px) !important; max-height: calc(100vh - 16px) !important; border-radius: 20px !important; }
@@ -748,6 +752,16 @@ export default function RunnerProfilePage() {
                         </div>
                     </div>
 
+                    {/* Desktop-only certificate slot — placed in the empty area to the LEFT of the actions column, matching the design in /admin/eslip2 follow-up spec. Hidden on mobile (cert button moves below E-Slip inside .runner-actions). */}
+                    {isFinished && campaign?.isApproveCertificate && (
+                        <div className="runner-cert-desktop" style={{ alignItems: 'center', justifyContent: 'center', minWidth: 220 }}>
+                            <Link href={`/runner/${runnerId}/certificate`} className="runner-action-btn" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, background: '#2563eb', color: '#fff', padding: '12px 18px', borderRadius: 12, fontWeight: 700, fontSize: 13, textDecoration: 'none', border: 'none', cursor: 'pointer', minWidth: 220, minHeight: 56, width: '100%' }}>
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="12" y1="18" x2="12" y2="12" /><polyline points="9 15 12 18 15 15" /></svg>
+                                ดาวน์โหลดใบประกาศ
+                            </Link>
+                        </div>
+                    )}
+
                     <div className="runner-actions" style={{ display: 'flex', flexDirection: 'column', gap: 6, marginLeft: 'auto', alignItems: 'flex-end' }}>
                         <button
                             className="runner-action-btn"
@@ -780,7 +794,7 @@ export default function RunnerProfilePage() {
                                     Finished — ดู E-Slip
                                 </Link>
                                 {campaign?.isApproveCertificate && (
-                                    <Link href={`/runner/${runnerId}/certificate`} className="runner-action-btn" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, background: '#2563eb', color: '#fff', padding: '8px 18px', borderRadius: 10, fontWeight: 700, fontSize: 13, textDecoration: 'none', border: 'none', cursor: 'pointer', minWidth: 200, minHeight: 38, width: '100%' }}>
+                                    <Link href={`/runner/${runnerId}/certificate`} className="runner-action-btn runner-cert-mobile" style={{ alignItems: 'center', justifyContent: 'center', gap: 6, background: '#2563eb', color: '#fff', padding: '8px 18px', borderRadius: 10, fontWeight: 700, fontSize: 13, textDecoration: 'none', border: 'none', cursor: 'pointer', minWidth: 200, minHeight: 38, width: '100%' }}>
                                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="12" y1="18" x2="12" y2="12" /><polyline points="9 15 12 18 15 15" /></svg>
                                         ดาวน์โหลดใบประกาศ
                                     </Link>
