@@ -13,9 +13,26 @@ interface Campaign {
     scanningBgImagePortrait?: string;
 }
 
-/** Resize an image file to maxWidth and re-encode as JPEG so the base64 payload
- *  fits inside the 10 MB API limit. Server still receives a data: URL. */
-async function compressImage(file: File, maxWidth: number, quality: number): Promise<string> {
+/** Draw image onto canvas at given size and return JPEG data URL at specified quality. */
+function canvasToJpeg(img: HTMLImageElement, w: number, h: number, quality: number): string {
+    const canvas = document.createElement('canvas');
+    canvas.width = w; canvas.height = h;
+    const ctx = canvas.getContext('2d')!;
+    ctx.drawImage(img, 0, 0, w, h);
+    return canvas.toDataURL('image/jpeg', quality);
+}
+
+/**
+ * Compress image to fit within maxBase64Bytes (default 400 KB).
+ * Tries progressively lower quality until the result fits.
+ * Two images per save request → both under 400 KB each = total <800 KB < nginx 1 MB limit.
+ */
+async function compressImage(
+    file: File,
+    maxWidth: number,
+    initialQuality: number,
+    maxBase64Bytes = 400_000,
+): Promise<string> {
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = () => {
@@ -24,12 +41,17 @@ async function compressImage(file: File, maxWidth: number, quality: number): Pro
                 const ratio = img.width > maxWidth ? maxWidth / img.width : 1;
                 const w = Math.round(img.width * ratio);
                 const h = Math.round(img.height * ratio);
-                const canvas = document.createElement('canvas');
-                canvas.width = w; canvas.height = h;
-                const ctx = canvas.getContext('2d');
-                if (!ctx) return reject(new Error('canvas ctx unavailable'));
-                ctx.drawImage(img, 0, 0, w, h);
-                resolve(canvas.toDataURL('image/jpeg', quality));
+
+                let quality = initialQuality;
+                let result = canvasToJpeg(img, w, h, quality);
+
+                // Step down quality until result fits or we hit the floor (0.30)
+                while (result.length > maxBase64Bytes && quality > 0.3) {
+                    quality = Math.round((quality - 0.08) * 100) / 100;
+                    result = canvasToJpeg(img, w, h, quality);
+                }
+
+                resolve(result);
             };
             img.onerror = () => reject(new Error('image decode failed'));
             img.src = reader.result as string;
@@ -89,6 +111,7 @@ export default function BibCheckPage() {
                 }),
             });
             if (!res.ok) {
+                if (res.status === 413) throw new Error('รูปภาพใหญ่เกินไป (413) — ลองใช้รูปที่มีขนาดไฟล์เล็กกว่านี้');
                 const txt = await res.text();
                 throw new Error(txt || `HTTP ${res.status}`);
             }
@@ -271,7 +294,7 @@ export default function BibCheckPage() {
                                                     onChange={async (e) => {
                                                         const file = e.target.files?.[0];
                                                         if (!file) return;
-                                                        const compressed = await compressImage(file, 1920, 0.82);
+                                                        const compressed = await compressImage(file, 1280, 0.65);
                                                         setBgImage(compressed);
                                                     }}
                                                 />
@@ -324,7 +347,7 @@ export default function BibCheckPage() {
                                                     onChange={async (e) => {
                                                         const file = e.target.files?.[0];
                                                         if (!file) return;
-                                                        const compressed = await compressImage(file, 1080, 0.82);
+                                                        const compressed = await compressImage(file, 900, 0.65);
                                                         setBgImagePortrait(compressed);
                                                     }}
                                                 />

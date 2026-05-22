@@ -38,6 +38,7 @@ export default function UploadPhotoPage() {
     const [campaignName, setCampaignName] = useState('');
     const [campaignBgImage, setCampaignBgImage] = useState('');
     const [generatedCardUrl, setGeneratedCardUrl] = useState<string>('');
+    const [generatedBlobUrl, setGeneratedBlobUrl] = useState<string>('');
     const [generating, setGenerating] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const cardRef = useRef<HTMLDivElement>(null);
@@ -45,26 +46,16 @@ export default function UploadPhotoPage() {
     const [cardScale, setCardScale] = useState(0.22);
 
     const handleDownload = async () => {
-        if (!cardRef.current) return;
         const filename = `BIB${runner?.bib || 'photo'}_${runner?.firstNameTh || runner?.firstName || ''}.jpg`;
-
         try {
-            await document.fonts.ready;
-
-            const opts = {
-                quality: 0.92,
-                width: exportWidth,
-                height: exportHeight,
-                pixelRatio: 1,
-                cacheBust: true,
-                style: { transform: 'none', position: 'relative' as const },
-            };
-
-            // First call warms the image cache (fixes base64 images not rendering)
-            await toJpeg(cardRef.current, opts).catch(() => {});
-            // Second call produces the correct output
-            const dataUrl = await toJpeg(cardRef.current, opts);
-
+            let dataUrl = generatedCardUrl;
+            if (!dataUrl) {
+                if (!cardRef.current) return;
+                await document.fonts.ready;
+                const opts = { quality: 0.92, width: exportWidth, height: exportHeight, pixelRatio: 1, cacheBust: true, style: { transform: 'none', position: 'relative' as const } };
+                await toJpeg(cardRef.current, opts).catch(() => {});
+                dataUrl = await toJpeg(cardRef.current, opts);
+            }
             const res = await fetch(dataUrl);
             const blob = await res.blob();
             const file = new File([blob], filename, { type: 'image/jpeg' });
@@ -139,11 +130,13 @@ export default function UploadPhotoPage() {
         return () => window.removeEventListener('resize', compute);
     }, [success, exportWidth]);
 
-    // Auto-generate card image for LINE long-press save
+    // Auto-generate card image — produce a blob URL so LINE can long-press save it
     useEffect(() => {
         if (!success || !cardRef.current) return;
         let cancelled = false;
+        // Revoke previous blob URL to avoid memory leak
         setGeneratedCardUrl('');
+        setGeneratedBlobUrl(prev => { if (prev) URL.revokeObjectURL(prev); return ''; });
         setGenerating(true);
         (async () => {
             await new Promise(r => setTimeout(r, 400));
@@ -153,8 +146,18 @@ export default function UploadPhotoPage() {
                 const opts = { quality: 0.92, width: exportWidth, height: exportHeight, pixelRatio: 1, cacheBust: true, style: { transform: 'none', position: 'relative' as const } };
                 await toJpeg(cardRef.current, opts).catch(() => {});
                 if (cancelled) return;
-                const url = await toJpeg(cardRef.current, opts);
-                if (!cancelled) setGeneratedCardUrl(url);
+                const dataUrl = await toJpeg(cardRef.current, opts);
+                if (cancelled) return;
+                // Convert to blob URL — LINE's in-app browser can long-press save blob URLs
+                const res = await fetch(dataUrl);
+                const blob = await res.blob();
+                const blobUrl = URL.createObjectURL(blob);
+                if (!cancelled) {
+                    setGeneratedCardUrl(dataUrl);
+                    setGeneratedBlobUrl(blobUrl);
+                } else {
+                    URL.revokeObjectURL(blobUrl);
+                }
             } catch { /* ignore */ } finally {
                 if (!cancelled) setGenerating(false);
             }
@@ -237,9 +240,9 @@ export default function UploadPhotoPage() {
                     const _photoSize = _isPortrait ? 630 : 440;
                     return (
                         <div ref={wrapperRef} style={{ width: '100%', maxWidth: _isPortrait ? 360 : 420, animation: 'fadeIn 0.5s ease-out' }}>
-                            {/* Scaled 1920×1080 card — exact same layout as scanning page */}
-                            <div style={{ position: 'relative', width: '100%', height: Math.round(exportHeight * cardScale), overflow: 'hidden', borderRadius: 14, marginBottom: 14, boxShadow: '0 15px 40px rgba(0,0,0,0.5)', border: '1px solid rgba(74,222,128,0.2)' }}>
-                                <div ref={cardRef} style={{ position: 'absolute', top: 0, left: 0, width: exportWidth, height: exportHeight, transformOrigin: '0 0', transform: `scale(${cardScale})` }}>
+                            {/* Off-screen card for toJpeg — not visible to user */}
+                            <div style={{ position: 'fixed', left: '-99999px', top: 0, pointerEvents: 'none', zIndex: -1 }}>
+                                <div ref={cardRef} style={{ width: exportWidth, height: exportHeight, position: 'relative' }}>
                                     <div style={{ width: exportWidth, height: exportHeight, background: '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'Prompt', sans-serif", position: 'relative', overflow: 'hidden' }}>
                                         <div style={{ width: _cardWidth, height: _cardHeight, background: '#ffffff', color: '#0f172a', display: 'flex', flexDirection: 'column', padding: _isPortrait ? '66px 58px 44px' : '66px 88px 54px', position: 'relative', overflow: 'hidden' }}>
                                             <div style={{ position: 'absolute', top: 0, left: 0, height: 4, width: '100%', background: '#16a34a', zIndex: 2 }} />
@@ -304,28 +307,27 @@ export default function UploadPhotoPage() {
                                     </div>
                                 </div>
                             </div>
-                            {/* Generated image for long-press save (LINE / Safari) */}
-                            {generating && (
-                                <div style={{ textAlign: 'center', padding: '16px 0', color: '#94a3b8', fontSize: 13 }}>
-                                    <div style={{ width: 24, height: 24, border: '3px solid #334155', borderTopColor: '#4ade80', borderRadius: '50%', animation: 'spin 0.8s linear infinite', margin: '0 auto 8px' }} />
-                                    กำลังสร้างรูป...
+                            {/* Single card image — loading or ready */}
+                            {generating ? (
+                                <div style={{ height: 220, background: 'rgba(255,255,255,0.05)', borderRadius: 14, marginBottom: 14, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', border: '1px solid rgba(255,255,255,0.1)' }}>
+                                    <div style={{ width: 28, height: 28, border: '3px solid #334155', borderTopColor: '#4ade80', borderRadius: '50%', animation: 'spin 0.8s linear infinite', marginBottom: 12 }} />
+                                    <p style={{ color: '#64748b', fontSize: 13, margin: 0 }}>กำลังสร้างรูป...</p>
                                 </div>
-                            )}
-                            {generatedCardUrl && (
-                                <div style={{ marginBottom: 10 }}>
+                            ) : generatedCardUrl ? (
+                                <div style={{ marginBottom: 14 }}>
                                     {/* eslint-disable-next-line @next/next/no-img-element */}
                                     <img
-                                        src={generatedCardUrl}
+                                        src={generatedBlobUrl || generatedCardUrl}
                                         alt="runner card"
-                                        style={{ width: '100%', borderRadius: 10, display: 'block', WebkitTouchCallout: 'default' }}
+                                        style={{ width: '100%', borderRadius: 12, display: 'block', boxShadow: '0 15px 40px rgba(0,0,0,0.5)', border: '1px solid rgba(74,222,128,0.2)', WebkitTouchCallout: 'default', userSelect: 'none' }}
                                     />
-                                    <p style={{ color: '#4ade80', fontSize: 12, textAlign: 'center', marginTop: 6, fontWeight: 700 }}>
-                                        📱 กดค้างที่รูปเพื่อบันทึก (สำหรับ LINE)
+                                    <p style={{ color: '#4ade80', fontSize: 12, textAlign: 'center', marginTop: 8, fontWeight: 700 }}>
+                                        📱 กดค้างที่รูปเพื่อบันทึก (LINE / Safari)
                                     </p>
                                 </div>
-                            )}
+                            ) : null}
                             <button onClick={handleDownload} style={{ width: '100%', padding: '14px 20px', borderRadius: 14, background: 'linear-gradient(135deg, #3b82f6, #2563eb)', color: '#fff', fontSize: 17, fontWeight: 800, border: 'none', cursor: 'pointer', boxShadow: '0 8px 24px rgba(59,130,246,0.35)', marginBottom: 10 }}>💾 ดาวน์โหลดรูป</button>
-                            <button onClick={() => { setSuccess(false); setUploadedPhoto(''); setGeneratedCardUrl(''); if (fileInputRef.current) fileInputRef.current.value = ''; }} style={{ width: '100%', padding: '12px 20px', borderRadius: 14, background: 'rgba(255,255,255,0.08)', color: '#94a3b8', fontSize: 14, fontWeight: 700, border: '1px solid rgba(255,255,255,0.12)', cursor: 'pointer' }}>📸 อัปโหลดรูปใหม่</button>
+                            <button onClick={() => { setSuccess(false); setUploadedPhoto(''); setGeneratedCardUrl(''); setGeneratedBlobUrl(prev => { if (prev) URL.revokeObjectURL(prev); return ''; }); if (fileInputRef.current) fileInputRef.current.value = ''; }} style={{ width: '100%', padding: '12px 20px', borderRadius: 14, background: 'rgba(255,255,255,0.08)', color: '#94a3b8', fontSize: 14, fontWeight: 700, border: '1px solid rgba(255,255,255,0.12)', cursor: 'pointer' }}>📸 อัปโหลดรูปใหม่</button>
                         </div>
                     );
                 })() : (
