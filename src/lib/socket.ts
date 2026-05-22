@@ -49,8 +49,12 @@ class SocketService {
 
     onRunnerUpdate(callback: (runner: Runner) => void) {
         this.socket?.on('runnerUpdate', callback);
+        // Handle batched updates (200ms window) — calls callback once per runner
+        const batchHandler = (runners: Runner[]) => runners.forEach(callback);
+        this.socket?.on('runnerBatchUpdate', batchHandler);
         return () => {
             this.socket?.off('runnerUpdate', callback);
+            this.socket?.off('runnerBatchUpdate', batchHandler);
         };
     }
 
