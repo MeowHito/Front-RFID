@@ -140,7 +140,10 @@ export default function CctvRecordingsPage() {
 
     // Archive-to-S3 progress
     const [archiving, setArchiving] = useState(false);
-    const [archiveResult, setArchiveResult] = useState<{ uploaded: number; skipped: number; errors: number } | null>(null);
+    const [archiveResult, setArchiveResult] = useState<{
+        uploaded: number; skipped: number; errors: number;
+        betaUploaded?: number; betaSkipped?: number; betaErrors?: number;
+    } | null>(null);
 
     const load = useCallback(async () => {
         setLoading(true);
@@ -319,13 +322,24 @@ export default function CctvRecordingsPage() {
         setArchiving(true);
         setArchiveResult(null);
         try {
-            const res = await fetch('/api/cctv-recordings/archive-all', {
-                method: 'POST',
-                headers: authHeaders(),
-            });
-            if (res.ok) {
-                const data = await res.json().catch(() => null);
-                if (data) setArchiveResult(data);
+            // Run classic archive + beta force-sync in parallel
+            const [classicRes, betaRes] = await Promise.allSettled([
+                fetch('/api/cctv-recordings/archive-all', { method: 'POST', headers: authHeaders() }),
+                fetch('/api/cctv-beta/recordings/force-sync', { method: 'POST', headers: authHeaders() }),
+            ]);
+            const classicData = classicRes.status === 'fulfilled' && classicRes.value.ok
+                ? await classicRes.value.json().catch(() => null) : null;
+            const betaData = betaRes.status === 'fulfilled' && betaRes.value.ok
+                ? await betaRes.value.json().catch(() => null) : null;
+            if (classicData || betaData) {
+                setArchiveResult({
+                    uploaded: classicData?.uploaded ?? 0,
+                    skipped: classicData?.skipped ?? 0,
+                    errors: classicData?.errors ?? 0,
+                    betaUploaded: betaData?.uploaded,
+                    betaSkipped: betaData?.skipped,
+                    betaErrors: betaData?.errors,
+                });
             }
             await load();
         } catch { /* ignore — UI shows current state */ }
@@ -713,10 +727,19 @@ export default function CctvRecordingsPage() {
                     </div>
                 </div>
                 {archiveResult && (
-                    <div className="text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-1.5 mb-2">
-                        {th
-                            ? `อัปโหลดสำเร็จ ${archiveResult.uploaded} ไฟล์ · ข้าม ${archiveResult.skipped} · ผิดพลาด ${archiveResult.errors}`
-                            : `Uploaded ${archiveResult.uploaded} · skipped ${archiveResult.skipped} · errors ${archiveResult.errors}`}
+                    <div className="text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2 mb-2 flex flex-col gap-0.5">
+                        <span>
+                            📹 Classic: {th
+                                ? `อัปโหลด ${archiveResult.uploaded} · ข้าม ${archiveResult.skipped} · ผิดพลาด ${archiveResult.errors}`
+                                : `uploaded ${archiveResult.uploaded} · skipped ${archiveResult.skipped} · errors ${archiveResult.errors}`}
+                        </span>
+                        {archiveResult.betaUploaded !== undefined && (
+                            <span>
+                                📱 Beta: {th
+                                    ? `อัปโหลด ${archiveResult.betaUploaded} segments · ข้าม ${archiveResult.betaSkipped} · ผิดพลาด ${archiveResult.betaErrors}`
+                                    : `uploaded ${archiveResult.betaUploaded} segments · skipped ${archiveResult.betaSkipped} · errors ${archiveResult.betaErrors}`}
+                            </span>
+                        )}
                     </div>
                 )}
                 <div className="w-full bg-slate-100 rounded-full h-2.5 overflow-hidden">
