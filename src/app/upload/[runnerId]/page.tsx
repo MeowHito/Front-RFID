@@ -240,11 +240,15 @@ export default function UploadPhotoPage() {
                                                         </div>
                                                     </div>
                                                 </div>
-                                                <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: _isPortrait ? 'center' : 'flex-start', textAlign: _isPortrait ? 'center' : 'left', maxWidth: _isPortrait ? '100%' : '58%' }}>
-                                                    <p style={{ color: '#16a34a', fontWeight: 600, fontSize: _isPortrait ? 16 : 18, textTransform: 'uppercase', margin: _isPortrait ? '0 0 18px' : '0 0 14px', display: 'flex', alignItems: 'center', gap: 8, letterSpacing: 2 }}>✓ ยืนยันข้อมูล</p>
-                                                    <h2 style={{ fontSize: _isPortrait ? 88 : 82, fontWeight: 800, lineHeight: 1.1, margin: '0 0 8px', color: '#0f172a', maxWidth: _isPortrait ? 834 : 1000, whiteSpace: 'nowrap', overflow: 'hidden' }}>{_nameMain}</h2>
-                                                    {_nameSub && <h3 style={{ fontSize: _isPortrait ? 34 : 30, fontWeight: 400, color: '#64748b', margin: _isPortrait ? '0 0 34px' : '0 0 32px', letterSpacing: 2, maxWidth: _isPortrait ? 834 : 1000, whiteSpace: 'nowrap', overflow: 'hidden' }}>{_nameSub}</h3>}
-                                                    <div style={{ display: 'flex', alignItems: 'stretch', gap: _isPortrait ? 24 : 18, borderLeft: _isPortrait ? 'none' : '4px solid #16a34a', borderTop: _isPortrait ? '4px solid #16a34a' : 'none', paddingLeft: _isPortrait ? 0 : 18, paddingTop: _isPortrait ? 26 : 0 }}>
+                                                <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: _isPortrait ? 'center' : 'flex-start', textAlign: _isPortrait ? 'center' : 'left', maxWidth: _isPortrait ? '100%' : '58%', gap: _isPortrait ? 30 : 0 }}>
+                                                    {/* Name panel — portrait gets translucent background panel matching scanning page */}
+                                                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: _isPortrait ? 'center' : 'flex-start', ...(_isPortrait ? { width: '100%', justifyContent: 'center', padding: '28px 40px 24px', background: 'rgba(255,255,255,0.58)', borderRadius: 12 } : {}) }}>
+                                                        <p style={{ color: '#16a34a', fontWeight: 600, fontSize: _isPortrait ? 16 : 18, textTransform: 'uppercase', margin: _isPortrait ? '0 0 18px' : '0 0 14px', display: 'flex', alignItems: 'center', gap: 8, letterSpacing: 2 }}>✓ ยืนยันข้อมูล</p>
+                                                        <h2 style={{ fontSize: _isPortrait ? 88 : 82, fontWeight: 800, lineHeight: 1.1, margin: '0 0 8px', color: '#0f172a', maxWidth: _isPortrait ? 834 : 1000, whiteSpace: 'nowrap', overflow: 'hidden' }}>{_nameMain}</h2>
+                                                        {_nameSub && <h3 style={{ fontSize: _isPortrait ? 34 : 30, fontWeight: 400, color: '#64748b', margin: _isPortrait ? '0' : '0 0 32px', letterSpacing: 2, maxWidth: _isPortrait ? 834 : 1000, whiteSpace: 'nowrap', overflow: 'hidden' }}>{_nameSub}</h3>}
+                                                    </div>
+                                                    {/* BIB group — portrait gets translucent background panel matching scanning page */}
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: _isPortrait ? 32 : 18, ...(_isPortrait ? { borderTop: '4px solid #16a34a', background: 'rgba(255,255,255,0.58)', borderRadius: 12, padding: '28px 52px', justifyContent: 'center' } : { alignItems: 'stretch', borderLeft: '4px solid #16a34a', paddingLeft: 18 }) }}>
                                                         <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
                                                             <span style={{ fontSize: 18, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 3 }}>BIB</span>
                                                             <span style={{ fontSize: _isPortrait ? 156 : 124, fontWeight: 700, color: '#0f172a', lineHeight: 0.9 }}>{_bib}</span>
@@ -255,7 +259,7 @@ export default function UploadPhotoPage() {
                                                 </div>
                                             </div>
                                             <div style={{ marginTop: 'auto', borderTop: '1px solid #cbd5e1', paddingTop: _isPortrait ? 28 : 24, flexShrink: 0 }}>
-                                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 0 }}>
+                                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: _isPortrait ? 2 : 0, ...(_isPortrait ? { background: '#e2e8f0', borderRadius: 8, overflow: 'hidden' } : {}) }}>
                                                     <div style={{ textAlign: _isPortrait ? 'center' : 'left', padding: _isPortrait ? '18px 20px' : '10px 18px 10px 0', background: _isPortrait ? '#ffffff' : 'transparent' }}>
                                                         <p style={{ fontSize: _isPortrait ? 16 : 18, fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 2, margin: '0 0 6px' }}>Gender</p>
                                                         <p style={{ fontSize: _isPortrait ? 54 : 46, fontWeight: 800, color: '#0f172a', lineHeight: 1, margin: 0 }}>{_gl}</p>

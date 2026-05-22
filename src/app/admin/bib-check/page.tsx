@@ -411,6 +411,54 @@ export default function BibCheckPage() {
                                 </a>
                             </div>
                         </div>
+
+                        {/* Share Scanning-2 Link */}
+                        <div style={{ padding: 20, background: '#f0fdf4', borderRadius: 12, border: '1px solid #bbf7d0' }}>
+                            <h4 style={{ fontSize: 14, fontWeight: 700, color: '#15803d', margin: '0 0 8px' }}>
+                                🔗 ลิ้งค์แชร์หน้า Scanning (ไม่มี QR Upload)
+                            </h4>
+                            <p style={{ fontSize: 12, color: '#64748b', margin: '0 0 12px' }}>
+                                เหมือนหน้า Scanning ปกติ แต่ไม่มี QR Code สำหรับอัปโหลดรูป
+                            </p>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <input
+                                    readOnly
+                                    value={typeof window !== 'undefined' ? `${window.location.origin}/scanning-2/${campaign.slug || campaign._id}` : `/scanning-2/${campaign.slug || campaign._id}`}
+                                    style={{
+                                        flex: 1, padding: '10px 14px', borderRadius: 8,
+                                        border: '1px solid #bbf7d0', background: '#fff', fontSize: 14,
+                                        fontFamily: 'monospace', color: '#15803d', fontWeight: 600,
+                                    }}
+                                    onClick={(e) => (e.target as HTMLInputElement).select()}
+                                />
+                                <button
+                                    onClick={() => {
+                                        const url = `${window.location.origin}/scanning-2/${campaign.slug || campaign._id}`;
+                                        navigator.clipboard.writeText(url);
+                                        alert('คัดลอกลิ้งค์แล้ว!');
+                                    }}
+                                    style={{
+                                        padding: '10px 18px', borderRadius: 8, border: 'none',
+                                        background: '#22c55e', color: '#fff', fontWeight: 700, fontSize: 13,
+                                        cursor: 'pointer', whiteSpace: 'nowrap',
+                                    }}
+                                >
+                                    📋 คัดลอก
+                                </button>
+                                <a
+                                    href={`/scanning-2/${campaign.slug || campaign._id}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    style={{
+                                        padding: '10px 18px', borderRadius: 8, border: 'none',
+                                        background: '#16a34a', color: '#fff', fontWeight: 700, fontSize: 13,
+                                        textDecoration: 'none', whiteSpace: 'nowrap',
+                                    }}
+                                >
+                                    🚀 เปิด
+                                </a>
+                            </div>
+                        </div>
                     </>
                 )}
             </div>
