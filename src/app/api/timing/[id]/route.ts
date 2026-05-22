@@ -32,3 +32,32 @@ export async function PUT(
         );
     }
 }
+
+export async function DELETE(
+    request: NextRequest,
+    { params }: { params: Promise<{ id: string }> }
+) {
+    const { id } = await params;
+
+    try {
+        const res = await fetch(`${BACKEND_URL}/timing/${id}`, {
+            method: 'DELETE',
+            headers: proxyHeaders(request),
+        });
+
+        if (!res.ok) {
+            return NextResponse.json(
+                { error: 'Failed to delete timing record' },
+                { status: res.status }
+            );
+        }
+
+        return NextResponse.json({ success: true });
+    } catch (error) {
+        console.error('Error deleting timing record:', error);
+        return NextResponse.json(
+            { error: 'Internal server error' },
+            { status: 500 }
+        );
+    }
+}

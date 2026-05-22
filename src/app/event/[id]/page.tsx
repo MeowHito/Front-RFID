@@ -325,6 +325,7 @@ export default function EventLivePage() {
     const [editTimingLoading, setEditTimingLoading] = useState(false);
     const [editTimingSaveMsg, setEditTimingSaveMsg] = useState<string | null>(null);
     const [cpTimingPickerOpen, setCpTimingPickerOpen] = useState<string | null>(null);
+    const [clearingCheckpoint, setClearingCheckpoint] = useState<string | null>(null);
 
     const toApiData = (payload: any) => payload?.data ?? payload;
 
@@ -996,6 +997,41 @@ export default function EventLivePage() {
         } finally {
             setEditSaving(false);
         }
+    };
+
+    const handleClearCheckpointTime = async (cpName: string, recordId: string) => {
+        if (!window.confirm(language === 'th' ? `ลบเวลา ${cpName} และ sync ข้อมูลใหม่จาก RaceTiger ใช่ไหม?` : `Clear ${cpName} time and re-sync from RaceTiger?`)) return;
+        setClearingCheckpoint(cpName);
+        setEditTimingSaveMsg(null);
+        try {
+            await fetch(`/api/timing/${recordId}`, {
+                method: 'DELETE',
+                headers: authHeaders(),
+            });
+            if (campaign?._id) {
+                await fetch(`/api/sync/full-sync?id=${campaign._id}`, {
+                    method: 'POST',
+                    headers: authHeaders(),
+                });
+            }
+            if (editingRunner?.eventId) {
+                const trRes = await fetch(`/api/timing/runner/${editingRunner.eventId}/${editingRunner._id}`, { cache: 'no-store' });
+                if (trRes.ok) {
+                    const trData = await trRes.json();
+                    const records = (Array.isArray(trData) ? trData : trData?.data || []).map((r: any) => ({
+                        _id: r._id,
+                        checkpoint: r.checkpoint || '',
+                        scanTime: r.scanTime || '',
+                        order: r.order,
+                    }));
+                    setEditTimingRecords(records);
+                }
+            }
+            setEditTimingChanges(prev => { const next = { ...prev }; delete next[cpName]; return next; });
+            setEditTimingSaveMsg(language === 'th' ? `ลบเวลา ${cpName} และ sync จาก RaceTiger เรียบร้อย` : `Cleared ${cpName} and re-synced from RaceTiger`);
+            setTimeout(() => setEditTimingSaveMsg(null), 4000);
+        } catch { /* ignore */ }
+        setClearingCheckpoint(null);
     };
 
     // Loading state
@@ -2100,6 +2136,7 @@ export default function EventLivePage() {
                                         }
                                         const cpColor = cp.type === 'start' ? '#3b82f6' : cp.type === 'finish' ? '#22c55e' : '#8b5cf6';
                                         const hasChanged = editTimingChanges[cp.name] !== undefined;
+                                        const isClearing = clearingCheckpoint === cp.name;
                                         return (
                                             <div key={cp.name + i} className="flex items-center gap-2">
                                                 <span className="inline-block min-w-[60px] whitespace-nowrap rounded px-2 py-0.5 text-center text-[10px] font-bold text-white" style={{ background: cpColor }}>
@@ -2112,6 +2149,17 @@ export default function EventLivePage() {
                                                 >
                                                     {displayTime || (language === 'th' ? 'กดเพื่อตั้งเวลา' : 'Click to set time')}
                                                 </button>
+                                                {matchedRecord?._id && (
+                                                    <button
+                                                        onClick={() => handleClearCheckpointTime(cp.name, matchedRecord._id!)}
+                                                        disabled={isClearing}
+                                                        title={language === 'th' ? 'ลบเวลาและ sync จาก RaceTiger' : 'Clear time & re-sync from RaceTiger'}
+                                                        className="flex shrink-0 items-center justify-center rounded-md border-none px-2 py-1.5 text-xs font-bold text-white transition-opacity duration-150"
+                                                        style={{ background: '#dc2626', opacity: isClearing ? 0.5 : 1, cursor: isClearing ? 'not-allowed' : 'pointer', minWidth: 28 }}
+                                                    >
+                                                        {isClearing ? '...' : '🗑'}
+                                                    </button>
+                                                )}
                                             </div>
                                         );
                                     })}
