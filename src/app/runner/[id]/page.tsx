@@ -309,6 +309,7 @@ export default function RunnerProfilePage() {
     const [followedRunners, setFollowedRunners] = useState<FollowedRunner[]>([]);
     const [selectedVideoIsPortrait, setSelectedVideoIsPortrait] = useState(false);
     const [videoDownloadLoading, setVideoDownloadLoading] = useState(false);
+    const [videoBuffering, setVideoBuffering] = useState(false);
 
     useEffect(() => {
         if (!runnerId) return;
@@ -597,12 +598,14 @@ export default function RunnerProfilePage() {
 
     const openCheckpointVideo = (checkpointKey: string) => {
         setSelectedVideoIsPortrait(false);
+        setVideoBuffering(true);
         setSelectedCheckpointKey(checkpointKey);
         setSelectedRecordingId(''); // reset → first available recording
     };
 
     const closeCheckpointVideo = () => {
         setSelectedVideoIsPortrait(false);
+        setVideoBuffering(false);
         setSelectedCheckpointKey('');
         setSelectedRecordingId('');
     };
@@ -1077,7 +1080,7 @@ export default function RunnerProfilePage() {
                                                 return (
                                                     <button
                                                         key={r._id}
-                                                        onClick={() => setSelectedRecordingId(r._id)}
+                                                        onClick={() => { setVideoBuffering(true); setSelectedRecordingId(r._id); }}
                                                         style={{
                                                             padding: '6px 14px',
                                                             borderRadius: 8,
@@ -1113,6 +1116,12 @@ export default function RunnerProfilePage() {
                                             className={`runner-modal-video-shell ${selectedVideoIsPortrait ? 'portrait' : 'landscape'}`}
                                             style={{ position: 'relative' }}
                                         >
+                                        {videoBuffering && (
+                                            <div style={{ position: 'absolute', inset: 0, zIndex: 10, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'rgba(2,6,23,0.82)', borderRadius: 'inherit', gap: 10 }}>
+                                                <div style={{ width: 36, height: 36, border: '3px solid #334155', borderTopColor: '#22c55e', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
+                                                <span style={{ color: '#94a3b8', fontSize: 13, fontWeight: 600 }}>กำลังเตรียมวิดีโอ...</span>
+                                            </div>
+                                        )}
                                         {/* Both classic and beta clips are now served as plain trimmed mp4 from
                                             the backend trim endpoint, so a single <video> works for everything.
                                             The video already starts at the trim window — no manual currentTime seek. */}
@@ -1133,6 +1142,10 @@ export default function RunnerProfilePage() {
                                                 setSelectedVideoIsPortrait(video.videoHeight > video.videoWidth);
                                                 video.play().catch(() => { /* autoplay blocked */ });
                                             }}
+                                            onCanPlay={() => setVideoBuffering(false)}
+                                            onWaiting={() => setVideoBuffering(true)}
+                                            onPlaying={() => setVideoBuffering(false)}
+                                            onError={() => setVideoBuffering(false)}
                                         />
                                         </div>
                                     </div>
