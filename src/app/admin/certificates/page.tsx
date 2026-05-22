@@ -6,77 +6,236 @@ import { authHeaders } from '@/lib/authHeaders';
 import AdminLayout from '../AdminLayout';
 
 // ============= TYPES =============
+type ElementType = 'text' | 'image' | 'shape' | 'flag' | 'table';
+type ShapeKind = 'rect' | 'circle' | 'triangle';
+type FlagMode = 'flag' | 'name' | 'both';
+type PaperSize = 'a4-landscape' | 'a4-portrait' | 'hd-landscape' | 'hd-portrait';
+
+type TableFieldKey =
+    | 'checkpoint' | 'distance' | 'cumulative' | 'sector' | 'pace'
+    | 'overall_rank' | 'gender_rank' | 'split_no';
+
+interface TableColumn {
+    field: TableFieldKey;
+    header: string;
+    width: number; // 0-100 (% of table width)
+    align: 'left' | 'center' | 'right';
+}
+
 interface CertElement {
-    id: string; content: string;
+    id: string;
+    type?: ElementType;
+    content: string;
     x: number; y: number; width: number;
+    height?: number;
     fontSize: number; fontFamily: string; color: string;
     fontWeight: 'normal' | 'bold'; fontStyle: 'normal' | 'italic';
     textAlign: 'left' | 'center' | 'right';
     opacity: number; letterSpacing: number;
-    type?: 'text' | 'image'; src?: string; aspectRatio?: number;
+    // image
+    src?: string; aspectRatio?: number;
+    // shape
+    shape?: ShapeKind;
+    fillColor?: string;
+    strokeColor?: string;
+    strokeWidth?: number;
+    // flag
+    flagMode?: FlagMode;
+    flagCode?: string;
+    // table
+    columns?: TableColumn[];
+    headerBg?: string;
+    headerColor?: string;
+    rowBg?: string;
+    rowAltBg?: string;
+    borderColor?: string;
+    borderWidth?: number;
+    showHeader?: boolean;
+    headerFontSize?: number;
 }
+
 interface Runner {
-    _id: string; bib: string; firstName: string; lastName: string;
+    _id: string; eventId?: string;
+    bib: string; firstName: string; lastName: string;
     firstNameTh?: string; lastNameTh?: string;
     gender: string; category: string; ageGroup?: string;
+    age?: number; team?: string; teamName?: string;
+    nationality?: string;
     netTime?: number; gunTime?: number; status: string;
     overallRank?: number; genderRank?: number; ageGroupRank?: number;
     finishTime?: string;
+    netPace?: string; gunPace?: string;
+    totalFinishers?: number; genderFinishers?: number;
 }
+
+interface SplitRecord {
+    checkpoint: string;
+    splitTime?: number;       // ms — sector time from prev cp
+    elapsedTime?: number;     // ms — cumulative from start
+    distanceFromStart?: number; // km
+    netPace?: string;
+    splitPace?: string;
+    splitNo?: number;
+    splitDesc?: string;
+    overallRank?: number;
+    genderRank?: number;
+}
+
 interface RaceCategory { name: string; distance?: string; }
 interface Campaign {
     _id: string; name: string; nameTh?: string; nameEn?: string;
+    eventId?: string;
     eventDate?: string; categories?: RaceCategory[];
     certBackgroundImage?: string; certLayout?: CertElement[];
+    certPaperSize?: PaperSize;
 }
 interface SnapLine { axis: 'x' | 'y'; pos: number; }
 interface CtxMenu { x: number; y: number; elId?: string; }
 
 // ============= CONSTANTS =============
 const CANVAS_REF_W = 1200;
-const CANVAS_ASPECT = 297 / 210;
 const SNAP_THRESHOLD = 1.2;
 const MAX_UNDO = 50;
+
+const PAPER_SIZES: Record<PaperSize, { label: string; w: number; h: number; printW: string; printH: string; orient: 'landscape' | 'portrait' }> = {
+    'a4-landscape': { label: 'A4 แนวนอน', w: 297, h: 210, printW: '297mm', printH: '210mm', orient: 'landscape' },
+    'a4-portrait':  { label: 'A4 แนวตั้ง', w: 210, h: 297, printW: '210mm', printH: '297mm', orient: 'portrait'  },
+    'hd-landscape': { label: '1920×1080 แนวนอน', w: 1920, h: 1080, printW: '1920px', printH: '1080px', orient: 'landscape' },
+    'hd-portrait':  { label: '1080×1920 แนวตั้ง', w: 1080, h: 1920, printW: '1080px', printH: '1920px', orient: 'portrait'  },
+};
+
 const FONT_FAMILIES: [string, string][] = [
     ['Sarabun', 'Sarabun, sans-serif'], ['Prompt', 'Prompt, sans-serif'],
     ['Kanit', 'Kanit, sans-serif'], ['Playfair Display', 'Playfair Display, serif'],
     ['Georgia', 'Georgia, serif'], ['Arial', 'Arial, sans-serif'],
     ['Impact', 'Impact, sans-serif'], ['Courier New', 'Courier New, monospace'],
 ];
-const DYNAMIC_FIELDS = [
+
+const DYNAMIC_FIELDS: { label: string; value: string }[] = [
     { label: 'Name (EN)', value: '{{name}}' },
     { label: 'Name (TH)', value: '{{name_th}}' },
+    { label: 'First Name', value: '{{first_name}}' },
+    { label: 'Last Name', value: '{{last_name}}' },
     { label: 'BIB', value: '{{bib}}' },
     { label: 'Category', value: '{{category}}' },
+    { label: 'Distance', value: '{{distance}}' },
     { label: 'Gender', value: '{{gender}}' },
+    { label: 'Age', value: '{{age}}' },
+    { label: 'Age Group', value: '{{age_group}}' },
+    { label: 'Team', value: '{{team}}' },
+    { label: 'Country', value: '{{country}}' },
+    { label: 'Flag', value: '{{flag}}' },
     { label: 'Net Time', value: '{{time}}' },
     { label: 'Gun Time', value: '{{gun_time}}' },
+    { label: 'Net Pace', value: '{{pace}}' },
+    { label: 'Gun Pace', value: '{{gun_pace}}' },
     { label: 'Overall Rank', value: '{{rank}}' },
     { label: 'Gender Rank', value: '{{gender_rank}}' },
-    { label: 'Age Rank', value: '{{age_rank}}' },
+    { label: 'Age Group Rank', value: '{{age_rank}}' },
+    { label: 'Overall / Total', value: '{{rank_total}}' },
+    { label: 'Gender / Total', value: '{{gender_rank_total}}' },
     { label: 'Event Name', value: '{{event_name}}' },
     { label: 'Event Date', value: '{{event_date}}' },
 ];
+
 const FIELD_PREVIEWS: Record<string, string> = {
-    '{{name}}': 'John Smith', '{{name_th}}': 'จอห์น สมิธ', '{{bib}}': '1234',
-    '{{category}}': '100K', '{{gender}}': 'Male', '{{time}}': '10:30:00',
-    '{{gun_time}}': '10:31:00', '{{rank}}': '42', '{{gender_rank}}': '15',
-    '{{age_rank}}': '5', '{{event_name}}': 'Core X250', '{{event_date}}': '15 มีนาคม 2568',
+    '{{name}}': 'John Smith', '{{name_th}}': 'จอห์น สมิธ',
+    '{{first_name}}': 'John', '{{last_name}}': 'Smith',
+    '{{bib}}': '1234', '{{category}}': '100K', '{{distance}}': '100K',
+    '{{gender}}': 'Male', '{{age}}': '32', '{{age_group}}': '30-39',
+    '{{team}}': '-', '{{country}}': 'Thailand', '{{flag}}': '🇹🇭',
+    '{{time}}': '10:30:00', '{{gun_time}}': '10:31:00',
+    '{{pace}}': '6:18', '{{gun_pace}}': '6:20',
+    '{{rank}}': '42', '{{gender_rank}}': '15', '{{age_rank}}': '5',
+    '{{rank_total}}': '42 / 472', '{{gender_rank_total}}': '15 / 118',
+    '{{event_name}}': 'CNX 100K Ultra Marathon 2025', '{{event_date}}': '4 ตุลาคม 2568',
 };
+
+// Country code → flag emoji
+function countryFlagEmoji(code: string): string {
+    if (!code) return '';
+    const c = code.trim().toUpperCase();
+    if (c.length !== 2) return '';
+    const A = 0x1F1E6;
+    return String.fromCodePoint(A + (c.charCodeAt(0) - 65)) + String.fromCodePoint(A + (c.charCodeAt(1) - 65));
+}
+
+// rough nationality string → ISO-2 code
+const NATIONALITY_MAP: Record<string, { code: string; name: string }> = {
+    'TH': { code: 'TH', name: 'Thailand' }, 'THA': { code: 'TH', name: 'Thailand' }, 'THAI': { code: 'TH', name: 'Thailand' }, 'THAILAND': { code: 'TH', name: 'Thailand' },
+    'US': { code: 'US', name: 'United States' }, 'USA': { code: 'US', name: 'United States' }, 'AMERICAN': { code: 'US', name: 'United States' },
+    'GB': { code: 'GB', name: 'United Kingdom' }, 'UK': { code: 'GB', name: 'United Kingdom' }, 'BRITISH': { code: 'GB', name: 'United Kingdom' },
+    'JP': { code: 'JP', name: 'Japan' }, 'JPN': { code: 'JP', name: 'Japan' }, 'JAPAN': { code: 'JP', name: 'Japan' },
+    'CN': { code: 'CN', name: 'China' }, 'CHN': { code: 'CN', name: 'China' }, 'CHINESE': { code: 'CN', name: 'China' }, 'CHINA': { code: 'CN', name: 'China' },
+    'KR': { code: 'KR', name: 'Korea' }, 'KOR': { code: 'KR', name: 'Korea' }, 'KOREA': { code: 'KR', name: 'Korea' },
+    'MY': { code: 'MY', name: 'Malaysia' }, 'MYS': { code: 'MY', name: 'Malaysia' }, 'MALAYSIA': { code: 'MY', name: 'Malaysia' },
+    'SG': { code: 'SG', name: 'Singapore' }, 'SGP': { code: 'SG', name: 'Singapore' }, 'SINGAPORE': { code: 'SG', name: 'Singapore' },
+    'ID': { code: 'ID', name: 'Indonesia' }, 'IDN': { code: 'ID', name: 'Indonesia' }, 'INDONESIA': { code: 'ID', name: 'Indonesia' },
+    'PH': { code: 'PH', name: 'Philippines' }, 'PHL': { code: 'PH', name: 'Philippines' }, 'PHILIPPINES': { code: 'PH', name: 'Philippines' },
+    'VN': { code: 'VN', name: 'Vietnam' }, 'VNM': { code: 'VN', name: 'Vietnam' }, 'VIETNAM': { code: 'VN', name: 'Vietnam' },
+    'AU': { code: 'AU', name: 'Australia' }, 'AUS': { code: 'AU', name: 'Australia' }, 'AUSTRALIA': { code: 'AU', name: 'Australia' },
+    'NZ': { code: 'NZ', name: 'New Zealand' }, 'NZL': { code: 'NZ', name: 'New Zealand' },
+    'FR': { code: 'FR', name: 'France' }, 'FRA': { code: 'FR', name: 'France' }, 'FRANCE': { code: 'FR', name: 'France' },
+    'DE': { code: 'DE', name: 'Germany' }, 'DEU': { code: 'DE', name: 'Germany' }, 'GERMANY': { code: 'DE', name: 'Germany' },
+    'CA': { code: 'CA', name: 'Canada' }, 'CAN': { code: 'CA', name: 'Canada' }, 'CANADA': { code: 'CA', name: 'Canada' },
+    'IN': { code: 'IN', name: 'India' }, 'IND': { code: 'IN', name: 'India' }, 'INDIA': { code: 'IN', name: 'India' },
+    'HK': { code: 'HK', name: 'Hong Kong' }, 'HKG': { code: 'HK', name: 'Hong Kong' }, 'TW': { code: 'TW', name: 'Taiwan' }, 'TWN': { code: 'TW', name: 'Taiwan' },
+};
+
+function resolveNationality(raw: string | undefined): { code: string; name: string } {
+    if (!raw) return { code: '', name: '-' };
+    const key = raw.trim().toUpperCase();
+    if (NATIONALITY_MAP[key]) return NATIONALITY_MAP[key];
+    if (key.length === 2) return { code: key, name: key };
+    return { code: '', name: raw };
+}
+
+const TABLE_FIELD_OPTIONS: { value: TableFieldKey; label: string; def: string }[] = [
+    { value: 'split_no', label: 'No.', def: '#' },
+    { value: 'checkpoint', label: 'Checkpoint', def: 'Checkpoint' },
+    { value: 'distance', label: 'Distance (km)', def: 'Distance' },
+    { value: 'cumulative', label: 'Cumulative Time', def: 'Time' },
+    { value: 'sector', label: 'Sector Time', def: 'Sector' },
+    { value: 'pace', label: 'Pace (min/km)', def: 'Pace' },
+    { value: 'overall_rank', label: 'Overall Rank', def: 'Overall' },
+    { value: 'gender_rank', label: 'Gender Rank', def: 'Gender' },
+];
+
+const MOCK_SPLITS: SplitRecord[] = [
+    { checkpoint: 'CP1 (25 km)', distanceFromStart: 25,  elapsedTime: 14666000, splitTime: 14666000, netPace: '9:46', overallRank: 398, genderRank: 94 },
+    { checkpoint: 'CP2 (40 km)', distanceFromStart: 40,  elapsedTime: 23485000, splitTime: 8819000,  netPace: '9:47', overallRank: 379, genderRank: 89 },
+    { checkpoint: 'CP3 (55 km)', distanceFromStart: 55,  elapsedTime: 32027000, splitTime: 8542000,  netPace: '9:29', overallRank: 361, genderRank: 82 },
+    { checkpoint: 'CP4 (77 km)', distanceFromStart: 77,  elapsedTime: 48115000, splitTime: 16088000, netPace: '12:11', overallRank: 326, genderRank: 70 },
+    { checkpoint: 'CP5 (85 km)', distanceFromStart: 85,  elapsedTime: 53652000, splitTime: 5537000,  netPace: '11:32', overallRank: 324, genderRank: 69 },
+    { checkpoint: 'FINISH (100 km)', distanceFromStart: 100, elapsedTime: 62988000, splitTime: 9336000, netPace: '10:22', overallRank: 310, genderRank: 65 },
+];
+
+const DEFAULT_COLUMNS: TableColumn[] = [
+    { field: 'distance',     header: 'Distance', width: 16, align: 'left'   },
+    { field: 'cumulative',   header: 'Time',     width: 16, align: 'center' },
+    { field: 'sector',       header: 'Sector',   width: 16, align: 'center' },
+    { field: 'pace',         header: 'Pace',     width: 16, align: 'center' },
+    { field: 'overall_rank', header: 'Overall',  width: 18, align: 'center' },
+    { field: 'gender_rank',  header: 'Gender',   width: 18, align: 'right'  },
+];
+
 const DEFAULT_ELEMENTS: CertElement[] = [
-    { id: 'title', content: 'Certificate of Achievement', x: 50, y: 12, width: 80, fontSize: 44, fontFamily: 'Playfair Display, serif', color: '#d4af37', fontWeight: 'bold', fontStyle: 'normal', textAlign: 'center', opacity: 1, letterSpacing: 3 },
-    { id: 'event', content: '{{event_name}}', x: 50, y: 24, width: 75, fontSize: 20, fontFamily: 'Sarabun, sans-serif', color: '#ffffff', fontWeight: 'normal', fontStyle: 'normal', textAlign: 'center', opacity: 0.85, letterSpacing: 1 },
-    { id: 'presented', content: 'This certificate is presented to', x: 50, y: 34, width: 60, fontSize: 15, fontFamily: 'Sarabun, sans-serif', color: '#ffffff', fontWeight: 'normal', fontStyle: 'italic', textAlign: 'center', opacity: 0.65, letterSpacing: 0 },
-    { id: 'name', content: '{{name}}', x: 50, y: 47, width: 70, fontSize: 48, fontFamily: 'Playfair Display, serif', color: '#ffffff', fontWeight: 'bold', fontStyle: 'normal', textAlign: 'center', opacity: 1, letterSpacing: 2 },
-    { id: 'details', content: 'BIB: {{bib}}   |   {{category}}   |   {{gender}}', x: 50, y: 59, width: 65, fontSize: 15, fontFamily: 'Sarabun, sans-serif', color: '#ffffff', fontWeight: 'normal', fontStyle: 'normal', textAlign: 'center', opacity: 0.8, letterSpacing: 0 },
-    { id: 'time', content: '{{time}}', x: 50, y: 70, width: 40, fontSize: 38, fontFamily: 'Sarabun, sans-serif', color: '#d4af37', fontWeight: 'bold', fontStyle: 'normal', textAlign: 'center', opacity: 1, letterSpacing: 2 },
-    { id: 'rank', content: 'Overall #{{rank}}  |  Gender #{{gender_rank}}  |  Age #{{age_rank}}', x: 50, y: 81, width: 70, fontSize: 13, fontFamily: 'Sarabun, sans-serif', color: '#ffffff', fontWeight: 'normal', fontStyle: 'normal', textAlign: 'center', opacity: 0.6, letterSpacing: 0 },
-    { id: 'date', content: '{{event_date}}', x: 15, y: 92, width: 24, fontSize: 12, fontFamily: 'Sarabun, sans-serif', color: '#ffffff', fontWeight: 'normal', fontStyle: 'normal', textAlign: 'center', opacity: 0.55, letterSpacing: 0 },
+    { id: 'title', type: 'text', content: 'Certificate of Achievement', x: 50, y: 12, width: 80, fontSize: 44, fontFamily: 'Playfair Display, serif', color: '#d4af37', fontWeight: 'bold', fontStyle: 'normal', textAlign: 'center', opacity: 1, letterSpacing: 3 },
+    { id: 'event', type: 'text', content: '{{event_name}}', x: 50, y: 24, width: 75, fontSize: 20, fontFamily: 'Sarabun, sans-serif', color: '#ffffff', fontWeight: 'normal', fontStyle: 'normal', textAlign: 'center', opacity: 0.85, letterSpacing: 1 },
+    { id: 'presented', type: 'text', content: 'This certificate is presented to', x: 50, y: 34, width: 60, fontSize: 15, fontFamily: 'Sarabun, sans-serif', color: '#ffffff', fontWeight: 'normal', fontStyle: 'italic', textAlign: 'center', opacity: 0.65, letterSpacing: 0 },
+    { id: 'name', type: 'text', content: '{{name}}', x: 50, y: 47, width: 70, fontSize: 48, fontFamily: 'Playfair Display, serif', color: '#ffffff', fontWeight: 'bold', fontStyle: 'normal', textAlign: 'center', opacity: 1, letterSpacing: 2 },
+    { id: 'details', type: 'text', content: 'BIB: {{bib}}   |   {{category}}   |   {{gender}}', x: 50, y: 59, width: 65, fontSize: 15, fontFamily: 'Sarabun, sans-serif', color: '#ffffff', fontWeight: 'normal', fontStyle: 'normal', textAlign: 'center', opacity: 0.8, letterSpacing: 0 },
+    { id: 'time', type: 'text', content: '{{time}}', x: 50, y: 70, width: 40, fontSize: 38, fontFamily: 'Sarabun, sans-serif', color: '#d4af37', fontWeight: 'bold', fontStyle: 'normal', textAlign: 'center', opacity: 1, letterSpacing: 2 },
+    { id: 'rank', type: 'text', content: 'Overall #{{rank}}  |  Gender #{{gender_rank}}  |  Age #{{age_rank}}', x: 50, y: 81, width: 70, fontSize: 13, fontFamily: 'Sarabun, sans-serif', color: '#ffffff', fontWeight: 'normal', fontStyle: 'normal', textAlign: 'center', opacity: 0.6, letterSpacing: 0 },
+    { id: 'date', type: 'text', content: '{{event_date}}', x: 15, y: 92, width: 24, fontSize: 12, fontFamily: 'Sarabun, sans-serif', color: '#ffffff', fontWeight: 'normal', fontStyle: 'normal', textAlign: 'center', opacity: 0.55, letterSpacing: 0 },
 ];
 
 const SIDEBAR_TOOLS = [
+    { id: 'paper', icon: '📄', label: 'PAPER' },
     { id: 'text', icon: 'Tt', label: 'TEXT' },
     { id: 'fields', icon: '{{}}', label: 'FIELDS' },
+    { id: 'shapes', icon: '◆', label: 'SHAPES' },
+    { id: 'table', icon: '▦', label: 'TABLE' },
     { id: 'bg', icon: '🖼', label: 'BG' },
     { id: 'runners', icon: '🏅', label: 'RUNNERS' },
     { id: 'layers', icon: '◇', label: 'LAYERS' },
@@ -88,23 +247,50 @@ function formatTime(ms?: number): string {
     const s = Math.floor(ms / 1000);
     return `${Math.floor(s / 3600).toString().padStart(2, '0')}:${Math.floor((s % 3600) / 60).toString().padStart(2, '0')}:${(s % 60).toString().padStart(2, '0')}`;
 }
+
+function categoryToDistance(cat?: string): string {
+    if (!cat) return '-';
+    const m = cat.match(/(\d+(?:\.\d+)?)\s*K/i);
+    return m ? `${m[1]}K` : cat;
+}
+
 function substituteFields(content: string, runner: Runner | null, campaign: Campaign | null): string {
     if (!runner) return content.replace(/\{\{[^}]+\}\}/g, m => FIELD_PREVIEWS[m] ?? m);
     const netTime = typeof runner.netTime === 'number' && runner.netTime > 0 ? formatTime(runner.netTime) : (runner.finishTime || '-');
     const gunTime = typeof runner.gunTime === 'number' && runner.gunTime > 0 ? formatTime(runner.gunTime) : '-';
+    const nat = resolveNationality(runner.nationality);
+    const totFinish = runner.totalFinishers && runner.totalFinishers > 0 ? runner.totalFinishers : null;
+    const genFinish = runner.genderFinishers && runner.genderFinishers > 0 ? runner.genderFinishers : null;
+    const teamName = runner.team || runner.teamName || '-';
     const map: Record<string, string> = {
         '{{name}}': `${runner.firstName} ${runner.lastName}`,
         '{{name_th}}': runner.firstNameTh ? `${runner.firstNameTh} ${runner.lastNameTh ?? ''}`.trim() : `${runner.firstName} ${runner.lastName}`,
-        '{{bib}}': runner.bib ?? '-', '{{category}}': runner.category ?? '-',
+        '{{first_name}}': runner.firstName ?? '-',
+        '{{last_name}}': runner.lastName ?? '-',
+        '{{bib}}': runner.bib ?? '-',
+        '{{category}}': runner.category ?? '-',
+        '{{distance}}': categoryToDistance(runner.category),
         '{{gender}}': runner.gender === 'M' ? 'Male' : 'Female',
-        '{{time}}': netTime, '{{gun_time}}': gunTime,
-        '{{rank}}': runner.overallRank && runner.overallRank > 0 ? String(runner.overallRank) : '-', '{{gender_rank}}': runner.genderRank && runner.genderRank > 0 ? String(runner.genderRank) : '-',
+        '{{age}}': runner.age ? String(runner.age) : '-',
+        '{{age_group}}': runner.ageGroup ?? '-',
+        '{{team}}': teamName,
+        '{{country}}': nat.name,
+        '{{flag}}': nat.code ? countryFlagEmoji(nat.code) : '',
+        '{{time}}': netTime,
+        '{{gun_time}}': gunTime,
+        '{{pace}}': runner.netPace || '-',
+        '{{gun_pace}}': runner.gunPace || '-',
+        '{{rank}}': runner.overallRank && runner.overallRank > 0 ? String(runner.overallRank) : '-',
+        '{{gender_rank}}': runner.genderRank && runner.genderRank > 0 ? String(runner.genderRank) : '-',
         '{{age_rank}}': runner.ageGroupRank && runner.ageGroupRank > 0 ? String(runner.ageGroupRank) : '-',
+        '{{rank_total}}': runner.overallRank && runner.overallRank > 0 && totFinish ? `${runner.overallRank} / ${totFinish}` : (runner.overallRank ? String(runner.overallRank) : '-'),
+        '{{gender_rank_total}}': runner.genderRank && runner.genderRank > 0 && genFinish ? `${runner.genderRank} / ${genFinish}` : (runner.genderRank ? String(runner.genderRank) : '-'),
         '{{event_name}}': campaign?.nameTh ?? campaign?.name ?? '-',
         '{{event_date}}': campaign?.eventDate ? new Date(campaign.eventDate).toLocaleDateString('th-TH', { day: 'numeric', month: 'long', year: 'numeric' }) : '-',
     };
     return content.replace(/\{\{[^}]+\}\}/g, m => map[m] ?? m);
 }
+
 function escapeHtml(value: string): string {
     return value
         .replace(/&/g, '&amp;')
@@ -113,21 +299,29 @@ function escapeHtml(value: string): string {
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#39;');
 }
+
 function uid() { return Math.random().toString(36).slice(2, 10); }
-function getElementHeight(el: CertElement): number {
-    if (el.type !== 'image') return 0;
-    return Math.max(4, Math.min(100, el.width * CANVAS_ASPECT / Math.max(0.1, el.aspectRatio || 1)));
+
+function getElementHeight(el: CertElement, paperAspect: number): number {
+    if (el.type === 'image') {
+        return Math.max(4, Math.min(100, el.width * paperAspect / Math.max(0.1, el.aspectRatio || 1)));
+    }
+    if (el.type === 'shape' || el.type === 'table' || el.type === 'flag') {
+        return Math.max(2, Math.min(100, el.height ?? el.width));
+    }
+    return 0;
 }
+
 function isTypingTarget(target: EventTarget | null): boolean {
     const el = target as HTMLElement | null;
     if (!el) return false;
     const tag = el.tagName;
     return el.isContentEditable || tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
 }
+
 function computeSnaps(movingId: string, mx: number, my: number, els: CertElement[]): { snappedX: number; snappedY: number; lines: SnapLine[] } {
     let sx = mx, sy = my;
     const lines: SnapLine[] = [];
-    // canvas center guides
     if (Math.abs(mx - 50) < SNAP_THRESHOLD) { sx = 50; lines.push({ axis: 'x', pos: 50 }); }
     if (Math.abs(my - 50) < SNAP_THRESHOLD) { sy = 50; lines.push({ axis: 'y', pos: 50 }); }
     for (const el of els) {
@@ -138,9 +332,102 @@ function computeSnaps(movingId: string, mx: number, my: number, els: CertElement
     return { snappedX: sx, snappedY: sy, lines };
 }
 
+function splitsCellValue(field: TableFieldKey, row: SplitRecord, rowIdx: number): string {
+    switch (field) {
+        case 'split_no':    return row.splitNo ? String(row.splitNo) : String(rowIdx + 1);
+        case 'checkpoint':  return row.checkpoint || row.splitDesc || '-';
+        case 'distance':    return row.distanceFromStart != null ? `${row.distanceFromStart} km` : '-';
+        case 'cumulative':  return formatTime(row.elapsedTime);
+        case 'sector':      return formatTime(row.splitTime);
+        case 'pace':        return row.splitPace || row.netPace || '-';
+        case 'overall_rank': return row.overallRank ? String(row.overallRank) : '-';
+        case 'gender_rank': return row.genderRank ? String(row.genderRank) : '-';
+        default: return '-';
+    }
+}
+
+// ============= SUB-COMPONENTS =============
+function ShapeRender({ el }: { el: CertElement }) {
+    const fill = el.fillColor || '#ffffff';
+    const stroke = el.strokeColor || 'transparent';
+    const sw = el.strokeWidth ?? 0;
+    if (el.shape === 'circle') {
+        return (
+            <svg viewBox="0 0 100 100" preserveAspectRatio="none" width="100%" height="100%" style={{ display: 'block', pointerEvents: 'none' }}>
+                <ellipse cx="50" cy="50" rx={50 - sw / 2} ry={50 - sw / 2} fill={fill} stroke={stroke} strokeWidth={sw} />
+            </svg>
+        );
+    }
+    if (el.shape === 'triangle') {
+        return (
+            <svg viewBox="0 0 100 100" preserveAspectRatio="none" width="100%" height="100%" style={{ display: 'block', pointerEvents: 'none' }}>
+                <polygon points="50,2 98,98 2,98" fill={fill} stroke={stroke} strokeWidth={sw} />
+            </svg>
+        );
+    }
+    // rect
+    return (
+        <div style={{ width: '100%', height: '100%', background: fill, border: sw > 0 ? `${sw}px solid ${stroke}` : 'none', boxSizing: 'border-box' }} />
+    );
+}
+
+function FlagRender({ el, runner, fontScale }: { el: CertElement; runner: Runner | null; fontScale: number }) {
+    const nat = runner
+        ? resolveNationality(runner.nationality)
+        : { code: el.flagCode || 'TH', name: 'Thailand' };
+    const mode = el.flagMode || 'flag';
+    const emoji = nat.code ? countryFlagEmoji(nat.code) : '';
+    const fs = el.fontSize * fontScale;
+    if (mode === 'name') return <div style={{ fontSize: fs, color: el.color, fontWeight: el.fontWeight, textAlign: el.textAlign as 'left' | 'center' | 'right', width: '100%' }}>{nat.name}</div>;
+    if (mode === 'flag') return <div style={{ fontSize: fs * 1.4, lineHeight: 1, textAlign: el.textAlign as 'left' | 'center' | 'right', width: '100%' }}>{emoji || '🏳️'}</div>;
+    return <div style={{ fontSize: fs, color: el.color, fontWeight: el.fontWeight, textAlign: el.textAlign as 'left' | 'center' | 'right', width: '100%' }}>{emoji} {nat.name}</div>;
+}
+
+function TableRender({ el, splits, fontScale }: { el: CertElement; splits: SplitRecord[]; fontScale: number }) {
+    const cols = el.columns && el.columns.length > 0 ? el.columns : DEFAULT_COLUMNS;
+    const totalW = cols.reduce((s, c) => s + c.width, 0) || 1;
+    const headerBg = el.headerBg || 'rgba(0,0,0,0.08)';
+    const headerColor = el.headerColor || el.color;
+    const rowBg = el.rowBg || 'transparent';
+    const rowAltBg = el.rowAltBg || rowBg;
+    const borderColor = el.borderColor || 'rgba(0,0,0,0.2)';
+    const borderWidth = el.borderWidth ?? 0;
+    const showHeader = el.showHeader !== false;
+    const fs = el.fontSize * fontScale;
+    const hfs = (el.headerFontSize ?? el.fontSize) * fontScale;
+    const rows = splits.length > 0 ? splits : MOCK_SPLITS;
+    return (
+        <table style={{ width: '100%', height: '100%', borderCollapse: 'collapse', tableLayout: 'fixed', fontFamily: el.fontFamily, color: el.color, fontWeight: el.fontWeight, pointerEvents: 'none' }}>
+            {showHeader && (
+                <thead>
+                    <tr style={{ background: headerBg, color: headerColor }}>
+                        {cols.map((c, i) => (
+                            <th key={i} style={{ width: `${(c.width / totalW) * 100}%`, padding: '4px 6px', textAlign: c.align, fontSize: hfs, fontWeight: 700, border: borderWidth > 0 ? `${borderWidth}px solid ${borderColor}` : 'none' }}>{c.header}</th>
+                        ))}
+                    </tr>
+                </thead>
+            )}
+            <tbody>
+                {rows.length === 0 ? (
+                    <tr><td colSpan={cols.length} style={{ textAlign: 'center', padding: 6, fontSize: fs, opacity: 0.7 }}>No checkpoint data</td></tr>
+                ) : rows.map((r, i) => (
+                    <tr key={i} style={{ background: i % 2 === 0 ? rowBg : rowAltBg }}>
+                        {cols.map((c, j) => (
+                            <td key={j} style={{ padding: '3px 6px', textAlign: c.align, fontSize: fs, fontVariantNumeric: 'tabular-nums', border: borderWidth > 0 ? `${borderWidth}px solid ${borderColor}` : 'none' }}>
+                                {splitsCellValue(c.field, r, i)}
+                            </td>
+                        ))}
+                    </tr>
+                ))}
+            </tbody>
+        </table>
+    );
+}
+
 // ============= MAIN COMPONENT =============
 export default function CertificatesPage() {
-    const { language } = useLanguage();
+    const { language: _lang } = useLanguage();
+    void _lang;
     const [campaign, setCampaign] = useState<Campaign | null>(null);
     const [loading, setLoading] = useState(true);
     const [selectedCategory, setSelectedCategory] = useState('');
@@ -150,11 +437,13 @@ export default function CertificatesPage() {
     const [page, setPage] = useState(1);
     const [runnersLoading, setRunnersLoading] = useState(false);
     const [selectedRunner, setSelectedRunner] = useState<Runner | null>(null);
+    const [splits, setSplits] = useState<SplitRecord[]>([]);
     const [generating, setGenerating] = useState(false);
     const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
     const limit = 30;
 
     // Canvas editor state
+    const [paperSize, setPaperSize] = useState<PaperSize>('a4-landscape');
     const [elements, setElements] = useState<CertElement[]>(DEFAULT_ELEMENTS);
     const [selectedId, setSelectedId] = useState<string | null>(null);
     const [bgImage, setBgImage] = useState('');
@@ -164,7 +453,7 @@ export default function CertificatesPage() {
     const [canvasW, setCanvasW] = useState(800);
     const canvasRef = useRef<HTMLDivElement>(null);
     const imageInputRef = useRef<HTMLInputElement>(null);
-    const dragRef = useRef<{ id: string; startMX: number; startMY: number; startElX: number; startElY: number; canvasW: number; canvasH: number; mode: 'move' | 'resize'; startElW?: number } | null>(null);
+    const dragRef = useRef<{ id: string; startMX: number; startMY: number; startElX: number; startElY: number; canvasW: number; canvasH: number; mode: 'move' | 'resize' | 'resizeH'; startElW?: number; startElH?: number } | null>(null);
     const runnerRequestRef = useRef(0);
     const [imageImporting, setImageImporting] = useState(false);
     const [clipboardEl, setClipboardEl] = useState<CertElement | null>(null);
@@ -177,11 +466,13 @@ export default function CertificatesPage() {
         setRedoStack([]);
     }, []);
 
-    // Snap guides + context menu
     const [snapLines, setSnapLines] = useState<SnapLine[]>([]);
     const [ctxMenu, setCtxMenu] = useState<CtxMenu | null>(null);
     const [ctxSubmenu, setCtxSubmenu] = useState<'layer' | null>(null);
     const [activeTool, setActiveTool] = useState<string>('');
+
+    const paperInfo = PAPER_SIZES[paperSize];
+    const paperAspect = paperInfo.h / paperInfo.w; // used by image height calc
 
     const showToast = (message: string, type: 'success' | 'error') => {
         setToast({ message, type });
@@ -228,17 +519,14 @@ export default function CertificatesPage() {
                 src: dataUrl,
                 aspectRatio,
                 content: '',
-                x: 50,
-                y: 50,
+                x: 50, y: 50,
                 width: aspectRatio >= 1 ? 28 : 18,
                 fontSize: 20,
                 fontFamily: 'Sarabun, sans-serif',
                 color: '#ffffff',
-                fontWeight: 'normal',
-                fontStyle: 'normal',
+                fontWeight: 'normal', fontStyle: 'normal',
                 textAlign: 'center',
-                opacity: 1,
-                letterSpacing: 0,
+                opacity: 1, letterSpacing: 0,
             };
             pushUndo(elements);
             setElements(prev => [...prev, el]);
@@ -316,7 +604,7 @@ export default function CertificatesPage() {
         const obs = new ResizeObserver(measure);
         if (canvasRef.current) obs.observe(canvasRef.current);
         return () => obs.disconnect();
-    }, []);
+    }, [paperSize]);
 
     useEffect(() => {
         async function loadFeatured() {
@@ -329,6 +617,7 @@ export default function CertificatesPage() {
                     if (data.categories?.length > 0) setSelectedCategory(data.categories[0].name);
                     if (data.certBackgroundImage) setBgImage(data.certBackgroundImage);
                     if (Array.isArray(data.certLayout) && data.certLayout.length > 0) setElements(data.certLayout);
+                    if (data.certPaperSize && PAPER_SIZES[data.certPaperSize as PaperSize]) setPaperSize(data.certPaperSize);
                 }
             } catch { setCampaign(null); }
             finally { setLoading(false); }
@@ -367,6 +656,8 @@ export default function CertificatesPage() {
                 overallRank: runner.overallRank && runner.overallRank > 0 ? runner.overallRank : (overallRank > 0 ? overallRank : runner.overallRank),
                 genderRank: runner.genderRank && runner.genderRank > 0 ? runner.genderRank : (genderRank > 0 ? genderRank : runner.genderRank),
                 ageGroupRank: runner.ageGroupRank && runner.ageGroupRank > 0 ? runner.ageGroupRank : (ageGroupRank > 0 ? ageGroupRank : runner.ageGroupRank),
+                totalFinishers: runner.totalFinishers || finishedRunners.length,
+                genderFinishers: runner.genderFinishers || finishedRunners.filter(r => r.gender === runner.gender).length,
             };
         } catch {
             return runner;
@@ -376,11 +667,36 @@ export default function CertificatesPage() {
     const handleSelectRunner = useCallback(async (runner: Runner) => {
         const requestId = ++runnerRequestRef.current;
         setSelectedRunner(runner);
+        setSplits([]);
         try {
             const detailRes = await fetch(`/api/runners/${runner._id}`, { cache: 'no-store' });
             const detail = detailRes.ok ? await detailRes.json() as Runner : runner;
             const resolved = await resolveRunnerRanks({ ...runner, ...detail });
             if (runnerRequestRef.current === requestId) setSelectedRunner(resolved);
+
+            // Fetch splits
+            const eventId = (detail.eventId as unknown as string) || (resolved.eventId as unknown as string);
+            if (eventId) {
+                try {
+                    const splitsRes = await fetch(`/api/timing/runner/${eventId}/${runner._id}`, { cache: 'no-store' });
+                    if (splitsRes.ok) {
+                        const arr = await splitsRes.json();
+                        if (runnerRequestRef.current === requestId && Array.isArray(arr)) {
+                            const mapped: SplitRecord[] = arr.map((r: Record<string, unknown>) => ({
+                                checkpoint: (r.splitDesc as string) || (r.checkpoint as string) || '-',
+                                splitTime: r.splitTime as number,
+                                elapsedTime: (r.elapsedTime as number) ?? (r.totalNetTime as number) ?? (r.netTime as number),
+                                distanceFromStart: r.distanceFromStart as number,
+                                netPace: (r.netPace as string) || (r.splitPace as string),
+                                splitPace: r.splitPace as string,
+                                splitNo: r.splitNo as number,
+                                splitDesc: r.splitDesc as string,
+                            }));
+                            setSplits(mapped);
+                        }
+                    }
+                } catch { /* ignore */ }
+            }
         } catch {
             const resolved = await resolveRunnerRanks(runner);
             if (runnerRequestRef.current === requestId) setSelectedRunner(resolved);
@@ -452,7 +768,16 @@ export default function CertificatesPage() {
             if (!drag) return;
             if (drag.mode === 'resize') {
                 const dw = ((e.clientX - drag.startMX) / drag.canvasW) * 100;
-                setElements(prev => prev.map(el => el.id === drag.id ? { ...el, width: Math.max(5, Math.min(100, (drag.startElW ?? 20) + dw)) } : el));
+                const dh = ((e.clientY - drag.startMY) / drag.canvasH) * 100;
+                setElements(prev => prev.map(el => {
+                    if (el.id !== drag.id) return el;
+                    const newW = Math.max(2, Math.min(100, (drag.startElW ?? 20) + dw));
+                    if (el.type === 'shape' || el.type === 'table' || el.type === 'flag') {
+                        const newH = Math.max(2, Math.min(100, (drag.startElH ?? 20) + dh));
+                        return { ...el, width: newW, height: newH };
+                    }
+                    return { ...el, width: newW };
+                }));
             } else {
                 const rawX = drag.startElX + ((e.clientX - drag.startMX) / drag.canvasW) * 100;
                 const rawY = drag.startElY + ((e.clientY - drag.startMY) / drag.canvasH) * 100;
@@ -466,9 +791,7 @@ export default function CertificatesPage() {
             }
         };
         const onUp = () => {
-            if (dragRef.current) {
-                setSnapLines([]);
-            }
+            if (dragRef.current) setSnapLines([]);
             dragRef.current = null;
         };
         document.addEventListener('mousemove', onMove);
@@ -483,7 +806,12 @@ export default function CertificatesPage() {
         pushUndo(elements);
         const rect = canvas.getBoundingClientRect();
         const el = elements.find(x => x.id === id);
-        dragRef.current = { id, startMX: e.clientX, startMY: e.clientY, startElX: el?.x ?? 50, startElY: el?.y ?? 50, canvasW: rect.width, canvasH: rect.height, mode, startElW: el?.width };
+        dragRef.current = {
+            id, startMX: e.clientX, startMY: e.clientY,
+            startElX: el?.x ?? 50, startElY: el?.y ?? 50,
+            canvasW: rect.width, canvasH: rect.height, mode,
+            startElW: el?.width, startElH: el?.height ?? el?.width,
+        };
         setSelectedId(id);
         setCtxMenu(null);
     };
@@ -493,6 +821,62 @@ export default function CertificatesPage() {
         const el: CertElement = { id: uid(), type: 'text', content, x: 50, y: 50, width: 40, fontSize: 20, fontFamily: 'Sarabun, sans-serif', color: '#ffffff', fontWeight: 'normal', fontStyle: 'normal', textAlign: 'center', opacity: 1, letterSpacing: 0 };
         setElements(prev => [...prev, el]);
         setSelectedId(el.id);
+    };
+
+    const addShapeElement = (shape: ShapeKind) => {
+        pushUndo(elements);
+        const el: CertElement = {
+            id: uid(), type: 'shape', shape,
+            content: '', x: 50, y: 50,
+            width: 20, height: 20,
+            fontSize: 20, fontFamily: 'Sarabun, sans-serif', color: '#ffffff',
+            fontWeight: 'normal', fontStyle: 'normal', textAlign: 'center',
+            opacity: 1, letterSpacing: 0,
+            fillColor: '#d4af37', strokeColor: '#ffffff', strokeWidth: 0,
+        };
+        setElements(prev => [...prev, el]);
+        setSelectedId(el.id);
+        setActiveTool('');
+    };
+
+    const addFlagElement = (mode: FlagMode) => {
+        pushUndo(elements);
+        const el: CertElement = {
+            id: uid(), type: 'flag',
+            content: '', x: 50, y: 50,
+            width: mode === 'flag' ? 8 : 24, height: mode === 'flag' ? 8 : 6,
+            fontSize: 24, fontFamily: 'Sarabun, sans-serif', color: '#ffffff',
+            fontWeight: 'bold', fontStyle: 'normal', textAlign: 'center',
+            opacity: 1, letterSpacing: 0,
+            flagMode: mode, flagCode: 'TH',
+        };
+        setElements(prev => [...prev, el]);
+        setSelectedId(el.id);
+        setActiveTool('');
+    };
+
+    const addTableElement = () => {
+        pushUndo(elements);
+        const el: CertElement = {
+            id: uid(), type: 'table',
+            content: '', x: 50, y: 70,
+            width: 75, height: 22,
+            fontSize: 12, fontFamily: 'Sarabun, sans-serif', color: '#ffffff',
+            fontWeight: 'normal', fontStyle: 'normal', textAlign: 'center',
+            opacity: 1, letterSpacing: 0,
+            columns: DEFAULT_COLUMNS,
+            headerBg: 'rgba(0,0,0,0.25)',
+            headerColor: '#ffffff',
+            rowBg: 'transparent',
+            rowAltBg: 'rgba(255,255,255,0.05)',
+            borderColor: 'rgba(255,255,255,0.3)',
+            borderWidth: 1,
+            showHeader: true,
+            headerFontSize: 12,
+        };
+        setElements(prev => [...prev, el]);
+        setSelectedId(el.id);
+        setActiveTool('');
     };
 
     const deleteElement = (id: string) => { pushUndo(elements); setElements(prev => prev.filter(e => e.id !== id)); if (selectedId === id) setSelectedId(null); };
@@ -521,7 +905,11 @@ export default function CertificatesPage() {
         if (!campaign?._id) return;
         setSaving(true);
         try {
-            const res = await fetch(`/api/campaigns/${campaign._id}`, { method: 'PUT', headers: authHeaders(), body: JSON.stringify({ certBackgroundImage: bgImage, certLayout: elements }) });
+            const res = await fetch(`/api/campaigns/${campaign._id}`, {
+                method: 'PUT',
+                headers: authHeaders(),
+                body: JSON.stringify({ certBackgroundImage: bgImage, certLayout: elements, certPaperSize: paperSize }),
+            });
             if (res.ok) showToast('บันทึก Layout แล้ว', 'success');
             else showToast('Save failed', 'error');
         } catch { showToast('Error', 'error'); }
@@ -535,20 +923,74 @@ export default function CertificatesPage() {
         try {
             const win = window.open('', '_blank');
             if (!win) { showToast('Browser blocked popup', 'error'); return; }
-            const ps = 1122 / CANVAS_REF_W;
-            const elHtml = elements.map(el => {
+            // For 96dpi-based pt scaling: A4-landscape = 1122px@96dpi. For HD, use exact px.
+            const pageWpx = paperSize === 'hd-landscape' ? 1920
+                          : paperSize === 'hd-portrait' ? 1080
+                          : paperSize === 'a4-portrait' ? Math.round(210 / 25.4 * 96)
+                          : Math.round(297 / 25.4 * 96);
+            const ps = pageWpx / CANVAS_REF_W;
+            const renderEl = (el: CertElement): string => {
                 if (el.type === 'image' && el.src) {
-                    return `<img class="cert-image-el" src=${JSON.stringify(el.src)} alt="" style="left:${el.x}%;top:${el.y}%;width:${el.width}%;height:${getElementHeight(el)}%;opacity:${el.opacity};" />`;
+                    const h = getElementHeight(el, paperAspect);
+                    return `<img class="cert-image-el" src=${JSON.stringify(el.src)} alt="" style="left:${el.x}%;top:${el.y}%;width:${el.width}%;height:${h}%;opacity:${el.opacity};" />`;
+                }
+                if (el.type === 'shape' && el.shape) {
+                    const h = getElementHeight(el, paperAspect);
+                    const fill = el.fillColor || '#fff';
+                    const stroke = el.strokeColor || 'transparent';
+                    const sw = el.strokeWidth ?? 0;
+                    let inner = '';
+                    if (el.shape === 'circle') {
+                        inner = `<svg viewBox="0 0 100 100" preserveAspectRatio="none" width="100%" height="100%" style="display:block"><ellipse cx="50" cy="50" rx="${50 - sw / 2}" ry="${50 - sw / 2}" fill="${fill}" stroke="${stroke}" stroke-width="${sw}"/></svg>`;
+                    } else if (el.shape === 'triangle') {
+                        inner = `<svg viewBox="0 0 100 100" preserveAspectRatio="none" width="100%" height="100%" style="display:block"><polygon points="50,2 98,98 2,98" fill="${fill}" stroke="${stroke}" stroke-width="${sw}"/></svg>`;
+                    } else {
+                        inner = `<div style="width:100%;height:100%;background:${fill};border:${sw}px solid ${stroke};box-sizing:border-box"></div>`;
+                    }
+                    return `<div class="cert-shape-el" style="left:${el.x}%;top:${el.y}%;width:${el.width}%;height:${h}%;opacity:${el.opacity};">${inner}</div>`;
+                }
+                if (el.type === 'flag') {
+                    const nat = resolveNationality(selectedRunner.nationality);
+                    const mode = el.flagMode || 'flag';
+                    const emoji = nat.code ? countryFlagEmoji(nat.code) : '🏳️';
+                    const txt = mode === 'name' ? escapeHtml(nat.name) : mode === 'flag' ? emoji : `${emoji} ${escapeHtml(nat.name)}`;
+                    const fs = (el.fontSize * ps * (mode === 'flag' ? 1.4 : 1)).toFixed(1);
+                    return `<div class="cert-el" style="left:${el.x}%;top:${el.y}%;width:${el.width}%;font-size:${fs}px;color:${el.color};font-weight:${el.fontWeight};text-align:${el.textAlign};opacity:${el.opacity};">${txt}</div>`;
+                }
+                if (el.type === 'table') {
+                    const cols = el.columns && el.columns.length > 0 ? el.columns : DEFAULT_COLUMNS;
+                    const totalW = cols.reduce((s, c) => s + c.width, 0) || 1;
+                    const headerBg = el.headerBg || 'rgba(0,0,0,0.08)';
+                    const headerColor = el.headerColor || el.color;
+                    const rowBg = el.rowBg || 'transparent';
+                    const rowAltBg = el.rowAltBg || rowBg;
+                    const borderColor = el.borderColor || 'rgba(0,0,0,0.2)';
+                    const bw = el.borderWidth ?? 0;
+                    const showHeader = el.showHeader !== false;
+                    const fs = (el.fontSize * ps).toFixed(1);
+                    const hfs = ((el.headerFontSize ?? el.fontSize) * ps).toFixed(1);
+                    const h = getElementHeight(el, paperAspect);
+                    const rows = splits.length > 0 ? splits : MOCK_SPLITS;
+                    const th = showHeader ? `<thead><tr style="background:${headerBg};color:${headerColor}">${cols.map(c => `<th style="width:${(c.width / totalW) * 100}%;padding:4px 6px;text-align:${c.align};font-size:${hfs}px;font-weight:700;border:${bw}px solid ${borderColor}">${escapeHtml(c.header)}</th>`).join('')}</tr></thead>` : '';
+                    const body = rows.length === 0
+                        ? `<tr><td colspan="${cols.length}" style="text-align:center;padding:6px;font-size:${fs}px;opacity:.7">No checkpoint data</td></tr>`
+                        : rows.map((r, i) => `<tr style="background:${i % 2 === 0 ? rowBg : rowAltBg}">${cols.map(c => `<td style="padding:3px 6px;text-align:${c.align};font-size:${fs}px;font-variant-numeric:tabular-nums;border:${bw}px solid ${borderColor}">${escapeHtml(splitsCellValue(c.field, r, i))}</td>`).join('')}</tr>`).join('');
+                    return `<div class="cert-table-el" style="left:${el.x}%;top:${el.y}%;width:${el.width}%;height:${h}%;opacity:${el.opacity};color:${el.color};font-family:${el.fontFamily};"><table style="width:100%;height:100%;border-collapse:collapse;table-layout:fixed">${th}<tbody>${body}</tbody></table></div>`;
                 }
                 const text = escapeHtml(substituteFields(el.content, selectedRunner, campaign)).replace(/\n/g, '<br>');
                 return `<div class="cert-el" style="left:${el.x}%;top:${el.y}%;width:${el.width}%;font-size:${(el.fontSize * ps).toFixed(1)}px;font-family:${el.fontFamily};color:${el.color};font-weight:${el.fontWeight};font-style:${el.fontStyle};text-align:${el.textAlign};opacity:${el.opacity};letter-spacing:${(el.letterSpacing * ps).toFixed(1)}px;">${text}</div>`;
-            }).join('');
+            };
+            const elHtml = elements.map(renderEl).join('');
             const bgLayer = bgImage ? `<img class="cert-bg-image" src=${JSON.stringify(bgImage)} alt="" />` : '';
-            win.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Certificate</title><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;700&family=Prompt:wght@400;700&family=Kanit:wght@400;700&family=Playfair+Display:wght@400;700&display=swap"><style>@page{size:A4 landscape;margin:0}*{box-sizing:border-box;margin:0;padding:0}html,body{width:297mm;height:210mm;overflow:hidden;-webkit-print-color-adjust:exact;print-color-adjust:exact;background:${bgColor}}body{font-family:Sarabun,sans-serif}.cert{width:297mm;height:210mm;position:relative;overflow:hidden;background:${bgColor}}.cert-bg-image{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:0}.cert-el,.cert-image-el{position:absolute;transform:translate(-50%,-50%);z-index:1}.cert-el{white-space:pre-wrap;word-break:break-word;line-height:1.3}.cert-image-el{object-fit:contain}</style></head><body><div class="cert">${bgLayer}${elHtml}</div><script>const done=()=>setTimeout(()=>window.print(),80);const fontReady=document.fonts&&document.fonts.ready?document.fonts.ready:Promise.resolve();const imgs=[...document.images].filter(img=>!img.complete);Promise.all([fontReady,...imgs.map(img=>new Promise(resolve=>{img.addEventListener('load',resolve,{once:true});img.addEventListener('error',resolve,{once:true});}))]).then(done);if(imgs.length===0){fontReady.then(done);}</script></body></html>`);
+            const isHD = paperSize === 'hd-landscape' || paperSize === 'hd-portrait';
+            const pageRule = isHD
+                ? `@page{size:${paperInfo.printW} ${paperInfo.printH};margin:0}`
+                : `@page{size:A4 ${paperInfo.orient};margin:0}`;
+            win.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Certificate</title><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;700&family=Prompt:wght@400;700&family=Kanit:wght@400;700&family=Playfair+Display:wght@400;700&display=swap"><style>${pageRule}*{box-sizing:border-box;margin:0;padding:0}html,body{width:${paperInfo.printW};height:${paperInfo.printH};overflow:hidden;-webkit-print-color-adjust:exact;print-color-adjust:exact;background:${bgColor}}body{font-family:Sarabun,sans-serif}.cert{width:${paperInfo.printW};height:${paperInfo.printH};position:relative;overflow:hidden;background:${bgColor}}.cert-bg-image{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:0}.cert-el,.cert-image-el,.cert-shape-el,.cert-table-el{position:absolute;transform:translate(-50%,-50%);z-index:1}.cert-el{white-space:pre-wrap;word-break:break-word;line-height:1.3}.cert-image-el{object-fit:contain}.cert-table-el table th,.cert-table-el table td{vertical-align:middle}</style></head><body><div class="cert">${bgLayer}${elHtml}</div><script>const done=()=>setTimeout(()=>window.print(),120);const fontReady=document.fonts&&document.fonts.ready?document.fonts.ready:Promise.resolve();const imgs=[...document.images].filter(img=>!img.complete);Promise.all([fontReady,...imgs.map(img=>new Promise(resolve=>{img.addEventListener('load',resolve,{once:true});img.addEventListener('error',resolve,{once:true});}))]).then(done);if(imgs.length===0){fontReady.then(done);}</script></body></html>`);
             win.document.close();
         } catch { showToast('Error', 'error'); }
         finally { setGenerating(false); }
-    }, [selectedRunner, elements, bgImage, bgColor, campaign]);
+    }, [selectedRunner, elements, bgImage, bgColor, campaign, paperSize, paperInfo, paperAspect, splits]);
 
     const alignElement = (id: string, hAlign?: 'left' | 'center' | 'right', vAlign?: 'top' | 'middle' | 'bottom') => {
         pushUndo(elements);
@@ -632,7 +1074,17 @@ export default function CertificatesPage() {
 
                     {/* LEFT TOOL PANEL */}
                     {activeTool && (
-                        <div style={{ width: 210, background: '#fff', borderRight: '1px solid #e5e7eb', overflowY: 'auto', padding: 10, flexShrink: 0 }}>
+                        <div style={{ width: 230, background: '#fff', borderRight: '1px solid #e5e7eb', overflowY: 'auto', padding: 10, flexShrink: 0 }}>
+                            {activeTool === 'paper' && <>
+                                <div style={{ fontWeight: 700, fontSize: 12, marginBottom: 8, color: '#374151' }}>ขนาดกระดาษ / Orientation</div>
+                                {(Object.keys(PAPER_SIZES) as PaperSize[]).map(k => (
+                                    <button key={k} onClick={() => setPaperSize(k)} style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: paperSize === k ? '2px solid #3b82f6' : '1px solid #d1d5db', background: paperSize === k ? '#dbeafe' : '#f8fafc', cursor: 'pointer', fontWeight: 600, fontSize: 11, marginBottom: 5, textAlign: 'left' }}>
+                                        <div style={{ fontSize: 11, fontWeight: 800 }}>{PAPER_SIZES[k].label}</div>
+                                        <div style={{ fontSize: 9, color: '#64748b' }}>{PAPER_SIZES[k].w} × {PAPER_SIZES[k].h} {k.startsWith('hd') ? 'px' : 'mm'}</div>
+                                    </button>
+                                ))}
+                                <div style={{ fontSize: 9, color: '#94a3b8', marginTop: 6, lineHeight: 1.5 }}>การปรับ orientation จะรีเฟรชสัดส่วน canvas. ตำแหน่งจะคงที่เป็น % เทียบกับ canvas.</div>
+                            </>}
                             {activeTool === 'text' && <>
                                 <div style={{ fontWeight: 700, fontSize: 12, marginBottom: 8, color: '#374151' }}>Text Elements</div>
                                 <button onClick={() => { addTextElement(); setActiveTool(''); }} style={{ width: '100%', padding: '8px', borderRadius: 6, border: '1px solid #d1d5db', fontSize: 11, background: '#f8fafc', cursor: 'pointer', fontWeight: 600, marginBottom: 4 }}>➕ Add Text</button>
@@ -642,19 +1094,42 @@ export default function CertificatesPage() {
                             </>}
                             {activeTool === 'fields' && <>
                                 <div style={{ fontWeight: 700, fontSize: 12, marginBottom: 8, color: '#374151' }}>Dynamic Fields</div>
+                                <div style={{ fontSize: 9, color: '#64748b', marginBottom: 6 }}>กดปุ่มเพื่อเพิ่ม element แสดงค่า. ค่าจะแทนที่ตามนักวิ่งที่เลือก</div>
                                 {DYNAMIC_FIELDS.map(f => (
                                     <button key={f.value} onClick={() => { addTextElement(f.value); setActiveTool(''); }} style={{ width: '100%', padding: '6px 8px', borderRadius: 5, border: '1px dashed #93c5fd', fontSize: 11, background: '#eff6ff', color: '#1d4ed8', cursor: 'pointer', fontWeight: 600, marginBottom: 3, textAlign: 'left' }}>{f.label} <span style={{ opacity: 0.5 }}>{f.value}</span></button>
                                 ))}
+                                <div style={{ height: 1, background: '#e5e7eb', margin: '8px 0' }} />
+                                <div style={{ fontWeight: 700, fontSize: 11, marginBottom: 4, color: '#374151' }}>Country / Flag</div>
+                                <button onClick={() => addFlagElement('flag')} style={{ width: '100%', padding: '6px 8px', borderRadius: 5, border: '1px solid #d1d5db', fontSize: 11, background: '#fff', cursor: 'pointer', fontWeight: 600, marginBottom: 3, textAlign: 'left' }}>🇹🇭 Flag only</button>
+                                <button onClick={() => addFlagElement('name')} style={{ width: '100%', padding: '6px 8px', borderRadius: 5, border: '1px solid #d1d5db', fontSize: 11, background: '#fff', cursor: 'pointer', fontWeight: 600, marginBottom: 3, textAlign: 'left' }}>Aa Country name</button>
+                                <button onClick={() => addFlagElement('both')} style={{ width: '100%', padding: '6px 8px', borderRadius: 5, border: '1px solid #d1d5db', fontSize: 11, background: '#fff', cursor: 'pointer', fontWeight: 600, marginBottom: 3, textAlign: 'left' }}>🇹🇭 Thailand (both)</button>
+                            </>}
+                            {activeTool === 'shapes' && <>
+                                <div style={{ fontWeight: 700, fontSize: 12, marginBottom: 8, color: '#374151' }}>Shapes</div>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6, marginBottom: 8 }}>
+                                    <button onClick={() => addShapeElement('rect')} style={{ aspectRatio: 1, borderRadius: 6, border: '1px solid #d1d5db', background: '#f8fafc', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', fontSize: 9, gap: 2 }}><div style={{ width: 28, height: 22, background: '#374151', borderRadius: 2 }} />Rect</button>
+                                    <button onClick={() => addShapeElement('circle')} style={{ aspectRatio: 1, borderRadius: 6, border: '1px solid #d1d5db', background: '#f8fafc', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', fontSize: 9, gap: 2 }}><div style={{ width: 26, height: 26, background: '#374151', borderRadius: '50%' }} />Circle</button>
+                                    <button onClick={() => addShapeElement('triangle')} style={{ aspectRatio: 1, borderRadius: 6, border: '1px solid #d1d5db', background: '#f8fafc', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', fontSize: 9, gap: 2 }}>
+                                        <svg width="28" height="24" viewBox="0 0 28 24"><polygon points="14,2 26,22 2,22" fill="#374151" /></svg>
+                                        Triangle
+                                    </button>
+                                </div>
+                                <div style={{ fontSize: 9, color: '#94a3b8', lineHeight: 1.5 }}>ลาก resize handle เพื่อปรับขนาด. แก้สีในแถบขวา.</div>
+                            </>}
+                            {activeTool === 'table' && <>
+                                <div style={{ fontWeight: 700, fontSize: 12, marginBottom: 8, color: '#374151' }}>Splits Table</div>
+                                <button onClick={addTableElement} style={{ width: '100%', padding: '10px', borderRadius: 6, border: '1px solid #3b82f6', background: '#dbeafe', cursor: 'pointer', fontWeight: 700, fontSize: 11, marginBottom: 6, color: '#1d4ed8' }}>➕ Add Splits Table</button>
+                                <div style={{ fontSize: 9, color: '#64748b', lineHeight: 1.5 }}>เพิ่มตารางสรุป splits checkpoint. เลือก field ต่อ column ได้ในแถบขวา (Distance / Time / Sector / Pace / Overall / Gender)</div>
                             </>}
                             {activeTool === 'bg' && <>
                                 <div style={{ fontWeight: 700, fontSize: 12, marginBottom: 8, color: '#374151' }}>Background</div>
                                 <label style={{ fontSize: 10, color: '#64748b', fontWeight: 600, display: 'block', marginBottom: 2 }}>สีพื้นหลัง</label>
                                 <input type="color" value={bgColor} onChange={e => setBgColor(e.target.value)} style={{ width: '100%', height: 28, border: 'none', borderRadius: 4, cursor: 'pointer', marginBottom: 8 }} />
-                                {bgImage && <div style={{ position: 'relative', marginBottom: 6 }}><img src={bgImage} alt="bg" style={{ width: '100%', borderRadius: 4, border: '1px solid #e5e7eb', aspectRatio: '297/210', objectFit: 'cover' }} /><button onClick={() => setBgImage('')} style={{ position: 'absolute', top: 2, right: 2, background: '#ef4444', color: '#fff', border: 'none', borderRadius: 3, padding: '1px 6px', fontSize: 10, fontWeight: 700, cursor: 'pointer' }}>✕</button></div>}
+                                {bgImage && <div style={{ position: 'relative', marginBottom: 6 }}><img src={bgImage} alt="bg" style={{ width: '100%', borderRadius: 4, border: '1px solid #e5e7eb', aspectRatio: `${paperInfo.w} / ${paperInfo.h}`, objectFit: 'cover' }} /><button onClick={() => setBgImage('')} style={{ position: 'absolute', top: 2, right: 2, background: '#ef4444', color: '#fff', border: 'none', borderRadius: 3, padding: '1px 6px', fontSize: 10, fontWeight: 700, cursor: 'pointer' }}>✕</button></div>}
                                 <input type="file" id="cert-bg" accept="image/*" style={{ display: 'none' }} onChange={handleBgUpload} />
                                 <input ref={imageInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleImageImport} />
                                 <label htmlFor="cert-bg" style={{ display: 'block', padding: '6px', borderRadius: 6, border: '1px dashed #d1d5db', background: '#f9fafb', cursor: bgUploading ? 'wait' : 'pointer', fontSize: 11, color: '#666', textAlign: 'center' }}>{bgUploading ? '⏳ กำลังอัปโหลด...' : bgImage ? 'เปลี่ยนรูป' : '📷 อัปโหลดภาพพื้นหลัง'}</label>
-                                <p style={{ fontSize: 9, color: '#94a3b8', marginTop: 4 }}>แนะนำ A4 landscape (297×210mm)</p>
+                                <p style={{ fontSize: 9, color: '#94a3b8', marginTop: 4 }}>แนะนำขนาด {paperInfo.w}×{paperInfo.h}</p>
                             </>}
                             {activeTool === 'runners' && <>
                                 <div style={{ fontWeight: 700, fontSize: 12, marginBottom: 6, color: '#374151' }}>Runners</div>
@@ -686,7 +1161,11 @@ export default function CertificatesPage() {
                                 {[...elements].reverse().map((el, i) => (
                                     <div key={el.id} onClick={() => setSelectedId(el.id)} style={{ padding: '5px 8px', borderRadius: 5, cursor: 'pointer', marginBottom: 2, border: selectedId === el.id ? '1.5px solid #3b82f6' : '1px solid #e5e7eb', background: selectedId === el.id ? '#dbeafe' : '#fff', fontSize: 10, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                                         <span style={{ fontWeight: 700, color: '#64748b', marginRight: 4 }}>{elements.length - i}.</span>
-                                        {el.type === 'image' ? '[Image]' : el.content.substring(0, 30)}
+                                        {el.type === 'image' ? '[Image]'
+                                            : el.type === 'shape' ? `[Shape: ${el.shape}]`
+                                            : el.type === 'flag' ? `[Flag: ${el.flagMode}]`
+                                            : el.type === 'table' ? '[Splits Table]'
+                                            : (el.content || '').substring(0, 30)}
                                     </div>
                                 ))}
                             </>}
@@ -697,6 +1176,9 @@ export default function CertificatesPage() {
                     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, overflow: 'hidden' }}>
                         <div style={{ height: 40, background: '#1e293b', display: 'flex', alignItems: 'center', padding: '0 12px', gap: 6, flexShrink: 0 }}>
                             <span style={{ color: '#e2e8f0', fontSize: 13, fontWeight: 700, marginRight: 8 }}>Certificate Editor</span>
+                            <select value={paperSize} onChange={e => setPaperSize(e.target.value as PaperSize)} style={{ padding: '3px 6px', borderRadius: 4, border: '1px solid #334155', background: '#0f172a', color: '#e2e8f0', fontSize: 11, cursor: 'pointer' }}>
+                                {(Object.keys(PAPER_SIZES) as PaperSize[]).map(k => <option key={k} value={k}>{PAPER_SIZES[k].label}</option>)}
+                            </select>
                             <button onClick={() => { if (undoStack.length === 0) return; const last = undoStack[undoStack.length - 1]; setRedoStack(r => [...r, elements]); setElements(last); setUndoStack(s => s.slice(0, -1)); }} disabled={undoStack.length === 0} title="Undo (Ctrl+Z)" style={{ padding: '3px 6px', borderRadius: 4, border: 'none', background: undoStack.length > 0 ? '#334155' : 'transparent', color: undoStack.length > 0 ? '#e2e8f0' : '#475569', cursor: undoStack.length > 0 ? 'pointer' : 'default', fontSize: 14 }}>↩</button>
                             <button onClick={() => { if (redoStack.length === 0) return; const last = redoStack[redoStack.length - 1]; setUndoStack(u => [...u, elements]); setElements(last); setRedoStack(s => s.slice(0, -1)); }} disabled={redoStack.length === 0} title="Redo (Ctrl+Shift+Z)" style={{ padding: '3px 6px', borderRadius: 4, border: 'none', background: redoStack.length > 0 ? '#334155' : 'transparent', color: redoStack.length > 0 ? '#e2e8f0' : '#475569', cursor: redoStack.length > 0 ? 'pointer' : 'default', fontSize: 14 }}>↪</button>
                             <div style={{ flex: 1 }} />
@@ -705,9 +1187,13 @@ export default function CertificatesPage() {
                             <button onClick={handleSave} disabled={saving} style={{ padding: '4px 14px', borderRadius: 5, border: 'none', background: saving ? '#334155' : '#22c55e', color: '#fff', fontSize: 11, fontWeight: 700, cursor: saving ? 'not-allowed' : 'pointer' }}>{saving ? '...' : 'Save Changes'}</button>
                         </div>
 
-                        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', background: '#94a3b8', padding: 16 }}>
-                            <div style={{ width: '100%', maxWidth: 820, maxHeight: '100%' }}>
-                                <div ref={canvasRef} onClick={() => setSelectedId(null)} onContextMenu={e => { e.preventDefault(); setCtxMenu({ x: e.clientX, y: e.clientY }); setCtxSubmenu(null); }} style={{ position: 'relative', width: '100%', aspectRatio: '297/210', background: bgImage ? `url(${bgImage}) center/cover` : bgColor, borderRadius: 2, overflow: 'hidden', cursor: 'default', boxShadow: '0 4px 24px rgba(0,0,0,0.45)', userSelect: 'none' }}>
+                        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'auto', background: '#94a3b8', padding: 16 }}>
+                            <div style={{
+                                width: '100%',
+                                maxWidth: paperInfo.orient === 'landscape' ? 920 : 620,
+                                maxHeight: '100%',
+                            }}>
+                                <div ref={canvasRef} onClick={() => setSelectedId(null)} onContextMenu={e => { e.preventDefault(); setCtxMenu({ x: e.clientX, y: e.clientY }); setCtxSubmenu(null); }} style={{ position: 'relative', width: '100%', aspectRatio: `${paperInfo.w} / ${paperInfo.h}`, background: bgImage ? `url(${bgImage}) center/cover` : bgColor, borderRadius: 2, overflow: 'hidden', cursor: 'default', boxShadow: '0 4px 24px rgba(0,0,0,0.45)', userSelect: 'none' }}>
 
                                     {snapLines.map((sl, i) => sl.axis === 'x'
                                         ? <div key={`s${i}`} style={{ position: 'absolute', left: `${sl.pos}%`, top: 0, width: 1, height: '100%', background: '#f472b6', zIndex: 99, pointerEvents: 'none' }} />
@@ -716,10 +1202,38 @@ export default function CertificatesPage() {
 
                                     {elements.map(el => {
                                         const isSelected = selectedId === el.id;
-                                        const imageHeight = getElementHeight(el);
+                                        const heightPct = getElementHeight(el, paperAspect);
+                                        const isText = !el.type || el.type === 'text';
+                                        const isImage = el.type === 'image';
+                                        const isShape = el.type === 'shape';
+                                        const isFlag = el.type === 'flag';
+                                        const isTable = el.type === 'table';
+                                        const hasHeight = isImage || isShape || isFlag || isTable;
                                         return (
-                                            <div key={el.id} onClick={e => { e.stopPropagation(); setSelectedId(el.id); }} onMouseDown={e => { if (e.button === 0) startDrag(e, el.id, 'move'); }} onContextMenu={e => { e.preventDefault(); e.stopPropagation(); setSelectedId(el.id); setCtxMenu({ x: e.clientX, y: e.clientY, elId: el.id }); setCtxSubmenu(null); }} style={{ position: 'absolute', left: `${el.x}%`, top: `${el.y}%`, width: `${el.width}%`, height: el.type === 'image' ? `${imageHeight}%` : undefined, transform: 'translate(-50%,-50%)', fontSize: `${el.fontSize * scale}px`, fontFamily: el.fontFamily, color: el.color, fontWeight: el.fontWeight, fontStyle: el.fontStyle, textAlign: el.textAlign as 'left' | 'center' | 'right', opacity: el.opacity, letterSpacing: `${el.letterSpacing * scale}px`, cursor: 'move', padding: el.type === 'image' ? 0 : '2px 4px', outline: isSelected ? '2px solid #3b82f6' : '1px solid transparent', outlineOffset: 2, boxSizing: 'border-box', whiteSpace: 'pre-wrap', wordBreak: 'break-word', lineHeight: 1.3, transition: 'outline .1s' }}>
-                                                {el.type === 'image' && el.src ? <img src={el.src} alt="element" style={{ width: '100%', height: '100%', objectFit: 'contain', pointerEvents: 'none', display: 'block' }} /> : substituteFields(el.content, selectedRunner, campaign)}
+                                            <div key={el.id}
+                                                onClick={e => { e.stopPropagation(); setSelectedId(el.id); }}
+                                                onMouseDown={e => { if (e.button === 0) startDrag(e, el.id, 'move'); }}
+                                                onContextMenu={e => { e.preventDefault(); e.stopPropagation(); setSelectedId(el.id); setCtxMenu({ x: e.clientX, y: e.clientY, elId: el.id }); setCtxSubmenu(null); }}
+                                                style={{
+                                                    position: 'absolute', left: `${el.x}%`, top: `${el.y}%`, width: `${el.width}%`,
+                                                    height: hasHeight ? `${heightPct}%` : undefined,
+                                                    transform: 'translate(-50%,-50%)',
+                                                    fontSize: `${el.fontSize * scale}px`, fontFamily: el.fontFamily, color: el.color,
+                                                    fontWeight: el.fontWeight, fontStyle: el.fontStyle,
+                                                    textAlign: el.textAlign as 'left' | 'center' | 'right',
+                                                    opacity: el.opacity, letterSpacing: `${el.letterSpacing * scale}px`,
+                                                    cursor: 'move', padding: isText ? '2px 4px' : 0,
+                                                    outline: isSelected ? '2px solid #3b82f6' : '1px solid transparent', outlineOffset: 2,
+                                                    boxSizing: 'border-box',
+                                                    whiteSpace: 'pre-wrap', wordBreak: 'break-word', lineHeight: 1.3,
+                                                    transition: 'outline .1s',
+                                                    display: hasHeight ? 'block' : undefined,
+                                                }}>
+                                                {isImage && el.src ? <img src={el.src} alt="element" style={{ width: '100%', height: '100%', objectFit: 'contain', pointerEvents: 'none', display: 'block' }} />
+                                                    : isShape ? <ShapeRender el={el} />
+                                                    : isFlag ? <FlagRender el={el} runner={selectedRunner} fontScale={scale} />
+                                                    : isTable ? <TableRender el={el} splits={splits} fontScale={scale} />
+                                                    : substituteFields(el.content, selectedRunner, campaign)}
                                                 {isSelected && <>
                                                     <div onMouseDown={e => startDrag(e, el.id, 'resize')} style={{ position: 'absolute', bottom: -5, right: -5, width: 10, height: 10, background: '#3b82f6', border: '2px solid #fff', borderRadius: 2, cursor: 'se-resize', zIndex: 10 }} />
                                                     <div onMouseDown={e => startDrag(e, el.id, 'resize')} style={{ position: 'absolute', bottom: -5, left: -5, width: 10, height: 10, background: '#3b82f6', border: '2px solid #fff', borderRadius: 2, cursor: 'sw-resize', zIndex: 10 }} />
@@ -735,22 +1249,147 @@ export default function CertificatesPage() {
                     </div>
 
                     {/* RIGHT: ELEMENT PROPERTIES */}
-                    <div style={{ width: 230, background: '#1e293b', overflowY: 'auto', padding: '12px 10px', flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    <div style={{ width: 250, background: '#1e293b', overflowY: 'auto', padding: '12px 10px', flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 10 }}>
                         {selectedEl ? (<>
-                            <div style={{ color: '#94a3b8', fontSize: 10, fontWeight: 700, letterSpacing: 1 }}>ELEMENT PROPERTIES</div>
+                            <div style={{ color: '#94a3b8', fontSize: 10, fontWeight: 700, letterSpacing: 1 }}>
+                                {selectedEl.type === 'shape' ? `SHAPE — ${selectedEl.shape?.toUpperCase()}`
+                                    : selectedEl.type === 'flag' ? `FLAG — ${selectedEl.flagMode?.toUpperCase()}`
+                                    : selectedEl.type === 'table' ? 'SPLITS TABLE'
+                                    : selectedEl.type === 'image' ? 'IMAGE'
+                                    : 'TEXT'}
+                            </div>
 
                             {selectedEl.type === 'image' && selectedEl.src ? <div><img src={selectedEl.src} alt="selected" style={{ width: '100%', borderRadius: 6, border: '1px solid #334155', background: '#0f172a' }} /></div> : null}
 
-                            {selectedEl.type !== 'image' && <div>
+                            {/* SHAPE PROPERTIES */}
+                            {selectedEl.type === 'shape' && <>
+                                <div>
+                                    <label style={{ fontSize: 9, color: '#64748b', fontWeight: 700, display: 'block', marginBottom: 4 }}>SHAPE</label>
+                                    <div style={{ display: 'flex', gap: 4 }}>
+                                        {(['rect', 'circle', 'triangle'] as ShapeKind[]).map(s => (
+                                            <button key={s} onClick={() => updateEl(selectedEl.id, { shape: s })} style={{ flex: 1, padding: '5px', borderRadius: 4, border: `1.5px solid ${selectedEl.shape === s ? '#3b82f6' : '#334155'}`, background: selectedEl.shape === s ? '#1e3a5f' : '#0f172a', color: '#e2e8f0', cursor: 'pointer', fontSize: 10 }}>{s}</button>
+                                        ))}
+                                    </div>
+                                </div>
+                                <div>
+                                    <label style={{ fontSize: 9, color: '#64748b', fontWeight: 700, display: 'block', marginBottom: 4 }}>FILL</label>
+                                    <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                                        <input type="color" value={selectedEl.fillColor || '#ffffff'} onChange={e => updateEl(selectedEl.id, { fillColor: e.target.value })} style={{ width: 32, height: 32, border: '2px solid #334155', borderRadius: 6, cursor: 'pointer', background: 'none' }} />
+                                        <input type="text" value={selectedEl.fillColor || ''} onChange={e => updateEl(selectedEl.id, { fillColor: e.target.value })} style={{ flex: 1, padding: '5px', borderRadius: 4, border: '1px solid #334155', background: '#0f172a', color: '#e2e8f0', fontSize: 11 }} />
+                                    </div>
+                                </div>
+                                <div>
+                                    <label style={{ fontSize: 9, color: '#64748b', fontWeight: 700, display: 'block', marginBottom: 4 }}>STROKE</label>
+                                    <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                                        <input type="color" value={selectedEl.strokeColor || '#ffffff'} onChange={e => updateEl(selectedEl.id, { strokeColor: e.target.value })} style={{ width: 32, height: 32, border: '2px solid #334155', borderRadius: 6, cursor: 'pointer', background: 'none' }} />
+                                        <input type="number" min={0} max={20} value={selectedEl.strokeWidth ?? 0} onChange={e => updateEl(selectedEl.id, { strokeWidth: Number(e.target.value) })} style={{ width: 60, padding: '5px', borderRadius: 4, border: '1px solid #334155', background: '#0f172a', color: '#e2e8f0', fontSize: 11 }} />
+                                        <span style={{ fontSize: 9, color: '#64748b' }}>px</span>
+                                    </div>
+                                </div>
+                            </>}
+
+                            {/* FLAG PROPERTIES */}
+                            {selectedEl.type === 'flag' && <>
+                                <div>
+                                    <label style={{ fontSize: 9, color: '#64748b', fontWeight: 700, display: 'block', marginBottom: 4 }}>MODE</label>
+                                    <div style={{ display: 'flex', gap: 4 }}>
+                                        {(['flag', 'name', 'both'] as FlagMode[]).map(m => (
+                                            <button key={m} onClick={() => updateEl(selectedEl.id, { flagMode: m })} style={{ flex: 1, padding: '5px', borderRadius: 4, border: `1.5px solid ${selectedEl.flagMode === m ? '#3b82f6' : '#334155'}`, background: selectedEl.flagMode === m ? '#1e3a5f' : '#0f172a', color: '#e2e8f0', cursor: 'pointer', fontSize: 10 }}>{m}</button>
+                                        ))}
+                                    </div>
+                                </div>
+                                <div>
+                                    <label style={{ fontSize: 9, color: '#64748b', fontWeight: 700, display: 'block', marginBottom: 4 }}>DEFAULT CODE (preview)</label>
+                                    <input value={selectedEl.flagCode || ''} maxLength={3} onChange={e => updateEl(selectedEl.id, { flagCode: e.target.value.toUpperCase() })} placeholder="TH" style={{ width: '100%', padding: '5px', borderRadius: 4, border: '1px solid #334155', background: '#0f172a', color: '#e2e8f0', fontSize: 11 }} />
+                                </div>
+                            </>}
+
+                            {/* TABLE PROPERTIES */}
+                            {selectedEl.type === 'table' && <>
+                                <div>
+                                    <label style={{ fontSize: 9, color: '#64748b', fontWeight: 700, display: 'block', marginBottom: 4 }}>COLUMNS</label>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 240, overflowY: 'auto' }}>
+                                        {(selectedEl.columns || DEFAULT_COLUMNS).map((c, idx) => (
+                                            <div key={idx} style={{ padding: 5, border: '1px solid #334155', borderRadius: 4, background: '#0f172a' }}>
+                                                <div style={{ display: 'flex', gap: 4, alignItems: 'center', marginBottom: 3 }}>
+                                                    <span style={{ fontSize: 9, color: '#64748b', minWidth: 14 }}>{idx + 1}.</span>
+                                                    <select value={c.field} onChange={e => {
+                                                        const newCols = [...(selectedEl.columns || DEFAULT_COLUMNS)];
+                                                        const opt = TABLE_FIELD_OPTIONS.find(o => o.value === e.target.value as TableFieldKey);
+                                                        newCols[idx] = { ...c, field: e.target.value as TableFieldKey, header: c.header || opt?.def || '' };
+                                                        updateEl(selectedEl.id, { columns: newCols });
+                                                    }} style={{ flex: 1, padding: '3px', borderRadius: 3, border: '1px solid #334155', background: '#1e293b', color: '#e2e8f0', fontSize: 10 }}>
+                                                        {TABLE_FIELD_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                                                    </select>
+                                                    <button onClick={() => {
+                                                        const newCols = [...(selectedEl.columns || DEFAULT_COLUMNS)];
+                                                        newCols.splice(idx, 1);
+                                                        updateEl(selectedEl.id, { columns: newCols });
+                                                    }} style={{ padding: '2px 5px', borderRadius: 3, border: '1px solid #7f1d1d', background: '#450a0a', color: '#fca5a5', cursor: 'pointer', fontSize: 10 }}>✕</button>
+                                                </div>
+                                                <div style={{ display: 'flex', gap: 3 }}>
+                                                    <input value={c.header} onChange={e => {
+                                                        const newCols = [...(selectedEl.columns || DEFAULT_COLUMNS)];
+                                                        newCols[idx] = { ...c, header: e.target.value };
+                                                        updateEl(selectedEl.id, { columns: newCols });
+                                                    }} placeholder="หัวคอลัมน์" style={{ flex: 1, padding: '3px 5px', borderRadius: 3, border: '1px solid #334155', background: '#1e293b', color: '#e2e8f0', fontSize: 10 }} />
+                                                    <input type="number" min={5} max={60} value={c.width} onChange={e => {
+                                                        const newCols = [...(selectedEl.columns || DEFAULT_COLUMNS)];
+                                                        newCols[idx] = { ...c, width: Number(e.target.value) };
+                                                        updateEl(selectedEl.id, { columns: newCols });
+                                                    }} title="width" style={{ width: 38, padding: '3px', borderRadius: 3, border: '1px solid #334155', background: '#1e293b', color: '#e2e8f0', fontSize: 10, textAlign: 'center' }} />
+                                                    <select value={c.align} onChange={e => {
+                                                        const newCols = [...(selectedEl.columns || DEFAULT_COLUMNS)];
+                                                        newCols[idx] = { ...c, align: e.target.value as 'left' | 'center' | 'right' };
+                                                        updateEl(selectedEl.id, { columns: newCols });
+                                                    }} style={{ padding: '3px', borderRadius: 3, border: '1px solid #334155', background: '#1e293b', color: '#e2e8f0', fontSize: 10 }}>
+                                                        <option value="left">L</option>
+                                                        <option value="center">C</option>
+                                                        <option value="right">R</option>
+                                                    </select>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                    <button onClick={() => {
+                                        const cur = selectedEl.columns || DEFAULT_COLUMNS;
+                                        updateEl(selectedEl.id, { columns: [...cur, { field: 'distance', header: 'Distance', width: 15, align: 'left' }] });
+                                    }} style={{ marginTop: 4, width: '100%', padding: '5px', borderRadius: 4, border: '1px dashed #3b82f6', background: '#0f172a', color: '#60a5fa', cursor: 'pointer', fontSize: 10, fontWeight: 600 }}>➕ Add Column</button>
+                                </div>
+                                <div>
+                                    <label style={{ fontSize: 9, color: '#64748b', fontWeight: 700, display: 'block', marginBottom: 4 }}>TABLE STYLE</label>
+                                    <div style={{ display: 'flex', gap: 4, alignItems: 'center', marginBottom: 4 }}>
+                                        <span style={{ fontSize: 9, color: '#94a3b8', minWidth: 65 }}>Header BG</span>
+                                        <input type="color" value={selectedEl.headerBg?.startsWith('#') ? selectedEl.headerBg : '#000000'} onChange={e => updateEl(selectedEl.id, { headerBg: e.target.value })} style={{ width: 30, height: 24, border: '1px solid #334155', borderRadius: 4, cursor: 'pointer' }} />
+                                        <input value={selectedEl.headerBg || ''} onChange={e => updateEl(selectedEl.id, { headerBg: e.target.value })} placeholder="rgba(0,0,0,.25)" style={{ flex: 1, padding: '3px', borderRadius: 3, border: '1px solid #334155', background: '#0f172a', color: '#e2e8f0', fontSize: 9 }} />
+                                    </div>
+                                    <div style={{ display: 'flex', gap: 4, alignItems: 'center', marginBottom: 4 }}>
+                                        <span style={{ fontSize: 9, color: '#94a3b8', minWidth: 65 }}>Row Alt BG</span>
+                                        <input value={selectedEl.rowAltBg || ''} onChange={e => updateEl(selectedEl.id, { rowAltBg: e.target.value })} placeholder="rgba(255,255,255,.05)" style={{ flex: 1, padding: '3px', borderRadius: 3, border: '1px solid #334155', background: '#0f172a', color: '#e2e8f0', fontSize: 9 }} />
+                                    </div>
+                                    <div style={{ display: 'flex', gap: 4, alignItems: 'center', marginBottom: 4 }}>
+                                        <span style={{ fontSize: 9, color: '#94a3b8', minWidth: 65 }}>Border</span>
+                                        <input type="color" value={selectedEl.borderColor?.startsWith('#') ? selectedEl.borderColor : '#ffffff'} onChange={e => updateEl(selectedEl.id, { borderColor: e.target.value })} style={{ width: 30, height: 24, border: '1px solid #334155', borderRadius: 4 }} />
+                                        <input type="number" min={0} max={4} value={selectedEl.borderWidth ?? 0} onChange={e => updateEl(selectedEl.id, { borderWidth: Number(e.target.value) })} style={{ width: 40, padding: '3px', borderRadius: 3, border: '1px solid #334155', background: '#0f172a', color: '#e2e8f0', fontSize: 10, textAlign: 'center' }} />
+                                        <label style={{ fontSize: 9, color: '#94a3b8', display: 'flex', alignItems: 'center', gap: 3, cursor: 'pointer' }}>
+                                            <input type="checkbox" checked={selectedEl.showHeader !== false} onChange={e => updateEl(selectedEl.id, { showHeader: e.target.checked })} />Header
+                                        </label>
+                                    </div>
+                                </div>
+                            </>}
+
+                            {/* TEXT CONTENT */}
+                            {(!selectedEl.type || selectedEl.type === 'text') && <div>
                                 <label style={{ fontSize: 9, color: '#64748b', fontWeight: 700, display: 'block', marginBottom: 2 }}>CONTENT</label>
                                 <textarea value={selectedEl.content} onChange={e => updateEl(selectedEl.id, { content: e.target.value })} rows={2} style={{ width: '100%', padding: '4px 6px', borderRadius: 4, border: '1px solid #334155', background: '#0f172a', color: '#e2e8f0', fontSize: 10, resize: 'vertical', fontFamily: 'monospace' }} />
                             </div>}
 
-                            {selectedEl.type !== 'image' && <div style={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}>
+                            {(!selectedEl.type || selectedEl.type === 'text') && <div style={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}>
                                 {DYNAMIC_FIELDS.map(f => <button key={f.value} onClick={() => updateEl(selectedEl.id, { content: selectedEl.content + f.value })} style={{ padding: '2px 4px', borderRadius: 3, border: '1px solid #334155', background: '#0f172a', color: '#60a5fa', fontSize: 8, cursor: 'pointer' }}>{f.value}</button>)}
                             </div>}
 
-                            {selectedEl.type !== 'image' && <div>
+                            {/* TYPOGRAPHY (text/flag/table) */}
+                            {(selectedEl.type !== 'image' && selectedEl.type !== 'shape') && <div>
                                 <label style={{ fontSize: 9, color: '#64748b', fontWeight: 700, display: 'block', marginBottom: 2 }}>TYPOGRAPHY</label>
                                 <select value={selectedEl.fontFamily} onChange={e => updateEl(selectedEl.id, { fontFamily: e.target.value })} style={{ width: '100%', padding: '4px', borderRadius: 4, border: '1px solid #334155', background: '#0f172a', color: '#e2e8f0', fontSize: 10, marginBottom: 6 }}>
                                     {FONT_FAMILIES.map(([lbl, val]) => <option key={val} value={val}>{lbl}</option>)}
@@ -764,8 +1403,8 @@ export default function CertificatesPage() {
                                 </div>
                             </div>}
 
-                            {selectedEl.type !== 'image' && <div>
-                                <label style={{ fontSize: 9, color: '#64748b', fontWeight: 700, display: 'block', marginBottom: 4 }}>COLOR & STYLE</label>
+                            {(selectedEl.type !== 'image' && selectedEl.type !== 'shape') && <div>
+                                <label style={{ fontSize: 9, color: '#64748b', fontWeight: 700, display: 'block', marginBottom: 4 }}>COLOR</label>
                                 <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
                                     <input type="color" value={selectedEl.color} onChange={e => updateEl(selectedEl.id, { color: e.target.value })} style={{ width: 32, height: 32, border: '2px solid #334155', borderRadius: 6, cursor: 'pointer', background: 'none' }} />
                                     {['#ffffff', '#d4af37', '#000000', '#e2e8f0'].map(c => (
@@ -774,7 +1413,7 @@ export default function CertificatesPage() {
                                 </div>
                             </div>}
 
-                            {selectedEl.type !== 'image' && <div>
+                            {(!selectedEl.type || selectedEl.type === 'text' || selectedEl.type === 'flag' || selectedEl.type === 'table') && <div>
                                 <label style={{ fontSize: 9, color: '#64748b', fontWeight: 700, display: 'block', marginBottom: 4 }}>ALIGN</label>
                                 <div style={{ display: 'flex', gap: 4 }}>
                                     {(['left', 'center', 'right'] as const).map(a => <button key={a} onClick={() => updateEl(selectedEl.id, { textAlign: a })} style={{ flex: 1, padding: '5px', borderRadius: 4, border: `1.5px solid ${selectedEl.textAlign === a ? '#3b82f6' : '#334155'}`, background: selectedEl.textAlign === a ? '#1e3a5f' : '#0f172a', color: '#e2e8f0', cursor: 'pointer', fontSize: 11 }}>{a === 'left' ? '⇤' : a === 'center' ? '≡' : '⇥'}</button>)}
@@ -782,8 +1421,8 @@ export default function CertificatesPage() {
                             </div>}
 
                             <div>
-                                <label style={{ fontSize: 9, color: '#64748b', fontWeight: 700, display: 'block', marginBottom: 4 }}>{selectedEl.type === 'image' ? 'IMAGE' : 'SPACING'}</label>
-                                {selectedEl.type !== 'image' ? <>
+                                <label style={{ fontSize: 9, color: '#64748b', fontWeight: 700, display: 'block', marginBottom: 4 }}>SIZE</label>
+                                {(!selectedEl.type || selectedEl.type === 'text') ? <>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 4 }}>
                                         <span style={{ fontSize: 9, color: '#94a3b8', minWidth: 65 }}>Letter</span>
                                         <input type="range" min={-2} max={30} value={selectedEl.letterSpacing} onChange={e => updateEl(selectedEl.id, { letterSpacing: Number(e.target.value) })} style={{ flex: 1, accentColor: '#22c55e' }} />
@@ -803,24 +1442,34 @@ export default function CertificatesPage() {
                                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4, marginBottom: 4 }}>
                                         <div style={{ background: '#0f172a', borderRadius: 4, padding: '4px 6px', border: '1px solid #334155' }}>
                                             <div style={{ fontSize: 8, color: '#64748b' }}>WIDTH %</div>
-                                            <input type="number" min={5} max={100} value={Math.round(selectedEl.width)} onChange={e => updateEl(selectedEl.id, { width: Number(e.target.value) })} style={{ width: '100%', background: 'transparent', border: 'none', color: '#e2e8f0', fontSize: 13, fontWeight: 700, outline: 'none' }} />
+                                            <input type="number" min={2} max={100} value={Math.round(selectedEl.width)} onChange={e => updateEl(selectedEl.id, { width: Number(e.target.value) })} style={{ width: '100%', background: 'transparent', border: 'none', color: '#e2e8f0', fontSize: 13, fontWeight: 700, outline: 'none' }} />
                                         </div>
                                         <div style={{ background: '#0f172a', borderRadius: 4, padding: '4px 6px', border: '1px solid #334155' }}>
                                             <div style={{ fontSize: 8, color: '#64748b' }}>HEIGHT %</div>
-                                            <div style={{ color: '#e2e8f0', fontSize: 13, fontWeight: 700 }}>{Math.round(getElementHeight(selectedEl))}</div>
+                                            {selectedEl.type === 'image' ? (
+                                                <div style={{ color: '#e2e8f0', fontSize: 13, fontWeight: 700 }}>{Math.round(getElementHeight(selectedEl, paperAspect))}</div>
+                                            ) : (
+                                                <input type="number" min={2} max={100} value={Math.round(selectedEl.height ?? selectedEl.width)} onChange={e => updateEl(selectedEl.id, { height: Number(e.target.value) })} style={{ width: '100%', background: 'transparent', border: 'none', color: '#e2e8f0', fontSize: 13, fontWeight: 700, outline: 'none' }} />
+                                            )}
                                         </div>
                                     </div>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 4 }}>
-                                        <span style={{ fontSize: 9, color: '#94a3b8', minWidth: 65 }}>Size</span>
-                                        <input type="range" min={5} max={100} value={selectedEl.width} onChange={e => updateEl(selectedEl.id, { width: Number(e.target.value) })} style={{ flex: 1, accentColor: '#22c55e' }} />
+                                        <span style={{ fontSize: 9, color: '#94a3b8', minWidth: 65 }}>Width</span>
+                                        <input type="range" min={2} max={100} value={selectedEl.width} onChange={e => updateEl(selectedEl.id, { width: Number(e.target.value) })} style={{ flex: 1, accentColor: '#22c55e' }} />
                                         <span style={{ fontSize: 9, color: '#94a3b8', minWidth: 24, textAlign: 'right' }}>{Math.round(selectedEl.width)}%</span>
                                     </div>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 4 }}>
+                                    {selectedEl.type !== 'image' && (
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 4 }}>
+                                            <span style={{ fontSize: 9, color: '#94a3b8', minWidth: 65 }}>Height</span>
+                                            <input type="range" min={2} max={100} value={selectedEl.height ?? selectedEl.width} onChange={e => updateEl(selectedEl.id, { height: Number(e.target.value) })} style={{ flex: 1, accentColor: '#22c55e' }} />
+                                            <span style={{ fontSize: 9, color: '#94a3b8', minWidth: 24, textAlign: 'right' }}>{Math.round(selectedEl.height ?? selectedEl.width)}%</span>
+                                        </div>
+                                    )}
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                                         <span style={{ fontSize: 9, color: '#94a3b8', minWidth: 65 }}>Opacity</span>
                                         <input type="range" min={0} max={1} step={0.05} value={selectedEl.opacity} onChange={e => updateEl(selectedEl.id, { opacity: Number(e.target.value) })} style={{ flex: 1, accentColor: '#22c55e' }} />
                                         <span style={{ fontSize: 9, color: '#94a3b8', minWidth: 24, textAlign: 'right' }}>{Math.round(selectedEl.opacity * 100)}%</span>
                                     </div>
-                                    <div style={{ fontSize: 8, color: '#64748b' }}>Aspect ratio locked</div>
                                 </>}
                             </div>
 

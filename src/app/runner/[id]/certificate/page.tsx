@@ -180,10 +180,12 @@ export default function CertificatePage() {
         try {
             const { toPng } = await import('html-to-image');
             // Capture at 2x device width for crisp output regardless of viewport size.
+            await document.fonts.ready;
             const dataUrl = await toPng(certRef.current, {
                 pixelRatio: 2,
                 cacheBust: true,
                 backgroundColor: '#1a1a2e',
+                skipFonts: true,
             });
             const link = document.createElement('a');
             link.download = `certificate-${runner.bib || 'runner'}.png`;

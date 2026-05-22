@@ -188,6 +188,13 @@ export default function ResultWinnersBySlugPage() {
     const refreshTimerRef = useRef<NodeJS.Timeout | null>(null);
     const countdownRef = useRef<NodeJS.Timeout | null>(null);
     const [isMobile, setIsMobile] = useState(false);
+    const [autoMode, setAutoMode] = useState(false);
+    const [autoCountdown, setAutoCountdown] = useState(15);
+    const autoTimerRef = useRef<NodeJS.Timeout | null>(null);
+    const autoCountdownRef = useRef<NodeJS.Timeout | null>(null);
+    const campaignCategoriesRef = useRef<{ name: string; distance?: string }[]>([]);
+    const [dropdownOpen, setDropdownOpen] = useState(false);
+    const dropdownRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
         const check = () => setIsMobile(window.innerWidth < 768);
@@ -265,6 +272,48 @@ export default function ResultWinnersBySlugPage() {
             if (countdownRef.current) clearInterval(countdownRef.current);
         };
     }, [campaign, selectedCategory, loadRunners]);
+
+    // Sync categories ref so auto timer can access latest without re-registering interval
+    useEffect(() => {
+        campaignCategoriesRef.current = campaign?.categories || [];
+    }, [campaign]);
+
+    // Auto-cycling through categories every 15s
+    useEffect(() => {
+        if (!autoMode) {
+            if (autoTimerRef.current) clearInterval(autoTimerRef.current);
+            if (autoCountdownRef.current) clearInterval(autoCountdownRef.current);
+            return;
+        }
+        setAutoCountdown(15);
+        autoCountdownRef.current = setInterval(() => {
+            setAutoCountdown(prev => (prev <= 1 ? 1 : prev - 1));
+        }, 1000);
+        autoTimerRef.current = setInterval(() => {
+            setAutoCountdown(15);
+            setSelectedCategory(prev => {
+                const cats = campaignCategoriesRef.current;
+                if (!cats.length) return prev;
+                const idx = cats.findIndex(c => c.name === prev);
+                return cats[(idx + 1) % cats.length].name;
+            });
+        }, 15000);
+        return () => {
+            if (autoTimerRef.current) clearInterval(autoTimerRef.current);
+            if (autoCountdownRef.current) clearInterval(autoCountdownRef.current);
+        };
+    }, [autoMode]);
+
+    // Close dropdown on outside click
+    useEffect(() => {
+        const handler = (e: MouseEvent) => {
+            if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+                setDropdownOpen(false);
+            }
+        };
+        document.addEventListener('mousedown', handler);
+        return () => document.removeEventListener('mousedown', handler);
+    }, []);
 
     // Derive active age groups from selected category's config
     const disableAgeGroupRanking = false;
@@ -399,7 +448,7 @@ export default function ResultWinnersBySlugPage() {
                     </div>
                 </div>
 
-                {/* Bottom row on mobile: Campaign name + category tabs */}
+                {/* Right: Campaign name + category dropdown + auto button */}
                 <div style={{ display: 'flex', alignItems: isMobile ? 'stretch' : 'center', gap: isMobile ? 6 : '1vw', flexDirection: isMobile ? 'column' : 'row' }}>
                     {campaign && (
                         <span style={{ fontSize: isMobile ? 11 : '1.3vh', fontWeight: 700, color: '#94a3b8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: isMobile ? '100%' : '25vw' }}>
@@ -408,22 +457,82 @@ export default function ResultWinnersBySlugPage() {
                     )}
 
                     {campaign?.categories && campaign.categories.length > 0 && (
-                        <div style={{ display: 'flex', gap: isMobile ? 6 : '0.4vw', overflowX: 'auto', WebkitOverflowScrolling: 'touch', paddingBottom: isMobile ? 2 : 0 }}>
-                            {campaign.categories.map(cat => (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                            {/* Category dropdown */}
+                            <div ref={dropdownRef} style={{ position: 'relative' }}>
                                 <button
-                                    key={cat.name}
-                                    onClick={() => setSelectedCategory(cat.name)}
+                                    onClick={() => setDropdownOpen(d => !d)}
                                     style={{
-                                        padding: isMobile ? '6px 12px' : '0.4vh 1vw', borderRadius: 6, fontSize: isMobile ? 12 : '1.3vh', fontWeight: 700,
-                                        border: selectedCategory === cat.name ? '2px solid #22c55e' : '1px solid #475569',
-                                        background: selectedCategory === cat.name ? '#22c55e' : 'transparent',
-                                        color: selectedCategory === cat.name ? '#000' : '#cbd5e1',
-                                        cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
+                                        display: 'flex', alignItems: 'center', gap: 8,
+                                        padding: isMobile ? '6px 12px' : '0.4vh 0.8vw',
+                                        background: '#0f172a', border: `1px solid ${dropdownOpen ? '#22c55e' : '#475569'}`,
+                                        borderRadius: 8, color: '#f1f5f9',
+                                        fontSize: isMobile ? 12 : '1.3vh', fontWeight: 700,
+                                        cursor: 'pointer', whiteSpace: 'nowrap',
+                                        fontFamily: "'Prompt', 'Inter', sans-serif",
                                     }}
                                 >
-                                    {cat.name}{cat.distance ? ` (${cat.distance})` : ''}
+                                    {selectedCategory
+                                        ? `${selectedCategory}${campaign.categories.find(c => c.name === selectedCategory)?.distance ? ` (${campaign.categories.find(c => c.name === selectedCategory)!.distance})` : ''}`
+                                        : 'เลือกระยะ'}
+                                    <span style={{ fontSize: 10, opacity: 0.6, transform: dropdownOpen ? 'rotate(180deg)' : 'none', display: 'inline-block', transition: 'transform 0.15s' }}>▾</span>
                                 </button>
-                            ))}
+                                {dropdownOpen && (
+                                    <div style={{
+                                        position: 'absolute', top: 'calc(100% + 4px)', right: 0,
+                                        background: '#1e293b', border: '1px solid #475569',
+                                        borderRadius: 8, overflow: 'hidden', zIndex: 100,
+                                        minWidth: 180, boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
+                                    }}>
+                                        {campaign.categories.map((cat, i) => (
+                                            <button
+                                                key={cat.name}
+                                                onClick={() => {
+                                                    setSelectedCategory(cat.name);
+                                                    setAutoMode(false);
+                                                    setDropdownOpen(false);
+                                                }}
+                                                style={{
+                                                    display: 'block', width: '100%', textAlign: 'left',
+                                                    padding: '10px 16px',
+                                                    background: selectedCategory === cat.name ? 'rgba(34,197,94,0.15)' : 'transparent',
+                                                    border: 'none',
+                                                    borderBottom: i < campaign.categories!.length - 1 ? '1px solid #334155' : 'none',
+                                                    color: selectedCategory === cat.name ? '#22c55e' : '#cbd5e1',
+                                                    fontSize: isMobile ? 13 : '1.3vh', fontWeight: 700,
+                                                    cursor: 'pointer', whiteSpace: 'nowrap',
+                                                    fontFamily: "'Prompt', 'Inter', sans-serif",
+                                                }}
+                                            >
+                                                {cat.name}{cat.distance ? ` (${cat.distance})` : ''}
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Auto button — only shown when there are multiple categories */}
+                            {campaign.categories.length > 1 && (
+                                <button
+                                    onClick={() => setAutoMode(m => !m)}
+                                    style={{
+                                        display: 'flex', alignItems: 'center', gap: 6,
+                                        padding: isMobile ? '6px 12px' : '0.4vh 0.8vw',
+                                        background: autoMode ? '#22c55e' : 'transparent',
+                                        border: `1px solid ${autoMode ? '#22c55e' : '#475569'}`,
+                                        borderRadius: 8,
+                                        color: autoMode ? '#000' : '#94a3b8',
+                                        fontSize: isMobile ? 12 : '1.3vh', fontWeight: 800,
+                                        cursor: 'pointer', whiteSpace: 'nowrap',
+                                        fontFamily: "'Prompt', 'Inter', sans-serif",
+                                        minWidth: isMobile ? 80 : 72,
+                                        justifyContent: 'center',
+                                        transition: 'background 0.2s, color 0.2s, border-color 0.2s',
+                                    }}
+                                >
+                                    {autoMode ? `⏸ ${autoCountdown}s` : '▶ AUTO'}
+                                </button>
+                            )}
                         </div>
                     )}
                 </div>
