@@ -213,10 +213,27 @@ export default function Home() {
     const endFinish = campaign.eventEndDate ? parseLocalDateTime(campaign.eventEndDate, '23:59') : undefined;
     const finish = cutoffFinish || endFinish;
 
-    if (finish && now.getTime() >= finish.getTime()) return 'finished';
-    if (cat.status === 'finished') return 'finished';
+    if (finish) {
+      return now.getTime() >= finish.getTime() ? 'finished' : 'live';
+    }
 
+    // No time-based finish defined → fall back to backend status
+    if (cat.status === 'finished') return 'finished';
     return 'live';
+  };
+
+  // Find the earliest gun time across all categories (regardless of whether it has passed)
+  const getFirstGunTime = (campaign: Campaign): Date | undefined => {
+    let earliest: Date | undefined;
+    for (const cat of campaign.categories) {
+      const start = parseLocalDateTime(campaign.eventDate, cat.startTime);
+      if (start) {
+        if (!earliest || start.getTime() < earliest.getTime()) {
+          earliest = start;
+        }
+      }
+    }
+    return earliest;
   };
 
   // Transform backend categories to ActivityCard format
@@ -472,7 +489,12 @@ export default function Home() {
                   color={campaign.cardColor || campaign.categories[0]?.badgeColor || 'var(--accent)'}
                   link={`/event/${campaign.slug || campaign._id}`}
                   status={getStatusInfo(campaign.status)}
-                  countdown={campaign.status === 'upcoming' ? calculateCountdown(campaign.countdownDate || campaign.eventDate) : undefined}
+                  countdown={(() => {
+                    const firstGun = getFirstGunTime(campaign);
+                    if (firstGun) return calculateCountdown(firstGun.toISOString());
+                    if (campaign.status === 'upcoming') return calculateCountdown(campaign.countdownDate || campaign.eventDate);
+                    return undefined;
+                  })()}
                   categories={transformCategories(campaign)}
                 />
               ))

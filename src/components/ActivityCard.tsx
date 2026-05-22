@@ -168,7 +168,7 @@ export default function ActivityCard({
                                     <tr key={idx} className="border-b border-gray-100 dark:border-gray-700 last:border-0">
                                         <td className="py-2.5 px-3 align-middle">
                                             {cat.status === 'live' ? (
-                                                <span className="inline-block bg-red-600 text-white text-[0.6rem] font-bold px-1.5 py-0.5 rounded">LIVE</span>
+                                                <span className="inline-block bg-red-600 text-white text-[0.6rem] font-bold px-1.5 py-0.5 rounded" style={{ animation: 'pulse-text 1.5s ease-in-out infinite' }}>LIVE</span>
                                             ) : cat.status === 'finished' ? (
                                                 <span className="text-sm">🥇</span>
                                             ) : (
