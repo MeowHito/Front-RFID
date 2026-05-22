@@ -93,6 +93,7 @@ const menuSections: MenuSection[] = [
             { href: '/admin/age-group-ranking', label: 'อันดับกลุ่มอายุ', labelEn: 'Age Group Ranking', icon: 'ranking-star' },
             { href: '/admin/certificates', label: 'ใบประกาศ', labelEn: 'Certificates', icon: 'print' },
             { href: '/admin/eslip', label: 'E-Slip', labelEn: 'E-Slip', icon: 'id-card' },
+            { href: '/admin/eslip2', label: 'E-Slip 2 Editor', labelEn: 'E-Slip 2 Editor', icon: 'paint-brush', iconColor: '#8b5cf6' },
             { href: '/admin/links', label: 'ลิงก์แชร์', labelEn: 'Share Links', icon: 'route' },
             { href: '/admin/export', label: 'ส่งออกข้อมูล', labelEn: 'Export Data', icon: 'file-excel' },
         ]

@@ -48,9 +48,13 @@ interface TimingRecord {
     splitTime?: number;
     elapsedTime?: number;
     distanceFromStart?: number;
+    legDistance?: number;
     netTime?: number;
     gunTime?: number;
     order?: number;
+    netPace?: string;
+    gunPace?: string;
+    splitPace?: string;
 }
 
 interface CampaignData {
@@ -457,6 +461,21 @@ export default function RunnerProfilePage() {
     // Sort timings by order (needed below for fallback computations)
     const sortedTimings = [...timings].sort((a, b) => (a.order || 0) - (b.order || 0));
 
+    // Build a checkpoint-name → distanceFromStart lookup from the event mappings,
+    // since RaceTiger does NOT store per-record distance on the timing entries.
+    const cpDistMap = new Map<string, number>();
+    for (const m of cpMappings) {
+        const cp = typeof m.checkpointId === 'object' ? m.checkpointId : null;
+        if (!cp?.name) continue;
+        const dist = m.distanceFromStart ?? cp.kmCumulative;
+        if (dist != null) cpDistMap.set(cp.name.trim().toLowerCase(), Number(dist));
+    }
+    const distFor = (cpName?: string): number | null => {
+        if (!cpName) return null;
+        const v = cpDistMap.get(cpName.trim().toLowerCase());
+        return v == null ? null : v;
+    };
+
     // Derive stat values: use runner document fields, fallback to timing records
     const finishTiming = sortedTimings.find(t => t.checkpoint?.toLowerCase().includes('finish'));
     const lastTiming = sortedTimings.length > 0 ? sortedTimings[sortedTimings.length - 1] : null;
@@ -862,10 +881,24 @@ export default function RunnerProfilePage() {
                                     const isStartCp = record.checkpoint?.toLowerCase().includes('start');
                                     const isCurrent = i === latestCpIdx && !isFinished;
                                     const displayNetTime = record.netTime ?? record.elapsedTime;
+                                    // RaceTiger does NOT store distance on timing records — look it up
+                                    // from the event's checkpoint mappings (which carry kmCumulative).
+                                    const cumDist = record.distanceFromStart ?? distFor(record.checkpoint);
+                                    const prevCum = i > 0
+                                        ? (sortedTimings[i - 1].distanceFromStart ?? distFor(sortedTimings[i - 1].checkpoint))
+                                        : null;
+                                    const segDist = (record.legDistance != null && record.legDistance > 0)
+                                        ? Math.round(record.legDistance * 100) / 100
+                                        : (cumDist != null && prevCum != null)
+                                            ? Math.round((cumDist - prevCum) * 100) / 100
+                                            : null;
 
-                                    // Calculate pace for this segment
+                                    // Pace: prefer values synced from RaceTiger; fall back to computed
                                     let segPace = '-';
-                                    if (record.distanceFromStart && record.distanceFromStart > 0 && displayNetTime && displayNetTime > 0) {
+                                    const importedPace = (record.netPace || record.splitPace || record.gunPace || '').trim();
+                                    if (importedPace) {
+                                        segPace = `${importedPace} /km`;
+                                    } else if (record.distanceFromStart && record.distanceFromStart > 0 && displayNetTime && displayNetTime > 0) {
                                         const totalMin = displayNetTime / 60000;
                                         const paceMin = totalMin / record.distanceFromStart;
                                         const pM = Math.floor(paceMin);
@@ -901,7 +934,14 @@ export default function RunnerProfilePage() {
                                                 {rowHasVideo && <CheckpointCameraIcon onClick={() => openCheckpointVideo(rowKey)} size={24} />}
                                             </td>
                                             <td style={{ padding: '10px 6px', fontSize: 11, fontWeight: 700, color: '#64748b' }}>
-                                                {record.distanceFromStart != null ? `${record.distanceFromStart} KM` : '-'}
+                                                {cumDist != null || (segDist != null && segDist > 0) ? (
+                                                    <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.2 }}>
+                                                        {cumDist != null && <span>{cumDist} KM</span>}
+                                                        {segDist != null && segDist > 0 && (
+                                                            <span style={{ fontSize: 9, fontWeight: 600, color: '#94a3b8' }}>+{segDist} KM</span>
+                                                        )}
+                                                    </div>
+                                                ) : '-'}
                                             </td>
                                             <td style={{ padding: '10px 6px', fontSize: 11, color: '#475569' }}>
                                                 {formatTimeOfDay(record.scanTime)}
@@ -927,6 +967,10 @@ export default function RunnerProfilePage() {
                                     const isFinishCp = cp.type === 'finish';
                                     const isStartCp = cp.type === 'start';
                                     const cpRank = checkpointRanks[cp.name] ?? null;
+                                    const prevDist = i > 0 ? checkpointRows[i - 1].distanceFromStart : null;
+                                    const segDist = (cp.distanceFromStart != null && prevDist != null)
+                                        ? Math.round((cp.distanceFromStart - prevDist) * 100) / 100
+                                        : null;
                                     return (
                                         <tr
                                             key={`cp-${i}`}
@@ -946,7 +990,14 @@ export default function RunnerProfilePage() {
                                                 {rowHasVideo && <CheckpointCameraIcon onClick={() => openCheckpointVideo(rowKey)} size={24} />}
                                             </td>
                                             <td style={{ padding: '10px 6px', fontSize: 11, fontWeight: 700, color: passed ? '#64748b' : '#cbd5e1' }}>
-                                                {cp.distanceFromStart != null ? `${cp.distanceFromStart} KM` : '-'}
+                                                {cp.distanceFromStart != null ? (
+                                                    <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.2 }}>
+                                                        <span>{cp.distanceFromStart} KM</span>
+                                                        {segDist != null && segDist > 0 && (
+                                                            <span style={{ fontSize: 9, fontWeight: 600, color: passed ? '#94a3b8' : '#cbd5e1' }}>+{segDist} KM</span>
+                                                        )}
+                                                    </div>
+                                                ) : '-'}
                                             </td>
                                             <td style={{ padding: '10px 6px', fontSize: 11, color: '#cbd5e1' }}>-</td>
                                             <td style={{ padding: '10px 6px', fontSize: 11, fontWeight: 800, color: passed && isFinishCp ? '#16a34a' : passed ? '#0f172a' : '#cbd5e1' }}>

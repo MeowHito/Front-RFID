@@ -52,6 +52,7 @@ export const ROUTE_TO_MODULE: Record<string, string> = {
     '/admin/age-group-ranking': 'results',
     '/admin/certificates': 'certificates',
     '/admin/eslip': 'certificates',
+    '/admin/eslip2': 'certificates',
     '/admin/links': 'results',
     '/admin/export': 'reports',
     '/admin/cctv-cameras': 'cctvMonitor',

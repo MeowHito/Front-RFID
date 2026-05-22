@@ -43,6 +43,9 @@ interface TimingRecord {
     netTime?: number;
     gunTime?: number;
     order?: number;
+    netPace?: string;
+    gunPace?: string;
+    splitPace?: string;
 }
 
 interface CampaignData {
@@ -53,6 +56,44 @@ interface CampaignData {
     eslipTemplate?: string;
     eslipTemplates?: string[];
     eslipVisibleFields?: string[];
+    eslipMode?: string;
+    eslipV2Layout?: ESlipV2Layout;
+}
+
+// ─── E-Slip V2 types (mirrors admin/eslip2/page.tsx) ──────────────────────────
+
+type FieldKey =
+    | 'eventName' | 'bib' | 'runnerName' | 'firstName' | 'lastName'
+    | 'category' | 'distance' | 'gender' | 'ageGroup'
+    | 'overallRank' | 'genderRank' | 'categoryRank'
+    | 'gunTime' | 'netTime' | 'pace'
+    | 'eventDate' | 'location' | 'static';
+
+interface ESlipV2Element {
+    id: string;
+    type?: 'text' | 'image' | 'splits';
+    field: FieldKey;
+    staticText: string;
+    x: number; y: number; width: number; height: number;
+    fontSize: number; fontWeight: string; color: string;
+    align: 'left' | 'center' | 'right';
+    prefix: string; suffix: string;
+    backgroundColor: string; borderRadius: number; opacity: number; zIndex: number;
+    italic: boolean; uppercase: boolean; letterSpacing: number;
+    imageData?: string;
+    objectFit?: 'cover' | 'contain' | 'fill';
+    header1?: string;
+    header2?: string;
+    header3?: string;
+    rowGap?: number;
+    colGap?: number;
+}
+
+interface ESlipV2Layout {
+    canvasWidth: number;
+    canvasHeight: number;
+    background: { type: 'color' | 'image'; color: string; imageData: string; imageOpacity?: number };
+    elements: ESlipV2Element[];
 }
 
 function formatTime(ms?: number | null): string {
@@ -463,6 +504,225 @@ function Template3({ runner, timings, campaign, slipRef, showField }: TemplatePr
     );
 }
 
+// ─── E-Slip V2 Renderer ────────────────────────────────────────────────────────
+
+function resolveFieldValue(field: FieldKey, staticText: string, runner: RunnerData, campaign: CampaignData | null): string {
+    const fmt = formatTime;
+    switch (field) {
+        case 'eventName':   return campaign?.name ?? '';
+        case 'bib':         return runner.bib ?? '';
+        case 'runnerName':  return `${runner.firstName} ${runner.lastName}`.trim();
+        case 'firstName':   return runner.firstName ?? '';
+        case 'lastName':    return runner.lastName ?? '';
+        case 'category':    return runner.category ?? '';
+        case 'distance':    return runner.category ?? '';
+        case 'gender':      return runner.gender === 'M' ? 'Male' : 'Female';
+        case 'ageGroup':    return runner.ageGroup ?? '';
+        case 'overallRank': return String(runner.overallRank ?? '-');
+        case 'genderRank':  return String(runner.genderRank ?? runner.genderNetRank ?? '-');
+        case 'categoryRank':return String(runner.categoryRank ?? runner.categoryNetRank ?? '-');
+        case 'gunTime':     return runner.gunTimeStr ?? fmt(runner.gunTime);
+        case 'netTime':     return runner.netTimeStr ?? fmt(runner.netTime);
+        case 'pace':        return runner.netPace ?? runner.gunPace ?? '-';
+        case 'eventDate':   return campaign?.eventDate ? new Date(campaign.eventDate).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' }) : '';
+        case 'location':    return campaign?.location ?? '';
+        case 'static':      return staticText;
+        default:            return '';
+    }
+}
+
+function paceForTiming(t: TimingRecord): string {
+    const imported = (t.netPace || t.splitPace || t.gunPace || '').trim();
+    if (imported) return imported;
+    const ms = t.netTime ?? t.elapsedTime;
+    if (ms && ms > 0 && t.distanceFromStart && t.distanceFromStart > 0) {
+        const totalMin = ms / 60000;
+        const paceMin = totalMin / t.distanceFromStart;
+        const pM = Math.floor(paceMin);
+        const pS = Math.round((paceMin - pM) * 60);
+        return `${pM}:${pS.toString().padStart(2, '0')}`;
+    }
+    return '-';
+}
+
+function checkpointLabelFor(t: TimingRecord): string {
+    const cp = t.checkpoint || '';
+    const isFinish = cp.toLowerCase().includes('finish');
+    const name = isFinish ? 'Finish' : cp;
+    const km = t.distanceFromStart != null ? ` (${t.distanceFromStart} KM)` : '';
+    return `${name}${km}`;
+}
+
+function ESlipV2SplitsTable({ el, timings }: { el: ESlipV2Element; timings: TimingRecord[] }) {
+    const sorted = [...timings].sort((a, b) => (a.order || 0) - (b.order || 0));
+    const rows = sorted.filter(t => !((t.checkpoint || '').toLowerCase().includes('start')));
+
+    const gap = el.rowGap ?? 6;
+    const cgap = el.colGap ?? 4;
+    const cellBase: React.CSSProperties = {
+        fontSize: el.fontSize || 13,
+        color: el.color || '#000',
+        fontWeight: el.fontWeight || '900',
+        padding: `${gap}px ${cgap}px`,
+        fontFamily: "'Prompt', sans-serif",
+        textTransform: el.uppercase ? 'uppercase' : 'none',
+        fontStyle: el.italic ? 'italic' : 'normal',
+        letterSpacing: el.letterSpacing || 0,
+    };
+    const headBase: React.CSSProperties = { ...cellBase, padding: `${gap + 2}px ${cgap}px` };
+
+    return (
+        <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed', background: 'transparent' }}>
+            <thead>
+                <tr>
+                    <th style={{ ...headBase, textAlign: 'left' }}>{el.header1 || 'CHECKPOINT'}</th>
+                    <th style={{ ...headBase, textAlign: 'center' }}>{el.header2 || 'TIME'}</th>
+                    <th style={{ ...headBase, textAlign: 'right' }}>{el.header3 || 'PACE'}</th>
+                </tr>
+            </thead>
+            <tbody>
+                {rows.length === 0 && (
+                    <tr><td colSpan={3} style={{ ...cellBase, textAlign: 'center' }}>No checkpoint data</td></tr>
+                )}
+                {rows.map(t => {
+                    const ms = t.netTime ?? t.elapsedTime;
+                    return (
+                        <tr key={t._id}>
+                            <td style={{ ...cellBase, textAlign: 'left' }}>{checkpointLabelFor(t)}</td>
+                            <td style={{ ...cellBase, textAlign: 'center', fontVariantNumeric: 'tabular-nums' }}>{ms ? formatTime(ms) : '-'}</td>
+                            <td style={{ ...cellBase, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{paceForTiming(t)}</td>
+                        </tr>
+                    );
+                })}
+            </tbody>
+        </table>
+    );
+}
+
+function ESlipV2Renderer({ layout, runner, campaign, slipRef, timings }: {
+    layout: ESlipV2Layout;
+    runner: RunnerData;
+    campaign: CampaignData | null;
+    slipRef: React.RefObject<HTMLDivElement | null>;
+    timings: TimingRecord[];
+}) {
+    const wrapperRef = useRef<HTMLDivElement>(null);
+    const [scale, setScale] = useState(1);
+
+    useEffect(() => {
+        const update = () => {
+            if (!wrapperRef.current) return;
+            const w = wrapperRef.current.clientWidth;
+            setScale(Math.min(1, w / layout.canvasWidth));
+        };
+        update();
+        const ro = new ResizeObserver(update);
+        if (wrapperRef.current) ro.observe(wrapperRef.current);
+        return () => ro.disconnect();
+    }, [layout.canvasWidth]);
+
+    const imageOpacity = layout.background.imageOpacity ?? 1;
+    const isImageBg = layout.background.type === 'image' && !!layout.background.imageData;
+    const scaledHeight = layout.canvasHeight * scale;
+
+    return (
+        <div
+            ref={slipRef}
+            style={{
+                width: '100%',
+                maxWidth: layout.canvasWidth,
+                userSelect: 'none',
+            }}
+        >
+        <div
+            ref={wrapperRef}
+            style={{
+                position: 'relative',
+                width: '100%',
+                height: scaledHeight,
+                borderRadius: 20,
+                overflow: 'hidden',
+                boxShadow: '0 8px 40px rgba(0,0,0,0.5)',
+                backgroundColor: isImageBg ? '#000' : layout.background.color,
+            }}
+        >
+            {isImageBg && (
+                <div
+                    style={{
+                        position: 'absolute', inset: 0,
+                        backgroundImage: `url(${layout.background.imageData})`,
+                        backgroundSize: 'cover',
+                        backgroundPosition: 'center',
+                        opacity: imageOpacity,
+                    }}
+                />
+            )}
+            <div
+                style={{
+                    position: 'absolute',
+                    top: 0, left: 0,
+                    width: layout.canvasWidth,
+                    height: layout.canvasHeight,
+                    transform: `scale(${scale})`,
+                    transformOrigin: 'top left',
+                }}
+            >
+            {layout.elements.map(el => {
+                const isImage = el.type === 'image';
+                const isSplits = el.type === 'splits';
+                const text = (isImage || isSplits) ? '' : el.prefix + resolveFieldValue(el.field, el.staticText, runner, campaign) + el.suffix;
+                return (
+                    <div
+                        key={el.id}
+                        style={{
+                            position: 'absolute',
+                            left: el.x, top: el.y,
+                            width: el.width, height: el.height,
+                            fontSize: el.fontSize,
+                            fontWeight: el.fontWeight,
+                            color: el.color,
+                            textAlign: el.align,
+                            fontStyle: el.italic ? 'italic' : 'normal',
+                            textTransform: el.uppercase ? 'uppercase' : 'none',
+                            letterSpacing: el.letterSpacing,
+                            backgroundColor: (isImage || isSplits) ? 'transparent' : (el.backgroundColor || 'transparent'),
+                            borderRadius: el.borderRadius,
+                            opacity: el.opacity,
+                            zIndex: el.zIndex,
+                            display: 'flex',
+                            alignItems: isSplits ? 'stretch' : 'center',
+                            justifyContent: isSplits ? 'stretch' : (el.align === 'center' ? 'center' : el.align === 'right' ? 'flex-end' : 'flex-start'),
+                            padding: (isImage || isSplits) ? 0 : '0 4px',
+                            overflow: 'hidden',
+                            whiteSpace: isSplits ? 'normal' : 'nowrap',
+                            fontFamily: "'Prompt', sans-serif",
+                            boxSizing: 'border-box',
+                        }}
+                    >
+                        {isImage && el.imageData ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                                src={el.imageData}
+                                alt=""
+                                crossOrigin="anonymous"
+                                style={{
+                                    width: '100%', height: '100%',
+                                    objectFit: el.objectFit || 'cover',
+                                    borderRadius: el.borderRadius,
+                                }}
+                            />
+                        ) : isSplits ? (
+                            <ESlipV2SplitsTable el={el} timings={timings} />
+                        ) : text}
+                    </div>
+                );
+            })}
+            </div>
+        </div>
+        </div>
+    );
+}
+
 export default function ESlipPage() {
     const params = useParams();
     const router = useRouter();
@@ -490,7 +750,23 @@ export default function ESlipPage() {
                 if (json.status?.code === '200' && json.data) {
                     setRunner(json.data.runner);
                     setTimings(json.data.timingRecords || []);
-                    const c = json.data.campaign;
+                    let c = json.data.campaign;
+                    // Back-compat: ensure layout has a splits element so the splits table renders
+                    if (c?.eslipV2Layout?.elements && !c.eslipV2Layout.elements.some((el: ESlipV2Element) => el.type === 'splits')) {
+                        const cw = c.eslipV2Layout.canvasWidth || 380;
+                        const ch = c.eslipV2Layout.canvasHeight || 700;
+                        const w = cw - 40;
+                        const h = 200;
+                        const defaultSplits: ESlipV2Element = {
+                            id: `el-splits-default`, type: 'splits', field: 'static', staticText: '',
+                            x: 20, y: Math.max(0, ch - h - 16), width: w, height: h,
+                            fontSize: 13, fontWeight: '900', color: '#000000', align: 'left',
+                            prefix: '', suffix: '', backgroundColor: '', borderRadius: 0, opacity: 1, zIndex: 50,
+                            italic: false, uppercase: false, letterSpacing: 0,
+                            header1: 'CHECKPOINT', header2: 'TIME', header3: 'PACE', rowGap: 6, colGap: 4,
+                        };
+                        c = { ...c, eslipV2Layout: { ...c.eslipV2Layout, elements: [...c.eslipV2Layout.elements, defaultSplits] } };
+                    }
                     setCampaign(c || null);
                     // Set available templates from admin config
                     const adminTemplates = c?.eslipTemplates;
@@ -551,10 +827,11 @@ export default function ESlipPage() {
         setDownloading(true);
         try {
             const { toJpeg } = await import('html-to-image');
+            const v2Mode = isV2;
             const opts = {
                 quality: 0.95,
                 pixelRatio: 3,
-                backgroundColor: activeTemplate === 'template3' ? '#f1f5f9' : '#0f172a',
+                backgroundColor: v2Mode ? (campaign?.eslipV2Layout?.background?.color || '#1e293b') : activeTemplate === 'template3' ? '#f1f5f9' : '#0f172a',
                 cacheBust: true,
             };
             // Safari/iOS needs a double-render: first pass primes image loading, second captures correctly
@@ -631,7 +908,10 @@ export default function ESlipPage() {
         );
     }
 
-    const isWhiteTheme = activeTemplate === 'template3';
+    const modeIsV2 = campaign?.eslipMode === 'v2';
+    const hasV2Layout = modeIsV2 && (campaign?.eslipV2Layout?.elements?.length ?? 0) > 0;
+    const isV2 = hasV2Layout;
+    const isWhiteTheme = !modeIsV2 && activeTemplate === 'template3';
     const bgColor = isWhiteTheme ? 'bg-slate-100' : 'bg-slate-900';
 
     return (
@@ -652,8 +932,8 @@ export default function ESlipPage() {
             </header>
 
             <div className="px-2.5 py-5 flex flex-col items-center w-full">
-                {/* Template Selector */}
-                {availableTemplates.length > 1 && (
+                {/* Template Selector — only for v1 */}
+                {!modeIsV2 && availableTemplates.length > 1 && (
                     <div className="mb-4 flex gap-2 flex-wrap justify-center">
                         {availableTemplates.map(t => {
                             const isActive = activeTemplate === t;
@@ -676,7 +956,7 @@ export default function ESlipPage() {
                         })}
                     </div>
                 )}
-                {activeTemplate === 'template2' && (
+                {!modeIsV2 && activeTemplate === 'template2' && (
                     <div className="mb-4 max-w-[380px] rounded-[16px] bg-[#121a2c] border border-white/10 px-3 py-2.5">
                         <div className="flex items-center gap-2.5">
                             <div className="text-[10px] font-extrabold uppercase tracking-[1.2px] text-white/75 shrink-0">Choose Text Color</div>
@@ -705,18 +985,29 @@ export default function ESlipPage() {
                 )}
 
                 {/* Render Active Template */}
-                {(() => {
-                    const vf = campaign?.eslipVisibleFields;
-                    const showField = (key: string) => !vf || vf.length === 0 || vf.includes(key);
-                    const common = { runner, timings, campaign, slipRef, showField };
-                    if (activeTemplate === 'template1') return <Template1 {...common} bgImage={bgImage} />;
-                    if (activeTemplate === 'template2') return <Template2 {...common} bgImage={bgImage} textColorMode={photoTextColor} />;
-                    return <Template3 {...common} bgImage={null} />;
-                })()}
+                {modeIsV2 && !hasV2Layout
+                    ? (
+                        <div className="w-full max-w-[380px] rounded-[20px] bg-slate-800 border border-slate-700 flex flex-col items-center justify-center p-10 gap-4">
+                            <span className="text-4xl">🎨</span>
+                            <p className="text-white font-bold text-center">ผู้จัดงานยังไม่ได้ออกแบบ E-Slip</p>
+                            <p className="text-slate-400 text-sm text-center">โปรดรอให้ทีมงานตั้งค่า E-Slip ก่อนนะคะ</p>
+                        </div>
+                    )
+                    : isV2
+                    ? <ESlipV2Renderer layout={campaign!.eslipV2Layout!} runner={runner} campaign={campaign} slipRef={slipRef} timings={timings} />
+                    : (() => {
+                        const vf = campaign?.eslipVisibleFields;
+                        const showField = (key: string) => !vf || vf.length === 0 || vf.includes(key);
+                        const common = { runner, timings, campaign, slipRef, showField };
+                        if (activeTemplate === 'template1') return <Template1 {...common} bgImage={bgImage} />;
+                        if (activeTemplate === 'template2') return <Template2 {...common} bgImage={bgImage} textColorMode={photoTextColor} />;
+                        return <Template3 {...common} bgImage={null} />;
+                    })()
+                }
 
                 {/* Action Buttons */}
                 <div className="flex gap-3 w-full max-w-[380px] mt-5">
-                    {activeTemplate !== 'template3' && (
+                    {!modeIsV2 && activeTemplate !== 'template3' && (
                         <>
                             <input type="file" id="eslip-bg" accept="image/*" className="hidden" onChange={handleBgUpload} />
                             <label htmlFor="eslip-bg" className="flex-1 py-4 rounded-[15px] font-extrabold text-sm text-center cursor-pointer bg-white text-black flex justify-center items-center gap-2">
@@ -724,11 +1015,13 @@ export default function ESlipPage() {
                             </label>
                         </>
                     )}
-                    <button onClick={handleDownload} disabled={downloading}
-                        className={`flex-1 py-4 rounded-[15px] font-extrabold text-sm text-center border-none bg-green-600 text-white flex justify-center items-center gap-2 ${downloading ? 'opacity-70 cursor-wait' : 'cursor-pointer'}`}
-                    >
-                        {downloading ? '⏳ กำลังประมวลผล...' : '📥 บันทึกภาพ'}
-                    </button>
+                    {!(modeIsV2 && !hasV2Layout) && (
+                        <button onClick={handleDownload} disabled={downloading}
+                            className={`flex-1 py-4 rounded-[15px] font-extrabold text-sm text-center border-none bg-green-600 text-white flex justify-center items-center gap-2 ${downloading ? 'opacity-70 cursor-wait' : 'cursor-pointer'}`}
+                        >
+                            {downloading ? '⏳ กำลังประมวลผล...' : '📥 บันทึกภาพ'}
+                        </button>
+                    )}
                 </div>
 
                 {/* Back link */}
