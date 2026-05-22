@@ -18,6 +18,7 @@ interface Campaign {
     name: string;
     nameTh?: string;
     nameEn?: string;
+    eventDate?: string;
     categories?: RaceCategory[];
 }
 
@@ -34,6 +35,23 @@ interface Checkpoint {
     kmCumulative?: number;
     cutoffTime?: string;
     distanceMappings?: string[];
+}
+
+interface ManualRunner {
+    _id: string;
+    eventId: string;
+    bib: string;
+    firstName: string;
+    lastName: string;
+    firstNameTh?: string;
+    lastNameTh?: string;
+    category: string;
+    status: string;
+    gunTimeStr?: string;
+    gunTime?: number;
+    elapsedTime?: number;
+    latestCheckpoint?: string;
+    timeInput: string;
 }
 
 export default function RouteMappingPage() {
@@ -67,9 +85,33 @@ export default function RouteMappingPage() {
     const hasUnsavedChanges = dirtyIds.size > 0;
     const [syncing, setSyncing] = useState(false);
 
+    // Manual Start state
+    const [manualStartOpen, setManualStartOpen] = useState(false);
+    const [manualRunners, setManualRunners] = useState<ManualRunner[]>([]);
+    const [manualSelectedIds, setManualSelectedIds] = useState<Set<string>>(new Set());
+    const [manualLoading, setManualLoading] = useState(false);
+    const [manualSaving, setManualSaving] = useState(false);
+    const [manualSelectAll, setManualSelectAll] = useState(false);
+    // runnerId → Set of checkpoint _ids that are ticked
+    const [manualCpChecks, setManualCpChecks] = useState<Record<string, string[]>>({});
+
     const showToast = (message: string, type: 'success' | 'error') => {
         setToast({ message, type });
         setTimeout(() => setToast(null), 3000);
+    };
+
+    const parseTimeToMs = (timeStr: string): number => {
+        if (!timeStr?.trim()) return 0;
+        const parts = timeStr.trim().split(':').map(s => parseInt(s, 10) || 0);
+        if (parts.length === 3) return (parts[0] * 3600 + parts[1] * 60 + parts[2]) * 1000;
+        if (parts.length === 2) return (parts[0] * 60 + parts[1]) * 1000;
+        return 0;
+    };
+
+    const msToTimeStr = (ms: number): string => {
+        if (!ms || ms <= 0) return '';
+        const s = Math.floor(ms / 1000);
+        return `${String(Math.floor(s / 3600)).padStart(2, '0')}:${String(Math.floor((s % 3600) / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
     };
 
     const markDirty = useCallback((cpId: string) => {
@@ -99,6 +141,235 @@ export default function RouteMappingPage() {
             showToast(language === 'th' ? 'Sync ไม่สำเร็จ' : 'Sync failed', 'error');
         } finally {
             setSyncing(false);
+        }
+    };
+
+    // Manual Start handlers
+    const handleOpenManualStart = async () => {
+        if (!campaign?._id || !selectedCategory) {
+            showToast(language === 'th' ? 'กรุณาเลือกระยะทางก่อน' : 'Please select a distance first', 'error');
+            return;
+        }
+        setManualStartOpen(true);
+        setManualLoading(true);
+        setManualSelectedIds(new Set());
+        setManualSelectAll(false);
+        setManualCpChecks({});
+        try {
+            const params = new URLSearchParams({
+                campaignId: campaign._id,
+                category: selectedCategory,
+                limit: '2000',
+                sortBy: 'bib',
+                sortOrder: 'asc',
+            });
+            const res = await fetch(`/api/runners/paged?${params.toString()}`);
+            const json = await res.json();
+            const list: any[] = json.data || json || [];
+            setManualRunners(list.map((r: any) => ({
+                _id: r._id,
+                eventId: String(r.eventId || ''),
+                bib: r.bib,
+                firstName: r.firstName,
+                lastName: r.lastName,
+                firstNameTh: r.firstNameTh,
+                lastNameTh: r.lastNameTh,
+                category: r.category,
+                status: r.status || 'not_started',
+                gunTimeStr: r.gunTimeStr,
+                gunTime: r.gunTime,
+                elapsedTime: r.elapsedTime,
+                latestCheckpoint: r.latestCheckpoint,
+                timeInput: r.gunTimeStr || msToTimeStr(r.gunTime || r.elapsedTime || 0) || '',
+            })));
+        } catch {
+            showToast(language === 'th' ? 'โหลดรายชื่อไม่สำเร็จ' : 'Failed to load runners', 'error');
+            setManualStartOpen(false);
+        } finally {
+            setManualLoading(false);
+        }
+    };
+
+    const handleManualToggleAll = () => {
+        if (manualSelectAll) {
+            setManualSelectedIds(new Set());
+            setManualSelectAll(false);
+        } else {
+            setManualSelectedIds(new Set(manualRunners.map(r => r._id)));
+            setManualSelectAll(true);
+        }
+    };
+
+    const handleManualToggleRunner = (id: string) => {
+        setManualSelectedIds(prev => {
+            const next = new Set(prev);
+            if (next.has(id)) {
+                next.delete(id);
+                if (manualSelectAll) setManualSelectAll(false);
+            } else {
+                next.add(id);
+            }
+            return next;
+        });
+    };
+
+    const handleManualTimeChange = (id: string, value: string, currentSelectedIds: Set<string>, isSelectAll: boolean) => {
+        if (isSelectAll && currentSelectedIds.has(id)) {
+            setManualRunners(prev => prev.map(r =>
+                currentSelectedIds.has(r._id) ? { ...r, timeInput: value } : r
+            ));
+        } else {
+            setManualRunners(prev => prev.map(r => r._id === id ? { ...r, timeInput: value } : r));
+        }
+    };
+
+    const handleManualBulkStatus = (status: string) => {
+        setManualRunners(prev => prev.map(r =>
+            manualSelectedIds.has(r._id) ? { ...r, status } : r
+        ));
+    };
+
+    const handleManualCpToggle = (runnerId: string, cpId: string) => {
+        const selectedIds = manualSelectedIds;
+        setManualCpChecks(prev => {
+            const current = prev[runnerId] || [];
+            const isNowTicked = !current.includes(cpId);
+            // If this runner is selected, propagate to all selected runners
+            if (selectedIds.has(runnerId)) {
+                const updates: Record<string, string[]> = {};
+                selectedIds.forEach(id => {
+                    const runnerCps = prev[id] || [];
+                    updates[id] = isNowTicked
+                        ? (runnerCps.includes(cpId) ? runnerCps : [...runnerCps, cpId])
+                        : runnerCps.filter(c => c !== cpId);
+                });
+                return { ...prev, ...updates };
+            }
+            return {
+                ...prev,
+                [runnerId]: isNowTicked ? [...current, cpId] : current.filter(id => id !== cpId),
+            };
+        });
+    };
+
+    const handleManualSave = async () => {
+        if (manualSelectedIds.size === 0) {
+            showToast(language === 'th' ? 'กรุณาเลือกนักวิ่งก่อน' : 'Please select runners first', 'error');
+            return;
+        }
+        setManualSaving(true);
+
+        // Build race start datetime from campaign eventDate + category startTime
+        const selectedCat = categories.find(c => c.name === selectedCategory);
+        const startTimeStr = selectedCat?.startTime || '00:00';
+        const [startH, startM] = startTimeStr.split(':').map(s => parseInt(s, 10) || 0);
+        const campaignDate = campaign?.eventDate ? new Date(campaign.eventDate) : new Date();
+        const raceStart = new Date(
+            campaignDate.getFullYear(), campaignDate.getMonth(), campaignDate.getDate(),
+            startH, startM, 0, 0
+        );
+        const raceStartMs = raceStart.getTime();
+
+        // Sorted checkpoints for the selected distance
+        const cpsSorted = visibleCheckpoints.slice().sort((a, b) => a.orderNum - b.orderNum);
+        const totalCps = cpsSorted.length;
+
+        const selectedRunners = manualRunners.filter(r => manualSelectedIds.has(r._id));
+        let ok = 0, fail = 0;
+
+        const saveOneRunner = async (runner: ManualRunner) => {
+            try {
+                const gunTimeMs = parseTimeToMs(runner.timeInput);
+                const tickedCpIds = manualCpChecks[runner._id] || [];
+                const tickedCps = cpsSorted.filter(cp => tickedCpIds.includes(cp._id));
+
+                // Step 1: if any ticked CPs or gunTime set, pre-set startTime so processScan
+                //         can calculate correct elapsedTime for each timing record
+                if ((tickedCps.length > 0 || gunTimeMs > 0) && runner.eventId) {
+                    await fetch(`/api/runners/${runner._id}`, {
+                        method: 'PUT',
+                        headers: authHeaders(),
+                        body: JSON.stringify({ startTime: raceStart.toISOString() }),
+                    });
+                }
+
+                // Step 2: create a timing record for each ticked checkpoint (sequential)
+                for (const cp of tickedCps) {
+                    if (!runner.eventId) continue;
+                    const cpIdx = cpsSorted.findIndex(c => c._id === cp._id);
+                    let scanTimeMs = raceStartMs;
+                    if (cp.type === 'start') {
+                        scanTimeMs = raceStartMs;
+                    } else if (cp.type === 'finish' && gunTimeMs > 0) {
+                        scanTimeMs = raceStartMs + gunTimeMs;
+                    } else if (gunTimeMs > 0 && totalCps > 1 && cpIdx > 0) {
+                        const fraction = cpIdx / (totalCps - 1);
+                        scanTimeMs = raceStartMs + Math.floor(fraction * gunTimeMs);
+                    }
+                    await fetch('/api/timing/scan', {
+                        method: 'POST',
+                        headers: authHeaders(),
+                        body: JSON.stringify({
+                            eventId: runner.eventId,
+                            bib: runner.bib,
+                            checkpoint: cp.name,
+                            scanTime: new Date(scanTimeMs).toISOString(),
+                            note: 'manual',
+                        }),
+                    });
+                }
+
+                // Step 3: final runner update — explicit set of all fields so event/runner pages
+                //         reflect the correct checkpoint, time and status without waiting for
+                //         an auto-refresh cycle.
+                const lastTickedCp = tickedCps.length > 0 ? tickedCps[tickedCps.length - 1] : null;
+                const payload: Record<string, unknown> = {
+                    status: runner.status,
+                    isManualStatus: true,
+                    statusChangedBy: 'manual-start',
+                };
+                // latestCheckpoint — drives the checkpoint badge in event-page status column
+                if (lastTickedCp) {
+                    payload.latestCheckpoint = lastTickedCp.name;
+                    payload.passedCount = tickedCps.length;
+                    payload.isStarted = true;
+                }
+                if (gunTimeMs > 0) {
+                    payload.gunTime = gunTimeMs;
+                    payload.gunTimeStr = runner.timeInput.trim();
+                    payload.elapsedTime = gunTimeMs;
+                    payload.startTime = raceStart.toISOString();
+                    if (runner.status === 'finished') {
+                        payload.finishTime = new Date(raceStartMs + gunTimeMs).toISOString();
+                        payload.netTime = gunTimeMs;
+                        // latestCheckpoint for finished = FINISH checkpoint if it exists
+                        const finishCp = cpsSorted.find(c => c.type === 'finish');
+                        if (finishCp && !lastTickedCp) {
+                            payload.latestCheckpoint = finishCp.name;
+                        }
+                    }
+                }
+                const res = await fetch(`/api/runners/${runner._id}`, {
+                    method: 'PUT',
+                    headers: authHeaders(),
+                    body: JSON.stringify(payload),
+                });
+                if (!res.ok) throw new Error('Failed');
+                return { success: true };
+            } catch {
+                return { success: false };
+            }
+        };
+
+        const results = await Promise.all(selectedRunners.map(saveOneRunner));
+        ok = results.filter(r => r.success).length;
+        fail = results.filter(r => !r.success).length;
+        setManualSaving(false);
+        if (fail === 0) {
+            showToast(language === 'th' ? `บันทึกสำเร็จ ${ok} คน` : `Saved ${ok} runner(s)`, 'success');
+            setManualStartOpen(false);
+        } else {
+            showToast(language === 'th' ? `สำเร็จ ${ok} คน, ล้มเหลว ${fail} คน` : `Saved ${ok}, failed ${fail}`, 'error');
         }
     };
 
@@ -813,6 +1084,253 @@ export default function RouteMappingPage() {
             )}
 
 
+            {/* Manual Start Modal */}
+            {manualStartOpen && (() => {
+                const cpsSorted = visibleCheckpoints.slice().sort((a, b) => a.orderNum - b.orderNum);
+                const cpTypeStyle = (type: string) => {
+                    if (type === 'start') return { bg: '#dcfce7', color: '#15803d', border: '#86efac' };
+                    if (type === 'finish') return { bg: '#fee2e2', color: '#dc2626', border: '#fca5a5' };
+                    return { bg: '#eff6ff', color: '#1d4ed8', border: '#93c5fd' };
+                };
+                const statusMap: Record<string, { label: string; color: string; bg: string }> = {
+                    not_started: { label: 'Not Start', color: '#6b7280', bg: '#f3f4f6' },
+                    in_progress: { label: 'Racing', color: '#1d4ed8', bg: '#dbeafe' },
+                    finished: { label: 'Finish', color: '#15803d', bg: '#dcfce7' },
+                    dnf: { label: 'DNF', color: '#b45309', bg: '#fef3c7' },
+                    dns: { label: 'DNS', color: '#7c3aed', bg: '#ede9fe' },
+                    dq: { label: 'DQ', color: '#dc2626', bg: '#fee2e2' },
+                };
+                return (
+                    <div
+                        style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}
+                        onClick={() => !manualSaving && setManualStartOpen(false)}
+                    >
+                        <div
+                            onClick={e => e.stopPropagation()}
+                            style={{ width: 'min(1100px, 97vw)', maxHeight: '92vh', background: '#fff', borderRadius: 10, boxShadow: '0 20px 60px rgba(0,0,0,0.3)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
+                        >
+                            {/* Header */}
+                            <div style={{ padding: '13px 20px', background: '#8e44ad', color: '#fff', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
+                                <div>
+                                    <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8 }}>
+                                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="5 3 19 12 5 21 5 3" /></svg>
+                                        {language === 'th' ? 'Manual Start — ตั้งเวลา / Checkpoint / สถานะ' : 'Manual Start — Set Time / Checkpoint / Status'}
+                                    </h3>
+                                    <p style={{ margin: '2px 0 0', fontSize: 11, opacity: 0.85 }}>
+                                        {language === 'th'
+                                            ? `ระยะ: ${selectedCategory}  |  ✓ ติ๊ก Checkpoint = นักวิ่งผ่านจุดนั้น  |  Gun Time → แสดงที่ /event และ /runner`
+                                            : `Distance: ${selectedCategory}  |  ✓ Tick checkpoint = runner passed it  |  Gun Time → visible on /event and /runner`}
+                                    </p>
+                                </div>
+                                <button onClick={() => setManualStartOpen(false)} disabled={manualSaving} style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: 6, color: '#fff', padding: '5px 10px', cursor: 'pointer', fontSize: 16, fontWeight: 700 }}>✕</button>
+                            </div>
+
+                            {/* Status bulk buttons */}
+                            <div style={{ padding: '8px 16px', borderBottom: '1px solid #e5e7eb', background: '#faf5ff', display: 'flex', gap: 5, alignItems: 'center', flexWrap: 'wrap', flexShrink: 0 }}>
+                                <span style={{ fontSize: 11, color: '#6b7280', fontWeight: 600, marginRight: 4 }}>
+                                    {language === 'th' ? `ตั้งสถานะทุกคนที่เลือก (${manualSelectedIds.size}):` : `Bulk status for ${manualSelectedIds.size} selected:`}
+                                </span>
+                                {Object.entries(statusMap).map(([key, { label, color, bg }]) => (
+                                    <button
+                                        key={key}
+                                        onClick={() => handleManualBulkStatus(key)}
+                                        disabled={manualSelectedIds.size === 0}
+                                        style={{
+                                            padding: '3px 10px', borderRadius: 20, border: `1.5px solid ${color}`,
+                                            background: bg, color, fontSize: 11, fontWeight: 700,
+                                            cursor: manualSelectedIds.size === 0 ? 'not-allowed' : 'pointer',
+                                            opacity: manualSelectedIds.size === 0 ? 0.4 : 1,
+                                        }}
+                                    >{label}</button>
+                                ))}
+                                {manualSelectAll && (
+                                    <span style={{ fontSize: 10, color: '#8e44ad', fontWeight: 600, marginLeft: 6, background: '#f3e8ff', padding: '2px 8px', borderRadius: 10, border: '1px solid #c084fc' }}>
+                                        {language === 'th' ? '⚡ Select All เปิด — แก้เวลาคนเดียว ทุกคนที่เลือกได้รับเวลาเดียวกัน' : '⚡ Select All on — editing one time syncs all selected'}
+                                    </span>
+                                )}
+                            </div>
+
+                            {/* Table (horizontally scrollable) */}
+                            <div style={{ overflowY: 'auto', overflowX: 'auto', flex: 1 }}>
+                                {manualLoading ? (
+                                    <div style={{ textAlign: 'center', padding: 40, color: '#999', fontSize: 14 }}>
+                                        {language === 'th' ? 'กำลังโหลดรายชื่อ...' : 'Loading runners...'}
+                                    </div>
+                                ) : manualRunners.length === 0 ? (
+                                    <div style={{ textAlign: 'center', padding: 40, color: '#999', fontSize: 14 }}>
+                                        {language === 'th' ? 'ไม่พบนักวิ่งในระยะนี้' : 'No runners found for this distance'}
+                                    </div>
+                                ) : (
+                                    <table
+                                        className="data-table"
+                                        style={{
+                                            tableLayout: 'fixed',
+                                            minWidth: 420 + cpsSorted.length * 56,
+                                            width: '100%',
+                                        }}
+                                    >
+                                        <thead>
+                                            <tr>
+                                                {/* Fixed columns */}
+                                                <th style={{ width: 36, textAlign: 'center', position: 'sticky', left: 0, background: '#f8fafc', zIndex: 2 }}>
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={manualSelectAll}
+                                                        onChange={handleManualToggleAll}
+                                                        title={language === 'th' ? 'เลือกทั้งหมด' : 'Select all'}
+                                                        style={{ cursor: 'pointer', width: 14, height: 14 }}
+                                                    />
+                                                </th>
+                                                <th style={{ width: 62, textAlign: 'center', position: 'sticky', left: 36, background: '#f8fafc', zIndex: 2 }}>BIB</th>
+                                                <th style={{ width: 150, textAlign: 'left', position: 'sticky', left: 98, background: '#f8fafc', zIndex: 2 }}>
+                                                    {language === 'th' ? 'ชื่อ' : 'Name'}
+                                                </th>
+                                                {/* Checkpoint columns */}
+                                                {cpsSorted.map(cp => {
+                                                    const ts = cpTypeStyle(cp.type);
+                                                    return (
+                                                        <th
+                                                            key={cp._id}
+                                                            style={{
+                                                                width: 56, textAlign: 'center', fontSize: 10,
+                                                                background: ts.bg, color: ts.color,
+                                                                borderBottom: `2px solid ${ts.border}`,
+                                                                padding: '4px 2px',
+                                                            }}
+                                                            title={cp.name}
+                                                        >
+                                                            <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 52 }}>
+                                                                {cp.name.length > 7 ? cp.name.slice(0, 6) + '…' : cp.name}
+                                                            </div>
+                                                            <div style={{ fontSize: 9, opacity: 0.7, textTransform: 'uppercase' }}>{cp.type}</div>
+                                                        </th>
+                                                    );
+                                                })}
+                                                {/* Status + Gun Time */}
+                                                <th style={{ width: 100, textAlign: 'center' }}>{language === 'th' ? 'สถานะ' : 'Status'}</th>
+                                                <th style={{ width: 128, textAlign: 'center' }}>Gun Time</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {manualRunners.map(runner => {
+                                                const selected = manualSelectedIds.has(runner._id);
+                                                const st = statusMap[runner.status] || statusMap['not_started'];
+                                                const ticked = manualCpChecks[runner._id] || [];
+                                                const displayName = language === 'th'
+                                                    ? `${runner.firstNameTh || runner.firstName} ${runner.lastNameTh || runner.lastName}`
+                                                    : `${runner.firstName} ${runner.lastName}`;
+                                                const rowBg = selected ? '#faf5ff' : undefined;
+                                                return (
+                                                    <tr key={runner._id} style={{ background: rowBg }}>
+                                                        {/* Select checkbox */}
+                                                        <td style={{ textAlign: 'center', position: 'sticky', left: 0, background: rowBg || '#fff', zIndex: 1 }}>
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={selected}
+                                                                onChange={() => handleManualToggleRunner(runner._id)}
+                                                                style={{ cursor: 'pointer', width: 14, height: 14 }}
+                                                            />
+                                                        </td>
+                                                        {/* BIB */}
+                                                        <td style={{ textAlign: 'center', fontWeight: 700, fontSize: 12, position: 'sticky', left: 36, background: rowBg || '#fff', zIndex: 1 }}>
+                                                            {runner.bib}
+                                                        </td>
+                                                        {/* Name */}
+                                                        <td
+                                                            style={{ textAlign: 'left', fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', position: 'sticky', left: 98, background: rowBg || '#fff', zIndex: 1 }}
+                                                            title={displayName}
+                                                        >
+                                                            {displayName}
+                                                        </td>
+                                                        {/* Checkpoint tick columns */}
+                                                        {cpsSorted.map(cp => {
+                                                            const isTicked = ticked.includes(cp._id);
+                                                            const ts = cpTypeStyle(cp.type);
+                                                            return (
+                                                                <td key={cp._id} style={{ textAlign: 'center', padding: '3px 2px', background: isTicked ? ts.bg : undefined }}>
+                                                                    <input
+                                                                        type="checkbox"
+                                                                        checked={isTicked}
+                                                                        onChange={() => handleManualCpToggle(runner._id, cp._id)}
+                                                                        title={cp.name}
+                                                                        style={{ cursor: 'pointer', width: 14, height: 14, accentColor: ts.color }}
+                                                                    />
+                                                                </td>
+                                                            );
+                                                        })}
+                                                        {/* Status badge */}
+                                                        <td style={{ textAlign: 'center' }}>
+                                                            <span style={{ display: 'inline-block', padding: '2px 7px', borderRadius: 12, fontSize: 10, fontWeight: 700, background: st.bg, color: st.color }}>
+                                                                {st.label}
+                                                            </span>
+                                                        </td>
+                                                        {/* Gun Time input */}
+                                                        <td style={{ textAlign: 'center' }}>
+                                                            <input
+                                                                type="text"
+                                                                value={runner.timeInput}
+                                                                placeholder="01:30:00"
+                                                                onChange={e => handleManualTimeChange(runner._id, e.target.value, manualSelectedIds, manualSelectAll)}
+                                                                style={{
+                                                                    width: '100%', padding: '3px 5px', borderRadius: 4,
+                                                                    border: `1px solid ${selected ? '#c084fc' : '#d1d5db'}`,
+                                                                    fontSize: 12, textAlign: 'center', fontFamily: 'monospace',
+                                                                    background: selected ? '#faf5ff' : '#fff',
+                                                                    fontWeight: runner.timeInput ? 600 : 400,
+                                                                    color: runner.timeInput ? '#8e44ad' : '#9ca3af',
+                                                                }}
+                                                            />
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            })}
+                                        </tbody>
+                                    </table>
+                                )}
+                            </div>
+
+                            {/* Footer */}
+                            <div style={{ padding: '10px 20px', borderTop: '1px solid #e5e7eb', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, background: '#fafafa' }}>
+                                <span style={{ fontSize: 12, color: '#6b7280' }}>
+                                    {language === 'th'
+                                        ? `เลือกแล้ว ${manualSelectedIds.size} / ${manualRunners.length} คน`
+                                        : `Selected ${manualSelectedIds.size} / ${manualRunners.length} runner(s)`}
+                                    {Object.values(manualCpChecks).some(arr => arr.length > 0) && (
+                                        <span style={{ marginLeft: 10, color: '#8e44ad', fontWeight: 600 }}>
+                                            {language === 'th' ? '✓ มีการติ๊ก Checkpoint' : '✓ Checkpoints ticked'}
+                                        </span>
+                                    )}
+                                </span>
+                                <div style={{ display: 'flex', gap: 8 }}>
+                                    <button
+                                        onClick={() => setManualStartOpen(false)}
+                                        disabled={manualSaving}
+                                        style={{ padding: '6px 16px', borderRadius: 6, border: '1px solid #d1d5db', background: '#fff', color: '#4b5563', fontSize: 13, cursor: 'pointer' }}
+                                    >
+                                        {language === 'th' ? 'ยกเลิก' : 'Cancel'}
+                                    </button>
+                                    <button
+                                        onClick={handleManualSave}
+                                        disabled={manualSaving || manualSelectedIds.size === 0}
+                                        style={{
+                                            padding: '6px 18px', borderRadius: 6, border: 'none',
+                                            background: (manualSaving || manualSelectedIds.size === 0) ? '#9ca3af' : '#8e44ad',
+                                            color: '#fff', fontSize: 13, fontWeight: 700,
+                                            cursor: (manualSaving || manualSelectedIds.size === 0) ? 'not-allowed' : 'pointer',
+                                            display: 'inline-flex', alignItems: 'center', gap: 6,
+                                        }}
+                                    >
+                                        {manualSaving
+                                            ? (language === 'th' ? 'กำลังบันทึก...' : 'Saving...')
+                                            : (language === 'th' ? `บันทึก ${manualSelectedIds.size} คน` : `Save ${manualSelectedIds.size} runner(s)`)}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                );
+            })()}
+
             <div className="content-box">
                 {loading ? (
                     <div style={{ textAlign: 'center', padding: 30, color: '#999', fontSize: 13 }}>Loading...</div>
@@ -858,6 +1376,20 @@ export default function RouteMappingPage() {
                                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="16" /><line x1="8" y1="12" x2="16" y2="12" /></svg>
                                 {language === 'th' ? 'ดึงจุด Checkpoint' : 'Pull checkpoints'}
 
+                            </button>
+                            <button
+                                onClick={handleOpenManualStart}
+                                disabled={!selectedCategory}
+                                className="btn btn-query"
+                                style={{
+                                    background: '#8e44ad', fontSize: 13,
+                                    display: 'inline-flex', alignItems: 'center', gap: 5,
+                                    opacity: !selectedCategory ? 0.5 : 1,
+                                    cursor: !selectedCategory ? 'not-allowed' : 'pointer',
+                                }}
+                            >
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="5 3 19 12 5 21 5 3" /></svg>
+                                {language === 'th' ? 'Manual Start' : 'Manual Start'}
                             </button>
                             <button
                                 onClick={handleSyncFromRaceTiger}
