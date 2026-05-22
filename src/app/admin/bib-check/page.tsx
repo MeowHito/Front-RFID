@@ -10,6 +10,7 @@ interface Campaign {
     slug?: string;
     scanningTemplate?: string;
     scanningBgImage?: string;
+    scanningBgImagePortrait?: string;
 }
 
 /** Resize an image file to maxWidth and re-encode as JPEG so the base64 payload
@@ -47,6 +48,7 @@ const SCANNING_TEMPLATE = {
 export default function BibCheckPage() {
     const [campaign, setCampaign] = useState<Campaign | null>(null);
     const [bgImage, setBgImage] = useState<string | null>(null);
+    const [bgImagePortrait, setBgImagePortrait] = useState<string | null>(null);
     const [saving, setSaving] = useState(false);
     const [saved, setSaved] = useState(false);
     const [loading, setLoading] = useState(true);
@@ -59,6 +61,7 @@ export default function BibCheckPage() {
                     const data = await res.json();
                     setCampaign(data);
                     if (data.scanningBgImage) setBgImage(data.scanningBgImage);
+                    if (data.scanningBgImagePortrait) setBgImagePortrait(data.scanningBgImagePortrait);
                 }
             } catch (err) {
                 console.error('Failed to load campaign:', err);
@@ -82,6 +85,7 @@ export default function BibCheckPage() {
                 body: JSON.stringify({
                     scanningTemplate: 'athletic',
                     scanningBgImage: bgImage || '',
+                    scanningBgImagePortrait: bgImagePortrait || '',
                 }),
             });
             if (!res.ok) {
@@ -214,60 +218,125 @@ export default function BibCheckPage() {
                         </div>
 
                         {/* Background Image Upload */}
-                        <div style={{ marginBottom: 32, padding: 20, background: '#f8fafc', borderRadius: 14, border: '1px solid #e2e8f0' }}>
+                        <div style={{ marginBottom: 20, padding: 20, background: '#f8fafc', borderRadius: 14, border: '1px solid #e2e8f0' }}>
                             <h3 style={{ fontSize: 15, fontWeight: 700, color: '#0f172a', margin: '0 0 4px' }}>
                                 🖼️ ภาพพื้นหลัง Scanning
                             </h3>
-                            <p style={{ fontSize: 12, color: '#64748b', margin: '0 0 14px' }}>
-                                อัพโหลดภาพพื้นหลังสำหรับหน้า Scanning — แนะนำขนาด 1920×1080 px
+                            <p style={{ fontSize: 12, color: '#64748b', margin: '0 0 16px' }}>
+                                อัพโหลดภาพพื้นหลังแยกตามทิศทางหน้าจอ — ระบบจะเลือกภาพที่ถูกต้องโดยอัตโนมัติ
                             </p>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
-                                {bgImage ? (
-                                    <div style={{ position: 'relative' }}>
-                                        <img
-                                            src={bgImage}
-                                            alt="bg-preview"
-                                            style={{ width: 200, height: 112, objectFit: 'cover', borderRadius: 10, border: '2px solid #cbd5e1' }}
-                                        />
-                                        <button
-                                            onClick={() => setBgImage(null)}
-                                            style={{
-                                                position: 'absolute', top: -8, right: -8,
-                                                width: 24, height: 24, borderRadius: '50%',
-                                                background: '#ef4444', color: '#fff', border: 'none',
-                                                fontSize: 12, fontWeight: 900, cursor: 'pointer',
-                                                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                            }}
-                                        >✕</button>
+
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                                {/* Landscape BG */}
+                                <div style={{ padding: 16, background: '#fff', borderRadius: 12, border: '1px solid #e2e8f0' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                                        <span style={{ fontSize: 16 }}>🖥️</span>
+                                        <div>
+                                            <div style={{ fontSize: 13, fontWeight: 700, color: '#0f172a' }}>แนวนอน (Landscape)</div>
+                                            <div style={{ fontSize: 11, color: '#94a3b8' }}>แนะนำ 1920×1080 px</div>
+                                        </div>
                                     </div>
-                                ) : (
-                                    <label style={{
-                                        width: 200, height: 112, borderRadius: 10,
-                                        border: '2px dashed #cbd5e1', display: 'flex',
-                                        flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-                                        cursor: 'pointer', background: '#fff', transition: '0.2s',
-                                    }}>
-                                        <span style={{ fontSize: 28, marginBottom: 4 }}>📁</span>
-                                        <span style={{ fontSize: 11, color: '#64748b', fontWeight: 600 }}>คลิกเพื่ออัพโหลด</span>
-                                        <input
-                                            type="file"
-                                            accept="image/*"
-                                            style={{ display: 'none' }}
-                                            onChange={async (e) => {
-                                                const file = e.target.files?.[0];
-                                                if (!file) return;
-                                                // Compress to <=1920px wide JPEG to stay under the 10mb body limit
-                                                const compressed = await compressImage(file, 1920, 0.82);
-                                                setBgImage(compressed);
-                                            }}
-                                        />
-                                    </label>
-                                )}
-                                <div style={{ fontSize: 11, color: '#94a3b8', lineHeight: 1.6 }}>
-                                    รองรับไฟล์ JPG, PNG, WebP<br />
-                                    ภาพจะแสดงเป็นพื้นหลังพร้อม overlay มืด
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                                        {bgImage ? (
+                                            <div style={{ position: 'relative' }}>
+                                                <img
+                                                    src={bgImage}
+                                                    alt="bg-landscape-preview"
+                                                    style={{ width: 200, height: 112, objectFit: 'cover', borderRadius: 8, border: '2px solid #cbd5e1' }}
+                                                />
+                                                <button
+                                                    onClick={() => setBgImage(null)}
+                                                    style={{
+                                                        position: 'absolute', top: -8, right: -8,
+                                                        width: 24, height: 24, borderRadius: '50%',
+                                                        background: '#ef4444', color: '#fff', border: 'none',
+                                                        fontSize: 12, fontWeight: 900, cursor: 'pointer',
+                                                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                    }}
+                                                >✕</button>
+                                            </div>
+                                        ) : (
+                                            <label style={{
+                                                width: 200, height: 112, borderRadius: 8,
+                                                border: '2px dashed #cbd5e1', display: 'flex',
+                                                flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                                                cursor: 'pointer', background: '#f8fafc', transition: '0.2s',
+                                            }}>
+                                                <span style={{ fontSize: 24, marginBottom: 4 }}>📁</span>
+                                                <span style={{ fontSize: 11, color: '#64748b', fontWeight: 600 }}>คลิกเพื่ออัพโหลด</span>
+                                                <input
+                                                    type="file"
+                                                    accept="image/*"
+                                                    style={{ display: 'none' }}
+                                                    onChange={async (e) => {
+                                                        const file = e.target.files?.[0];
+                                                        if (!file) return;
+                                                        const compressed = await compressImage(file, 1920, 0.82);
+                                                        setBgImage(compressed);
+                                                    }}
+                                                />
+                                            </label>
+                                        )}
+                                    </div>
+                                </div>
+
+                                {/* Portrait BG */}
+                                <div style={{ padding: 16, background: '#fff', borderRadius: 12, border: '1px solid #e2e8f0' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                                        <span style={{ fontSize: 16 }}>📱</span>
+                                        <div>
+                                            <div style={{ fontSize: 13, fontWeight: 700, color: '#0f172a' }}>แนวตั้ง (Portrait)</div>
+                                            <div style={{ fontSize: 11, color: '#94a3b8' }}>แนะนำ 1080×1920 px</div>
+                                        </div>
+                                    </div>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                                        {bgImagePortrait ? (
+                                            <div style={{ position: 'relative' }}>
+                                                <img
+                                                    src={bgImagePortrait}
+                                                    alt="bg-portrait-preview"
+                                                    style={{ width: 63, height: 112, objectFit: 'cover', borderRadius: 8, border: '2px solid #cbd5e1' }}
+                                                />
+                                                <button
+                                                    onClick={() => setBgImagePortrait(null)}
+                                                    style={{
+                                                        position: 'absolute', top: -8, right: -8,
+                                                        width: 24, height: 24, borderRadius: '50%',
+                                                        background: '#ef4444', color: '#fff', border: 'none',
+                                                        fontSize: 12, fontWeight: 900, cursor: 'pointer',
+                                                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                    }}
+                                                >✕</button>
+                                            </div>
+                                        ) : (
+                                            <label style={{
+                                                width: 63, height: 112, borderRadius: 8,
+                                                border: '2px dashed #cbd5e1', display: 'flex',
+                                                flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                                                cursor: 'pointer', background: '#f8fafc', transition: '0.2s',
+                                            }}>
+                                                <span style={{ fontSize: 24, marginBottom: 4 }}>📁</span>
+                                                <span style={{ fontSize: 9, color: '#64748b', fontWeight: 600, textAlign: 'center' }}>คลิกเพื่อ<br/>อัพโหลด</span>
+                                                <input
+                                                    type="file"
+                                                    accept="image/*"
+                                                    style={{ display: 'none' }}
+                                                    onChange={async (e) => {
+                                                        const file = e.target.files?.[0];
+                                                        if (!file) return;
+                                                        const compressed = await compressImage(file, 1080, 0.82);
+                                                        setBgImagePortrait(compressed);
+                                                    }}
+                                                />
+                                            </label>
+                                        )}
+                                    </div>
                                 </div>
                             </div>
+
+                            <p style={{ fontSize: 11, color: '#94a3b8', margin: '12px 0 0', lineHeight: 1.6 }}>
+                                รองรับไฟล์ JPG, PNG, WebP — ภาพจะแสดงเป็นพื้นหลังพร้อม overlay มืด
+                            </p>
                         </div>
 
                         {/* Save Button */}

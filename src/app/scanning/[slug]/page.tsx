@@ -48,7 +48,7 @@ interface Runner {
     gunPace?: string; netPace?: string; photoUrl?: string;
     wave?: string; medical?: string;
 }
-interface Campaign { _id: string; name: string; slug?: string; scanningTemplate?: string; scanningBgImage?: string; subtitle?: string; }
+interface Campaign { _id: string; name: string; slug?: string; scanningTemplate?: string; scanningBgImage?: string; scanningBgImagePortrait?: string; subtitle?: string; }
 
 export default function ScanningBySlugPage() {
     const params = useParams();
@@ -406,9 +406,12 @@ export default function ScanningBySlugPage() {
                 }}>
                     <div className="ce-card">
                         <div className="ce-progress" key={`prog-${animKey}`} />
-                        {campaign?.scanningBgImage && (
-                            <div className="ce-card-bg" style={{ backgroundImage: `url(${campaign.scanningBgImage})` }} />
-                        )}
+                        {(() => {
+                            const bgSrc = portrait
+                                ? (campaign?.scanningBgImagePortrait || campaign?.scanningBgImage)
+                                : campaign?.scanningBgImage;
+                            return bgSrc ? <div className="ce-card-bg" style={{ backgroundImage: `url(${bgSrc})` }} /> : null;
+                        })()}
 
                         {/* Header */}
                         <div className="ce-header">
