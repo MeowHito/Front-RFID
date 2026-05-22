@@ -8,7 +8,6 @@ import { useLanguage } from "@/lib/language-context";
 interface Campaign {
   _id: string;
   name: string;
-  categories?: { name: string; distance: string }[];
 }
 
 interface CheckpointOption {
@@ -16,7 +15,6 @@ interface CheckpointOption {
   name: string;
   type: string;
   orderNum: number;
-  distanceMappings?: string[];
 }
 
 interface BetaCamera {
@@ -53,7 +51,6 @@ export default function CctvBetaCamerasPage() {
   const { language } = useLanguage();
   const th = language === "th";
   const [selectedCampaign, setSelectedCampaign] = useState("");
-  const [campaignData, setCampaignData] = useState<Campaign | null>(null);
   const [checkpoints, setCheckpoints] = useState<CheckpointOption[]>([]);
   const [cameras, setCameras] = useState<BetaCamera[]>([]);
   const [loading, setLoading] = useState(false);
@@ -62,7 +59,6 @@ export default function CctvBetaCamerasPage() {
   const [copiedKey, setCopiedKey] = useState("");
   const [form, setForm] = useState({
     name: "",
-    coverageZone: "",
     checkpointId: "",
     checkpointName: "",
     preferredProtocol: "srt" as "srt" | "rtmp",
@@ -72,7 +68,6 @@ export default function CctvBetaCamerasPage() {
   const [editing, setEditing] = useState<BetaCamera | null>(null);
   const [editForm, setEditForm] = useState({
     name: "",
-    coverageZone: "",
     checkpointId: "",
     checkpointName: "",
     preferredProtocol: "srt" as "srt" | "rtmp",
@@ -85,7 +80,6 @@ export default function CctvBetaCamerasPage() {
       .then((r) => r.json())
       .then((d) => {
         if (d?._id) {
-          setCampaignData(d);
           setSelectedCampaign(d._id);
         }
       })
@@ -99,15 +93,6 @@ export default function CctvBetaCamerasPage() {
       .then((d) => setCheckpoints(Array.isArray(d) ? d : []))
       .catch(() => setCheckpoints([]));
   }, [selectedCampaign]);
-
-  const categoryOptions = campaignData?.categories ?? [];
-  const filteredCheckpoints = form.coverageZone
-    ? checkpoints.filter(
-        (cp) =>
-          !cp.distanceMappings?.length ||
-          cp.distanceMappings.includes(form.coverageZone),
-      )
-    : checkpoints;
 
   const load = useCallback(async () => {
     if (!selectedCampaign) return;
@@ -136,7 +121,6 @@ export default function CctvBetaCamerasPage() {
       preferredProtocol: form.preferredProtocol,
       autoRecord: form.autoRecord,
     };
-    if (form.coverageZone) payload.coverageZone = form.coverageZone;
     if (form.checkpointId) payload.checkpointId = form.checkpointId;
     if (form.checkpointName) payload.checkpointName = form.checkpointName;
     const res = await fetch("/api/cctv-beta/cameras", {
@@ -147,7 +131,6 @@ export default function CctvBetaCamerasPage() {
     if (res.ok) {
       setForm({
         name: "",
-        coverageZone: "",
         checkpointId: "",
         checkpointName: "",
         preferredProtocol: "srt",
@@ -292,7 +275,6 @@ export default function CctvBetaCamerasPage() {
     setEditing(cam);
     setEditForm({
       name: cam.name || "",
-      coverageZone: cam.coverageZone || "",
       checkpointId: cam.checkpointId || "",
       checkpointName: cam.checkpointName || "",
       preferredProtocol: cam.preferredProtocol,
@@ -306,7 +288,6 @@ export default function CctvBetaCamerasPage() {
     try {
       const payload: Record<string, unknown> = {
         name: editForm.name.trim(),
-        coverageZone: editForm.coverageZone || undefined,
         checkpointId: editForm.checkpointId || undefined,
         checkpointName: editForm.checkpointName || undefined,
         preferredProtocol: editForm.preferredProtocol,
@@ -328,14 +309,6 @@ export default function CctvBetaCamerasPage() {
       setEditSaving(false);
     }
   };
-
-  const editFilteredCheckpoints = editForm.coverageZone
-    ? checkpoints.filter(
-        (cp) =>
-          !cp.distanceMappings?.length ||
-          cp.distanceMappings.includes(editForm.coverageZone),
-      )
-    : checkpoints;
 
   return (
     <AdminLayout>
@@ -386,60 +359,21 @@ export default function CctvBetaCamerasPage() {
             }}>
 
             <input
-            
               placeholder={th ? "ชื่อกล้อง *" : "Name *"}
-            value={form.name}
-            onChange={(e) => setForm({ ...form, name: e.target.value })}
-            style={inputStyle}
-            />
-
-            <select
-              value={form.coverageZone}
-              onChange={(e) =>
-                setForm({
-                  ...form,
-                  coverageZone: e.target.value,
-                  checkpointId: "",
-                  checkpointName: "",
-                })
-              }
+              value={form.name}
+              onChange={(e) => setForm({ ...form, name: e.target.value })}
               style={inputStyle}
-            >
-              <option value="">
-                {th ? "— เลือกระยะ —" : "— Select distance —"}
-              </option>
-              {categoryOptions.map((c) => (
-                <option key={c.name} value={c.name}>
-                  {c.name} ({c.distance})
-                </option>
-              ))}
-            </select>
-
+            />
             <select
               value={form.checkpointId}
               onChange={(e) => {
-                const cp = filteredCheckpoints.find(
-                  (x) => x._id === e.target.value,
-                );
-                setForm({
-                  ...form,
-                  checkpointId: e.target.value,
-                  checkpointName: cp?.name ?? "",
-                });
+                const cp = checkpoints.find((x) => x._id === e.target.value);
+                setForm({ ...form, checkpointId: e.target.value, checkpointName: cp?.name ?? "" });
               }}
-              disabled={!form.coverageZone}
               style={inputStyle}
             >
-              <option value="">
-                {th
-                  ? form.coverageZone
-                    ? "— เลือก checkpoint —"
-                    : "เลือกระยะก่อน"
-                  : form.coverageZone
-                    ? "— Select checkpoint —"
-                    : "Select distance first"}
-              </option>
-              {filteredCheckpoints.map((cp) => (
+              <option value="">{th ? "— เลือก checkpoint —" : "— Select checkpoint —"}</option>
+              {checkpoints.map((cp) => (
                 <option key={cp._id} value={cp._id}>
                   {cp.name} ({cp.type})
                 </option>
@@ -684,31 +618,17 @@ export default function CctvBetaCamerasPage() {
                   <input value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} style={inputStyle} />
                 </div>
                 <div>
-                  <label style={editLabel}>{th ? "ระยะ (Distance)" : "Distance"}</label>
-                  <select
-                    value={editForm.coverageZone}
-                    onChange={(e) => setEditForm({ ...editForm, coverageZone: e.target.value, checkpointId: "", checkpointName: "" })}
-                    style={inputStyle}
-                  >
-                    <option value="">{th ? "— เลือกระยะ —" : "— Select —"}</option>
-                    {categoryOptions.map((c) => (
-                      <option key={c.name} value={c.name}>{c.name} ({c.distance})</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label style={editLabel}>{th ? "Checkpoint" : "Checkpoint"}</label>
+                  <label style={editLabel}>Checkpoint</label>
                   <select
                     value={editForm.checkpointId}
                     onChange={(e) => {
-                      const cp = editFilteredCheckpoints.find((x) => x._id === e.target.value);
+                      const cp = checkpoints.find((x) => x._id === e.target.value);
                       setEditForm({ ...editForm, checkpointId: e.target.value, checkpointName: cp?.name ?? "" });
                     }}
-                    disabled={!editForm.coverageZone}
                     style={inputStyle}
                   >
-                    <option value="">{th ? "— เลือก checkpoint —" : "— Select —"}</option>
-                    {editFilteredCheckpoints.map((cp) => (
+                    <option value="">{th ? "— เลือก checkpoint —" : "— Select checkpoint —"}</option>
+                    {checkpoints.map((cp) => (
                       <option key={cp._id} value={cp._id}>{cp.name} ({cp.type})</option>
                     ))}
                   </select>
