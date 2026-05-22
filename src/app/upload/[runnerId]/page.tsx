@@ -102,7 +102,7 @@ export default function UploadPhotoPage() {
         if (!campaignSlug) return;
         (async () => {
             try {
-                const res = await fetch(`/api/campaigns/${encodeURIComponent(campaignSlug)}`);
+                const res = await fetch(`/api/campaigns/${encodeURIComponent(campaignSlug)}?full=true`, { cache: 'no-store' });
                 if (res.ok) {
                     const data = await res.json();
                     if (data.name) setCampaignName(data.name);

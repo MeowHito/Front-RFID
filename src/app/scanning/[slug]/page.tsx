@@ -72,7 +72,7 @@ export default function ScanningBySlugPage() {
         if (!slug) return;
         (async () => {
             try {
-                const res = await fetch(`/api/campaigns/${encodeURIComponent(slug)}`);
+                const res = await fetch(`/api/campaigns/${encodeURIComponent(slug)}?full=true`, { cache: 'no-store' });
                 if (res.ok) {
                     const data = await res.json();
                     setCampaign(data);
