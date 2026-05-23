@@ -823,7 +823,7 @@ export default function RunnerProfilePage() {
                     </div>
                     <div className="runner-stat-card" style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, padding: 12 }}>
                         <p className="runner-stat-label" style={{ fontSize: 9, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', marginBottom: 2 }}>Category Rank</p>
-                        <p className="runner-stat-value" style={{ fontSize: 20, fontWeight: 900, color: '#0f172a', margin: 0 }}>{categoryRank || '-'}</p>
+                        <p className="runner-stat-value" style={{ fontSize: 20, fontWeight: 900, color: '#0f172a', margin: 0 }}>{categoryRank || '-'} {runner.ageGroup ? <small style={{ fontSize: 11, color: '#94a3b8', fontWeight: 700 }}>({runner.ageGroup})</small> : null}</p>
                     </div>
                     <div className="runner-stat-card" style={{ background: isFinished ? '#f0fdf4' : '#fff', border: `1px solid ${isFinished ? '#bbf7d0' : '#e2e8f0'}`, borderRadius: 12, padding: 12 }}>
                         <p className="runner-stat-label" style={{ fontSize: 9, fontWeight: 700, color: isFinished ? '#16a34a' : '#94a3b8', textTransform: 'uppercase', marginBottom: 2 }}>{isFinished ? 'Finish Time' : 'Elapsed'}</p>
