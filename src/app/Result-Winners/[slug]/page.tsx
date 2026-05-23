@@ -117,6 +117,7 @@ export default function ResultWinnersBySlugPage() {
     const autoTimerRef = useRef<NodeJS.Timeout | null>(null);
     const autoCountdownRef = useRef<NodeJS.Timeout | null>(null);
     const campaignCategoriesRef = useRef<{ name: string; distance?: string }[]>([]);
+    const [ageGroupCategories, setAgeGroupCategories] = useState<{ name: string; distance?: string }[] | null>(null);
     const [dropdownOpen, setDropdownOpen] = useState(false);
     const dropdownRef = useRef<HTMLDivElement>(null);
     const [volume, setVolume] = useState(1);
@@ -206,9 +207,34 @@ export default function ResultWinnersBySlugPage() {
         };
     }, [campaign, selectedCategory, loadRunners]);
 
+    // Check which categories have any runner with ageGroup set (from RaceTiger)
     useEffect(() => {
-        campaignCategoriesRef.current = campaign?.categories || [];
-    }, [campaign]);
+        if (!campaign?._id || !campaign.categories?.length) return;
+        const campaignId = campaign._id;
+        const cats = campaign.categories;
+        setAgeGroupCategories(null);
+        Promise.all(
+            cats.map(async cat => {
+                try {
+                    const p = new URLSearchParams({ campaignId, category: cat.name, limit: '1', skipStatusCounts: 'true' });
+                    const res = await fetch(`/api/runners/paged?${p.toString()}`, { cache: 'no-store' });
+                    if (!res.ok) return null;
+                    const data = await res.json();
+                    return data.data?.[0]?.ageGroup ? cat : null;
+                } catch { return null; }
+            })
+        ).then(results => {
+            const filtered = results.filter((c): c is { name: string; distance?: string } => c !== null);
+            setAgeGroupCategories(filtered);
+            if (filtered.length > 0) {
+                setSelectedCategory(prev => filtered.some(c => c.name === prev) ? prev : filtered[0].name);
+            }
+        });
+    }, [campaign?._id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    useEffect(() => {
+        campaignCategoriesRef.current = ageGroupCategories ?? campaign?.categories ?? [];
+    }, [campaign, ageGroupCategories]);
 
     useEffect(() => {
         if (!autoMode) {
@@ -403,7 +429,7 @@ export default function ResultWinnersBySlugPage() {
                         </div>
                     )}
 
-                    {campaign?.categories && campaign.categories.length > 0 && (
+                    {ageGroupCategories !== null && ageGroupCategories.length > 0 && (
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
                             <div ref={dropdownRef} style={{ position: 'relative' }}>
                                 <button
@@ -411,17 +437,17 @@ export default function ResultWinnersBySlugPage() {
                                     style={{ display: 'flex', alignItems: 'center', gap: 8, padding: isMobile ? '6px 12px' : '0.4vh 0.8vw', background: '#0f172a', border: `1px solid ${dropdownOpen ? '#22c55e' : '#475569'}`, borderRadius: 8, color: '#f1f5f9', fontSize: isMobile ? 12 : '1.3vh', fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: "'Prompt', 'Inter', sans-serif" }}
                                 >
                                     {selectedCategory
-                                        ? `${selectedCategory}${campaign.categories.find(c => c.name === selectedCategory)?.distance ? ` (${campaign.categories.find(c => c.name === selectedCategory)!.distance})` : ''}`
+                                        ? `${selectedCategory}${ageGroupCategories.find(c => c.name === selectedCategory)?.distance ? ` (${ageGroupCategories.find(c => c.name === selectedCategory)!.distance})` : ''}`
                                         : 'เลือกระยะ'}
                                     <span style={{ fontSize: 10, opacity: 0.6, transform: dropdownOpen ? 'rotate(180deg)' : 'none', display: 'inline-block', transition: 'transform 0.15s' }}>▾</span>
                                 </button>
                                 {dropdownOpen && (
                                     <div style={{ position: 'absolute', top: 'calc(100% + 4px)', right: 0, background: '#1e293b', border: '1px solid #475569', borderRadius: 8, overflow: 'hidden', zIndex: 100, minWidth: 180, boxShadow: '0 8px 24px rgba(0,0,0,0.5)' }}>
-                                        {campaign.categories.map((cat, i) => (
+                                        {ageGroupCategories.map((cat, i) => (
                                             <button
                                                 key={cat.name}
                                                 onClick={() => { setSelectedCategory(cat.name); setAutoMode(false); setDropdownOpen(false); }}
-                                                style={{ display: 'block', width: '100%', textAlign: 'left', padding: '10px 16px', background: selectedCategory === cat.name ? 'rgba(34,197,94,0.15)' : 'transparent', border: 'none', borderBottom: i < campaign.categories!.length - 1 ? '1px solid #334155' : 'none', color: selectedCategory === cat.name ? '#22c55e' : '#cbd5e1', fontSize: isMobile ? 13 : '1.3vh', fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: "'Prompt', 'Inter', sans-serif" }}
+                                                style={{ display: 'block', width: '100%', textAlign: 'left', padding: '10px 16px', background: selectedCategory === cat.name ? 'rgba(34,197,94,0.15)' : 'transparent', border: 'none', borderBottom: i < ageGroupCategories.length - 1 ? '1px solid #334155' : 'none', color: selectedCategory === cat.name ? '#22c55e' : '#cbd5e1', fontSize: isMobile ? 13 : '1.3vh', fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: "'Prompt', 'Inter', sans-serif" }}
                                             >
                                                 {cat.name}{cat.distance ? ` (${cat.distance})` : ''}
                                             </button>
@@ -430,7 +456,7 @@ export default function ResultWinnersBySlugPage() {
                                 )}
                             </div>
 
-                            {campaign.categories.length > 1 && (
+                            {ageGroupCategories.length > 1 && (
                                 <button
                                     onClick={() => setAutoMode(m => !m)}
                                     style={{ display: 'flex', alignItems: 'center', gap: 6, padding: isMobile ? '6px 12px' : '0.4vh 0.8vw', background: autoMode ? '#22c55e' : 'transparent', border: `1px solid ${autoMode ? '#22c55e' : '#475569'}`, borderRadius: 8, color: autoMode ? '#000' : '#94a3b8', fontSize: isMobile ? 12 : '1.3vh', fontWeight: 800, cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: "'Prompt', 'Inter', sans-serif", minWidth: isMobile ? 80 : 72, justifyContent: 'center', transition: 'background 0.2s, color 0.2s, border-color 0.2s' }}
