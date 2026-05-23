@@ -36,7 +36,7 @@ interface Campaign {
 }
 
 const TOP_N = 5;
-const REFRESH_INTERVAL = 15;
+const REFRESH_INTERVAL = 5;
 
 function formatTime(ms: number | undefined | null): string {
     if (ms === undefined || ms === null || ms <= 0) return '-';
@@ -60,6 +60,11 @@ export default function OverallWinnersBySlugPage() {
     const refreshTimerRef = useRef<NodeJS.Timeout | null>(null);
     const countdownRef = useRef<NodeJS.Timeout | null>(null);
     const [isMobile, setIsMobile] = useState(false);
+    const [autoMode, setAutoMode] = useState(false);
+    const [autoCountdown, setAutoCountdown] = useState(5);
+    const autoTimerRef = useRef<NodeJS.Timeout | null>(null);
+    const autoCountdownRef = useRef<NodeJS.Timeout | null>(null);
+    const campaignCategoriesRef = useRef<CampaignCategory[]>([]);
 
     useEffect(() => {
         const check = () => setIsMobile(window.innerWidth < 768);
@@ -140,6 +145,37 @@ export default function OverallWinnersBySlugPage() {
             if (countdownRef.current) clearInterval(countdownRef.current);
         };
     }, [campaign, selectedCategory, loadRunners]);
+
+    // Sync categories ref so auto timer can access latest without re-registering interval
+    useEffect(() => {
+        campaignCategoriesRef.current = campaign?.categories || [];
+    }, [campaign]);
+
+    // Auto-cycling through categories every 5s
+    useEffect(() => {
+        if (!autoMode) {
+            if (autoTimerRef.current) clearInterval(autoTimerRef.current);
+            if (autoCountdownRef.current) clearInterval(autoCountdownRef.current);
+            return;
+        }
+        setAutoCountdown(5);
+        autoCountdownRef.current = setInterval(() => {
+            setAutoCountdown(prev => (prev <= 1 ? 1 : prev - 1));
+        }, 1000);
+        autoTimerRef.current = setInterval(() => {
+            setAutoCountdown(5);
+            setSelectedCategory(prev => {
+                const cats = campaignCategoriesRef.current;
+                if (!cats.length) return prev;
+                const idx = cats.findIndex(c => c.name === prev);
+                return cats[(idx + 1) % cats.length].name;
+            });
+        }, 5000);
+        return () => {
+            if (autoTimerRef.current) clearInterval(autoTimerRef.current);
+            if (autoCountdownRef.current) clearInterval(autoCountdownRef.current);
+        };
+    }, [autoMode]);
 
     const { maleWinners, femaleWinners } = useMemo(() => {
         const finished = runners.filter(r => r.status === 'finished' && (r.netTime || r.gunTime || r.elapsedTime));
@@ -238,22 +274,44 @@ export default function OverallWinnersBySlugPage() {
                     )}
 
                     {campaign?.categories && campaign.categories.length > 0 && (
-                        <div style={{ display: 'flex', gap: isMobile ? 6 : '0.4vw', overflowX: 'auto', WebkitOverflowScrolling: 'touch', paddingBottom: isMobile ? 2 : 0 }}>
-                            {campaign.categories.map(cat => (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 6 : '0.4vw', flexWrap: 'wrap' }}>
+                            <div style={{ display: 'flex', gap: isMobile ? 6 : '0.4vw', overflowX: 'auto', WebkitOverflowScrolling: 'touch', paddingBottom: isMobile ? 2 : 0 }}>
+                                {campaign.categories.map(cat => (
+                                    <button
+                                        key={cat.name}
+                                        onClick={() => { setSelectedCategory(cat.name); setAutoMode(false); }}
+                                        style={{
+                                            padding: isMobile ? '6px 12px' : '0.4vh 1vw', borderRadius: 6, fontSize: isMobile ? 12 : '1.3vh', fontWeight: 700,
+                                            border: selectedCategory === cat.name ? '2px solid #38bdf8' : '1px solid #475569',
+                                            background: selectedCategory === cat.name ? '#38bdf8' : 'transparent',
+                                            color: selectedCategory === cat.name ? '#082f49' : '#cbd5e1',
+                                            cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
+                                        }}
+                                    >
+                                        {cat.name}{cat.distance ? ` (${cat.distance})` : ''}
+                                    </button>
+                                ))}
+                            </div>
+                            {campaign.categories.length > 1 && (
                                 <button
-                                    key={cat.name}
-                                    onClick={() => setSelectedCategory(cat.name)}
+                                    onClick={() => setAutoMode(m => !m)}
                                     style={{
-                                        padding: isMobile ? '6px 12px' : '0.4vh 1vw', borderRadius: 6, fontSize: isMobile ? 12 : '1.3vh', fontWeight: 700,
-                                        border: selectedCategory === cat.name ? '2px solid #38bdf8' : '1px solid #475569',
-                                        background: selectedCategory === cat.name ? '#38bdf8' : 'transparent',
-                                        color: selectedCategory === cat.name ? '#082f49' : '#cbd5e1',
+                                        display: 'flex', alignItems: 'center', gap: 6,
+                                        padding: isMobile ? '6px 12px' : '0.4vh 0.8vw',
+                                        background: autoMode ? '#38bdf8' : 'transparent',
+                                        border: `1px solid ${autoMode ? '#38bdf8' : '#475569'}`,
+                                        borderRadius: 6,
+                                        color: autoMode ? '#082f49' : '#94a3b8',
+                                        fontSize: isMobile ? 12 : '1.3vh', fontWeight: 800,
                                         cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
+                                        minWidth: isMobile ? 80 : 72,
+                                        justifyContent: 'center',
+                                        transition: 'background 0.2s, color 0.2s, border-color 0.2s',
                                     }}
                                 >
-                                    {cat.name}{cat.distance ? ` (${cat.distance})` : ''}
+                                    {autoMode ? `⏸ ${autoCountdown}s` : '▶ AUTO'}
                                 </button>
-                            ))}
+                            )}
                         </div>
                     )}
                 </div>

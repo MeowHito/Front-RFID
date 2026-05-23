@@ -172,7 +172,7 @@ function resolveAgeGroup(runner: Runner, ageGroups: AgeGroupBucket[]): string {
     return 'Unknown';
 }
 
-const REFRESH_INTERVAL = 15; // seconds
+const REFRESH_INTERVAL = 5; // seconds
 
 export default function ResultWinnersBySlugPage() {
     const params = useParams();
@@ -189,7 +189,7 @@ export default function ResultWinnersBySlugPage() {
     const countdownRef = useRef<NodeJS.Timeout | null>(null);
     const [isMobile, setIsMobile] = useState(false);
     const [autoMode, setAutoMode] = useState(false);
-    const [autoCountdown, setAutoCountdown] = useState(15);
+    const [autoCountdown, setAutoCountdown] = useState(5);
     const autoTimerRef = useRef<NodeJS.Timeout | null>(null);
     const autoCountdownRef = useRef<NodeJS.Timeout | null>(null);
     const campaignCategoriesRef = useRef<{ name: string; distance?: string }[]>([]);
@@ -288,19 +288,19 @@ export default function ResultWinnersBySlugPage() {
             if (autoCountdownRef.current) clearInterval(autoCountdownRef.current);
             return;
         }
-        setAutoCountdown(15);
+        setAutoCountdown(5);
         autoCountdownRef.current = setInterval(() => {
             setAutoCountdown(prev => (prev <= 1 ? 1 : prev - 1));
         }, 1000);
         autoTimerRef.current = setInterval(() => {
-            setAutoCountdown(15);
+            setAutoCountdown(5);
             setSelectedCategory(prev => {
                 const cats = campaignCategoriesRef.current;
                 if (!cats.length) return prev;
                 const idx = cats.findIndex(c => c.name === prev);
                 return cats[(idx + 1) % cats.length].name;
             });
-        }, 15000);
+        }, 5000);
         return () => {
             if (autoTimerRef.current) clearInterval(autoTimerRef.current);
             if (autoCountdownRef.current) clearInterval(autoCountdownRef.current);

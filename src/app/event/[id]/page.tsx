@@ -999,22 +999,34 @@ export default function EventLivePage() {
         }
     };
 
-    const handleClearCheckpointTime = async (cpName: string, recordId: string) => {
-        if (!window.confirm(language === 'th' ? `ลบเวลา ${cpName} และ sync ข้อมูลใหม่จาก RaceTiger ใช่ไหม?` : `Clear ${cpName} time and re-sync from RaceTiger?`)) return;
+    const handleClearCheckpointTime = async (cpName: string, recordId: string, e: React.MouseEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (!editingRunner) return;
+        if (!window.confirm(language === 'th' ? `ลบเวลา ${cpName} ของนักวิ่งคนนี้ และ sync ข้อมูลจาก RaceTiger ใช่ไหม?` : `Clear ${cpName} time for this runner and re-sync from RaceTiger?`)) return;
         setClearingCheckpoint(cpName);
         setEditTimingSaveMsg(null);
         try {
+            // 1. Delete the erroneous timing record
             await fetch(`/api/timing/${recordId}`, {
                 method: 'DELETE',
                 headers: authHeaders(),
             });
+            // 2. Reset this runner's status to in_progress so the finish is removed
+            await fetch(`/api/runners/${editingRunner._id}/status`, {
+                method: 'PUT',
+                headers: authHeaders(),
+                body: JSON.stringify({ status: 'in_progress', changedBy: 'admin' }),
+            });
+            // 3. Trigger full-sync for this campaign in background (fire-and-forget — don't await)
             if (campaign?._id) {
-                await fetch(`/api/sync/full-sync?id=${campaign._id}`, {
+                fetch(`/api/sync/full-sync?id=${campaign._id}`, {
                     method: 'POST',
                     headers: authHeaders(),
-                });
+                }).catch(() => { /* ignore sync errors */ });
             }
-            if (editingRunner?.eventId) {
+            // 4. Refresh timing records in modal for this runner only
+            if (editingRunner.eventId) {
                 const trRes = await fetch(`/api/timing/runner/${editingRunner.eventId}/${editingRunner._id}`, { cache: 'no-store' });
                 if (trRes.ok) {
                     const trData = await trRes.json();
@@ -1027,9 +1039,14 @@ export default function EventLivePage() {
                     setEditTimingRecords(records);
                 }
             }
+            // Update local runner state immediately (status back to in_progress)
+            setRunners(prev => prev.map(r =>
+                r._id === editingRunner._id ? { ...r, status: 'in_progress' } : r
+            ));
+            setEditStatus('in_progress');
             setEditTimingChanges(prev => { const next = { ...prev }; delete next[cpName]; return next; });
-            setEditTimingSaveMsg(language === 'th' ? `ลบเวลา ${cpName} และ sync จาก RaceTiger เรียบร้อย` : `Cleared ${cpName} and re-synced from RaceTiger`);
-            setTimeout(() => setEditTimingSaveMsg(null), 4000);
+            setEditTimingSaveMsg(language === 'th' ? `ลบเวลา ${cpName} เรียบร้อย — กำลัง sync จาก RaceTiger...` : `Cleared ${cpName} — syncing from RaceTiger...`);
+            setTimeout(() => setEditTimingSaveMsg(null), 5000);
         } catch { /* ignore */ }
         setClearingCheckpoint(null);
     };
@@ -2151,7 +2168,8 @@ export default function EventLivePage() {
                                                 </button>
                                                 {matchedRecord?._id && (
                                                     <button
-                                                        onClick={() => handleClearCheckpointTime(cp.name, matchedRecord._id!)}
+                                                        type="button"
+                                                        onClick={(e) => handleClearCheckpointTime(cp.name, matchedRecord._id!, e)}
                                                         disabled={isClearing}
                                                         title={language === 'th' ? 'ลบเวลาและ sync จาก RaceTiger' : 'Clear time & re-sync from RaceTiger'}
                                                         className="flex shrink-0 items-center justify-center rounded-md border-none px-2 py-1.5 text-xs font-bold text-white transition-opacity duration-150"
