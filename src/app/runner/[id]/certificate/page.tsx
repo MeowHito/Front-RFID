@@ -12,6 +12,7 @@ interface CertElement {
     x: number;
     y: number;
     width: number;
+    height?: number;
     fontSize: number;
     fontFamily: string;
     color: string;
@@ -23,6 +24,17 @@ interface CertElement {
     type?: 'text' | 'image';
     src?: string;
     aspectRatio?: number;
+    // effects (mirrors editor)
+    rotation?: number;
+    borderRadius?: number;
+    brightness?: number;
+    contrast?: number;
+    blur?: number;
+    shadowEnabled?: boolean;
+    shadowColor?: string;
+    shadowBlur?: number;
+    shadowX?: number;
+    shadowY?: number;
 }
 
 interface RunnerData {
@@ -55,12 +67,23 @@ interface CampaignData {
     isApproveCertificate?: boolean;
     certLayout?: CertElement[] | null;
     certBackgroundImage?: string | null;
+    certPaperSize?: string | null;
+    certBgOpacity?: number | null;
+    certBgColor?: string | null;
 }
 
 // ─── Constants — must match editor ────────────────────────────────────────────
 
 const CANVAS_REF_W = 1200;
-const CANVAS_ASPECT = 297 / 210; // A4 landscape
+
+function paperRatioWH(paper?: string | null): number {
+    switch (paper) {
+        case 'a4-portrait': return 210 / 297;
+        case 'hd-landscape': return 1920 / 1080;
+        case 'hd-portrait': return 1080 / 1920;
+        default: return 297 / 210; // a4-landscape
+    }
+}
 
 const FIELD_PREVIEWS: Record<string, string> = {
     '{{name}}': '-', '{{name_th}}': '-', '{{bib}}': '-',
@@ -118,9 +141,9 @@ function substituteFields(content: string, runner: RunnerData | null, campaign: 
     return content.replace(/\{\{[^}]+\}\}/g, m => map[m] ?? m);
 }
 
-function getElementHeight(el: CertElement): number {
+function getElementHeight(el: CertElement, ratioWH: number): number {
     if (el.type !== 'image') return 0;
-    return Math.max(4, Math.min(100, el.width * CANVAS_ASPECT / Math.max(0.1, el.aspectRatio || 1)));
+    return Math.max(4, Math.min(100, el.width * ratioWH / Math.max(0.1, el.aspectRatio || 1)));
 }
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
@@ -231,8 +254,15 @@ export default function CertificatePage() {
         ? campaign.certLayout
         : DEFAULT_ELEMENTS;
     const bgImage = campaign.certBackgroundImage || '';
-    const bgColor = '#1a1a2e';
+    const bgColor = campaign.certBgColor || '#1a1a2e';
+    const bgOpacity = typeof campaign.certBgOpacity === 'number' ? campaign.certBgOpacity : 1;
     const scale = canvasW / CANVAS_REF_W;
+    const paper = campaign.certPaperSize || 'a4-landscape';
+    const aspectRatio = paper === 'a4-portrait' ? '210/297'
+        : paper === 'hd-landscape' ? '1920/1080'
+        : paper === 'hd-portrait' ? '1080/1920'
+        : '297/210';
+    const ratioWH = paperRatioWH(paper);
 
     return (
         <div style={{ minHeight: '100vh', background: '#f1f5f9', padding: '16px 12px 32px', fontFamily: "'Sarabun', sans-serif" }}>
@@ -270,15 +300,32 @@ export default function CertificatePage() {
                         style={{
                             position: 'relative',
                             width: '100%',
-                            aspectRatio: '297/210',
-                            background: bgImage ? `url(${bgImage}) center/cover` : bgColor,
+                            aspectRatio,
+                            background: bgColor,
                             overflow: 'hidden',
                             userSelect: 'none',
                         }}
                     >
+                        {bgImage && (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={bgImage} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', opacity: bgOpacity, pointerEvents: 'none', zIndex: 0 }} />
+                        )}
                         {elements.map(el => {
-                            const imageHeight = getElementHeight(el);
+                            const imageHeight = getElementHeight(el, ratioWH);
                             const isImage = el.type === 'image';
+                            const rot = el.rotation || 0;
+                            const br = el.borderRadius || 0;
+                            const filterParts: string[] = [];
+                            if (isImage) {
+                                if (typeof el.brightness === 'number' && el.brightness !== 100) filterParts.push(`brightness(${el.brightness}%)`);
+                                if (typeof el.contrast === 'number' && el.contrast !== 100) filterParts.push(`contrast(${el.contrast}%)`);
+                                if (typeof el.blur === 'number' && el.blur > 0) filterParts.push(`blur(${el.blur}px)`);
+                            }
+                            const shadowStr = el.shadowEnabled
+                                ? `${el.shadowX || 0}px ${el.shadowY ?? 2}px ${el.shadowBlur ?? 4}px ${el.shadowColor || 'rgba(0,0,0,0.5)'}`
+                                : undefined;
+                            if (isImage && shadowStr) filterParts.push(`drop-shadow(${shadowStr})`);
+                            const imgFilter = filterParts.length > 0 ? filterParts.join(' ') : undefined;
                             return (
                                 <div
                                     key={el.id}
@@ -288,7 +335,7 @@ export default function CertificatePage() {
                                         top: `${el.y}%`,
                                         width: `${el.width}%`,
                                         height: isImage ? `${imageHeight}%` : undefined,
-                                        transform: 'translate(-50%,-50%)',
+                                        transform: `translate(-50%,-50%) rotate(${rot}deg)`,
                                         fontSize: `${el.fontSize * scale}px`,
                                         fontFamily: el.fontFamily,
                                         color: el.color,
@@ -302,11 +349,15 @@ export default function CertificatePage() {
                                         whiteSpace: 'pre-wrap',
                                         wordBreak: 'break-word',
                                         lineHeight: 1.3,
+                                        textShadow: !isImage && shadowStr ? shadowStr : undefined,
+                                        borderRadius: isImage && br > 0 ? `${br}px` : undefined,
+                                        overflow: isImage && br > 0 ? 'hidden' : undefined,
+                                        zIndex: 1,
                                     }}
                                 >
                                     {isImage && el.src ? (
                                         // eslint-disable-next-line @next/next/no-img-element
-                                        <img src={el.src} alt="" style={{ width: '100%', height: '100%', objectFit: 'contain', pointerEvents: 'none', display: 'block' }} />
+                                        <img src={el.src} alt="" style={{ width: '100%', height: '100%', objectFit: 'contain', pointerEvents: 'none', display: 'block', filter: imgFilter, borderRadius: br > 0 ? `${br}px` : undefined }} />
                                     ) : (
                                         substituteFields(el.content, runner, campaign)
                                     )}

@@ -52,6 +52,12 @@ const LINK_ROWS: LinkRow[] = [
         labelEn: '📹 CCTV Mobile Camera — open on phone at Checkpoint, tap "Start Stream"',
         buildUrl: (origin, campaign) => `${origin}/camera/${campaign?.slug || campaign?._id || ''}`,
     },
+    {
+        id: 'certificate-search',
+        label: '🏅 ค้นหาใบประกาศ (BIB / ชื่อ)',
+        labelEn: '🏅 Certificate Search (BIB / Name)',
+        buildUrl: (origin, campaign) => `${origin}/certificate-search/${campaign?.slug || campaign?._id || ''}`,
+    },
 ];
 
 export default function LinksPage() {

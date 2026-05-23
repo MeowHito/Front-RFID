@@ -32,6 +32,17 @@ interface CertElement {
     fontWeight: 'normal' | 'bold'; fontStyle: 'normal' | 'italic';
     textAlign: 'left' | 'center' | 'right';
     opacity: number; letterSpacing: number;
+    // transform / decoration (apply to most types)
+    rotation?: number;       // degrees
+    borderRadius?: number;   // px (image/rect shape)
+    brightness?: number;     // % (image, default 100)
+    contrast?: number;       // % (image, default 100)
+    blur?: number;           // px (image)
+    shadowEnabled?: boolean;
+    shadowColor?: string;
+    shadowBlur?: number;     // px
+    shadowX?: number;        // px
+    shadowY?: number;        // px
     // image
     src?: string; aspectRatio?: number;
     // shape
@@ -448,6 +459,7 @@ export default function CertificatesPage() {
     const [selectedId, setSelectedId] = useState<string | null>(null);
     const [bgImage, setBgImage] = useState('');
     const [bgColor, setBgColor] = useState('#1a1a2e');
+    const [bgOpacity, setBgOpacity] = useState(1);
     const [bgUploading, setBgUploading] = useState(false);
     const [saving, setSaving] = useState(false);
     const [canvasW, setCanvasW] = useState(800);
@@ -609,7 +621,7 @@ export default function CertificatesPage() {
     useEffect(() => {
         async function loadFeatured() {
             try {
-                const res = await fetch('/api/campaigns/featured', { cache: 'no-store' });
+                const res = await fetch('/api/campaigns/featured?full=true', { cache: 'no-store' });
                 if (!res.ok) throw new Error('no featured');
                 const data = await res.json();
                 if (data?._id) {
@@ -618,6 +630,8 @@ export default function CertificatesPage() {
                     if (data.certBackgroundImage) setBgImage(data.certBackgroundImage);
                     if (Array.isArray(data.certLayout) && data.certLayout.length > 0) setElements(data.certLayout);
                     if (data.certPaperSize && PAPER_SIZES[data.certPaperSize as PaperSize]) setPaperSize(data.certPaperSize);
+                    if (typeof data.certBgOpacity === 'number') setBgOpacity(data.certBgOpacity);
+                    if (data.certBgColor) setBgColor(data.certBgColor);
                 }
             } catch { setCampaign(null); }
             finally { setLoading(false); }
@@ -879,7 +893,13 @@ export default function CertificatesPage() {
         setActiveTool('');
     };
 
-    const deleteElement = (id: string) => { pushUndo(elements); setElements(prev => prev.filter(e => e.id !== id)); if (selectedId === id) setSelectedId(null); };
+    const deleteElement = (id: string) => {
+        pushUndo(elements);
+        setElements(prev => prev.filter(e => e.id !== id));
+        if (selectedId === id) setSelectedId(null);
+        setCtxMenu(null);
+        setCtxSubmenu(null);
+    };
     const updateEl = (id: string, patch: Partial<CertElement>) => { pushUndo(elements); setElements(prev => prev.map(el => el.id === id ? { ...el, ...patch } : el)); };
     const totalPages = Math.ceil(total / limit);
 
@@ -908,7 +928,7 @@ export default function CertificatesPage() {
             const res = await fetch(`/api/campaigns/${campaign._id}`, {
                 method: 'PUT',
                 headers: authHeaders(),
-                body: JSON.stringify({ certBackgroundImage: bgImage, certLayout: elements, certPaperSize: paperSize }),
+                body: JSON.stringify({ certBackgroundImage: bgImage, certLayout: elements, certPaperSize: paperSize, certBgOpacity: bgOpacity, certBgColor: bgColor }),
             });
             if (res.ok) showToast('บันทึก Layout แล้ว', 'success');
             else showToast('Save failed', 'error');
@@ -929,25 +949,39 @@ export default function CertificatesPage() {
                           : paperSize === 'a4-portrait' ? Math.round(210 / 25.4 * 96)
                           : Math.round(297 / 25.4 * 96);
             const ps = pageWpx / CANVAS_REF_W;
+            const transformFor = (el: CertElement): string => `translate(-50%,-50%) rotate(${el.rotation || 0}deg)`;
+            const shadowFor = (el: CertElement): string => el.shadowEnabled
+                ? `${el.shadowX || 0}px ${el.shadowY ?? 2}px ${el.shadowBlur ?? 4}px ${el.shadowColor || 'rgba(0,0,0,0.5)'}`
+                : '';
             const renderEl = (el: CertElement): string => {
                 if (el.type === 'image' && el.src) {
                     const h = getElementHeight(el, paperAspect);
-                    return `<img class="cert-image-el" src=${JSON.stringify(el.src)} alt="" style="left:${el.x}%;top:${el.y}%;width:${el.width}%;height:${h}%;opacity:${el.opacity};" />`;
+                    const br = el.borderRadius || 0;
+                    const filterParts: string[] = [];
+                    if (typeof el.brightness === 'number' && el.brightness !== 100) filterParts.push(`brightness(${el.brightness}%)`);
+                    if (typeof el.contrast === 'number' && el.contrast !== 100) filterParts.push(`contrast(${el.contrast}%)`);
+                    if (typeof el.blur === 'number' && el.blur > 0) filterParts.push(`blur(${el.blur}px)`);
+                    const sh = shadowFor(el);
+                    if (sh) filterParts.push(`drop-shadow(${sh})`);
+                    const filterCss = filterParts.length > 0 ? `filter:${filterParts.join(' ')};` : '';
+                    return `<img class="cert-image-el" src=${JSON.stringify(el.src)} alt="" style="left:${el.x}%;top:${el.y}%;width:${el.width}%;height:${h}%;opacity:${el.opacity};transform:${transformFor(el)};${br > 0 ? `border-radius:${br}px;` : ''}${filterCss}" />`;
                 }
                 if (el.type === 'shape' && el.shape) {
                     const h = getElementHeight(el, paperAspect);
                     const fill = el.fillColor || '#fff';
                     const stroke = el.strokeColor || 'transparent';
                     const sw = el.strokeWidth ?? 0;
+                    const br = el.borderRadius || 0;
                     let inner = '';
                     if (el.shape === 'circle') {
                         inner = `<svg viewBox="0 0 100 100" preserveAspectRatio="none" width="100%" height="100%" style="display:block"><ellipse cx="50" cy="50" rx="${50 - sw / 2}" ry="${50 - sw / 2}" fill="${fill}" stroke="${stroke}" stroke-width="${sw}"/></svg>`;
                     } else if (el.shape === 'triangle') {
                         inner = `<svg viewBox="0 0 100 100" preserveAspectRatio="none" width="100%" height="100%" style="display:block"><polygon points="50,2 98,98 2,98" fill="${fill}" stroke="${stroke}" stroke-width="${sw}"/></svg>`;
                     } else {
-                        inner = `<div style="width:100%;height:100%;background:${fill};border:${sw}px solid ${stroke};box-sizing:border-box"></div>`;
+                        inner = `<div style="width:100%;height:100%;background:${fill};border:${sw}px solid ${stroke};box-sizing:border-box;${br > 0 ? `border-radius:${br}px;` : ''}"></div>`;
                     }
-                    return `<div class="cert-shape-el" style="left:${el.x}%;top:${el.y}%;width:${el.width}%;height:${h}%;opacity:${el.opacity};">${inner}</div>`;
+                    const sh = shadowFor(el);
+                    return `<div class="cert-shape-el" style="left:${el.x}%;top:${el.y}%;width:${el.width}%;height:${h}%;opacity:${el.opacity};transform:${transformFor(el)};${br > 0 && el.shape === 'rect' ? `border-radius:${br}px;overflow:hidden;` : ''}${sh ? `box-shadow:${sh};` : ''}">${inner}</div>`;
                 }
                 if (el.type === 'flag') {
                     const nat = resolveNationality(selectedRunner.nationality);
@@ -955,7 +989,8 @@ export default function CertificatesPage() {
                     const emoji = nat.code ? countryFlagEmoji(nat.code) : '🏳️';
                     const txt = mode === 'name' ? escapeHtml(nat.name) : mode === 'flag' ? emoji : `${emoji} ${escapeHtml(nat.name)}`;
                     const fs = (el.fontSize * ps * (mode === 'flag' ? 1.4 : 1)).toFixed(1);
-                    return `<div class="cert-el" style="left:${el.x}%;top:${el.y}%;width:${el.width}%;font-size:${fs}px;color:${el.color};font-weight:${el.fontWeight};text-align:${el.textAlign};opacity:${el.opacity};">${txt}</div>`;
+                    const sh = shadowFor(el);
+                    return `<div class="cert-el" style="left:${el.x}%;top:${el.y}%;width:${el.width}%;font-size:${fs}px;color:${el.color};font-weight:${el.fontWeight};text-align:${el.textAlign};opacity:${el.opacity};transform:${transformFor(el)};${sh ? `text-shadow:${sh};` : ''}">${txt}</div>`;
                 }
                 if (el.type === 'table') {
                     const cols = el.columns && el.columns.length > 0 ? el.columns : DEFAULT_COLUMNS;
@@ -975,13 +1010,14 @@ export default function CertificatesPage() {
                     const body = rows.length === 0
                         ? `<tr><td colspan="${cols.length}" style="text-align:center;padding:6px;font-size:${fs}px;opacity:.7">No checkpoint data</td></tr>`
                         : rows.map((r, i) => `<tr style="background:${i % 2 === 0 ? rowBg : rowAltBg}">${cols.map(c => `<td style="padding:3px 6px;text-align:${c.align};font-size:${fs}px;font-variant-numeric:tabular-nums;border:${bw}px solid ${borderColor}">${escapeHtml(splitsCellValue(c.field, r, i))}</td>`).join('')}</tr>`).join('');
-                    return `<div class="cert-table-el" style="left:${el.x}%;top:${el.y}%;width:${el.width}%;height:${h}%;opacity:${el.opacity};color:${el.color};font-family:${el.fontFamily};"><table style="width:100%;height:100%;border-collapse:collapse;table-layout:fixed">${th}<tbody>${body}</tbody></table></div>`;
+                    return `<div class="cert-table-el" style="left:${el.x}%;top:${el.y}%;width:${el.width}%;height:${h}%;opacity:${el.opacity};color:${el.color};font-family:${el.fontFamily};transform:${transformFor(el)};"><table style="width:100%;height:100%;border-collapse:collapse;table-layout:fixed">${th}<tbody>${body}</tbody></table></div>`;
                 }
                 const text = escapeHtml(substituteFields(el.content, selectedRunner, campaign)).replace(/\n/g, '<br>');
-                return `<div class="cert-el" style="left:${el.x}%;top:${el.y}%;width:${el.width}%;font-size:${(el.fontSize * ps).toFixed(1)}px;font-family:${el.fontFamily};color:${el.color};font-weight:${el.fontWeight};font-style:${el.fontStyle};text-align:${el.textAlign};opacity:${el.opacity};letter-spacing:${(el.letterSpacing * ps).toFixed(1)}px;">${text}</div>`;
+                const sh = shadowFor(el);
+                return `<div class="cert-el" style="left:${el.x}%;top:${el.y}%;width:${el.width}%;font-size:${(el.fontSize * ps).toFixed(1)}px;font-family:${el.fontFamily};color:${el.color};font-weight:${el.fontWeight};font-style:${el.fontStyle};text-align:${el.textAlign};opacity:${el.opacity};letter-spacing:${(el.letterSpacing * ps).toFixed(1)}px;transform:${transformFor(el)};${sh ? `text-shadow:${sh};` : ''}">${text}</div>`;
             };
             const elHtml = elements.map(renderEl).join('');
-            const bgLayer = bgImage ? `<img class="cert-bg-image" src=${JSON.stringify(bgImage)} alt="" />` : '';
+            const bgLayer = bgImage ? `<img class="cert-bg-image" src=${JSON.stringify(bgImage)} alt="" style="opacity:${bgOpacity};" />` : '';
             const isHD = paperSize === 'hd-landscape' || paperSize === 'hd-portrait';
             const pageRule = isHD
                 ? `@page{size:${paperInfo.printW} ${paperInfo.printH};margin:0}`
@@ -990,7 +1026,7 @@ export default function CertificatesPage() {
             win.document.close();
         } catch { showToast('Error', 'error'); }
         finally { setGenerating(false); }
-    }, [selectedRunner, elements, bgImage, bgColor, campaign, paperSize, paperInfo, paperAspect, splits]);
+    }, [selectedRunner, elements, bgImage, bgOpacity, bgColor, campaign, paperSize, paperInfo, paperAspect, splits]);
 
     const alignElement = (id: string, hAlign?: 'left' | 'center' | 'right', vAlign?: 'top' | 'middle' | 'bottom') => {
         pushUndo(elements);
@@ -1125,10 +1161,14 @@ export default function CertificatesPage() {
                                 <div style={{ fontWeight: 700, fontSize: 12, marginBottom: 8, color: '#374151' }}>Background</div>
                                 <label style={{ fontSize: 10, color: '#64748b', fontWeight: 600, display: 'block', marginBottom: 2 }}>สีพื้นหลัง</label>
                                 <input type="color" value={bgColor} onChange={e => setBgColor(e.target.value)} style={{ width: '100%', height: 28, border: 'none', borderRadius: 4, cursor: 'pointer', marginBottom: 8 }} />
-                                {bgImage && <div style={{ position: 'relative', marginBottom: 6 }}><img src={bgImage} alt="bg" style={{ width: '100%', borderRadius: 4, border: '1px solid #e5e7eb', aspectRatio: `${paperInfo.w} / ${paperInfo.h}`, objectFit: 'cover' }} /><button onClick={() => setBgImage('')} style={{ position: 'absolute', top: 2, right: 2, background: '#ef4444', color: '#fff', border: 'none', borderRadius: 3, padding: '1px 6px', fontSize: 10, fontWeight: 700, cursor: 'pointer' }}>✕</button></div>}
+                                {bgImage && <div style={{ position: 'relative', marginBottom: 6 }}><img src={bgImage} alt="bg" style={{ width: '100%', borderRadius: 4, border: '1px solid #e5e7eb', aspectRatio: `${paperInfo.w} / ${paperInfo.h}`, objectFit: 'cover', opacity: bgOpacity }} /><button onClick={() => setBgImage('')} style={{ position: 'absolute', top: 2, right: 2, background: '#ef4444', color: '#fff', border: 'none', borderRadius: 3, padding: '1px 6px', fontSize: 10, fontWeight: 700, cursor: 'pointer' }}>✕</button></div>}
                                 <input type="file" id="cert-bg" accept="image/*" style={{ display: 'none' }} onChange={handleBgUpload} />
                                 <input ref={imageInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleImageImport} />
                                 <label htmlFor="cert-bg" style={{ display: 'block', padding: '6px', borderRadius: 6, border: '1px dashed #d1d5db', background: '#f9fafb', cursor: bgUploading ? 'wait' : 'pointer', fontSize: 11, color: '#666', textAlign: 'center' }}>{bgUploading ? '⏳ กำลังอัปโหลด...' : bgImage ? 'เปลี่ยนรูป' : '📷 อัปโหลดภาพพื้นหลัง'}</label>
+                                {bgImage && <div style={{ marginTop: 8 }}>
+                                    <label style={{ fontSize: 10, color: '#64748b', fontWeight: 600, display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}><span>BG Opacity (ทำให้จาง)</span><span>{Math.round(bgOpacity * 100)}%</span></label>
+                                    <input type="range" min={0} max={1} step={0.05} value={bgOpacity} onChange={e => setBgOpacity(Number(e.target.value))} style={{ width: '100%', accentColor: '#22c55e' }} />
+                                </div>}
                                 <p style={{ fontSize: 9, color: '#94a3b8', marginTop: 4 }}>แนะนำขนาด {paperInfo.w}×{paperInfo.h}</p>
                             </>}
                             {activeTool === 'runners' && <>
@@ -1193,7 +1233,9 @@ export default function CertificatesPage() {
                                 maxWidth: paperInfo.orient === 'landscape' ? 920 : 620,
                                 maxHeight: '100%',
                             }}>
-                                <div ref={canvasRef} onClick={() => setSelectedId(null)} onContextMenu={e => { e.preventDefault(); setCtxMenu({ x: e.clientX, y: e.clientY }); setCtxSubmenu(null); }} style={{ position: 'relative', width: '100%', aspectRatio: `${paperInfo.w} / ${paperInfo.h}`, background: bgImage ? `url(${bgImage}) center/cover` : bgColor, borderRadius: 2, overflow: 'hidden', cursor: 'default', boxShadow: '0 4px 24px rgba(0,0,0,0.45)', userSelect: 'none' }}>
+                                <div ref={canvasRef} onClick={() => setSelectedId(null)} onContextMenu={e => { e.preventDefault(); setCtxMenu({ x: e.clientX, y: e.clientY }); setCtxSubmenu(null); }} style={{ position: 'relative', width: '100%', aspectRatio: `${paperInfo.w} / ${paperInfo.h}`, background: bgColor, borderRadius: 2, overflow: 'hidden', cursor: 'default', boxShadow: '0 4px 24px rgba(0,0,0,0.45)', userSelect: 'none' }}>
+
+                                    {bgImage && <div style={{ position: 'absolute', inset: 0, backgroundImage: `url(${bgImage})`, backgroundSize: 'cover', backgroundPosition: 'center', opacity: bgOpacity, pointerEvents: 'none', zIndex: 0 }} />}
 
                                     {snapLines.map((sl, i) => sl.axis === 'x'
                                         ? <div key={`s${i}`} style={{ position: 'absolute', left: `${sl.pos}%`, top: 0, width: 1, height: '100%', background: '#f472b6', zIndex: 99, pointerEvents: 'none' }} />
@@ -1209,6 +1251,22 @@ export default function CertificatesPage() {
                                         const isFlag = el.type === 'flag';
                                         const isTable = el.type === 'table';
                                         const hasHeight = isImage || isShape || isFlag || isTable;
+                                        const rot = el.rotation || 0;
+                                        const br = el.borderRadius || 0;
+                                        const filterParts: string[] = [];
+                                        if (isImage) {
+                                            if (typeof el.brightness === 'number' && el.brightness !== 100) filterParts.push(`brightness(${el.brightness}%)`);
+                                            if (typeof el.contrast === 'number' && el.contrast !== 100) filterParts.push(`contrast(${el.contrast}%)`);
+                                            if (typeof el.blur === 'number' && el.blur > 0) filterParts.push(`blur(${el.blur}px)`);
+                                        }
+                                        const filterStr = filterParts.length > 0 ? filterParts.join(' ') : undefined;
+                                        const shadowStr = el.shadowEnabled
+                                            ? `${el.shadowX || 0}px ${el.shadowY || 2}px ${el.shadowBlur ?? 4}px ${el.shadowColor || 'rgba(0,0,0,0.5)'}`
+                                            : undefined;
+                                        const textShadow = isText && shadowStr ? shadowStr : undefined;
+                                        const boxShadow = !isText && !isImage && shadowStr ? shadowStr : undefined;
+                                        const imgDropShadow = isImage && shadowStr ? `drop-shadow(${shadowStr})` : '';
+                                        const combinedImgFilter = [filterStr, imgDropShadow].filter(Boolean).join(' ') || undefined;
                                         return (
                                             <div key={el.id}
                                                 onClick={e => { e.stopPropagation(); setSelectedId(el.id); }}
@@ -1217,7 +1275,7 @@ export default function CertificatesPage() {
                                                 style={{
                                                     position: 'absolute', left: `${el.x}%`, top: `${el.y}%`, width: `${el.width}%`,
                                                     height: hasHeight ? `${heightPct}%` : undefined,
-                                                    transform: 'translate(-50%,-50%)',
+                                                    transform: `translate(-50%,-50%) rotate(${rot}deg)`,
                                                     fontSize: `${el.fontSize * scale}px`, fontFamily: el.fontFamily, color: el.color,
                                                     fontWeight: el.fontWeight, fontStyle: el.fontStyle,
                                                     textAlign: el.textAlign as 'left' | 'center' | 'right',
@@ -1228,8 +1286,13 @@ export default function CertificatesPage() {
                                                     whiteSpace: 'pre-wrap', wordBreak: 'break-word', lineHeight: 1.3,
                                                     transition: 'outline .1s',
                                                     display: hasHeight ? 'block' : undefined,
+                                                    borderRadius: (isImage || isShape) && br > 0 ? `${br}px` : undefined,
+                                                    overflow: (isImage || isShape) && br > 0 ? 'hidden' : undefined,
+                                                    textShadow,
+                                                    boxShadow,
+                                                    zIndex: 1,
                                                 }}>
-                                                {isImage && el.src ? <img src={el.src} alt="element" style={{ width: '100%', height: '100%', objectFit: 'contain', pointerEvents: 'none', display: 'block' }} />
+                                                {isImage && el.src ? <img src={el.src} alt="element" style={{ width: '100%', height: '100%', objectFit: 'contain', pointerEvents: 'none', display: 'block', filter: combinedImgFilter, borderRadius: br > 0 ? `${br}px` : undefined }} />
                                                     : isShape ? <ShapeRender el={el} />
                                                     : isFlag ? <FlagRender el={el} runner={selectedRunner} fontScale={scale} />
                                                     : isTable ? <TableRender el={el} splits={splits} fontScale={scale} />
@@ -1487,6 +1550,65 @@ export default function CertificatesPage() {
                                 </div>
                             </div>
 
+                            {/* EFFECTS: rotation, borderRadius, image filters, shadow */}
+                            <div>
+                                <label style={{ fontSize: 9, color: '#64748b', fontWeight: 700, display: 'block', marginBottom: 4 }}>EFFECTS</label>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 4 }}>
+                                    <span style={{ fontSize: 9, color: '#94a3b8', minWidth: 65 }}>Rotation</span>
+                                    <input type="range" min={-180} max={180} value={selectedEl.rotation || 0} onChange={e => updateEl(selectedEl.id, { rotation: Number(e.target.value) })} style={{ flex: 1, accentColor: '#22c55e' }} />
+                                    <input type="number" min={-180} max={180} value={selectedEl.rotation || 0} onChange={e => updateEl(selectedEl.id, { rotation: Number(e.target.value) })} style={{ width: 44, padding: '2px 4px', borderRadius: 3, border: '1px solid #334155', background: '#0f172a', color: '#e2e8f0', fontSize: 10, textAlign: 'center' }} />
+                                </div>
+                                {(selectedEl.type === 'image' || (selectedEl.type === 'shape' && selectedEl.shape === 'rect')) && (
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 4 }}>
+                                        <span style={{ fontSize: 9, color: '#94a3b8', minWidth: 65 }}>Radius</span>
+                                        <input type="range" min={0} max={120} value={selectedEl.borderRadius || 0} onChange={e => updateEl(selectedEl.id, { borderRadius: Number(e.target.value) })} style={{ flex: 1, accentColor: '#22c55e' }} />
+                                        <input type="number" min={0} max={400} value={selectedEl.borderRadius || 0} onChange={e => updateEl(selectedEl.id, { borderRadius: Number(e.target.value) })} style={{ width: 44, padding: '2px 4px', borderRadius: 3, border: '1px solid #334155', background: '#0f172a', color: '#e2e8f0', fontSize: 10, textAlign: 'center' }} />
+                                    </div>
+                                )}
+                                {selectedEl.type === 'image' && <>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 4 }}>
+                                        <span style={{ fontSize: 9, color: '#94a3b8', minWidth: 65 }}>Brightness</span>
+                                        <input type="range" min={0} max={200} value={selectedEl.brightness ?? 100} onChange={e => updateEl(selectedEl.id, { brightness: Number(e.target.value) })} style={{ flex: 1, accentColor: '#22c55e' }} />
+                                        <span style={{ fontSize: 9, color: '#94a3b8', minWidth: 28, textAlign: 'right' }}>{selectedEl.brightness ?? 100}%</span>
+                                    </div>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 4 }}>
+                                        <span style={{ fontSize: 9, color: '#94a3b8', minWidth: 65 }}>Contrast</span>
+                                        <input type="range" min={0} max={200} value={selectedEl.contrast ?? 100} onChange={e => updateEl(selectedEl.id, { contrast: Number(e.target.value) })} style={{ flex: 1, accentColor: '#22c55e' }} />
+                                        <span style={{ fontSize: 9, color: '#94a3b8', minWidth: 28, textAlign: 'right' }}>{selectedEl.contrast ?? 100}%</span>
+                                    </div>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 4 }}>
+                                        <span style={{ fontSize: 9, color: '#94a3b8', minWidth: 65 }}>Blur</span>
+                                        <input type="range" min={0} max={20} step={0.5} value={selectedEl.blur || 0} onChange={e => updateEl(selectedEl.id, { blur: Number(e.target.value) })} style={{ flex: 1, accentColor: '#22c55e' }} />
+                                        <span style={{ fontSize: 9, color: '#94a3b8', minWidth: 28, textAlign: 'right' }}>{selectedEl.blur || 0}px</span>
+                                    </div>
+                                </>}
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 4 }}>
+                                    <label style={{ fontSize: 9, color: '#94a3b8', display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>
+                                        <input type="checkbox" checked={!!selectedEl.shadowEnabled} onChange={e => updateEl(selectedEl.id, { shadowEnabled: e.target.checked })} />Shadow
+                                    </label>
+                                    {selectedEl.shadowEnabled && (
+                                        <input type="color" value={selectedEl.shadowColor?.startsWith('#') ? selectedEl.shadowColor : '#000000'} onChange={e => updateEl(selectedEl.id, { shadowColor: e.target.value })} style={{ width: 30, height: 22, border: '1px solid #334155', borderRadius: 4, cursor: 'pointer' }} />
+                                    )}
+                                </div>
+                                {selectedEl.shadowEnabled && <>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 4 }}>
+                                        <span style={{ fontSize: 9, color: '#94a3b8', minWidth: 65 }}>Sh. Blur</span>
+                                        <input type="range" min={0} max={40} value={selectedEl.shadowBlur ?? 4} onChange={e => updateEl(selectedEl.id, { shadowBlur: Number(e.target.value) })} style={{ flex: 1, accentColor: '#22c55e' }} />
+                                        <span style={{ fontSize: 9, color: '#94a3b8', minWidth: 28, textAlign: 'right' }}>{selectedEl.shadowBlur ?? 4}</span>
+                                    </div>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 4 }}>
+                                        <span style={{ fontSize: 9, color: '#94a3b8', minWidth: 65 }}>Sh. X</span>
+                                        <input type="range" min={-30} max={30} value={selectedEl.shadowX || 0} onChange={e => updateEl(selectedEl.id, { shadowX: Number(e.target.value) })} style={{ flex: 1, accentColor: '#22c55e' }} />
+                                        <span style={{ fontSize: 9, color: '#94a3b8', minWidth: 28, textAlign: 'right' }}>{selectedEl.shadowX || 0}</span>
+                                    </div>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 4 }}>
+                                        <span style={{ fontSize: 9, color: '#94a3b8', minWidth: 65 }}>Sh. Y</span>
+                                        <input type="range" min={-30} max={30} value={selectedEl.shadowY ?? 2} onChange={e => updateEl(selectedEl.id, { shadowY: Number(e.target.value) })} style={{ flex: 1, accentColor: '#22c55e' }} />
+                                        <span style={{ fontSize: 9, color: '#94a3b8', minWidth: 28, textAlign: 'right' }}>{selectedEl.shadowY ?? 2}</span>
+                                    </div>
+                                </>}
+                            </div>
+
                             <div style={{ display: 'flex', gap: 4 }}>
                                 {selectedEl.type === 'image' && selectedEl.src ? <button onClick={() => setElementAsBackground(selectedEl.id)} style={{ flex: 1, padding: '6px', borderRadius: 5, border: '1px solid #1d4ed8', background: '#172554', color: '#93c5fd', fontSize: 10, fontWeight: 700, cursor: 'pointer' }}>🖼 Set as BG</button> : null}
                                 <button onClick={() => deleteElement(selectedEl.id)} style={{ flex: 1, padding: '6px', borderRadius: 5, border: '1px solid #7f1d1d', background: '#450a0a', color: '#fca5a5', fontSize: 10, fontWeight: 700, cursor: 'pointer' }}>🗑 Delete</button>
@@ -1499,7 +1621,7 @@ export default function CertificatesPage() {
                             </div>
                         )}
                         <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
-                            <button onClick={() => { if (window.confirm('รีเซ็ต Layout เป็นค่าเริ่มต้น?')) { pushUndo(elements); setElements(DEFAULT_ELEMENTS); setSelectedId(null); } }} style={{ padding: '7px', borderRadius: 6, border: '1px solid #334155', background: '#0f172a', color: '#94a3b8', fontSize: 10, cursor: 'pointer' }}>🔄 Reset Layout</button>
+                            <button onClick={() => { if (window.confirm('รีเซ็ต Layout เป็นค่าเริ่มต้น?')) { pushUndo(elements); setElements(DEFAULT_ELEMENTS.map(el => ({ ...el, id: uid() }))); setSelectedId(null); setCtxMenu(null); setCtxSubmenu(null); } }} style={{ padding: '7px', borderRadius: 6, border: '1px solid #334155', background: '#0f172a', color: '#94a3b8', fontSize: 10, cursor: 'pointer' }}>🔄 Reset Layout</button>
                         </div>
                     </div>
                 </div>
