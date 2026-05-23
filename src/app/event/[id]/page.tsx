@@ -2574,6 +2574,9 @@ export default function EventLivePage() {
                                     {manualModalRunners.map(runner => {
                                         const isChecked = manualSelectedIds.has(runner._id);
                                         const statusColor: Record<string, string> = { finished: '#22c55e', in_progress: '#f97316', dnf: '#dc2626', dns: '#dc2626', dq: '#7c2d12', not_started: '#94a3b8' };
+                                        const gunStr = formatDisplayTimeString(runner.gunTimeStr) || formatTime(runner.gunTime);
+                                        const netStr = formatDisplayTimeString(runner.netTimeStr) || formatTime(runner.netTime);
+                                        const cpName = runner.latestCheckpoint || runner.statusCheckpoint || '';
                                         return (
                                             <div
                                                 key={runner._id}
@@ -2585,7 +2588,7 @@ export default function EventLivePage() {
                                                         return next;
                                                     });
                                                 }}
-                                                className="flex cursor-pointer items-center gap-3 border-b px-5 py-2.5 transition-colors"
+                                                className="flex cursor-pointer items-center gap-2 border-b px-4 py-2 transition-colors"
                                                 style={{
                                                     borderColor: themeStyles.border,
                                                     background: isChecked ? (isDark ? 'rgba(249,115,22,0.10)' : 'rgba(249,115,22,0.06)') : 'transparent',
@@ -2593,12 +2596,15 @@ export default function EventLivePage() {
                                                 onMouseEnter={e => { if (!isChecked) (e.currentTarget as HTMLElement).style.background = isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.02)'; }}
                                                 onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = isChecked ? (isDark ? 'rgba(249,115,22,0.10)' : 'rgba(249,115,22,0.06)') : 'transparent'; }}
                                             >
+                                                {/* Checkbox */}
                                                 <div
-                                                    className="flex h-4.5 w-4.5 shrink-0 items-center justify-center rounded"
+                                                    className="shrink-0"
                                                     style={{
                                                         width: 18, height: 18,
                                                         border: isChecked ? '2px solid #f97316' : `2px solid ${themeStyles.border}`,
                                                         background: isChecked ? '#f97316' : 'transparent',
+                                                        borderRadius: 4,
+                                                        display: 'flex', alignItems: 'center', justifyContent: 'center',
                                                     }}
                                                 >
                                                     {isChecked && (
@@ -2607,22 +2613,66 @@ export default function EventLivePage() {
                                                         </svg>
                                                     )}
                                                 </div>
-                                                <span className="w-12 shrink-0 font-mono text-[12px] font-bold" style={{ color: '#3b82f6' }}>
+
+                                                {/* BIB */}
+                                                <span className="w-10 shrink-0 font-mono text-[12px] font-bold" style={{ color: '#3b82f6' }}>
                                                     {runner.bib}
                                                 </span>
+
+                                                {/* Name */}
                                                 <div className="min-w-0 flex-1">
-                                                    <div className="truncate text-[13px] font-semibold" style={{ color: themeStyles.text }}>
+                                                    <div className="truncate text-[12px] font-semibold" style={{ color: themeStyles.text }}>
                                                         {runner.firstName} {runner.lastName}
                                                         {(runner.firstNameTh || runner.lastNameTh) && (
-                                                            <span className="ml-1.5 text-[11px] font-normal" style={{ color: themeStyles.textSecondary }}>
+                                                            <span className="ml-1 text-[10px] font-normal" style={{ color: themeStyles.textSecondary }}>
                                                                 {runner.firstNameTh} {runner.lastNameTh}
                                                             </span>
                                                         )}
                                                     </div>
                                                     <div className="text-[10px]" style={{ color: themeStyles.textSecondary }}>
-                                                        {runner.category} {runner.gender && `· ${runner.gender}`} {runner.ageGroup && `· ${runner.ageGroup}`}
+                                                        {runner.category}{runner.gender ? ` · ${runner.gender}` : ''}{runner.ageGroup ? ` · ${runner.ageGroup}` : ''}
+                                                        {/* Mobile: inline timing */}
+                                                        {isMobile && gunStr && gunStr !== '-' && <span className="ml-1.5 font-mono" style={{ color: themeStyles.textSecondary }}>G:{gunStr}</span>}
+                                                        {isMobile && netStr && netStr !== '-' && <span className="ml-1 font-mono text-green-500">N:{netStr}</span>}
+                                                        {isMobile && cpName && <span className="ml-1">📍{cpName}</span>}
                                                     </div>
                                                 </div>
+
+                                                {/* Gun Time — desktop only */}
+                                                {!isMobile && (
+                                                    <div className="w-16 shrink-0 text-right">
+                                                        <div className="font-mono text-[11px] font-semibold" style={{ color: themeStyles.text }}>
+                                                            {gunStr && gunStr !== '-' ? gunStr : <span style={{ color: themeStyles.textSecondary }}>—</span>}
+                                                        </div>
+                                                        <div className="text-[9px] uppercase tracking-wide" style={{ color: themeStyles.textSecondary }}>Gun</div>
+                                                    </div>
+                                                )}
+
+                                                {/* Net Time — desktop only */}
+                                                {!isMobile && (
+                                                    <div className="w-16 shrink-0 text-right">
+                                                        <div className="font-mono text-[11px] font-semibold" style={{ color: netStr && netStr !== '-' ? '#22c55e' : themeStyles.textSecondary }}>
+                                                            {netStr && netStr !== '-' ? netStr : '—'}
+                                                        </div>
+                                                        <div className="text-[9px] uppercase tracking-wide" style={{ color: themeStyles.textSecondary }}>Net</div>
+                                                    </div>
+                                                )}
+
+                                                {/* Progress — desktop only */}
+                                                {!isMobile && (
+                                                    <div className="w-20 shrink-0">
+                                                        <div className="truncate text-[10px] font-semibold" style={{ color: cpName ? themeStyles.text : themeStyles.textSecondary }}>
+                                                            {cpName || '—'}
+                                                        </div>
+                                                        {(runner.passedCount ?? 0) > 0 && (
+                                                            <div className="text-[9px]" style={{ color: themeStyles.textSecondary }}>
+                                                                {runner.passedCount} CP
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                )}
+
+                                                {/* Status badge */}
                                                 <span
                                                     className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold"
                                                     style={{ background: `${statusColor[runner.status] || '#94a3b8'}22`, color: statusColor[runner.status] || '#94a3b8' }}
