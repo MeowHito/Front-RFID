@@ -746,9 +746,13 @@ export default function CertificatesPage() {
                 });
             }
             if ((e.key === 'Delete' || e.key === 'Backspace') && selectedId) {
+                e.preventDefault();
                 pushUndo(elements);
                 setElements(prev => prev.filter(el => el.id !== selectedId));
                 setSelectedId(null);
+                setCtxMenu(null);
+                setCtxSubmenu(null);
+                setSnapLines([]);
             }
         };
         document.addEventListener('keydown', handler);

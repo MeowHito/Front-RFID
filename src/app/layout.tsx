@@ -18,6 +18,9 @@ const prompt = Prompt({
 export const metadata: Metadata = {
   title: "RFID Timing System",
   description: "ระบบจับเวลาวิ่งแบบ Real-time ด้วยเทคโนโลยี RFID",
+  other: {
+    google: "notranslate",
+  },
 };
 
 // Inline script to set theme class before React hydration (prevents flash)
@@ -44,8 +47,9 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="th" className="light" suppressHydrationWarning>
+    <html lang="th" className="light" translate="no" suppressHydrationWarning>
       <head>
+        <meta name="google" content="notranslate" />
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
         {GA_ID && (
           <>
@@ -60,7 +64,8 @@ export default function RootLayout({
         )}
       </head>
       <body
-        className={`${prompt.variable} font-sans antialiased`}
+        className={`${prompt.variable} font-sans antialiased notranslate`}
+        translate="no"
       >
         <ThemeProvider>
           <LanguageProvider>
