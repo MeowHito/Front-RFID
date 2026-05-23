@@ -15,6 +15,18 @@ const nextConfig: NextConfig = {
       ...config.watchOptions,
       ignored: ['**/backend/**', '**/node_modules/**'],
     };
+    // ExcelJS uses Node built-ins not available in browser — stub them
+    if (!isServer) {
+      config.resolve.fallback = {
+        ...config.resolve.fallback,
+        fs: false,
+        path: false,
+        stream: false,
+        crypto: false,
+        buffer: false,
+        zlib: false,
+      };
+    }
     return config;
   },
   // Exclude backend from page detection

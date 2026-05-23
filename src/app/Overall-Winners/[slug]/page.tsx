@@ -3,7 +3,7 @@
 import Image from 'next/image';
 import Link from 'next/link';
 import { useEffect, useState, useMemo, useRef, useCallback } from 'react';
-import { buildLandscapeTableCanvas, triggerDownload, LandscapeRunner } from '@/lib/winner-canvas';
+import { buildWinnersExcel, triggerExcelDownload } from '@/lib/winner-excel';
 import { useParams } from 'next/navigation';
 
 interface Runner {
@@ -194,18 +194,17 @@ export default function OverallWinnersBySlugPage() {
         };
     }, [displayedRunners, topN]);
 
-    const downloadLandscape = useCallback(async () => {
+    const downloadLandscape = useCallback(async (gender: 'male' | 'female' | 'both' = 'both') => {
         setDownloading('landscape');
         try {
-            const canvas = await buildLandscapeTableCanvas(
+            const blob = await buildWinnersExcel(
                 campaign?.name || '',
                 selectedCategory,
-                [{
-                    maleRunners: maleWinners as LandscapeRunner[],
-                    femaleRunners: femaleWinners as LandscapeRunner[],
-                }]
+                [{ maleRunners: maleWinners, femaleRunners: femaleWinners }],
+                gender,
             );
-            if (canvas) triggerDownload(canvas, `${campaign?.name || 'winners'}-Overall`);
+            const suffix = gender === 'male' ? '-Male' : gender === 'female' ? '-Female' : '';
+            if (blob) triggerExcelDownload(blob, `${campaign?.name || 'winners'}-Overall${suffix}`);
         } catch (e) { console.error(e); } finally {
             setDownloading(null);
         }
@@ -309,9 +308,9 @@ export default function OverallWinnersBySlugPage() {
                     {campaign && !initialLoading && (
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
                             <button
-                                onClick={downloadLandscape}
+                                onClick={() => downloadLandscape('both')}
                                 disabled={!!downloading}
-                                title="Download Overall Winners (Landscape)"
+                                title="Download Overall Winners (Excel)"
                                 style={{ display: 'flex', alignItems: 'center', gap: 5, padding: isMobile ? '5px 10px' : '0.35vh 0.7vw', background: '#1d4ed8', border: '1px solid #2563eb', borderRadius: 7, color: 'white', fontSize: isMobile ? 11 : '1.15vh', fontWeight: 800, cursor: 'pointer', whiteSpace: 'nowrap', opacity: downloading ? 0.6 : 1, transition: 'opacity 0.15s', fontFamily: "'Prompt','Inter',sans-serif" }}
                             >
                                 <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="1" x2="8" y2="11"/><polyline points="4 7 8 11 12 7"/><line x1="2" y1="14" x2="14" y2="14"/></svg>
@@ -369,8 +368,8 @@ export default function OverallWinnersBySlugPage() {
                 </div>
             ) : (
                 <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: isMobile ? 12 : '1vw', flex: isMobile ? undefined : 1, minHeight: 0, paddingBottom: isMobile ? 16 : 0 }}>
-                    {renderColumn('♂ MALE OVERALL', '#2563eb', maleWinners, maleColRef, downloadLandscape)}
-                    {renderColumn('♀ FEMALE OVERALL', '#db2777', femaleWinners, femaleColRef, downloadLandscape)}
+                    {renderColumn('♂ MALE OVERALL', '#2563eb', maleWinners, maleColRef, () => downloadLandscape('male'))}
+                    {renderColumn('♀ FEMALE OVERALL', '#db2777', femaleWinners, femaleColRef, () => downloadLandscape('female'))}
                 </div>
             )}
         </div>

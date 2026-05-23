@@ -3,7 +3,7 @@
 import Image from 'next/image';
 import Link from 'next/link';
 import { useEffect, useState, useMemo, useRef, useCallback } from 'react';
-import { buildLandscapeTableCanvas, triggerDownload, LandscapeSection } from '@/lib/winner-canvas';
+import { buildWinnersExcel, triggerExcelDownload, ExcelSection } from '@/lib/winner-excel';
 import { useParams } from 'next/navigation';
 
 interface Runner {
@@ -354,48 +354,34 @@ export default function ResultWinnersBySlugPage() {
         return { maleWinners, femaleWinners };
     }, [displayedRunners, activeAgeGroups, disableAgeGroupRanking, topN, campaign]);
 
-    const downloadLandscapeSection = useCallback(async (ageGroupLabel: string, gender: 'male' | 'female' | 'both' = 'both') => {
+    const downloadSection = useCallback(async (ageGroupLabel: string, gender: 'male' | 'female' | 'both' = 'both') => {
         const key = gender === 'both' ? ageGroupLabel : `${gender}-${ageGroupLabel}`;
         setDownloading(key);
         try {
-            const sections: LandscapeSection[] = [{
+            const sections: ExcelSection[] = [{
                 label: ageGroupLabel === 'OVERALL' ? undefined : ageGroupLabel,
                 maleRunners: maleWinners[ageGroupLabel] || [],
                 femaleRunners: femaleWinners[ageGroupLabel] || [],
             }];
             const suffix = gender === 'male' ? '-Male' : gender === 'female' ? '-Female' : '';
-            const canvas = await buildLandscapeTableCanvas(
-                campaign?.name || '',
-                selectedCategory,
-                sections,
-                undefined,
-                undefined,
-                gender
-            );
-            if (canvas) triggerDownload(canvas, `${campaign?.name || 'winners'}-AgeGroup-${ageGroupLabel}${suffix}`);
+            const blob = await buildWinnersExcel(campaign?.name || '', selectedCategory, sections, gender);
+            if (blob) triggerExcelDownload(blob, `${campaign?.name || 'winners'}-AgeGroup-${ageGroupLabel}${suffix}`);
         } catch (e) { console.error(e); } finally {
             setDownloading(null);
         }
     }, [campaign, selectedCategory, maleWinners, femaleWinners]);
 
-    const downloadLandscapeAll = useCallback(async (gender: 'male' | 'female' | 'both' = 'both') => {
+    const downloadAll = useCallback(async (gender: 'male' | 'female' | 'both' = 'both') => {
         setDownloading(gender === 'both' ? 'all' : `all-${gender}`);
         try {
-            const sections: LandscapeSection[] = activeAgeGroups.map(g => ({
+            const sections: ExcelSection[] = activeAgeGroups.map(g => ({
                 label: g.label === 'OVERALL' ? undefined : g.label,
                 maleRunners: maleWinners[g.label] || [],
                 femaleRunners: femaleWinners[g.label] || [],
             }));
             const suffix = gender === 'male' ? '-Male' : gender === 'female' ? '-Female' : '';
-            const canvas = await buildLandscapeTableCanvas(
-                campaign?.name || '',
-                selectedCategory,
-                sections,
-                undefined,
-                undefined,
-                gender
-            );
-            if (canvas) triggerDownload(canvas, `${campaign?.name || 'winners'}-AgeGroup-All${suffix}`);
+            const blob = await buildWinnersExcel(campaign?.name || '', selectedCategory, sections, gender);
+            if (blob) triggerExcelDownload(blob, `${campaign?.name || 'winners'}-AgeGroup-All${suffix}`);
         } catch (e) { console.error(e); } finally {
             setDownloading(null);
         }
@@ -532,9 +518,9 @@ export default function ResultWinnersBySlugPage() {
                     {campaign && !initialLoading && (
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
                             <button
-                                onClick={() => downloadLandscapeAll('both')}
+                                onClick={() => downloadAll('both')}
                                 disabled={!!downloading}
-                                title="Download All Winners (Landscape)"
+                                title="Download All Winners (Excel)"
                                 style={{ display: 'flex', alignItems: 'center', gap: 5, padding: isMobile ? '5px 10px' : '0.35vh 0.7vw', background: '#1d4ed8', border: '1px solid #2563eb', borderRadius: 7, color: 'white', fontSize: isMobile ? 11 : '1.15vh', fontWeight: 800, cursor: 'pointer', whiteSpace: 'nowrap', opacity: downloading ? 0.6 : 1, transition: 'opacity 0.15s', fontFamily: "'Prompt','Inter',sans-serif" }}
                             >
                                 <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="1" x2="8" y2="11"/><polyline points="4 7 8 11 12 7"/><line x1="2" y1="14" x2="14" y2="14"/></svg>
@@ -608,13 +594,13 @@ export default function ResultWinnersBySlugPage() {
                 <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: isMobile ? 12 : '1vw', flex: isMobile ? undefined : 1, minHeight: 0, paddingBottom: isMobile ? 16 : 0 }}>
                     {renderColumn(
                         disableAgeGroupRanking ? '♂ MALE RANKING' : '♂ MALE WINNERS', '#2563eb', '#1e3a5f', maleWinners, maleColRef, maleAgeGroupRefs,
-                        () => downloadLandscapeAll('male'),
-                        (label) => downloadLandscapeSection(label, 'male')
+                        () => downloadAll('male'),
+                        (label) => downloadSection(label, 'male')
                     )}
                     {renderColumn(
                         disableAgeGroupRanking ? '♀ FEMALE RANKING' : '♀ FEMALE WINNERS', '#db2777', '#831843', femaleWinners, femaleColRef, femaleAgeGroupRefs,
-                        () => downloadLandscapeAll('female'),
-                        (label) => downloadLandscapeSection(label, 'female')
+                        () => downloadAll('female'),
+                        (label) => downloadSection(label, 'female')
                     )}
                 </div>
             )}
