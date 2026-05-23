@@ -218,12 +218,12 @@ export interface LandscapeSection {
     femaleColor?: string;
 }
 
-function calcLandscapeH(sections: LandscapeSection[]): number {
+function calcLandscapeH(sections: LandscapeSection[], showGender: 'male' | 'female' | 'both' = 'both'): number {
     let h = L_PAD + L_HDR_H;
     for (const sec of sections) {
         if (sec.label) h += L_AG_HDR_H;
-        h += L_SEC_HDR_H + L_COL_HDR_H + sec.maleRunners.length * L_ROW_H;
-        h += L_SEC_HDR_H + L_COL_HDR_H + sec.femaleRunners.length * L_ROW_H;
+        if (showGender !== 'female') h += L_SEC_HDR_H + L_COL_HDR_H + sec.maleRunners.length * L_ROW_H;
+        if (showGender !== 'male') h += L_SEC_HDR_H + L_COL_HDR_H + sec.femaleRunners.length * L_ROW_H;
         h += L_SEC_GAP;
     }
     h += L_FTR_H + L_PAD;
@@ -236,10 +236,11 @@ export async function buildLandscapeTableCanvas(
     sections: LandscapeSection[],
     defaultMaleColor = '#2563eb',
     defaultFemaleColor = '#db2777',
+    showGender: 'male' | 'female' | 'both' = 'both',
 ): Promise<HTMLCanvasElement | null> {
     if (!sections.length) return null;
 
-    const H = calcLandscapeH(sections);
+    const H = calcLandscapeH(sections, showGender);
     const canvas = document.createElement('canvas');
     canvas.width = L_W;
     canvas.height = H;
@@ -380,8 +381,8 @@ export async function buildLandscapeTableCanvas(
             y += L_AG_HDR_H;
         }
 
-        drawGenderTable(sec.maleRunners, '♂ MALE', sec.maleColor ?? defaultMaleColor);
-        drawGenderTable(sec.femaleRunners, '♀ FEMALE', sec.femaleColor ?? defaultFemaleColor);
+        if (showGender !== 'female') drawGenderTable(sec.maleRunners, '♂ MALE', sec.maleColor ?? defaultMaleColor);
+        if (showGender !== 'male') drawGenderTable(sec.femaleRunners, '♀ FEMALE', sec.femaleColor ?? defaultFemaleColor);
         y += L_SEC_GAP;
     }
 

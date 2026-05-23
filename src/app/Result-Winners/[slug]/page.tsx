@@ -354,39 +354,48 @@ export default function ResultWinnersBySlugPage() {
         return { maleWinners, femaleWinners };
     }, [displayedRunners, activeAgeGroups, disableAgeGroupRanking, topN, campaign]);
 
-    const downloadLandscapeSection = useCallback(async (ageGroupLabel: string) => {
-        setDownloading(ageGroupLabel);
+    const downloadLandscapeSection = useCallback(async (ageGroupLabel: string, gender: 'male' | 'female' | 'both' = 'both') => {
+        const key = gender === 'both' ? ageGroupLabel : `${gender}-${ageGroupLabel}`;
+        setDownloading(key);
         try {
             const sections: LandscapeSection[] = [{
                 label: ageGroupLabel === 'OVERALL' ? undefined : ageGroupLabel,
                 maleRunners: maleWinners[ageGroupLabel] || [],
                 femaleRunners: femaleWinners[ageGroupLabel] || [],
             }];
+            const suffix = gender === 'male' ? '-Male' : gender === 'female' ? '-Female' : '';
             const canvas = await buildLandscapeTableCanvas(
                 campaign?.name || '',
                 selectedCategory,
-                sections
+                sections,
+                undefined,
+                undefined,
+                gender
             );
-            if (canvas) triggerDownload(canvas, `${campaign?.name || 'winners'}-AgeGroup-${ageGroupLabel}`);
+            if (canvas) triggerDownload(canvas, `${campaign?.name || 'winners'}-AgeGroup-${ageGroupLabel}${suffix}`);
         } catch (e) { console.error(e); } finally {
             setDownloading(null);
         }
     }, [campaign, selectedCategory, maleWinners, femaleWinners]);
 
-    const downloadLandscapeAll = useCallback(async () => {
-        setDownloading('all');
+    const downloadLandscapeAll = useCallback(async (gender: 'male' | 'female' | 'both' = 'both') => {
+        setDownloading(gender === 'both' ? 'all' : `all-${gender}`);
         try {
             const sections: LandscapeSection[] = activeAgeGroups.map(g => ({
                 label: g.label === 'OVERALL' ? undefined : g.label,
                 maleRunners: maleWinners[g.label] || [],
                 femaleRunners: femaleWinners[g.label] || [],
             }));
+            const suffix = gender === 'male' ? '-Male' : gender === 'female' ? '-Female' : '';
             const canvas = await buildLandscapeTableCanvas(
                 campaign?.name || '',
                 selectedCategory,
-                sections
+                sections,
+                undefined,
+                undefined,
+                gender
             );
-            if (canvas) triggerDownload(canvas, `${campaign?.name || 'winners'}-AgeGroup-All`);
+            if (canvas) triggerDownload(canvas, `${campaign?.name || 'winners'}-AgeGroup-All${suffix}`);
         } catch (e) { console.error(e); } finally {
             setDownloading(null);
         }
@@ -523,7 +532,7 @@ export default function ResultWinnersBySlugPage() {
                     {campaign && !initialLoading && (
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
                             <button
-                                onClick={downloadLandscapeAll}
+                                onClick={() => downloadLandscapeAll('both')}
                                 disabled={!!downloading}
                                 title="Download All Winners (Landscape)"
                                 style={{ display: 'flex', alignItems: 'center', gap: 5, padding: isMobile ? '5px 10px' : '0.35vh 0.7vw', background: '#1d4ed8', border: '1px solid #2563eb', borderRadius: 7, color: 'white', fontSize: isMobile ? 11 : '1.15vh', fontWeight: 800, cursor: 'pointer', whiteSpace: 'nowrap', opacity: downloading ? 0.6 : 1, transition: 'opacity 0.15s', fontFamily: "'Prompt','Inter',sans-serif" }}
@@ -599,13 +608,13 @@ export default function ResultWinnersBySlugPage() {
                 <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: isMobile ? 12 : '1vw', flex: isMobile ? undefined : 1, minHeight: 0, paddingBottom: isMobile ? 16 : 0 }}>
                     {renderColumn(
                         disableAgeGroupRanking ? '♂ MALE RANKING' : '♂ MALE WINNERS', '#2563eb', '#1e3a5f', maleWinners, maleColRef, maleAgeGroupRefs,
-                        downloadLandscapeAll,
-                        (label) => downloadLandscapeSection(label)
+                        () => downloadLandscapeAll('male'),
+                        (label) => downloadLandscapeSection(label, 'male')
                     )}
                     {renderColumn(
                         disableAgeGroupRanking ? '♀ FEMALE RANKING' : '♀ FEMALE WINNERS', '#db2777', '#831843', femaleWinners, femaleColRef, femaleAgeGroupRefs,
-                        downloadLandscapeAll,
-                        (label) => downloadLandscapeSection(label)
+                        () => downloadLandscapeAll('female'),
+                        (label) => downloadLandscapeSection(label, 'female')
                     )}
                 </div>
             )}
