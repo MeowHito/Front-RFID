@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useLanguage } from '@/lib/language-context';
 import { useTheme } from '@/lib/theme-context';
 import { useAuth } from '@/lib/auth-context';
@@ -281,7 +281,10 @@ export default function EventLivePage() {
     const { isAdmin, isAuthenticated } = useAuth();
     const params = useParams();
     const router = useRouter();
+    const searchParams = useSearchParams();
     const eventKey = params.id as string;
+
+    const catFromUrl = searchParams.get('cat') || '';
 
     const [campaign, setCampaign] = useState<Campaign | null>(null);
     // ... (rest of the code remains the same)
@@ -291,7 +294,7 @@ export default function EventLivePage() {
 
     const [searchQuery, setSearchQuery] = useState('');
     const [filterGender, setFilterGender] = useState<RunnerFilterGender>('ALL');
-    const [filterCategory, setFilterCategory] = useState('');
+    const [filterCategory, setFilterCategory] = useState(catFromUrl);
     const [filterStatus, setFilterStatus] = useState('ALL');
     // Runner detail is now handled by /runner/[id] page
 
@@ -704,6 +707,23 @@ export default function EventLivePage() {
         // Sort by distance descending
         return cats.sort((a, b) => (b.distanceValue ?? 0) - (a.distanceValue ?? 0));
     }, [campaign, runners, language]);
+
+    // Sync URL → state on back navigation (catFromUrl changes when browser restores URL)
+    useEffect(() => {
+        if (catFromUrl && catFromUrl !== filterCategory) {
+            setFilterCategory(catFromUrl);
+        }
+    }, [catFromUrl]);
+
+    // Sync state → URL when user switches category
+    useEffect(() => {
+        if (!filterCategory) return;
+        const current = new URLSearchParams(window.location.search);
+        if (current.get('cat') !== filterCategory) {
+            current.set('cat', filterCategory);
+            router.replace(`?${current.toString()}`, { scroll: false });
+        }
+    }, [filterCategory]);
 
     // Auto-select first category when categories change and none selected
     useEffect(() => {
@@ -1386,7 +1406,7 @@ export default function EventLivePage() {
                                         // Method 2: distance-based from checkpoint mapping
                                         if (progressPct === 0 && evLookup && matchedCpKey) {
                                             const cpDist = evLookup.checkpoints[matchedCpKey] ?? 0;
-                                            const total = evLookup.totalDistance || (parseDistanceValue(runner.category) || 0);
+                                            const total = parseDistanceValue(runner.category) || evLookup.totalDistance || 0;
                                             if (cpDist > 0 && total > 0) {
                                                 progressPct = Math.min(99, Math.round((cpDist / total) * 100));
                                                 progressDistKm = cpDist;
@@ -1638,12 +1658,18 @@ export default function EventLivePage() {
                                                         {runner.splitPace || '-'}
                                                     </td>
                                                 );
-                                            case 'distFromStart':
+                                            case 'distFromStart': {
+                                                const runnerCatDist = parseDistanceValue(runner.category);
+                                                const rawDist = runner.distanceFromStart || null;
+                                                const displayDist = rawDist != null
+                                                    ? (runnerCatDist != null && rawDist > runnerCatDist ? runnerCatDist : rawDist)
+                                                    : null;
                                                 return (
                                                     <td key={key} className="px-1 py-1.5 text-center text-[11px] font-semibold" style={{ color: themeStyles.textMuted }}>
-                                                        {runner.distanceFromStart ? `${runner.distanceFromStart.toFixed(1)}km` : '-'}
+                                                        {displayDist != null ? `${displayDist.toFixed(1)}km` : '-'}
                                                     </td>
                                                 );
+                                            }
                                             case 'gunTimeMs':
                                                 return (
                                                     <td key={key} className="px-1 py-1.5 text-center font-mono text-[11px] font-semibold" style={{ color: runner.gunTimeMs ? themeStyles.text : themeStyles.textSecondary }}>

@@ -834,7 +834,7 @@ export default function RunnerProfilePage() {
                 {/* DISTANCE PROGRESS BAR — Marathon mode only */}
                 {campaign?.displayMode !== 'lab' && checkpointRows.length > 0 && (() => {
                     const maxDist = checkpointRows.reduce((max, cp) => Math.max(max, cp.distanceFromStart || 0), 0);
-                    const totalDist = maxDist || (parseDistanceValue(runner.category) || 0);
+                    const totalDist = distanceVal || maxDist || 0;
                     const currentDist = passedUpToIdx >= 0 && checkpointRows[passedUpToIdx]?.distanceFromStart != null
                         ? checkpointRows[passedUpToIdx].distanceFromStart!
                         : 0;
@@ -900,10 +900,12 @@ export default function RunnerProfilePage() {
                                     const displayNetTime = record.netTime ?? record.elapsedTime;
                                     // RaceTiger does NOT store distance on timing records — look it up
                                     // from the event's checkpoint mappings (which carry kmCumulative).
-                                    const cumDist = record.distanceFromStart ?? distFor(record.checkpoint);
-                                    const prevCum = i > 0
-                                        ? (sortedTimings[i - 1].distanceFromStart ?? distFor(sortedTimings[i - 1].checkpoint))
-                                        : null;
+                                    // Cap at the runner's own category distance so a 50km runner sharing
+                                    // a FINISH checkpoint with 100km runners doesn't show 100 KM.
+                                    const rawCumDist = record.distanceFromStart ?? distFor(record.checkpoint);
+                                    const cumDist = (rawCumDist != null && distanceVal != null && rawCumDist > distanceVal) ? distanceVal : rawCumDist;
+                                    const rawPrevCum = i > 0 ? (sortedTimings[i - 1].distanceFromStart ?? distFor(sortedTimings[i - 1].checkpoint)) : null;
+                                    const prevCum = (rawPrevCum != null && distanceVal != null && rawPrevCum > distanceVal) ? distanceVal : rawPrevCum;
                                     const segDist = (record.legDistance != null && record.legDistance > 0)
                                         ? Math.round(record.legDistance * 100) / 100
                                         : (cumDist != null && prevCum != null)
