@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { BACKEND_URL, proxyHeaders } from '../../_helpers';
+import { BACKEND_URL, proxyHeaders, safeJson } from '../../_helpers';
 
 export async function PUT(request: NextRequest) {
     try {
@@ -16,7 +16,7 @@ export async function PUT(request: NextRequest) {
             return NextResponse.json(errorBody, { status: res.status });
         }
 
-        const data = await res.json();
+        const data = await safeJson(res);
         return NextResponse.json(data);
     } catch (error) {
         console.error('Error bulk updating runner status:', error);
