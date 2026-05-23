@@ -381,7 +381,7 @@ export default function ResultWinnersBySlugPage() {
                 {idx + 1}
             </div>
             <span style={{ fontSize: isMobile ? 12 : '1.35vh', fontWeight: 700, color: '#1e293b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1, textTransform: 'uppercase' }}>
-                {runner.firstName} {runner.lastName}
+                {runner.bib} {runner.firstName} {runner.lastName}
             </span>
             <span style={{ fontFamily: 'monospace', fontWeight: 800, fontSize: isMobile ? 11 : '1.35vh', color: '#1e293b', flexShrink: 0 }}>
                 {runner.netTimeStr || formatTime(runner.netTime || runner.gunTime)}
