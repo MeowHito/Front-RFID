@@ -3,6 +3,7 @@
 import Image from 'next/image';
 import Link from 'next/link';
 import { useEffect, useState, useMemo, useRef, useCallback } from 'react';
+import { buildA4Canvas, triggerDownload } from '@/lib/winner-canvas';
 import { useParams } from 'next/navigation';
 
 interface Runner {
@@ -67,6 +68,9 @@ export default function OverallWinnersBySlugPage() {
     const autoCountdownRef = useRef<NodeJS.Timeout | null>(null);
     const campaignCategoriesRef = useRef<CampaignCategory[]>([]);
     const displayedCategoryRef = useRef<string>('');
+    const [downloading, setDownloading] = useState<string | null>(null);
+    const maleColRef = useRef<HTMLDivElement | null>(null);
+    const femaleColRef = useRef<HTMLDivElement | null>(null);
 
     useEffect(() => {
         const check = () => setIsMobile(window.innerWidth < 768);
@@ -175,6 +179,26 @@ export default function OverallWinnersBySlugPage() {
         };
     }, [autoMode]);
 
+    const downloadSection = useCallback(async (
+        el: HTMLDivElement | null,
+        genderTitle: string,
+        accentColor: string
+    ) => {
+        if (!el) return;
+        setDownloading(genderTitle);
+        try {
+            const canvas = await buildA4Canvas(
+                [el],
+                campaign?.name || '',
+                `${selectedCategory} — ${genderTitle}`,
+                accentColor
+            );
+            if (canvas) triggerDownload(canvas, `${campaign?.name || 'winners'}-${genderTitle}`);
+        } catch (e) { console.error(e); } finally {
+            setDownloading(null);
+        }
+    }, [campaign, selectedCategory]);
+
     const topN = Math.max(1, campaign?.overallDisplayCount || 5);
 
     const { maleWinners, femaleWinners } = useMemo(() => {
@@ -227,10 +251,19 @@ export default function OverallWinnersBySlugPage() {
         </div>
     );
 
-    const renderColumn = (title: string, bgHeader: string, list: Runner[]) => (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: isMobile ? 8 : '0.8vh', minHeight: 0, flex: 1, overflowY: isMobile ? 'visible' : 'auto', paddingRight: isMobile ? 0 : 4 }}>
-            <div style={{ padding: isMobile ? '8px 0' : '0.9vh 0', fontWeight: 900, fontSize: isMobile ? 16 : '2vh', textAlign: 'center', textTransform: 'uppercase', borderRadius: 8, color: 'white', letterSpacing: 2, background: bgHeader, flexShrink: 0 }}>
-                {title}
+    const dlIcon = (size = 12) => (
+        <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="8" y1="1" x2="8" y2="11"/><polyline points="4 7 8 11 12 7"/><line x1="2" y1="14" x2="14" y2="14"/>
+        </svg>
+    );
+
+    const renderColumn = (title: string, bgHeader: string, list: Runner[], colRef: { current: HTMLDivElement | null }, onDownload: () => void) => (
+        <div ref={el => { colRef.current = el; }} style={{ display: 'flex', flexDirection: 'column', gap: isMobile ? 8 : '0.8vh', minHeight: 0, flex: 1, overflowY: isMobile ? 'visible' : 'auto', paddingRight: isMobile ? 0 : 4 }}>
+            <div style={{ padding: isMobile ? '8px 0' : '0.9vh 0', fontWeight: 900, fontSize: isMobile ? 16 : '2vh', textTransform: 'uppercase', borderRadius: 8, color: 'white', letterSpacing: 2, background: bgHeader, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
+                <span>{title}</span>
+                <button data-no-capture onClick={onDownload} disabled={!!downloading} title="Download" style={{ position: 'absolute', right: 8, background: 'rgba(255,255,255,0.18)', border: 'none', borderRadius: 5, cursor: 'pointer', padding: '3px 8px', color: 'white', fontSize: isMobile ? 11 : 12, display: 'flex', alignItems: 'center', gap: 4, fontWeight: 700, opacity: downloading ? 0.5 : 1, transition: 'opacity 0.15s' }}>
+                    {dlIcon(11)}{!isMobile && <span>Download</span>}
+                </button>
             </div>
             <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: 8, overflow: 'hidden', display: 'flex', flexDirection: 'column', flexShrink: 0, minHeight: isMobile ? 180 : '28vh' }}>
                 <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'flex-start', flex: 1, padding: isMobile ? '4px' : '0.35vh 4px', minHeight: 0 }}>
@@ -260,9 +293,32 @@ export default function OverallWinnersBySlugPage() {
 
                 <div style={{ display: 'flex', alignItems: isMobile ? 'stretch' : 'center', gap: isMobile ? 6 : '1vw', flexDirection: isMobile ? 'column' : 'row' }}>
                     {campaign && (
-                        <span style={{ fontSize: isMobile ? 11 : '1.3vh', fontWeight: 700, color: '#94a3b8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: isMobile ? '100%' : '25vw' }}>
+                        <span style={{ fontSize: isMobile ? 11 : '1.3vh', fontWeight: 700, color: '#94a3b8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: isMobile ? '100%' : '20vw' }}>
                             {campaign.name}
                         </span>
+                    )}
+
+                    {campaign && !initialLoading && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                            <button
+                                onClick={() => downloadSection(maleColRef.current, '♂ MALE OVERALL', '#2563eb')}
+                                disabled={!!downloading}
+                                title="Download Male Overall"
+                                style={{ display: 'flex', alignItems: 'center', gap: 5, padding: isMobile ? '5px 10px' : '0.35vh 0.7vw', background: '#1d4ed8', border: '1px solid #2563eb', borderRadius: 7, color: 'white', fontSize: isMobile ? 11 : '1.15vh', fontWeight: 800, cursor: 'pointer', whiteSpace: 'nowrap', opacity: downloading ? 0.6 : 1, transition: 'opacity 0.15s', fontFamily: "'Prompt','Inter',sans-serif" }}
+                            >
+                                <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="1" x2="8" y2="11"/><polyline points="4 7 8 11 12 7"/><line x1="2" y1="14" x2="14" y2="14"/></svg>
+                                ♂ Male
+                            </button>
+                            <button
+                                onClick={() => downloadSection(femaleColRef.current, '♀ FEMALE OVERALL', '#db2777')}
+                                disabled={!!downloading}
+                                title="Download Female Overall"
+                                style={{ display: 'flex', alignItems: 'center', gap: 5, padding: isMobile ? '5px 10px' : '0.35vh 0.7vw', background: '#be185d', border: '1px solid #db2777', borderRadius: 7, color: 'white', fontSize: isMobile ? 11 : '1.15vh', fontWeight: 800, cursor: 'pointer', whiteSpace: 'nowrap', opacity: downloading ? 0.6 : 1, transition: 'opacity 0.15s', fontFamily: "'Prompt','Inter',sans-serif" }}
+                            >
+                                <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="1" x2="8" y2="11"/><polyline points="4 7 8 11 12 7"/><line x1="2" y1="14" x2="14" y2="14"/></svg>
+                                ♀ Female
+                            </button>
+                        </div>
                     )}
 
                     {campaign?.categories && campaign.categories.length > 0 && (
@@ -314,8 +370,8 @@ export default function OverallWinnersBySlugPage() {
                 </div>
             ) : (
                 <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: isMobile ? 12 : '1vw', flex: isMobile ? undefined : 1, minHeight: 0, paddingBottom: isMobile ? 16 : 0 }}>
-                    {renderColumn('♂ MALE OVERALL', '#2563eb', maleWinners)}
-                    {renderColumn('♀ FEMALE OVERALL', '#db2777', femaleWinners)}
+                    {renderColumn('♂ MALE OVERALL', '#2563eb', maleWinners, maleColRef, () => downloadSection(maleColRef.current, '♂ MALE OVERALL', '#2563eb'))}
+                    {renderColumn('♀ FEMALE OVERALL', '#db2777', femaleWinners, femaleColRef, () => downloadSection(femaleColRef.current, '♀ FEMALE OVERALL', '#db2777'))}
                 </div>
             )}
         </div>

@@ -2554,7 +2554,7 @@ export default function EventLivePage() {
                             {/* BIB */}
                             <div className="w-10 shrink-0">{language === 'th' ? 'บิบ' : 'BIB'}</div>
                             {/* Runner name */}
-                            <div className="min-w-0 w-36 shrink">{language === 'th' ? 'นักวิ่ง' : 'Runner'}</div>
+                            <div className="min-w-0 flex-1 overflow-hidden">{language === 'th' ? 'นักวิ่ง' : 'Runner'}</div>
                             {/* Desktop-only columns */}
                             {!isMobile && <div className="w-16 shrink-0 text-right">{language === 'th' ? 'เวลาปืน' : 'Gun'}</div>}
                             {!isMobile && <div className="w-16 shrink-0 text-right">{language === 'th' ? 'เวลาชิป' : 'Net'}</div>}
@@ -2683,7 +2683,7 @@ export default function EventLivePage() {
                                                 </span>
 
                                                 {/* Name */}
-                                                <div className="min-w-0 w-36 shrink">
+                                                <div className="min-w-0 flex-1 overflow-hidden">
                                                     <div className="truncate text-[12px] font-semibold" style={{ color: themeStyles.text }}>
                                                         {runner.firstName} {runner.lastName}
                                                         {(runner.firstNameTh || runner.lastNameTh) && (

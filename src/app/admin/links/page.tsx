@@ -59,6 +59,30 @@ export default function LinksPage() {
     const [campaign, setCampaign] = useState<Campaign | null>(null);
     const [loading, setLoading] = useState(true);
     const [copiedId, setCopiedId] = useState<string | null>(null);
+    const [footerLeft, setFooterLeft] = useState<string | null>(null);
+    const [footerRight, setFooterRight] = useState<string | null>(null);
+
+    useEffect(() => {
+        setFooterLeft(localStorage.getItem('winner_dl_footer_left'));
+        setFooterRight(localStorage.getItem('winner_dl_footer_right'));
+    }, []);
+
+    const handleImageUpload = (side: 'left' | 'right', file: File) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const dataUrl = e.target?.result as string;
+            localStorage.setItem(`winner_dl_footer_${side}`, dataUrl);
+            if (side === 'left') setFooterLeft(dataUrl);
+            else setFooterRight(dataUrl);
+        };
+        reader.readAsDataURL(file);
+    };
+
+    const handleClearImage = (side: 'left' | 'right') => {
+        localStorage.removeItem(`winner_dl_footer_${side}`);
+        if (side === 'left') setFooterLeft(null);
+        else setFooterRight(null);
+    };
 
     useEffect(() => {
         (async () => {
@@ -219,6 +243,86 @@ export default function LinksPage() {
                         </p>
                     </>
                 )}
+
+                {/* Winner Download Footer Images */}
+                <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm mt-6">
+                    <div className="px-4 py-3 border-b border-slate-100 bg-slate-50 flex items-center gap-2">
+                        <span className="text-base">🖼️</span>
+                        <div>
+                            <h3 className="text-sm font-bold text-slate-800 m-0">
+                                {language === 'th' ? 'ตั้งค่ารูปภาพสำหรับ Winner Download' : 'Winner Download Footer Images'}
+                            </h3>
+                            <p className="text-xs text-slate-500 m-0 mt-0.5">
+                                {language === 'th'
+                                    ? 'รูปที่แสดงในส่วนล่างของภาพผลการแข่งขันที่ดาวโหลด (ขนาด A4)'
+                                    : 'Images shown in the footer of downloaded winner result images (A4 size)'}
+                            </p>
+                        </div>
+                    </div>
+                    <div className="p-5 flex gap-6 flex-wrap">
+                        {/* Left image */}
+                        <div className="flex flex-col gap-2 flex-1 min-w-[200px]">
+                            <div className="text-xs font-bold text-slate-600 uppercase tracking-wide">
+                                {language === 'th' ? 'มุมซ้ายล่าง' : 'Bottom Left'}
+                            </div>
+                            {footerLeft ? (
+                                <div className="relative w-fit">
+                                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                                    <img src={footerLeft} alt="footer left" className="h-24 w-auto max-w-[200px] rounded-lg border border-slate-200 object-contain bg-slate-50 p-1" />
+                                    <button
+                                        onClick={() => handleClearImage('left')}
+                                        className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-red-500 text-white text-xs border-none cursor-pointer flex items-center justify-center font-bold leading-none shadow"
+                                    >
+                                        ×
+                                    </button>
+                                </div>
+                            ) : (
+                                <label className="w-full border-2 border-dashed border-slate-200 rounded-xl h-24 flex flex-col items-center justify-center cursor-pointer hover:border-blue-400 hover:bg-blue-50 transition-colors select-none">
+                                    <span className="text-2xl">📷</span>
+                                    <span className="text-xs text-slate-400 mt-1">{language === 'th' ? 'คลิกเพื่ออัพโหลด' : 'Click to upload'}</span>
+                                    <input type="file" accept="image/*" className="hidden" onChange={e => { if (e.target.files?.[0]) handleImageUpload('left', e.target.files[0]); }} />
+                                </label>
+                            )}
+                        </div>
+
+                        {/* Right image — ผู้จัดงาน */}
+                        <div className="flex flex-col gap-2 flex-1 min-w-[200px]">
+                            <div className="text-xs font-bold text-slate-600 uppercase tracking-wide">
+                                {language === 'th' ? 'มุมขวาล่าง (ผู้จัดงาน)' : 'Bottom Right (Organizer)'}
+                            </div>
+                            {footerRight ? (
+                                <div className="relative w-fit">
+                                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                                    <img src={footerRight} alt="footer right" className="h-24 w-auto max-w-[200px] rounded-lg border border-slate-200 object-contain bg-slate-50 p-1" />
+                                    <button
+                                        onClick={() => handleClearImage('right')}
+                                        className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-red-500 text-white text-xs border-none cursor-pointer flex items-center justify-center font-bold leading-none shadow"
+                                    >
+                                        ×
+                                    </button>
+                                </div>
+                            ) : (
+                                <label className="w-full border-2 border-dashed border-slate-200 rounded-xl h-24 flex flex-col items-center justify-center cursor-pointer hover:border-blue-400 hover:bg-blue-50 transition-colors select-none">
+                                    <span className="text-2xl">📷</span>
+                                    <span className="text-xs text-slate-400 mt-1">{language === 'th' ? 'คลิกเพื่ออัพโหลด' : 'Click to upload'}</span>
+                                    <input type="file" accept="image/*" className="hidden" onChange={e => { if (e.target.files?.[0]) handleImageUpload('right', e.target.files[0]); }} />
+                                </label>
+                            )}
+                            <div className="flex items-center gap-2 pt-1">
+                                <div className="flex-1 border-b border-dashed border-slate-300" />
+                                <span className="text-xs text-slate-400 font-medium">ผู้จัดงาน</span>
+                                <div className="flex-1 border-b border-dashed border-slate-300" />
+                            </div>
+                        </div>
+                    </div>
+                    <div className="px-5 pb-4">
+                        <p className="text-xs text-slate-400">
+                            {language === 'th'
+                                ? '* รูปเก็บใน browser นี้เท่านั้น (localStorage) — ต้องตั้งค่าใหม่หากเปลี่ยนอุปกรณ์'
+                                : '* Images are stored in this browser only (localStorage) — reconfigure when switching devices'}
+                        </p>
+                    </div>
+                </div>
             </div>
         </AdminLayout>
     );

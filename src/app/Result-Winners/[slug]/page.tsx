@@ -3,6 +3,7 @@
 import Image from 'next/image';
 import Link from 'next/link';
 import { useEffect, useState, useMemo, useRef, useCallback } from 'react';
+import { buildA4Canvas, triggerDownload } from '@/lib/winner-canvas';
 import { useParams } from 'next/navigation';
 
 interface Runner {
@@ -121,6 +122,11 @@ export default function ResultWinnersBySlugPage() {
     const [dropdownOpen, setDropdownOpen] = useState(false);
     const dropdownRef = useRef<HTMLDivElement>(null);
     const [volume, setVolume] = useState(1);
+    const [downloading, setDownloading] = useState<string | null>(null);
+    const maleColRef = useRef<HTMLDivElement | null>(null);
+    const femaleColRef = useRef<HTMLDivElement | null>(null);
+    const maleAgeGroupRefs = useRef<Record<string, HTMLDivElement | null>>({});
+    const femaleAgeGroupRefs = useRef<Record<string, HTMLDivElement | null>>({});
     const volumeRef = useRef(1);
     const prevFinishedIdsRef = useRef<Set<string> | null>(null);
     // Track category for which data is currently displayed — clears old data only when category actually changes
@@ -291,6 +297,27 @@ export default function ResultWinnersBySlugPage() {
         return () => document.removeEventListener('mousedown', handler);
     }, []);
 
+    const downloadSection = useCallback(async (
+        el: HTMLDivElement | null,
+        genderTitle: string,
+        agLabel: string,
+        accentColor: string
+    ) => {
+        if (!el) return;
+        setDownloading(agLabel);
+        try {
+            const canvas = await buildA4Canvas(
+                [el],
+                campaign?.name || '',
+                `${selectedCategory} — ${genderTitle} — ${agLabel}`,
+                accentColor
+            );
+            if (canvas) triggerDownload(canvas, `${campaign?.name || 'winners'}-${agLabel}`);
+        } catch (e) { console.error(e); } finally {
+            setDownloading(null);
+        }
+    }, [campaign, selectedCategory]);
+
     const disableAgeGroupRanking = false;
     const topN = Math.max(1, campaign?.ageGroupDisplayCount || 5);
 
@@ -333,6 +360,28 @@ export default function ResultWinnersBySlugPage() {
         return { maleWinners, femaleWinners };
     }, [displayedRunners, activeAgeGroups, disableAgeGroupRanking, topN]);
 
+    const downloadAllCombined = useCallback(async (
+        refs: { current: Record<string, HTMLDivElement | null> },
+        genderTitle: string,
+        accentColor: string
+    ) => {
+        setDownloading('all');
+        try {
+            const elements = activeAgeGroups
+                .map(g => refs.current[g.label])
+                .filter((el): el is HTMLDivElement => el !== null);
+            const canvas = await buildA4Canvas(
+                elements,
+                campaign?.name || '',
+                `${selectedCategory} — ${genderTitle}`,
+                accentColor
+            );
+            if (canvas) triggerDownload(canvas, `${campaign?.name || 'winners'}-${genderTitle}-all`);
+        } catch (e) { console.error(e); } finally {
+            setDownloading(null);
+        }
+    }, [activeAgeGroups, campaign, selectedCategory]);
+
     const rankBg = ['#f59e0b', '#9ca3af', '#92400e', '#e2e8f0', '#e2e8f0'];
     const rankFg = ['#000', '#fff', '#fff', '#475569', '#475569'];
 
@@ -370,18 +419,39 @@ export default function ResultWinnersBySlugPage() {
         </div>
     );
 
-    const renderColumn = (title: string, bgHeader: string, bgAgeHeader: string, winners: Record<string, Runner[]>) => (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: isMobile ? 8 : '0.6vh', minHeight: 0, flex: 1, overflowY: isMobile ? 'visible' : 'auto', paddingRight: isMobile ? 0 : 4 }}>
-            <div style={{ padding: isMobile ? '8px 0' : '0.7vh 0', fontWeight: 900, fontSize: isMobile ? 16 : '2vh', textAlign: 'center', textTransform: 'uppercase', borderRadius: 8, color: 'white', letterSpacing: 2, background: bgHeader, flexShrink: 0 }}>
-                {title}
+    const dlIcon = (size = 12) => (
+        <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="8" y1="1" x2="8" y2="11"/><polyline points="4 7 8 11 12 7"/><line x1="2" y1="14" x2="14" y2="14"/>
+        </svg>
+    );
+
+    const renderColumn = (
+        title: string,
+        bgHeader: string,
+        bgAgeHeader: string,
+        winners: Record<string, Runner[]>,
+        colRef: { current: HTMLDivElement | null },
+        ageGroupRefs: { current: Record<string, HTMLDivElement | null> },
+        onDownloadAll: () => void,
+        onDownloadSingle: (label: string, el: HTMLDivElement | null) => void
+    ) => (
+        <div ref={el => { colRef.current = el; }} style={{ display: 'flex', flexDirection: 'column', gap: isMobile ? 8 : '0.6vh', minHeight: 0, flex: 1, overflowY: isMobile ? 'visible' : 'auto', paddingRight: isMobile ? 0 : 4 }}>
+            <div style={{ padding: isMobile ? '8px 0' : '0.7vh 0', fontWeight: 900, fontSize: isMobile ? 16 : '2vh', textTransform: 'uppercase', borderRadius: 8, color: 'white', letterSpacing: 2, background: bgHeader, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
+                <span>{title}</span>
+                <button data-no-capture onClick={onDownloadAll} disabled={!!downloading} title="Download all age groups as one A4 image" style={{ position: 'absolute', right: 8, background: 'rgba(255,255,255,0.18)', border: 'none', borderRadius: 5, cursor: 'pointer', padding: '3px 8px', color: 'white', fontSize: isMobile ? 11 : 12, display: 'flex', alignItems: 'center', gap: 4, fontWeight: 700, opacity: downloading ? 0.5 : 1, transition: 'opacity 0.15s' }}>
+                    {dlIcon(11)}{!isMobile && <span>All</span>}
+                </button>
             </div>
             {activeAgeGroups.map(g => {
                 const list = winners[g.label] || [];
                 const rows = Array.from({ length: topN }, (_, i) => i);
                 return (
-                    <div key={g.label} style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: 8, overflow: 'hidden', display: 'flex', flexDirection: 'column', flexShrink: 0, minHeight: topN >= 5 ? (isMobile ? 150 : '18vh') : 'auto' }}>
-                        <div style={{ background: bgAgeHeader, color: 'white', fontWeight: 800, fontSize: isMobile ? 13 : '1.5vh', padding: isMobile ? '4px 12px' : '0.25vh 12px', textAlign: 'center', flexShrink: 0 }}>
-                            {disableAgeGroupRanking ? 'OVERALL RANKING' : g.label}
+                    <div key={g.label} ref={el => { ageGroupRefs.current[g.label] = el; }} style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: 8, overflow: 'hidden', display: 'flex', flexDirection: 'column', flexShrink: 0, minHeight: topN >= 5 ? (isMobile ? 150 : '18vh') : 'auto' }}>
+                        <div style={{ background: bgAgeHeader, color: 'white', fontWeight: 800, fontSize: isMobile ? 13 : '1.5vh', padding: isMobile ? '4px 12px' : '0.25vh 12px', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', flexShrink: 0 }}>
+                            <span>{disableAgeGroupRanking ? 'OVERALL RANKING' : g.label}</span>
+                            <button data-no-capture onClick={() => onDownloadSingle(g.label, ageGroupRefs.current[g.label])} disabled={!!downloading} title="Download this age group (A4)" style={{ position: 'absolute', right: 6, background: 'rgba(255,255,255,0.22)', border: 'none', borderRadius: 3, cursor: 'pointer', padding: '2px 5px', color: 'white', display: 'flex', alignItems: 'center', opacity: downloading ? 0.5 : 1, transition: 'opacity 0.15s' }}>
+                                {dlIcon(10)}
+                            </button>
                         </div>
                         <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'flex-start', flex: 1, padding: isMobile ? '4px' : '0.25vh 4px', minHeight: 0 }}>
                             {rows.map(i => list[i] ? renderRunnerRow(list[i], i) : renderEmptyRow(i))}
@@ -426,6 +496,29 @@ export default function ResultWinnersBySlugPage() {
                                     style={{ width: isMobile ? 64 : '4.5vw', minWidth: 48, accentColor: '#22c55e', cursor: 'pointer', verticalAlign: 'middle' }}
                                 />
                             </div>
+                        </div>
+                    )}
+
+                    {campaign && !initialLoading && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                            <button
+                                onClick={() => downloadAllCombined(maleAgeGroupRefs, '♂ MALE WINNERS', '#2563eb')}
+                                disabled={!!downloading}
+                                title="Download Male Winners (all age groups)"
+                                style={{ display: 'flex', alignItems: 'center', gap: 5, padding: isMobile ? '5px 10px' : '0.35vh 0.7vw', background: '#1d4ed8', border: '1px solid #2563eb', borderRadius: 7, color: 'white', fontSize: isMobile ? 11 : '1.15vh', fontWeight: 800, cursor: 'pointer', whiteSpace: 'nowrap', opacity: downloading ? 0.6 : 1, transition: 'opacity 0.15s', fontFamily: "'Prompt','Inter',sans-serif" }}
+                            >
+                                <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="1" x2="8" y2="11"/><polyline points="4 7 8 11 12 7"/><line x1="2" y1="14" x2="14" y2="14"/></svg>
+                                ♂ Male
+                            </button>
+                            <button
+                                onClick={() => downloadAllCombined(femaleAgeGroupRefs, '♀ FEMALE WINNERS', '#db2777')}
+                                disabled={!!downloading}
+                                title="Download Female Winners (all age groups)"
+                                style={{ display: 'flex', alignItems: 'center', gap: 5, padding: isMobile ? '5px 10px' : '0.35vh 0.7vw', background: '#be185d', border: '1px solid #db2777', borderRadius: 7, color: 'white', fontSize: isMobile ? 11 : '1.15vh', fontWeight: 800, cursor: 'pointer', whiteSpace: 'nowrap', opacity: downloading ? 0.6 : 1, transition: 'opacity 0.15s', fontFamily: "'Prompt','Inter',sans-serif" }}
+                            >
+                                <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="1" x2="8" y2="11"/><polyline points="4 7 8 11 12 7"/><line x1="2" y1="14" x2="14" y2="14"/></svg>
+                                ♀ Female
+                            </button>
                         </div>
                     )}
 
@@ -492,8 +585,16 @@ export default function ResultWinnersBySlugPage() {
                 </div>
             ) : (
                 <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: isMobile ? 12 : '1vw', flex: isMobile ? undefined : 1, minHeight: 0, paddingBottom: isMobile ? 16 : 0 }}>
-                    {renderColumn(disableAgeGroupRanking ? '♂ MALE RANKING' : '♂ MALE WINNERS', '#2563eb', '#1e3a5f', maleWinners)}
-                    {renderColumn(disableAgeGroupRanking ? '♀ FEMALE RANKING' : '♀ FEMALE WINNERS', '#db2777', '#831843', femaleWinners)}
+                    {renderColumn(
+                        disableAgeGroupRanking ? '♂ MALE RANKING' : '♂ MALE WINNERS', '#2563eb', '#1e3a5f', maleWinners, maleColRef, maleAgeGroupRefs,
+                        () => downloadAllCombined(maleAgeGroupRefs, '♂ MALE WINNERS', '#2563eb'),
+                        (label, el) => downloadSection(el, '♂ MALE WINNERS', label, '#2563eb')
+                    )}
+                    {renderColumn(
+                        disableAgeGroupRanking ? '♀ FEMALE RANKING' : '♀ FEMALE WINNERS', '#db2777', '#831843', femaleWinners, femaleColRef, femaleAgeGroupRefs,
+                        () => downloadAllCombined(femaleAgeGroupRefs, '♀ FEMALE WINNERS', '#db2777'),
+                        (label, el) => downloadSection(el, '♀ FEMALE WINNERS', label, '#db2777')
+                    )}
                 </div>
             )}
         </div>
