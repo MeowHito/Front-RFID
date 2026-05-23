@@ -342,6 +342,7 @@ export default function EventLivePage() {
     const [manualSaveSuccess, setManualSaveSuccess] = useState<string | null>(null);
     const [manualCheckpoints, setManualCheckpoints] = useState<{name: string; orderNum: number; type: string}[]>([]);
     const [manualCheckpointsLoading, setManualCheckpointsLoading] = useState(false);
+    const [manualSort, setManualSort] = useState<'rank' | 'name' | 'bib'>('rank');
 
     const toApiData = (payload: any) => payload?.data ?? payload;
 
@@ -904,11 +905,22 @@ export default function EventLivePage() {
             );
         }
         return [...base].sort((a, b) => {
+            if (manualSort === 'rank') {
+                const aR = a.overallRank ?? 99999;
+                const bR = b.overallRank ?? 99999;
+                return aR !== bR ? aR - bR : (parseInt(a.bib) || 0) - (parseInt(b.bib) || 0);
+            }
+            if (manualSort === 'name') {
+                const aName = `${a.firstName} ${a.lastName}`.toLowerCase();
+                const bName = `${b.firstName} ${b.lastName}`.toLowerCase();
+                return aName.localeCompare(bName);
+            }
+            // bib
             const aN = parseInt(a.bib) || 0;
             const bN = parseInt(b.bib) || 0;
             return aN !== bN ? aN - bN : a.bib.localeCompare(b.bib);
         });
-    }, [runners, filterCategory, manualSearch, resolveRunnerCategoryKey]);
+    }, [runners, filterCategory, manualSearch, manualSort, resolveRunnerCategoryKey]);
 
     const followedRunnersForEvent = useMemo(
         () => getFollowedRunnersForEvent(followedRunners, eventKey, campaign?._id),
@@ -2425,11 +2437,11 @@ export default function EventLivePage() {
             {showManualStatusModal && (
                 <div
                     onClick={() => setShowManualStatusModal(false)}
-                    className="fixed inset-0 z-[1100] flex items-end justify-center bg-black/60 sm:items-center"
+                    className="fixed inset-0 z-[1100] flex items-end justify-center bg-black/60 sm:items-center sm:p-3"
                 >
                     <div
                         onClick={e => e.stopPropagation()}
-                        className="flex h-[92vh] w-full flex-col rounded-t-2xl shadow-[0_-8px_40px_rgba(0,0,0,0.3)] sm:h-[88vh] sm:max-w-2xl sm:rounded-xl"
+                        className="flex h-[100dvh] w-full flex-col rounded-t-2xl shadow-[0_-8px_40px_rgba(0,0,0,0.3)] sm:h-full sm:max-w-5xl sm:rounded-xl"
                         style={{ background: isDark ? '#1e293b' : '#fff' }}
                     >
                         {/* Modal Header */}
@@ -2453,15 +2465,27 @@ export default function EventLivePage() {
 
                         {/* Controls */}
                         <div className="shrink-0 border-b px-5 py-3 space-y-2.5" style={{ borderColor: themeStyles.border }}>
-                            {/* Search */}
-                            <input
-                                type="text"
-                                value={manualSearch}
-                                onChange={e => setManualSearch(e.target.value)}
-                                placeholder={language === 'th' ? 'ค้นหาชื่อหรือเลข BIB...' : 'Search by name or BIB...'}
-                                className="w-full rounded-lg border px-3 py-2 text-[13px] outline-none"
-                                style={{ borderColor: themeStyles.border, background: isDark ? '#0f172a' : '#f8fafc', color: themeStyles.text }}
-                            />
+                            {/* Search + Sort */}
+                            <div className="flex gap-2">
+                                <input
+                                    type="text"
+                                    value={manualSearch}
+                                    onChange={e => setManualSearch(e.target.value)}
+                                    placeholder={language === 'th' ? 'ค้นหาชื่อหรือเลข BIB...' : 'Search by name or BIB...'}
+                                    className="min-w-0 flex-1 rounded-lg border px-3 py-2 text-[13px] outline-none"
+                                    style={{ borderColor: themeStyles.border, background: isDark ? '#0f172a' : '#f8fafc', color: themeStyles.text }}
+                                />
+                                <select
+                                    value={manualSort}
+                                    onChange={e => setManualSort(e.target.value as 'rank' | 'name' | 'bib')}
+                                    className="shrink-0 rounded-lg border px-2 py-2 text-[12px] outline-none"
+                                    style={{ borderColor: themeStyles.border, background: isDark ? '#0f172a' : '#f8fafc', color: themeStyles.text }}
+                                >
+                                    <option value="rank">{language === 'th' ? 'เรียง: อันดับ' : 'Sort: Rank'}</option>
+                                    <option value="bib">{language === 'th' ? 'เรียง: BIB' : 'Sort: BIB'}</option>
+                                    <option value="name">{language === 'th' ? 'เรียง: ชื่อ' : 'Sort: Name'}</option>
+                                </select>
+                            </div>
 
                             {/* Status selector */}
                             <div className="flex flex-wrap items-center gap-1.5">
@@ -2564,6 +2588,27 @@ export default function EventLivePage() {
                         </div>
 
                         {/* Runner List */}
+                        {/* ── Table header (sticky) ── */}
+                        <div
+                            className="flex shrink-0 items-center gap-2 border-b px-4 py-1.5 text-[10px] font-bold uppercase tracking-[0.05em]"
+                            style={{ borderColor: themeStyles.border, background: isDark ? '#0f172a' : '#f8fafc', color: themeStyles.textSecondary, position: 'sticky', top: 0, zIndex: 2 }}
+                        >
+                            {/* Checkbox placeholder */}
+                            <div style={{ width: 18, flexShrink: 0 }} />
+                            {/* Rank */}
+                            {!isMobile && <div className="w-8 shrink-0 text-center">{language === 'th' ? 'อันดับ' : 'Rank'}</div>}
+                            {/* BIB */}
+                            <div className="w-10 shrink-0">{language === 'th' ? 'บิบ' : 'BIB'}</div>
+                            {/* Runner name */}
+                            <div className="min-w-0 w-36 shrink">{language === 'th' ? 'นักวิ่ง' : 'Runner'}</div>
+                            {/* Desktop-only columns */}
+                            {!isMobile && <div className="w-16 shrink-0 text-right">{language === 'th' ? 'เวลาปืน' : 'Gun Time'}</div>}
+                            {!isMobile && <div className="w-16 shrink-0 text-right">{language === 'th' ? 'เวลาชิป' : 'Net Time'}</div>}
+                            {!isMobile && <div className="w-28 shrink-0">{language === 'th' ? 'ความคืบหน้า' : 'Progress'}</div>}
+                            {/* Status */}
+                            <div className="shrink-0 w-14 text-center">{language === 'th' ? 'สถานะ' : 'Status'}</div>
+                        </div>
+
                         <div className="flex-1 overflow-y-auto">
                             {manualModalRunners.length === 0 ? (
                                 <div className="flex h-40 items-center justify-center text-sm" style={{ color: themeStyles.textSecondary }}>
@@ -2577,6 +2622,63 @@ export default function EventLivePage() {
                                         const gunStr = formatDisplayTimeString(runner.gunTimeStr) || formatTime(runner.gunTime);
                                         const netStr = formatDisplayTimeString(runner.netTimeStr) || formatTime(runner.netTime);
                                         const cpName = runner.latestCheckpoint || runner.statusCheckpoint || '';
+
+                                        // Progress calculation (same logic as main table)
+                                        const checkpointMeta = getRunnerCheckpointMeta(runner);
+                                        const { evLookup, checkpointKey, checkpointOrder, totalCheckpoints: totalCps, completedCpCount, isFinishLike } = checkpointMeta;
+                                        let progressPct = 0;
+                                        let progressDistKm = 0;
+                                        let eventTotalKm = 0;
+                                        let progressLabel = '';
+                                        if (runner.status === 'finished' || isFinishLike) {
+                                            progressPct = 100;
+                                            if (totalCps > 0 && completedCpCount > 0) progressLabel = `${completedCpCount}/${totalCps} CP`;
+                                        } else {
+                                            if ((runner.passedCount ?? 0) > 0 && totalCps > 0) {
+                                                const ratio = Math.round((runner.passedCount! / totalCps) * 100);
+                                                progressPct = runner.passedCount! >= totalCps ? 100 : Math.min(99, ratio);
+                                                progressLabel = `${runner.passedCount}/${totalCps} CP`;
+                                            }
+                                            if (progressPct === 0 && evLookup && checkpointKey) {
+                                                const cpDist = evLookup.checkpoints[checkpointKey] ?? 0;
+                                                const total = parseDistanceValue(runner.category) || evLookup.totalDistance || 0;
+                                                if (cpDist > 0 && total > 0) {
+                                                    progressPct = Math.min(99, Math.round((cpDist / total) * 100));
+                                                    progressDistKm = cpDist;
+                                                    eventTotalKm = total;
+                                                }
+                                            }
+                                            if (progressPct === 0 && totalCps > 0 && checkpointOrder > 0) {
+                                                const cpOrder = Math.min(checkpointOrder, totalCps);
+                                                progressPct = Math.min(99, Math.round((cpOrder / totalCps) * 100));
+                                                progressLabel = `${cpOrder}/${totalCps} CP`;
+                                            }
+                                            if (progressPct === 0) {
+                                                const elapsed = runner.gunTime || runner.elapsedTime || 0;
+                                                const median = categoryMedianTime[runner.category] || 0;
+                                                if (elapsed > 0 && median > 0) {
+                                                    const maxPct = runner.status === 'dnf' ? 90 : runner.status === 'dns' ? 0 : 95;
+                                                    progressPct = Math.min(maxPct, Math.round((elapsed / median) * 100));
+                                                } else if (runner.isStarted || runner.status === 'in_progress') {
+                                                    progressPct = 5;
+                                                }
+                                            }
+                                        }
+                                        const progressBarBg = progressPct >= 100
+                                            ? '#22c55e'
+                                            : progressPct > 75
+                                                ? 'linear-gradient(90deg,#334155 0%,#ef4444 33%,#eab308 66%,#22c55e 100%)'
+                                                : progressPct > 50
+                                                    ? 'linear-gradient(90deg,#334155 0%,#ef4444 50%,#eab308 100%)'
+                                                    : progressPct > 25
+                                                        ? 'linear-gradient(90deg,#334155 0%,#ef4444 100%)'
+                                                        : '#334155';
+                                        const progressSubLabel = progressLabel
+                                            ? progressLabel
+                                            : progressDistKm > 0 && eventTotalKm > 0
+                                                ? `${progressDistKm.toFixed(1)}/${eventTotalKm.toFixed(0)}km`
+                                                : '';
+
                                         return (
                                             <div
                                                 key={runner._id}
@@ -2614,13 +2716,20 @@ export default function EventLivePage() {
                                                     )}
                                                 </div>
 
+                                                {/* Rank — desktop only */}
+                                                {!isMobile && (
+                                                    <div className="w-8 shrink-0 text-center font-mono text-[11px] font-bold" style={{ color: runner.overallRank ? themeStyles.text : themeStyles.textSecondary }}>
+                                                        {runner.overallRank || '—'}
+                                                    </div>
+                                                )}
+
                                                 {/* BIB */}
                                                 <span className="w-10 shrink-0 font-mono text-[12px] font-bold" style={{ color: '#3b82f6' }}>
                                                     {runner.bib}
                                                 </span>
 
                                                 {/* Name */}
-                                                <div className="min-w-0 flex-1">
+                                                <div className="min-w-0 w-36 shrink">
                                                     <div className="truncate text-[12px] font-semibold" style={{ color: themeStyles.text }}>
                                                         {runner.firstName} {runner.lastName}
                                                         {(runner.firstNameTh || runner.lastNameTh) && (
@@ -2660,25 +2769,37 @@ export default function EventLivePage() {
 
                                                 {/* Progress — desktop only */}
                                                 {!isMobile && (
-                                                    <div className="w-20 shrink-0">
-                                                        <div className="truncate text-[10px] font-semibold" style={{ color: cpName ? themeStyles.text : themeStyles.textSecondary }}>
-                                                            {cpName || '—'}
+                                                    <div className="w-28 shrink-0">
+                                                        <div className="mb-0.5 flex items-baseline justify-between gap-1">
+                                                            <span className="text-[11px] font-bold" style={{ color: themeStyles.text }}>{progressPct}%</span>
+                                                            {progressSubLabel && (
+                                                                <span className="truncate text-[9px]" style={{ color: themeStyles.textSecondary }}>{progressSubLabel}</span>
+                                                            )}
                                                         </div>
-                                                        {(runner.passedCount ?? 0) > 0 && (
-                                                            <div className="text-[9px]" style={{ color: themeStyles.textSecondary }}>
-                                                                {runner.passedCount} CP
-                                                            </div>
+                                                        <div className="h-1.5 w-full overflow-hidden rounded-[3px]" style={{ background: isDark ? 'rgba(255,255,255,0.1)' : '#f1f5f9' }}>
+                                                            <div style={{
+                                                                height: '100%',
+                                                                width: `${progressPct}%`,
+                                                                borderRadius: 3,
+                                                                background: progressBarBg,
+                                                                transition: 'width 0.5s ease',
+                                                            }} />
+                                                        </div>
+                                                        {cpName && (
+                                                            <div className="mt-0.5 truncate text-[9px]" style={{ color: themeStyles.textSecondary }}>{cpName}</div>
                                                         )}
                                                     </div>
                                                 )}
 
                                                 {/* Status badge */}
-                                                <span
-                                                    className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold"
-                                                    style={{ background: `${statusColor[runner.status] || '#94a3b8'}22`, color: statusColor[runner.status] || '#94a3b8' }}
-                                                >
-                                                    {runner.status === 'not_started' ? 'Wait' : runner.status === 'in_progress' ? 'Racing' : runner.status.toUpperCase()}
-                                                </span>
+                                                <div className="w-14 shrink-0 flex justify-center">
+                                                    <span
+                                                        className="rounded px-1.5 py-0.5 text-[10px] font-bold"
+                                                        style={{ background: `${statusColor[runner.status] || '#94a3b8'}22`, color: statusColor[runner.status] || '#94a3b8' }}
+                                                    >
+                                                        {runner.status === 'not_started' ? 'Wait' : runner.status === 'in_progress' ? 'Racing' : runner.status.toUpperCase()}
+                                                    </span>
+                                                </div>
                                             </div>
                                         );
                                     })}
