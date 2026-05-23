@@ -728,6 +728,7 @@ export default function ESlipPage() {
     const router = useRouter();
     const runnerId = params.id as string;
     const slipRef = useRef<HTMLDivElement>(null);
+    const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     const [runner, setRunner] = useState<RunnerData | null>(null);
     const [timings, setTimings] = useState<TimingRecord[]>([]);
@@ -872,6 +873,30 @@ export default function ESlipPage() {
         }
     };
 
+    const handleCardLongPress = async () => {
+        if (!slipRef.current || downloading) return;
+        setDownloading(true);
+        try {
+            const { toJpeg } = await import('html-to-image');
+            const v2Mode = campaign?.eslipMode === 'v2' && (campaign?.eslipV2Layout?.elements?.length ?? 0) > 0;
+            const opts = {
+                quality: 0.95,
+                pixelRatio: 3,
+                backgroundColor: v2Mode
+                    ? (campaign?.eslipV2Layout?.background?.color || '#1e293b')
+                    : activeTemplate === 'template3' ? '#f1f5f9' : '#0f172a',
+                cacheBust: true,
+            };
+            await toJpeg(slipRef.current, opts).catch(() => {});
+            const dataUrl = await toJpeg(slipRef.current, opts);
+            setPreviewImage(dataUrl);
+        } catch (err) {
+            console.error('Long-press save error:', err);
+        } finally {
+            setDownloading(false);
+        }
+    };
+
     if (loading) {
         return (
             <div className="min-h-screen flex items-center justify-center bg-slate-900 font-[Prompt]">
@@ -984,7 +1009,15 @@ export default function ESlipPage() {
                     </div>
                 )}
 
-                {/* Render Active Template */}
+                {/* Render Active Template — long-press on mobile triggers save */}
+                <div
+                    className="w-full flex flex-col items-center select-none"
+                    onTouchStart={() => { longPressTimerRef.current = setTimeout(handleCardLongPress, 500); }}
+                    onTouchEnd={() => { if (longPressTimerRef.current) { clearTimeout(longPressTimerRef.current); longPressTimerRef.current = null; } }}
+                    onTouchMove={() => { if (longPressTimerRef.current) { clearTimeout(longPressTimerRef.current); longPressTimerRef.current = null; } }}
+                    onTouchCancel={() => { if (longPressTimerRef.current) { clearTimeout(longPressTimerRef.current); longPressTimerRef.current = null; } }}
+                    onContextMenu={(e) => e.preventDefault()}
+                >
                 {modeIsV2 && !hasV2Layout
                     ? (
                         <div className="w-full max-w-[380px] rounded-[20px] bg-slate-800 border border-slate-700 flex flex-col items-center justify-center p-10 gap-4">
@@ -1004,6 +1037,7 @@ export default function ESlipPage() {
                         return <Template3 {...common} bgImage={null} />;
                     })()
                 }
+                </div>
 
                 {/* Action Buttons */}
                 <div className="flex gap-3 w-full max-w-[380px] mt-5">
@@ -1033,11 +1067,18 @@ export default function ESlipPage() {
             {/* Mobile preview overlay */}
             {previewImage && (
                 <div className="fixed inset-0 z-[100] bg-slate-900/95 flex flex-col items-center justify-center p-4 gap-4">
-                    <img src={previewImage} alt="E-Slip" className="max-w-full max-h-[75vh] rounded-2xl shadow-2xl" />
-                    <div className="text-center text-slate-300 text-sm bg-white/10 rounded-xl px-5 py-2.5 leading-relaxed">
-                        📲 <b className="text-green-400">กดค้างที่รูป</b> → เลือก <b className="text-green-400">&quot;บันทึกรูปภาพ&quot;</b><br />เพื่อบันทึกลงแกลเลอรีของคุณ
+                    <img
+                        src={previewImage}
+                        alt="E-Slip"
+                        className="max-w-full max-h-[70vh] rounded-2xl shadow-2xl"
+                        onContextMenu={(e) => e.preventDefault()}
+                    />
+                    <div className="text-center text-slate-300 text-sm bg-white/10 rounded-xl px-5 py-3 leading-relaxed max-w-[300px]">
+                        📲 <b className="text-green-400">กดค้างที่รูป</b> แล้วเลือก<br />
+                        <b className="text-green-400">&quot;บันทึกรูปภาพ&quot;</b> หรือ <b className="text-green-400">&quot;ดาวน์โหลดรูปภาพ&quot;</b><br />
+                        <span className="text-slate-400 text-xs">เพื่อบันทึกลงแกลเลอรีของคุณ</span>
                     </div>
-                    <button onClick={() => setPreviewImage(null)} className="mt-2 px-8 py-3 rounded-xl bg-white/10 text-white font-bold text-sm border border-white/20 cursor-pointer">
+                    <button onClick={() => setPreviewImage(null)} className="px-8 py-3 rounded-xl bg-white/10 text-white font-bold text-sm border border-white/20 cursor-pointer">
                         ✕ ปิด
                     </button>
                 </div>
