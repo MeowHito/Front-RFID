@@ -36,7 +36,7 @@ interface Campaign {
     overallDisplayCount?: number;
 }
 
-const REFRESH_INTERVAL = 5;
+const REFRESH_INTERVAL = 10;
 
 function formatTime(ms: number | undefined | null): string {
     if (ms === undefined || ms === null || ms <= 0) return '-';
@@ -53,10 +53,11 @@ export default function OverallWinnersBySlugPage() {
     const [campaign, setCampaign] = useState<Campaign | null>(null);
     const [campaignNotFound, setCampaignNotFound] = useState(false);
     const [selectedCategory, setSelectedCategory] = useState<string>('');
-    const [runners, setRunners] = useState<Runner[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [countdown, setCountdown] = useState(REFRESH_INTERVAL);
+    // displayedRunners always holds the last successfully loaded data — never cleared between refreshes
+    const [displayedRunners, setDisplayedRunners] = useState<Runner[]>([]);
+    const [initialLoading, setInitialLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
+    const [countdown, setCountdown] = useState(REFRESH_INTERVAL);
     const refreshTimerRef = useRef<NodeJS.Timeout | null>(null);
     const countdownRef = useRef<NodeJS.Timeout | null>(null);
     const [isMobile, setIsMobile] = useState(false);
@@ -65,6 +66,7 @@ export default function OverallWinnersBySlugPage() {
     const autoTimerRef = useRef<NodeJS.Timeout | null>(null);
     const autoCountdownRef = useRef<NodeJS.Timeout | null>(null);
     const campaignCategoriesRef = useRef<CampaignCategory[]>([]);
+    const displayedCategoryRef = useRef<string>('');
 
     useEffect(() => {
         const check = () => setIsMobile(window.innerWidth < 768);
@@ -82,9 +84,7 @@ export default function OverallWinnersBySlugPage() {
                     const data = await res.json();
                     if (data?._id) {
                         setCampaign(data);
-                        if (data.categories?.length > 0) {
-                            setSelectedCategory(data.categories[0].name);
-                        }
+                        if (data.categories?.length > 0) setSelectedCategory(data.categories[0].name);
                     } else {
                         setCampaignNotFound(true);
                     }
@@ -94,40 +94,39 @@ export default function OverallWinnersBySlugPage() {
             } catch {
                 setCampaignNotFound(true);
             } finally {
-                setLoading(false);
+                setInitialLoading(false);
             }
         })();
     }, [slug]);
 
     const loadRunners = useCallback(async (isRefresh = false) => {
-        if (!campaign?._id || !selectedCategory) {
-            setRunners([]);
-            return;
-        }
-        if (isRefresh) setRefreshing(true); else setLoading(true);
+        if (!campaign?._id || !selectedCategory) { setDisplayedRunners([]); return; }
+
+        const categoryChanged = displayedCategoryRef.current !== selectedCategory;
+        const hasExistingData = displayedRunners.length > 0 && !categoryChanged;
+
+        if (!hasExistingData) setInitialLoading(true);
+        if (isRefresh || hasExistingData) setRefreshing(true);
+
         try {
-            const params = new URLSearchParams({
-                campaignId: campaign._id,
-                category: selectedCategory,
-                limit: '10000',
-                skipStatusCounts: 'true',
-            });
-            const res = await fetch(`/api/runners/paged?${params.toString()}`, { cache: 'no-store' });
+            const p = new URLSearchParams({ campaignId: campaign._id, category: selectedCategory, limit: '10000', skipStatusCounts: 'true' });
+            const res = await fetch(`/api/runners/paged?${p.toString()}`, { cache: 'no-store' });
             if (res.ok) {
                 const data = await res.json();
-                setRunners(data.data || []);
+                setDisplayedRunners(data.data || []);
+                displayedCategoryRef.current = selectedCategory;
             }
-        } catch {
-        } finally {
-            setLoading(false);
+        } catch { /* keep showing previous data */ } finally {
+            setInitialLoading(false);
             setRefreshing(false);
         }
-    }, [campaign, selectedCategory]);
+    }, [campaign, selectedCategory]); // eslint-disable-line react-hooks/exhaustive-deps
 
     useEffect(() => {
         loadRunners(false);
     }, [loadRunners]);
 
+    // Auto-refresh every 10 seconds
     useEffect(() => {
         if (!campaign?._id || !selectedCategory) return;
         setCountdown(REFRESH_INTERVAL);
@@ -138,6 +137,7 @@ export default function OverallWinnersBySlugPage() {
 
         refreshTimerRef.current = setInterval(() => {
             loadRunners(true);
+            setCountdown(REFRESH_INTERVAL);
         }, REFRESH_INTERVAL * 1000);
 
         return () => {
@@ -146,12 +146,10 @@ export default function OverallWinnersBySlugPage() {
         };
     }, [campaign, selectedCategory, loadRunners]);
 
-    // Sync categories ref so auto timer can access latest without re-registering interval
     useEffect(() => {
         campaignCategoriesRef.current = campaign?.categories || [];
     }, [campaign]);
 
-    // Auto-cycling through categories every 5s
     useEffect(() => {
         if (!autoMode) {
             if (autoTimerRef.current) clearInterval(autoTimerRef.current);
@@ -180,29 +178,24 @@ export default function OverallWinnersBySlugPage() {
     const topN = Math.max(1, campaign?.overallDisplayCount || 5);
 
     const { maleWinners, femaleWinners } = useMemo(() => {
-        const finished = runners.filter(r => r.status === 'finished' && (r.netTime || r.gunTime || r.elapsedTime));
+        const finished = displayedRunners.filter(r => r.status === 'finished' && (r.netTime || r.gunTime || r.elapsedTime));
         const sorted = [...finished].sort((a, b) => {
             const at = a.netTime || a.gunTime || a.elapsedTime || Infinity;
             const bt = b.netTime || b.gunTime || b.elapsedTime || Infinity;
             return at - bt;
         });
-
         return {
             maleWinners: sorted.filter(r => r.gender !== 'F').slice(0, topN),
             femaleWinners: sorted.filter(r => r.gender === 'F').slice(0, topN),
         };
-    }, [runners, topN]);
+    }, [displayedRunners, topN]);
 
     const rankBg = ['#f59e0b', '#9ca3af', '#92400e', '#e2e8f0', '#e2e8f0'];
     const rankFg = ['#000', '#fff', '#fff', '#475569', '#475569'];
 
     if (campaignNotFound) {
         return (
-            <div style={{
-                fontFamily: "'Prompt', 'Inter', sans-serif", background: '#0f172a',
-                height: '100vh', display: 'flex', flexDirection: 'column',
-                alignItems: 'center', justifyContent: 'center',
-            }}>
+            <div style={{ fontFamily: "'Prompt', 'Inter', sans-serif", background: '#0f172a', height: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
                 <div style={{ fontSize: 80, marginBottom: 24 }}>❌</div>
                 <div style={{ fontSize: 28, fontWeight: 900, color: '#ef4444', marginBottom: 8 }}>ไม่พบกิจกรรม</div>
                 <div style={{ fontSize: 16, color: '#94a3b8' }}>Campaign Not Found — กรุณาตรวจสอบลิงก์อีกครั้ง</div>
@@ -240,7 +233,7 @@ export default function OverallWinnersBySlugPage() {
                 {title}
             </div>
             <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: 8, overflow: 'hidden', display: 'flex', flexDirection: 'column', flexShrink: 0, minHeight: isMobile ? 180 : '28vh' }}>
-<div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'flex-start', flex: 1, padding: isMobile ? '4px' : '0.35vh 4px', minHeight: 0 }}>
+                <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'flex-start', flex: 1, padding: isMobile ? '4px' : '0.35vh 4px', minHeight: 0 }}>
                     {Array.from({ length: topN }, (_, i) => i).map(i => list[i] ? renderRunnerRow(list[i], i) : renderEmptyRow(i))}
                 </div>
             </div>
@@ -279,13 +272,7 @@ export default function OverallWinnersBySlugPage() {
                                     <button
                                         key={cat.name}
                                         onClick={() => { setSelectedCategory(cat.name); setAutoMode(false); }}
-                                        style={{
-                                            padding: isMobile ? '6px 12px' : '0.4vh 1vw', borderRadius: 6, fontSize: isMobile ? 12 : '1.3vh', fontWeight: 700,
-                                            border: selectedCategory === cat.name ? '2px solid #38bdf8' : '1px solid #475569',
-                                            background: selectedCategory === cat.name ? '#38bdf8' : 'transparent',
-                                            color: selectedCategory === cat.name ? '#082f49' : '#cbd5e1',
-                                            cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
-                                        }}
+                                        style={{ padding: isMobile ? '6px 12px' : '0.4vh 1vw', borderRadius: 6, fontSize: isMobile ? 12 : '1.3vh', fontWeight: 700, border: selectedCategory === cat.name ? '2px solid #38bdf8' : '1px solid #475569', background: selectedCategory === cat.name ? '#38bdf8' : 'transparent', color: selectedCategory === cat.name ? '#082f49' : '#cbd5e1', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }}
                                     >
                                         {cat.name}{cat.distance ? ` (${cat.distance})` : ''}
                                     </button>
@@ -294,19 +281,7 @@ export default function OverallWinnersBySlugPage() {
                             {campaign.categories.length > 1 && (
                                 <button
                                     onClick={() => setAutoMode(m => !m)}
-                                    style={{
-                                        display: 'flex', alignItems: 'center', gap: 6,
-                                        padding: isMobile ? '6px 12px' : '0.4vh 0.8vw',
-                                        background: autoMode ? '#38bdf8' : 'transparent',
-                                        border: `1px solid ${autoMode ? '#38bdf8' : '#475569'}`,
-                                        borderRadius: 6,
-                                        color: autoMode ? '#082f49' : '#94a3b8',
-                                        fontSize: isMobile ? 12 : '1.3vh', fontWeight: 800,
-                                        cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
-                                        minWidth: isMobile ? 80 : 72,
-                                        justifyContent: 'center',
-                                        transition: 'background 0.2s, color 0.2s, border-color 0.2s',
-                                    }}
+                                    style={{ display: 'flex', alignItems: 'center', gap: 6, padding: isMobile ? '6px 12px' : '0.4vh 0.8vw', background: autoMode ? '#38bdf8' : 'transparent', border: `1px solid ${autoMode ? '#38bdf8' : '#475569'}`, borderRadius: 6, color: autoMode ? '#082f49' : '#94a3b8', fontSize: isMobile ? 12 : '1.3vh', fontWeight: 800, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0, minWidth: isMobile ? 80 : 72, justifyContent: 'center', transition: 'background 0.2s, color 0.2s, border-color 0.2s' }}
                                 >
                                     {autoMode ? `⏸ ${autoCountdown}s` : '▶ AUTO'}
                                 </button>
@@ -316,35 +291,13 @@ export default function OverallWinnersBySlugPage() {
                 </div>
             </header>
 
-            {/* Campaign + category banner */}
             {campaign && (
-                <div style={{
-                    display: 'flex', flexDirection: isMobile ? 'column' : 'row',
-                    alignItems: 'center', justifyContent: 'center',
-                    gap: isMobile ? 4 : '0.8vw',
-                    padding: isMobile ? '8px 12px' : '0.5vh 1.5vw',
-                    background: '#1e293b', borderRadius: 10,
-                    marginBottom: isMobile ? 8 : '0.8vh',
-                    border: '1px solid #334155', flexShrink: 0,
-                    textAlign: 'center',
-                }}>
-                    <span style={{
-                        fontSize: isMobile ? 15 : '2.2vh', fontWeight: 900,
-                        color: '#f1f5f9', letterSpacing: 0.5,
-                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                        maxWidth: isMobile ? '100%' : '55vw',
-                    }}>
+                <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', alignItems: 'center', justifyContent: 'center', gap: isMobile ? 4 : '0.8vw', padding: isMobile ? '8px 12px' : '0.5vh 1.5vw', background: '#1e293b', borderRadius: 10, marginBottom: isMobile ? 8 : '0.8vh', border: '1px solid #334155', flexShrink: 0, textAlign: 'center' }}>
+                    <span style={{ fontSize: isMobile ? 15 : '2.2vh', fontWeight: 900, color: '#f1f5f9', letterSpacing: 0.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: isMobile ? '100%' : '55vw' }}>
                         {campaign.name}
                     </span>
                     {selectedCategory && (
-                        <span style={{
-                            display: 'inline-flex', alignItems: 'center',
-                            padding: isMobile ? '3px 14px' : '0.2vh 1.2vw',
-                            background: '#38bdf8', color: '#082f49',
-                            borderRadius: 999, fontWeight: 900,
-                            fontSize: isMobile ? 13 : '1.8vh', letterSpacing: 1,
-                            whiteSpace: 'nowrap', flexShrink: 0,
-                        }}>
+                        <span style={{ display: 'inline-flex', alignItems: 'center', padding: isMobile ? '3px 14px' : '0.2vh 1.2vw', background: '#38bdf8', color: '#082f49', borderRadius: 999, fontWeight: 900, fontSize: isMobile ? 13 : '1.8vh', letterSpacing: 1, whiteSpace: 'nowrap', flexShrink: 0 }}>
                             {selectedCategory}
                             {campaign.categories?.find(c => c.name === selectedCategory)?.distance
                                 ? ` · ${campaign.categories!.find(c => c.name === selectedCategory)!.distance}`
@@ -354,7 +307,8 @@ export default function OverallWinnersBySlugPage() {
                 </div>
             )}
 
-            {loading ? (
+            {/* Show loading only on very first load — never blank the screen on refresh */}
+            {initialLoading && displayedRunners.length === 0 ? (
                 <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', fontSize: isMobile ? 16 : '2vh' }}>
                     Loading...
                 </div>

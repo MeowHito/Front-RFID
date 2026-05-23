@@ -4,6 +4,9 @@ import "./globals.css";
 import { AuthProvider } from "@/lib/auth-context";
 import { ThemeProvider } from "@/lib/theme-context";
 import { LanguageProvider } from "@/lib/language-context";
+import Script from "next/script";
+
+const GA_ID = process.env.NEXT_PUBLIC_GA_ID;
 
 const prompt = Prompt({
   variable: "--font-prompt",
@@ -44,6 +47,17 @@ export default function RootLayout({
     <html lang="th" className="light" suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
+        {GA_ID && (
+          <>
+            <Script src={`https://www.googletagmanager.com/gtag/js?id=${GA_ID}`} strategy="afterInteractive" />
+            <Script id="ga-init" strategy="afterInteractive">{`
+              window.dataLayer = window.dataLayer || [];
+              function gtag(){dataLayer.push(arguments);}
+              gtag('js', new Date());
+              gtag('config', '${GA_ID}', { page_path: window.location.pathname });
+            `}</Script>
+          </>
+        )}
       </head>
       <body
         className={`${prompt.variable} font-sans antialiased`}

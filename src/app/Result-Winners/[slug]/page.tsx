@@ -76,37 +76,24 @@ function parseAgeGroupBucket(value?: string | null): AgeGroupBucket | null {
 
     const rangeMatch = label.match(/(\d+)\s*-\s*(\d+)/);
     if (rangeMatch) {
-        return {
-            label,
-            min: parseInt(rangeMatch[1]),
-            max: parseInt(rangeMatch[2]),
-        };
+        return { label, min: parseInt(rangeMatch[1]), max: parseInt(rangeMatch[2]) };
     }
 
     const underMatch = label.match(/(?:u|under)\s*(\d+)/i);
     if (underMatch) {
         const max = parseInt(underMatch[1]) - 1;
-        return {
-            label,
-            min: 0,
-            max: max >= 0 ? max : 0,
-        };
+        return { label, min: 0, max: max >= 0 ? max : 0 };
     }
 
     const plusMatch = label.match(/(\d+)\s*\+/);
     if (plusMatch) {
-        return {
-            label,
-            min: parseInt(plusMatch[1]),
-            max: 999,
-        };
+        return { label, min: parseInt(plusMatch[1]), max: 999 };
     }
 
     return null;
 }
 
 function buildAgeGroupsFromConfig(ageGroups: AgeGroupConfig[]): AgeGroupBucket[] {
-    // Extract unique age ranges (deduplicate male/female pairs)
     const seen = new Map<string, AgeGroupBucket>();
     for (const g of ageGroups) {
         if (!g.active) continue;
@@ -118,7 +105,6 @@ function buildAgeGroupsFromConfig(ageGroups: AgeGroupConfig[]): AgeGroupBucket[]
         }
     }
     const buckets = Array.from(seen.values());
-    // Sort by minAge ascending
     buckets.sort((a, b) => a.min - b.min);
     return buckets.length > 0 ? buckets : DEFAULT_AGE_GROUPS;
 }
@@ -129,9 +115,7 @@ function buildAgeGroupsFromRunners(runners: Runner[]): AgeGroupBucket[] {
         const bucket = parseAgeGroupBucket(runner.ageGroup);
         if (!bucket) continue;
         const key = bucket.label.toLowerCase();
-        if (!seen.has(key)) {
-            seen.set(key, bucket);
-        }
+        if (!seen.has(key)) seen.set(key, bucket);
     }
     return Array.from(seen.values()).sort((a, b) => {
         if (a.min !== b.min) return a.min - b.min;
@@ -152,7 +136,6 @@ function resolveAgeGroup(runner: Runner, ageGroups: AgeGroupBucket[]): string {
     const ag = normalizeAgeGroupLabel(runner.ageGroup);
     const exactMatch = ageGroups.find(g => normalizeAgeGroupLabel(g.label).toLowerCase() === ag.toLowerCase());
     if (exactMatch) return exactMatch.label;
-    // Try to parse age range like "30-39"
     const rangeMatch = ag.match(/(\d+)\s*-\s*(\d+)/);
     if (rangeMatch) {
         const lo = parseInt(rangeMatch[1]);
@@ -160,7 +143,6 @@ function resolveAgeGroup(runner: Runner, ageGroups: AgeGroupBucket[]): string {
             if (lo >= g.min && lo <= g.max) return g.label;
         }
     }
-    // Try from age field
     if (runner.age) {
         for (const g of ageGroups) {
             if (runner.age >= g.min && runner.age <= g.max) return g.label;
@@ -171,7 +153,7 @@ function resolveAgeGroup(runner: Runner, ageGroups: AgeGroupBucket[]): string {
     return 'Unknown';
 }
 
-const REFRESH_INTERVAL = 5; // seconds
+const REFRESH_INTERVAL = 10;
 
 export default function ResultWinnersBySlugPage() {
     const params = useParams();
@@ -180,10 +162,11 @@ export default function ResultWinnersBySlugPage() {
     const [campaign, setCampaign] = useState<Campaign | null>(null);
     const [campaignNotFound, setCampaignNotFound] = useState(false);
     const [selectedCategory, setSelectedCategory] = useState<string>('');
-    const [runners, setRunners] = useState<Runner[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [countdown, setCountdown] = useState(REFRESH_INTERVAL);
+    // displayedRunners always holds the last successfully loaded data — never cleared between refreshes
+    const [displayedRunners, setDisplayedRunners] = useState<Runner[]>([]);
+    const [initialLoading, setInitialLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
+    const [countdown, setCountdown] = useState(REFRESH_INTERVAL);
     const refreshTimerRef = useRef<NodeJS.Timeout | null>(null);
     const countdownRef = useRef<NodeJS.Timeout | null>(null);
     const [isMobile, setIsMobile] = useState(false);
@@ -197,6 +180,8 @@ export default function ResultWinnersBySlugPage() {
     const [volume, setVolume] = useState(1);
     const volumeRef = useRef(1);
     const prevFinishedIdsRef = useRef<Set<string> | null>(null);
+    // Track category for which data is currently displayed — clears old data only when category actually changes
+    const displayedCategoryRef = useRef<string>('');
 
     useEffect(() => {
         const check = () => setIsMobile(window.innerWidth < 768);
@@ -205,7 +190,6 @@ export default function ResultWinnersBySlugPage() {
         return () => window.removeEventListener('resize', check);
     }, []);
 
-    // Load campaign by slug
     useEffect(() => {
         if (!slug) return;
         (async () => {
@@ -215,9 +199,7 @@ export default function ResultWinnersBySlugPage() {
                     const data = await res.json();
                     if (data?._id) {
                         setCampaign(data);
-                        if (data.categories?.length > 0) {
-                            setSelectedCategory(data.categories[0].name);
-                        }
+                        if (data.categories?.length > 0) setSelectedCategory(data.categories[0].name);
                     } else {
                         setCampaignNotFound(true);
                     }
@@ -227,46 +209,53 @@ export default function ResultWinnersBySlugPage() {
             } catch {
                 setCampaignNotFound(true);
             } finally {
-                setLoading(false);
+                setInitialLoading(false);
             }
         })();
     }, [slug]);
 
-    // Load runners — called on campaign/category change + auto-refresh
     const loadRunners = useCallback(async (isRefresh = false) => {
-        if (!campaign?._id || !selectedCategory) { setRunners([]); return; }
-        if (isRefresh) setRefreshing(true); else setLoading(true);
+        if (!campaign?._id || !selectedCategory) { setDisplayedRunners([]); return; }
+
+        // Only show full loading screen when switching to a new category with no data yet
+        const categoryChanged = displayedCategoryRef.current !== selectedCategory;
+        const hasExistingData = displayedRunners.length > 0 && !categoryChanged;
+
+        if (!hasExistingData) setInitialLoading(true);
+        if (isRefresh || hasExistingData) setRefreshing(true);
+
         try {
-            const params = new URLSearchParams({ campaignId: campaign._id, category: selectedCategory, limit: '10000', skipStatusCounts: 'true' });
-            const res = await fetch(`/api/runners/paged?${params.toString()}`, { cache: 'no-store' });
+            const p = new URLSearchParams({ campaignId: campaign._id, category: selectedCategory, limit: '10000', skipStatusCounts: 'true' });
+            const res = await fetch(`/api/runners/paged?${p.toString()}`, { cache: 'no-store' });
             if (res.ok) {
                 const data = await res.json();
-                setRunners(data.data || []);
+                const newRunners = data.data || [];
+                // Atomically swap — no blank flash between old and new data
+                setDisplayedRunners(newRunners);
+                displayedCategoryRef.current = selectedCategory;
             }
-        } catch { /* */ } finally {
-            setLoading(false);
+        } catch { /* keep showing previous data */ } finally {
+            setInitialLoading(false);
             setRefreshing(false);
         }
-    }, [campaign, selectedCategory]);
+    }, [campaign, selectedCategory]); // eslint-disable-line react-hooks/exhaustive-deps
 
-    // Initial load + re-load on campaign/category change
     useEffect(() => {
         loadRunners(false);
     }, [loadRunners]);
 
-    // Auto-refresh every 15 seconds
+    // Auto-refresh every 10 seconds
     useEffect(() => {
         if (!campaign?._id || !selectedCategory) return;
         setCountdown(REFRESH_INTERVAL);
 
-        // Countdown ticker
         countdownRef.current = setInterval(() => {
             setCountdown(prev => (prev <= 1 ? REFRESH_INTERVAL : prev - 1));
         }, 1000);
 
-        // Data refresh
         refreshTimerRef.current = setInterval(() => {
             loadRunners(true);
+            setCountdown(REFRESH_INTERVAL);
         }, REFRESH_INTERVAL * 1000);
 
         return () => {
@@ -275,12 +264,10 @@ export default function ResultWinnersBySlugPage() {
         };
     }, [campaign, selectedCategory, loadRunners]);
 
-    // Sync categories ref so auto timer can access latest without re-registering interval
     useEffect(() => {
         campaignCategoriesRef.current = campaign?.categories || [];
     }, [campaign]);
 
-    // Auto-cycling through categories every 15s
     useEffect(() => {
         if (!autoMode) {
             if (autoTimerRef.current) clearInterval(autoTimerRef.current);
@@ -306,23 +293,16 @@ export default function ResultWinnersBySlugPage() {
         };
     }, [autoMode]);
 
-    // Sync volumeRef so sound effect always uses latest volume
     useEffect(() => { volumeRef.current = volume; }, [volume]);
-
-    // Reset finished tracking when category changes (don't play sounds on category switch)
     useEffect(() => { prevFinishedIdsRef.current = null; }, [selectedCategory]);
 
-    // Detect new finished runners and play sound
     useEffect(() => {
         const finishedNow = new Set(
-            runners
+            displayedRunners
                 .filter(r => r.status === 'finished' && (r.netTime || r.gunTime))
                 .map(r => r._id)
         );
-        if (prevFinishedIdsRef.current === null) {
-            prevFinishedIdsRef.current = finishedNow;
-            return;
-        }
+        if (prevFinishedIdsRef.current === null) { prevFinishedIdsRef.current = finishedNow; return; }
         const newIds = [...finishedNow].filter(id => !prevFinishedIdsRef.current!.has(id));
         prevFinishedIdsRef.current = finishedNow;
         if (newIds.length === 0) return;
@@ -333,49 +313,40 @@ export default function ResultWinnersBySlugPage() {
                 audio.play().catch(() => {});
             }, i * 400);
         });
-    }, [runners]);
+    }, [displayedRunners]);
 
-    // Close dropdown on outside click
     useEffect(() => {
         const handler = (e: MouseEvent) => {
-            if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
-                setDropdownOpen(false);
-            }
+            if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) setDropdownOpen(false);
         };
         document.addEventListener('mousedown', handler);
         return () => document.removeEventListener('mousedown', handler);
     }, []);
 
-    // Derive active age groups from selected category's config
     const disableAgeGroupRanking = false;
     const topN = Math.max(1, campaign?.ageGroupDisplayCount || 5);
 
     const activeAgeGroups = useMemo(() => {
         if (disableAgeGroupRanking) return [OVERALL_GROUP];
-        const syncedAgeGroups = buildAgeGroupsFromRunners(runners);
+        const syncedAgeGroups = buildAgeGroupsFromRunners(displayedRunners);
         if (syncedAgeGroups.length > 0) return syncedAgeGroups;
         if (!campaign?.categories || !selectedCategory) return DEFAULT_AGE_GROUPS;
         const cat = campaign.categories.find(c => c.name === selectedCategory);
         if (!cat?.ageGroups || cat.ageGroups.length === 0) return DEFAULT_AGE_GROUPS;
         return buildAgeGroupsFromConfig(cat.ageGroups);
-    }, [campaign, selectedCategory, runners, disableAgeGroupRanking]);
+    }, [campaign, selectedCategory, displayedRunners, disableAgeGroupRanking]);
 
-    // Build winners per gender per age group
     const { maleWinners, femaleWinners } = useMemo(() => {
-        const finished = runners.filter(r => r.status === 'finished' && (r.netTime || r.gunTime));
+        const finished = displayedRunners.filter(r => r.status === 'finished' && (r.netTime || r.gunTime));
         const sorted = [...finished].sort((a, b) => {
             const at = a.netTime || a.gunTime || a.elapsedTime || Infinity;
             const bt = b.netTime || b.gunTime || b.elapsedTime || Infinity;
             return at - bt;
         });
 
-        // Exclude top N overall winners from age group rankings if configured
         const excludeN = campaign?.excludeOverallFromAgeGroup || 0;
         const excludedBibs = new Set<string>();
-        if (excludeN > 0) {
-            // Top N overall = first N in sorted list (regardless of gender)
-            sorted.slice(0, excludeN).forEach(r => excludedBibs.add(r.bib));
-        }
+        if (excludeN > 0) sorted.slice(0, excludeN).forEach(r => excludedBibs.add(r.bib));
 
         const maleWinners: Record<string, Runner[]> = {};
         const femaleWinners: Record<string, Runner[]> = {};
@@ -385,24 +356,17 @@ export default function ResultWinnersBySlugPage() {
             if (excludedBibs.has(runner.bib)) continue;
             const ag = disableAgeGroupRanking ? OVERALL_GROUP.label : resolveAgeGroup(runner, activeAgeGroups);
             const bucket = runner.gender === 'F' ? femaleWinners : maleWinners;
-            if (bucket[ag] && bucket[ag].length < topN) {
-                bucket[ag].push(runner);
-            }
+            if (bucket[ag] && bucket[ag].length < topN) bucket[ag].push(runner);
         }
         return { maleWinners, femaleWinners };
-    }, [runners, campaign, activeAgeGroups, disableAgeGroupRanking, topN]);
+    }, [displayedRunners, campaign, activeAgeGroups, disableAgeGroupRanking, topN]);
 
     const rankBg = ['#f59e0b', '#9ca3af', '#92400e', '#e2e8f0', '#e2e8f0'];
     const rankFg = ['#000', '#fff', '#fff', '#475569', '#475569'];
 
-    // Campaign not found
     if (campaignNotFound) {
         return (
-            <div style={{
-                fontFamily: "'Prompt', 'Inter', sans-serif", background: '#0f172a',
-                height: '100vh', display: 'flex', flexDirection: 'column',
-                alignItems: 'center', justifyContent: 'center',
-            }}>
+            <div style={{ fontFamily: "'Prompt', 'Inter', sans-serif", background: '#0f172a', height: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
                 <div style={{ fontSize: 80, marginBottom: 24 }}>❌</div>
                 <div style={{ fontSize: 28, fontWeight: 900, color: '#ef4444', marginBottom: 8 }}>ไม่พบกิจกรรม</div>
                 <div style={{ fontSize: 16, color: '#94a3b8' }}>Campaign Not Found — กรุณาตรวจสอบลิงก์อีกครั้ง</div>
@@ -411,7 +375,6 @@ export default function ResultWinnersBySlugPage() {
         );
     }
 
-    // Render a single runner row
     const renderRunnerRow = (runner: Runner, idx: number) => (
         <div key={runner._id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: isMobile ? '4px 8px' : '0.3vh 8px', borderRadius: 5, background: idx === 0 ? '#fffbeb' : 'transparent', height: isMobile ? 'auto' : '2.8vh', minHeight: isMobile ? 28 : 22 }}>
             <div style={{ width: isMobile ? 22 : '2.2vh', height: isMobile ? 22 : '2.2vh', minWidth: 18, minHeight: 18, borderRadius: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: isMobile ? 12 : '1.3vh', fontWeight: 900, flexShrink: 0, background: rankBg[idx] || '#e2e8f0', color: rankFg[idx] || '#475569' }}>
@@ -426,7 +389,6 @@ export default function ResultWinnersBySlugPage() {
         </div>
     );
 
-    // Render an empty placeholder row
     const renderEmptyRow = (idx: number) => (
         <div key={`empty-${idx}`} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: isMobile ? '4px 8px' : '0.3vh 8px', height: isMobile ? 'auto' : '2.8vh', minHeight: isMobile ? 28 : 22 }}>
             <div style={{ width: isMobile ? 22 : '2.2vh', height: isMobile ? 22 : '2.2vh', minWidth: 18, minHeight: 18, borderRadius: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: isMobile ? 12 : '1.3vh', fontWeight: 900, flexShrink: 0, background: '#f1f5f9', color: '#cbd5e1' }}>
@@ -436,7 +398,6 @@ export default function ResultWinnersBySlugPage() {
         </div>
     );
 
-    // Render a winners column
     const renderColumn = (title: string, bgHeader: string, bgAgeHeader: string, winners: Record<string, Runner[]>) => (
         <div style={{ display: 'flex', flexDirection: 'column', gap: isMobile ? 8 : '0.6vh', minHeight: 0, flex: 1, overflowY: isMobile ? 'visible' : 'auto', paddingRight: isMobile ? 0 : 4 }}>
             <div style={{ padding: isMobile ? '8px 0' : '0.7vh 0', fontWeight: 900, fontSize: isMobile ? 16 : '2vh', textAlign: 'center', textTransform: 'uppercase', borderRadius: 8, color: 'white', letterSpacing: 2, background: bgHeader, flexShrink: 0 }}>
@@ -462,9 +423,7 @@ export default function ResultWinnersBySlugPage() {
     return (
         <div style={{ fontFamily: "'Prompt', 'Inter', sans-serif", background: '#0f172a', height: isMobile ? 'auto' : '100vh', minHeight: '100vh', overflow: isMobile ? 'auto' : 'hidden', display: 'flex', flexDirection: 'column', padding: isMobile ? '8px' : '0.8vh 1vw' }}>
             <style>{`@keyframes pulse { 0%,100% { opacity:1 } 50% { opacity:0.3 } }`}</style>
-            {/* Header */}
             <header style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', justifyContent: 'space-between', alignItems: isMobile ? 'stretch' : 'center', padding: isMobile ? '10px 12px' : '0.6vh 1.5vw', background: '#1e293b', borderRadius: 10, marginBottom: isMobile ? 8 : '0.8vh', flexShrink: 0, border: '1px solid #334155', gap: isMobile ? 8 : 0 }}>
-                {/* Top row: Logo + refresh */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <Link href="/" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                         <Image src="/logo-white.png" alt="ACTION" width={120} height={40} style={{ height: isMobile ? 28 : '3.5vh', width: 'auto' }} />
@@ -479,7 +438,6 @@ export default function ResultWinnersBySlugPage() {
                     </div>
                 </div>
 
-                {/* Right: Campaign name + volume slider + category dropdown + auto button */}
                 <div style={{ display: 'flex', alignItems: isMobile ? 'stretch' : 'center', gap: isMobile ? 6 : '1vw', flexDirection: isMobile ? 'column' : 'row' }}>
                     {campaign && (
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8, overflow: 'hidden', flexShrink: 1 }}>
@@ -491,11 +449,7 @@ export default function ResultWinnersBySlugPage() {
                                     {volume === 0 ? '🔇' : '🔊'}
                                 </span>
                                 <input
-                                    type="range"
-                                    min={0}
-                                    max={1}
-                                    step={0.05}
-                                    value={volume}
+                                    type="range" min={0} max={1} step={0.05} value={volume}
                                     onChange={e => setVolume(parseFloat(e.target.value))}
                                     style={{ width: isMobile ? 64 : '4.5vw', minWidth: 48, accentColor: '#22c55e', cursor: 'pointer', verticalAlign: 'middle' }}
                                 />
@@ -505,19 +459,10 @@ export default function ResultWinnersBySlugPage() {
 
                     {campaign?.categories && campaign.categories.length > 0 && (
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-                            {/* Category dropdown */}
                             <div ref={dropdownRef} style={{ position: 'relative' }}>
                                 <button
                                     onClick={() => setDropdownOpen(d => !d)}
-                                    style={{
-                                        display: 'flex', alignItems: 'center', gap: 8,
-                                        padding: isMobile ? '6px 12px' : '0.4vh 0.8vw',
-                                        background: '#0f172a', border: `1px solid ${dropdownOpen ? '#22c55e' : '#475569'}`,
-                                        borderRadius: 8, color: '#f1f5f9',
-                                        fontSize: isMobile ? 12 : '1.3vh', fontWeight: 700,
-                                        cursor: 'pointer', whiteSpace: 'nowrap',
-                                        fontFamily: "'Prompt', 'Inter', sans-serif",
-                                    }}
+                                    style={{ display: 'flex', alignItems: 'center', gap: 8, padding: isMobile ? '6px 12px' : '0.4vh 0.8vw', background: '#0f172a', border: `1px solid ${dropdownOpen ? '#22c55e' : '#475569'}`, borderRadius: 8, color: '#f1f5f9', fontSize: isMobile ? 12 : '1.3vh', fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: "'Prompt', 'Inter', sans-serif" }}
                                 >
                                     {selectedCategory
                                         ? `${selectedCategory}${campaign.categories.find(c => c.name === selectedCategory)?.distance ? ` (${campaign.categories.find(c => c.name === selectedCategory)!.distance})` : ''}`
@@ -525,31 +470,12 @@ export default function ResultWinnersBySlugPage() {
                                     <span style={{ fontSize: 10, opacity: 0.6, transform: dropdownOpen ? 'rotate(180deg)' : 'none', display: 'inline-block', transition: 'transform 0.15s' }}>▾</span>
                                 </button>
                                 {dropdownOpen && (
-                                    <div style={{
-                                        position: 'absolute', top: 'calc(100% + 4px)', right: 0,
-                                        background: '#1e293b', border: '1px solid #475569',
-                                        borderRadius: 8, overflow: 'hidden', zIndex: 100,
-                                        minWidth: 180, boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
-                                    }}>
+                                    <div style={{ position: 'absolute', top: 'calc(100% + 4px)', right: 0, background: '#1e293b', border: '1px solid #475569', borderRadius: 8, overflow: 'hidden', zIndex: 100, minWidth: 180, boxShadow: '0 8px 24px rgba(0,0,0,0.5)' }}>
                                         {campaign.categories.map((cat, i) => (
                                             <button
                                                 key={cat.name}
-                                                onClick={() => {
-                                                    setSelectedCategory(cat.name);
-                                                    setAutoMode(false);
-                                                    setDropdownOpen(false);
-                                                }}
-                                                style={{
-                                                    display: 'block', width: '100%', textAlign: 'left',
-                                                    padding: '10px 16px',
-                                                    background: selectedCategory === cat.name ? 'rgba(34,197,94,0.15)' : 'transparent',
-                                                    border: 'none',
-                                                    borderBottom: i < campaign.categories!.length - 1 ? '1px solid #334155' : 'none',
-                                                    color: selectedCategory === cat.name ? '#22c55e' : '#cbd5e1',
-                                                    fontSize: isMobile ? 13 : '1.3vh', fontWeight: 700,
-                                                    cursor: 'pointer', whiteSpace: 'nowrap',
-                                                    fontFamily: "'Prompt', 'Inter', sans-serif",
-                                                }}
+                                                onClick={() => { setSelectedCategory(cat.name); setAutoMode(false); setDropdownOpen(false); }}
+                                                style={{ display: 'block', width: '100%', textAlign: 'left', padding: '10px 16px', background: selectedCategory === cat.name ? 'rgba(34,197,94,0.15)' : 'transparent', border: 'none', borderBottom: i < campaign.categories!.length - 1 ? '1px solid #334155' : 'none', color: selectedCategory === cat.name ? '#22c55e' : '#cbd5e1', fontSize: isMobile ? 13 : '1.3vh', fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: "'Prompt', 'Inter', sans-serif" }}
                                             >
                                                 {cat.name}{cat.distance ? ` (${cat.distance})` : ''}
                                             </button>
@@ -558,24 +484,10 @@ export default function ResultWinnersBySlugPage() {
                                 )}
                             </div>
 
-                            {/* Auto button — only shown when there are multiple categories */}
                             {campaign.categories.length > 1 && (
                                 <button
                                     onClick={() => setAutoMode(m => !m)}
-                                    style={{
-                                        display: 'flex', alignItems: 'center', gap: 6,
-                                        padding: isMobile ? '6px 12px' : '0.4vh 0.8vw',
-                                        background: autoMode ? '#22c55e' : 'transparent',
-                                        border: `1px solid ${autoMode ? '#22c55e' : '#475569'}`,
-                                        borderRadius: 8,
-                                        color: autoMode ? '#000' : '#94a3b8',
-                                        fontSize: isMobile ? 12 : '1.3vh', fontWeight: 800,
-                                        cursor: 'pointer', whiteSpace: 'nowrap',
-                                        fontFamily: "'Prompt', 'Inter', sans-serif",
-                                        minWidth: isMobile ? 80 : 72,
-                                        justifyContent: 'center',
-                                        transition: 'background 0.2s, color 0.2s, border-color 0.2s',
-                                    }}
+                                    style={{ display: 'flex', alignItems: 'center', gap: 6, padding: isMobile ? '6px 12px' : '0.4vh 0.8vw', background: autoMode ? '#22c55e' : 'transparent', border: `1px solid ${autoMode ? '#22c55e' : '#475569'}`, borderRadius: 8, color: autoMode ? '#000' : '#94a3b8', fontSize: isMobile ? 12 : '1.3vh', fontWeight: 800, cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: "'Prompt', 'Inter', sans-serif", minWidth: isMobile ? 80 : 72, justifyContent: 'center', transition: 'background 0.2s, color 0.2s, border-color 0.2s' }}
                                 >
                                     {autoMode ? `⏸ ${autoCountdown}s` : '▶ AUTO'}
                                 </button>
@@ -585,34 +497,13 @@ export default function ResultWinnersBySlugPage() {
                 </div>
             </header>
 
-            {/* Campaign name + current category banner */}
             {campaign && (
-                <div style={{
-                    display: 'flex', flexDirection: isMobile ? 'column' : 'row',
-                    alignItems: 'center', justifyContent: 'center',
-                    gap: isMobile ? 6 : '1.2vw',
-                    padding: isMobile ? '10px 16px' : '0.7vh 1.5vw',
-                    background: '#1e293b', borderRadius: 10,
-                    marginBottom: isMobile ? 8 : '0.8vh',
-                    border: '1px solid #334155', flexShrink: 0, textAlign: 'center',
-                }}>
-                    <span style={{
-                        fontSize: isMobile ? 15 : '2.2vh', fontWeight: 900,
-                        color: '#f1f5f9', letterSpacing: 1,
-                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                        maxWidth: isMobile ? '100%' : '50vw',
-                    }}>
+                <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', alignItems: 'center', justifyContent: 'center', gap: isMobile ? 6 : '1.2vw', padding: isMobile ? '10px 16px' : '0.7vh 1.5vw', background: '#1e293b', borderRadius: 10, marginBottom: isMobile ? 8 : '0.8vh', border: '1px solid #334155', flexShrink: 0, textAlign: 'center' }}>
+                    <span style={{ fontSize: isMobile ? 15 : '2.2vh', fontWeight: 900, color: '#f1f5f9', letterSpacing: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: isMobile ? '100%' : '50vw' }}>
                         {campaign.name}
                     </span>
                     {selectedCategory && (
-                        <span style={{
-                            display: 'inline-flex', alignItems: 'center',
-                            background: '#22c55e', color: '#052e16',
-                            borderRadius: 999, fontWeight: 900,
-                            fontSize: isMobile ? 13 : '1.8vh',
-                            padding: isMobile ? '3px 14px' : '0.2vh 1.2vw',
-                            whiteSpace: 'nowrap', flexShrink: 0,
-                        }}>
+                        <span style={{ display: 'inline-flex', alignItems: 'center', background: '#22c55e', color: '#052e16', borderRadius: 999, fontWeight: 900, fontSize: isMobile ? 13 : '1.8vh', padding: isMobile ? '3px 14px' : '0.2vh 1.2vw', whiteSpace: 'nowrap', flexShrink: 0 }}>
                             {selectedCategory}
                             {campaign.categories?.find(c => c.name === selectedCategory)?.distance
                                 ? ` · ${campaign.categories.find(c => c.name === selectedCategory)!.distance}`
@@ -622,8 +513,8 @@ export default function ResultWinnersBySlugPage() {
                 </div>
             )}
 
-            {/* Content */}
-            {loading ? (
+            {/* Show loading only on very first load — never blank the screen on refresh */}
+            {initialLoading && displayedRunners.length === 0 ? (
                 <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', fontSize: isMobile ? 16 : '2vh' }}>
                     Loading...
                 </div>
