@@ -41,6 +41,8 @@ interface FeaturedCampaignSettings {
     slug?: string;
     excludeOverallFromAgeGroup?: number;
     disableAgeGroupRanking?: boolean;
+    ageGroupDisplayCount?: number;
+    overallDisplayCount?: number;
     categories?: { name: string; distance?: string; ageGroups?: AgeGroupConfig[] }[];
 }
 
@@ -189,6 +191,8 @@ export default function AgeGroupRankingPage() {
                 const data = await res.json();
                 setCampaign(data);
                 setExcludeTop(Math.max(0, Number(data?.excludeOverallFromAgeGroup) || 0));
+                setAgeGroupDisplayCount(Math.max(1, Number(data?.ageGroupDisplayCount) || DEFAULT_TOP_N));
+                setOverallDisplayCount(Math.max(1, Number(data?.overallDisplayCount) || DEFAULT_TOP_N));
                 setSelectedCategory(data?.categories?.[0]?.name || '');
             }
         } catch { /* */ } finally {
@@ -440,6 +444,8 @@ export default function AgeGroupRankingPage() {
                 body: JSON.stringify({
                     excludeOverallFromAgeGroup: excludeTop,
                     disableAgeGroupRanking: false,
+                    ageGroupDisplayCount: ageGroupDisplayCount,
+                    overallDisplayCount: overallDisplayCount,
                 }),
             });
             if (res.ok) {

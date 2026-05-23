@@ -43,6 +43,7 @@ interface Campaign {
     categories?: { name: string; distance?: string; ageGroups?: AgeGroupConfig[] }[];
     excludeOverallFromAgeGroup?: number;
     disableAgeGroupRanking?: boolean;
+    ageGroupDisplayCount?: number;
 }
 
 interface AgeGroupBucket {
@@ -138,8 +139,6 @@ function buildAgeGroupsFromRunners(runners: Runner[]): AgeGroupBucket[] {
         return a.label.localeCompare(b.label, undefined, { numeric: true, sensitivity: 'base' });
     });
 }
-
-const TOP_N = 5;
 
 function formatTime(ms: number | undefined | null): string {
     if (ms === undefined || ms === null || ms <= 0) return '-';
@@ -349,6 +348,7 @@ export default function ResultWinnersBySlugPage() {
 
     // Derive active age groups from selected category's config
     const disableAgeGroupRanking = false;
+    const topN = Math.max(1, campaign?.ageGroupDisplayCount || 5);
 
     const activeAgeGroups = useMemo(() => {
         if (disableAgeGroupRanking) return [OVERALL_GROUP];
@@ -385,12 +385,12 @@ export default function ResultWinnersBySlugPage() {
             if (excludedBibs.has(runner.bib)) continue;
             const ag = disableAgeGroupRanking ? OVERALL_GROUP.label : resolveAgeGroup(runner, activeAgeGroups);
             const bucket = runner.gender === 'F' ? femaleWinners : maleWinners;
-            if (bucket[ag] && bucket[ag].length < TOP_N) {
+            if (bucket[ag] && bucket[ag].length < topN) {
                 bucket[ag].push(runner);
             }
         }
         return { maleWinners, femaleWinners };
-    }, [runners, campaign, activeAgeGroups, disableAgeGroupRanking]);
+    }, [runners, campaign, activeAgeGroups, disableAgeGroupRanking, topN]);
 
     const rankBg = ['#f59e0b', '#9ca3af', '#92400e', '#e2e8f0', '#e2e8f0'];
     const rankFg = ['#000', '#fff', '#fff', '#475569', '#475569'];
@@ -444,8 +444,7 @@ export default function ResultWinnersBySlugPage() {
             </div>
             {activeAgeGroups.map(g => {
                 const list = winners[g.label] || [];
-                // Always render TOP_N rows — fill empties
-                const rows = Array.from({ length: TOP_N }, (_, i) => i);
+                const rows = Array.from({ length: topN }, (_, i) => i);
                 return (
                     <div key={g.label} style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: 8, overflow: 'hidden', display: 'flex', flexDirection: 'column', flexShrink: 0, minHeight: isMobile ? 150 : '18vh' }}>
                         <div style={{ background: bgAgeHeader, color: 'white', fontWeight: 800, fontSize: isMobile ? 13 : '1.5vh', padding: isMobile ? '4px 12px' : '0.25vh 12px', textAlign: 'center', flexShrink: 0 }}>

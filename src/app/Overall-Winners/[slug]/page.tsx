@@ -33,9 +33,9 @@ interface Campaign {
     slug?: string;
     uuid?: string;
     categories?: CampaignCategory[];
+    overallDisplayCount?: number;
 }
 
-const TOP_N = 5;
 const REFRESH_INTERVAL = 5;
 
 function formatTime(ms: number | undefined | null): string {
@@ -177,6 +177,8 @@ export default function OverallWinnersBySlugPage() {
         };
     }, [autoMode]);
 
+    const topN = Math.max(1, campaign?.overallDisplayCount || 5);
+
     const { maleWinners, femaleWinners } = useMemo(() => {
         const finished = runners.filter(r => r.status === 'finished' && (r.netTime || r.gunTime || r.elapsedTime));
         const sorted = [...finished].sort((a, b) => {
@@ -186,10 +188,10 @@ export default function OverallWinnersBySlugPage() {
         });
 
         return {
-            maleWinners: sorted.filter(r => r.gender !== 'F').slice(0, TOP_N),
-            femaleWinners: sorted.filter(r => r.gender === 'F').slice(0, TOP_N),
+            maleWinners: sorted.filter(r => r.gender !== 'F').slice(0, topN),
+            femaleWinners: sorted.filter(r => r.gender === 'F').slice(0, topN),
         };
-    }, [runners]);
+    }, [runners, topN]);
 
     const rankBg = ['#f59e0b', '#9ca3af', '#92400e', '#e2e8f0', '#e2e8f0'];
     const rankFg = ['#000', '#fff', '#fff', '#475569', '#475569'];
@@ -239,7 +241,7 @@ export default function OverallWinnersBySlugPage() {
             </div>
             <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: 8, overflow: 'hidden', display: 'flex', flexDirection: 'column', flexShrink: 0, minHeight: isMobile ? 180 : '28vh' }}>
 <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'flex-start', flex: 1, padding: isMobile ? '4px' : '0.35vh 4px', minHeight: 0 }}>
-                    {Array.from({ length: TOP_N }, (_, i) => i).map(i => list[i] ? renderRunnerRow(list[i], i) : renderEmptyRow(i))}
+                    {Array.from({ length: topN }, (_, i) => i).map(i => list[i] ? renderRunnerRow(list[i], i) : renderEmptyRow(i))}
                 </div>
             </div>
         </div>
