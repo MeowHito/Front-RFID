@@ -906,6 +906,10 @@ export default function EventLivePage() {
         }
         return [...base].sort((a, b) => {
             if (manualSort === 'rank') {
+                const statusPriority: Record<string, number> = { finished: 0, in_progress: 1, dnf: 2, dq: 3, dns: 4, not_started: 5 };
+                const aPrio = statusPriority[a.status] ?? 5;
+                const bPrio = statusPriority[b.status] ?? 5;
+                if (aPrio !== bPrio) return aPrio - bPrio;
                 const aR = a.overallRank ?? 99999;
                 const bR = b.overallRank ?? 99999;
                 return aR !== bR ? aR - bR : (parseInt(a.bib) || 0) - (parseInt(b.bib) || 0);
@@ -2487,10 +2491,10 @@ export default function EventLivePage() {
                                 </select>
                             </div>
 
-                            {/* Status selector */}
+                            {/* Status selector + Select All/Deselect All */}
                             <div className="flex flex-wrap items-center gap-1.5">
                                 <span className="shrink-0 text-[10px] font-bold uppercase" style={{ color: themeStyles.textSecondary }}>
-                                    {language === 'th' ? 'สถานะ:' : 'Set Status:'}
+                                    {language === 'th' ? 'สถานะ:' : 'Status:'}
                                 </span>
                                 {[
                                     { value: 'dnf', label: 'DNF', color: '#dc2626' },
@@ -2513,77 +2517,27 @@ export default function EventLivePage() {
                                         {opt.label}
                                     </button>
                                 ))}
-                            </div>
-
-                            {/* Checkpoint + Note */}
-                            <div className="flex gap-2">
-                                <div className="flex-1">
-                                    <label className="mb-1 block text-[10px] font-bold uppercase" style={{ color: themeStyles.textSecondary }}>
-                                        {language === 'th' ? 'จุด Checkpoint' : 'Checkpoint'}
-                                    </label>
-                                    {manualCheckpointsLoading ? (
-                                        <div className="rounded-lg border px-3 py-1.5 text-[12px]" style={{ borderColor: themeStyles.border, color: themeStyles.textSecondary, background: isDark ? '#0f172a' : '#f8fafc' }}>
-                                            {language === 'th' ? 'กำลังโหลด...' : 'Loading...'}
-                                        </div>
-                                    ) : manualCheckpoints.length > 0 ? (
-                                        <select
-                                            value={manualCheckpoint}
-                                            onChange={e => setManualCheckpoint(e.target.value)}
-                                            className="w-full rounded-lg border px-3 py-1.5 text-[12px]"
-                                            style={{ borderColor: themeStyles.border, background: isDark ? '#0f172a' : '#f8fafc', color: themeStyles.text }}
-                                        >
-                                            <option value="">{language === 'th' ? '— ไม่ระบุ —' : '— None —'}</option>
-                                            {manualCheckpoints.map(cp => (
-                                                <option key={cp.name} value={cp.name}>{cp.name}</option>
-                                            ))}
-                                        </select>
-                                    ) : (
-                                        <input
-                                            type="text"
-                                            value={manualCheckpoint}
-                                            onChange={e => setManualCheckpoint(e.target.value)}
-                                            placeholder="e.g. CP3, FINISH"
-                                            className="w-full rounded-lg border px-3 py-1.5 text-[12px]"
-                                            style={{ borderColor: themeStyles.border, background: isDark ? '#0f172a' : '#f8fafc', color: themeStyles.text }}
-                                        />
+                                <div className="ml-auto flex items-center gap-1.5">
+                                    <button
+                                        onClick={() => setManualSelectedIds(new Set(manualModalRunners.map(r => r._id)))}
+                                        className="rounded-md border-none px-3 py-1 text-[11px] font-bold"
+                                        style={{ background: isDark ? '#334155' : '#e2e8f0', color: themeStyles.text }}
+                                    >
+                                        {language === 'th' ? `เลือกทั้งหมด (${manualModalRunners.length})` : `All (${manualModalRunners.length})`}
+                                    </button>
+                                    <button
+                                        onClick={() => setManualSelectedIds(new Set())}
+                                        className="rounded-md border-none px-3 py-1 text-[11px] font-bold"
+                                        style={{ background: isDark ? '#334155' : '#e2e8f0', color: themeStyles.text }}
+                                    >
+                                        {language === 'th' ? 'ยกเลิก' : 'None'}
+                                    </button>
+                                    {manualSelectedIds.size > 0 && (
+                                        <span className="text-[11px] font-semibold text-orange-500">
+                                            {manualSelectedIds.size}
+                                        </span>
                                     )}
                                 </div>
-                                <div className="flex-1">
-                                    <label className="mb-1 block text-[10px] font-bold uppercase" style={{ color: themeStyles.textSecondary }}>
-                                        {language === 'th' ? 'หมายเหตุ' : 'Note'}
-                                    </label>
-                                    <input
-                                        type="text"
-                                        value={manualNote}
-                                        onChange={e => setManualNote(e.target.value)}
-                                        placeholder={language === 'th' ? 'เช่น ขาเจ็บ, หลงทาง' : 'e.g. injury, lost route'}
-                                        className="w-full rounded-lg border px-3 py-1.5 text-[12px]"
-                                        style={{ borderColor: themeStyles.border, background: isDark ? '#0f172a' : '#f8fafc', color: themeStyles.text }}
-                                    />
-                                </div>
-                            </div>
-
-                            {/* Select All / Deselect All */}
-                            <div className="flex items-center gap-2">
-                                <button
-                                    onClick={() => setManualSelectedIds(new Set(manualModalRunners.map(r => r._id)))}
-                                    className="rounded-md border-none px-3 py-1 text-[11px] font-bold"
-                                    style={{ background: isDark ? '#334155' : '#e2e8f0', color: themeStyles.text }}
-                                >
-                                    {language === 'th' ? `เลือกทั้งหมด (${manualModalRunners.length})` : `Select All (${manualModalRunners.length})`}
-                                </button>
-                                <button
-                                    onClick={() => setManualSelectedIds(new Set())}
-                                    className="rounded-md border-none px-3 py-1 text-[11px] font-bold"
-                                    style={{ background: isDark ? '#334155' : '#e2e8f0', color: themeStyles.text }}
-                                >
-                                    {language === 'th' ? 'ยกเลิกทั้งหมด' : 'Deselect All'}
-                                </button>
-                                {manualSelectedIds.size > 0 && (
-                                    <span className="text-[11px] font-semibold text-orange-500">
-                                        {language === 'th' ? `เลือก ${manualSelectedIds.size} คน` : `${manualSelectedIds.size} selected`}
-                                    </span>
-                                )}
                             </div>
                         </div>
 
@@ -2602,11 +2556,11 @@ export default function EventLivePage() {
                             {/* Runner name */}
                             <div className="min-w-0 w-36 shrink">{language === 'th' ? 'นักวิ่ง' : 'Runner'}</div>
                             {/* Desktop-only columns */}
-                            {!isMobile && <div className="w-16 shrink-0 text-right">{language === 'th' ? 'เวลาปืน' : 'Gun Time'}</div>}
-                            {!isMobile && <div className="w-16 shrink-0 text-right">{language === 'th' ? 'เวลาชิป' : 'Net Time'}</div>}
-                            {!isMobile && <div className="w-28 shrink-0">{language === 'th' ? 'ความคืบหน้า' : 'Progress'}</div>}
+                            {!isMobile && <div className="w-16 shrink-0 text-right">{language === 'th' ? 'เวลาปืน' : 'Gun'}</div>}
+                            {!isMobile && <div className="w-16 shrink-0 text-right">{language === 'th' ? 'เวลาชิป' : 'Net'}</div>}
+                            {!isMobile && <div className="w-24 shrink-0">{language === 'th' ? 'ความคืบหน้า' : 'Progress'}</div>}
                             {/* Status */}
-                            <div className="shrink-0 w-14 text-center">{language === 'th' ? 'สถานะ' : 'Status'}</div>
+                            <div className="shrink-0 w-24 text-center">{language === 'th' ? 'สถานะ' : 'Status'}</div>
                         </div>
 
                         <div className="flex-1 overflow-y-auto">
@@ -2769,7 +2723,7 @@ export default function EventLivePage() {
 
                                                 {/* Progress — desktop only */}
                                                 {!isMobile && (
-                                                    <div className="w-28 shrink-0">
+                                                    <div className="w-24 shrink-0">
                                                         <div className="mb-0.5 flex items-baseline justify-between gap-1">
                                                             <span className="text-[11px] font-bold" style={{ color: themeStyles.text }}>{progressPct}%</span>
                                                             {progressSubLabel && (
@@ -2785,21 +2739,49 @@ export default function EventLivePage() {
                                                                 transition: 'width 0.5s ease',
                                                             }} />
                                                         </div>
-                                                        {cpName && (
-                                                            <div className="mt-0.5 truncate text-[9px]" style={{ color: themeStyles.textSecondary }}>{cpName}</div>
-                                                        )}
                                                     </div>
                                                 )}
 
-                                                {/* Status badge */}
-                                                <div className="w-14 shrink-0 flex justify-center">
-                                                    <span
-                                                        className="rounded px-1.5 py-0.5 text-[10px] font-bold"
-                                                        style={{ background: `${statusColor[runner.status] || '#94a3b8'}22`, color: statusColor[runner.status] || '#94a3b8' }}
-                                                    >
-                                                        {runner.status === 'not_started' ? 'Wait' : runner.status === 'in_progress' ? 'Racing' : runner.status.toUpperCase()}
-                                                    </span>
-                                                </div>
+                                                {/* Status — rich cell like main table */}
+                                                {(() => {
+                                                    const isDnfSt = runner.status === 'dnf';
+                                                    const cpMeta2 = getRunnerCheckpointMeta(runner);
+                                                    const stCpName = cpMeta2.checkpointName || cpName;
+                                                    const isFinish2 = cpMeta2.isFinishLike;
+                                                    const showBadge = !['finished', 'in_progress', 'dnf'].includes(runner.status);
+                                                    const showFinishChip = !!stCpName && isFinish2;
+                                                    const showInProgChip = !!stCpName && runner.status === 'in_progress' && !isFinish2;
+                                                    const chipBg = showFinishChip ? '#dcfce7' : showInProgChip ? '#fef3c7' : isDnfSt ? '#dc2626' : 'transparent';
+                                                    const chipColor = showFinishChip ? '#166534' : showInProgChip ? '#92400e' : isDnfSt ? '#fff' : themeStyles.text;
+                                                    const chipLabel = isDnfSt ? 'DNF' : (!['dns','not_started'].includes(runner.status) ? stCpName : '');
+                                                    const scanTimeStr = String(runner.lastPassTime || runner.scanTime || '').trim();
+                                                    const scanLabel = scanTimeStr ? formatStatusScanTime(scanTimeStr, true) : '';
+                                                    return (
+                                                        <div className="w-24 shrink-0 flex flex-col items-center justify-center gap-0.5 text-center">
+                                                            <div className="flex flex-wrap items-center justify-center gap-1">
+                                                                {showBadge && (
+                                                                    <span className="inline-block shrink-0 rounded-[3px] px-1.5 py-px text-[10px] font-bold leading-[1.3] text-white" style={{ background: getStatusBgColor(runner.status) }}>
+                                                                        {getStatusLabel(runner.status)}
+                                                                    </span>
+                                                                )}
+                                                                {chipLabel ? (
+                                                                    <span className="inline-block shrink-0 overflow-visible rounded-full px-2 py-px text-[10px] font-bold leading-[1.3]" style={{ background: chipBg, color: chipColor }}>
+                                                                        {chipLabel}
+                                                                    </span>
+                                                                ) : null}
+                                                            </div>
+                                                            {scanLabel && (
+                                                                <div className="truncate text-[9px] font-semibold" style={{ color: isDnfSt ? '#dc2626' : themeStyles.textSecondary }}>
+                                                                    {scanLabel}
+                                                                </div>
+                                                            )}
+                                                            {/* Mobile: show on status row too */}
+                                                            {isMobile && stCpName && !chipLabel && (
+                                                                <div className="truncate text-[9px]" style={{ color: themeStyles.textSecondary }}>{stCpName}</div>
+                                                            )}
+                                                        </div>
+                                                    );
+                                                })()}
                                             </div>
                                         );
                                     })}
