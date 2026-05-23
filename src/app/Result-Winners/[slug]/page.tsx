@@ -23,14 +23,8 @@ interface Runner {
     overallRank?: number;
     genderRank?: number;
     categoryRank?: number;
-}
-
-interface AgeGroupConfig {
-    name: string;
-    minAge: number;
-    maxAge: number;
-    gender: 'male' | 'female';
-    active: boolean;
+    ageGroupRank?: number;
+    ageGroupNetRank?: number;
 }
 
 interface Campaign {
@@ -40,9 +34,7 @@ interface Campaign {
     nameEn?: string;
     slug?: string;
     uuid?: string;
-    categories?: { name: string; distance?: string; ageGroups?: AgeGroupConfig[] }[];
-    excludeOverallFromAgeGroup?: number;
-    disableAgeGroupRanking?: boolean;
+    categories?: { name: string; distance?: string }[];
     ageGroupDisplayCount?: number;
 }
 
@@ -93,36 +85,6 @@ function parseAgeGroupBucket(value?: string | null): AgeGroupBucket | null {
     return null;
 }
 
-function buildAgeGroupsFromConfig(ageGroups: AgeGroupConfig[]): AgeGroupBucket[] {
-    const seen = new Map<string, AgeGroupBucket>();
-    for (const g of ageGroups) {
-        if (!g.active) continue;
-        const key = `${g.minAge}-${g.maxAge}`;
-        if (!seen.has(key)) {
-            const isOpenEnd = g.maxAge >= 99;
-            const label = isOpenEnd ? `${g.minAge}+` : `${g.minAge}-${g.maxAge}`;
-            seen.set(key, { label, min: g.minAge, max: g.maxAge });
-        }
-    }
-    const buckets = Array.from(seen.values());
-    buckets.sort((a, b) => a.min - b.min);
-    return buckets.length > 0 ? buckets : DEFAULT_AGE_GROUPS;
-}
-
-function buildAgeGroupsFromRunners(runners: Runner[]): AgeGroupBucket[] {
-    const seen = new Map<string, AgeGroupBucket>();
-    for (const runner of runners) {
-        const bucket = parseAgeGroupBucket(runner.ageGroup);
-        if (!bucket) continue;
-        const key = bucket.label.toLowerCase();
-        if (!seen.has(key)) seen.set(key, bucket);
-    }
-    return Array.from(seen.values()).sort((a, b) => {
-        if (a.min !== b.min) return a.min - b.min;
-        if (a.max !== b.max) return a.max - b.max;
-        return a.label.localeCompare(b.label, undefined, { numeric: true, sensitivity: 'base' });
-    });
-}
 
 function formatTime(ms: number | undefined | null): string {
     if (ms === undefined || ms === null || ms <= 0) return '-';
@@ -132,26 +94,6 @@ function formatTime(ms: number | undefined | null): string {
     return `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 }
 
-function resolveAgeGroup(runner: Runner, ageGroups: AgeGroupBucket[]): string {
-    const ag = normalizeAgeGroupLabel(runner.ageGroup);
-    const exactMatch = ageGroups.find(g => normalizeAgeGroupLabel(g.label).toLowerCase() === ag.toLowerCase());
-    if (exactMatch) return exactMatch.label;
-    const rangeMatch = ag.match(/(\d+)\s*-\s*(\d+)/);
-    if (rangeMatch) {
-        const lo = parseInt(rangeMatch[1]);
-        for (const g of ageGroups) {
-            if (lo >= g.min && lo <= g.max) return g.label;
-        }
-    }
-    if (runner.age) {
-        for (const g of ageGroups) {
-            if (runner.age >= g.min && runner.age <= g.max) return g.label;
-        }
-    }
-    if (ag.toLowerCase().includes('u18') || ag.toLowerCase().includes('under')) return ageGroups[0]?.label || 'Unknown';
-    if (ag.includes('+') || ag.includes('60') || ag.includes('70')) return ageGroups[ageGroups.length - 1]?.label || 'Unknown';
-    return 'Unknown';
-}
 
 const REFRESH_INTERVAL = 10;
 
@@ -328,38 +270,42 @@ export default function ResultWinnersBySlugPage() {
 
     const activeAgeGroups = useMemo(() => {
         if (disableAgeGroupRanking) return [OVERALL_GROUP];
-        const syncedAgeGroups = buildAgeGroupsFromRunners(displayedRunners);
-        if (syncedAgeGroups.length > 0) return syncedAgeGroups;
-        if (!campaign?.categories || !selectedCategory) return DEFAULT_AGE_GROUPS;
-        const cat = campaign.categories.find(c => c.name === selectedCategory);
-        if (!cat?.ageGroups || cat.ageGroups.length === 0) return DEFAULT_AGE_GROUPS;
-        return buildAgeGroupsFromConfig(cat.ageGroups);
-    }, [campaign, selectedCategory, displayedRunners, disableAgeGroupRanking]);
+        const seen = new Map<string, AgeGroupBucket>();
+        for (const r of displayedRunners) {
+            if (r.status !== 'finished') continue;
+            const label = normalizeAgeGroupLabel(r.ageGroup);
+            if (!label || seen.has(label)) continue;
+            const bucket = parseAgeGroupBucket(label);
+            seen.set(label, bucket ?? { label, min: 999, max: 999 });
+        }
+        const buckets = Array.from(seen.values());
+        buckets.sort((a, b) => a.min !== b.min ? a.min - b.min : a.max - b.max);
+        return buckets.length > 0 ? buckets : DEFAULT_AGE_GROUPS;
+    }, [displayedRunners, disableAgeGroupRanking]);
 
     const { maleWinners, femaleWinners } = useMemo(() => {
         const finished = displayedRunners.filter(r => r.status === 'finished' && (r.netTime || r.gunTime));
-        const sorted = [...finished].sort((a, b) => {
-            const at = a.netTime || a.gunTime || a.elapsedTime || Infinity;
-            const bt = b.netTime || b.gunTime || b.elapsedTime || Infinity;
-            return at - bt;
-        });
 
-        const excludeN = campaign?.excludeOverallFromAgeGroup || 0;
-        const excludedBibs = new Set<string>();
-        if (excludeN > 0) sorted.slice(0, excludeN).forEach(r => excludedBibs.add(r.bib));
+        // Sort by RaceTiger's ageGroupRank; fall back to netTime for runners without a rank yet
+        const sorted = [...finished].sort((a, b) => {
+            const ar = (a.ageGroupRank && a.ageGroupRank > 0) ? a.ageGroupRank : Infinity;
+            const br = (b.ageGroupRank && b.ageGroupRank > 0) ? b.ageGroupRank : Infinity;
+            if (ar !== br) return ar - br;
+            return (a.netTime || a.gunTime || a.elapsedTime || Infinity) - (b.netTime || b.gunTime || b.elapsedTime || Infinity);
+        });
 
         const maleWinners: Record<string, Runner[]> = {};
         const femaleWinners: Record<string, Runner[]> = {};
         for (const g of activeAgeGroups) { maleWinners[g.label] = []; femaleWinners[g.label] = []; }
 
         for (const runner of sorted) {
-            if (excludedBibs.has(runner.bib)) continue;
-            const ag = disableAgeGroupRanking ? OVERALL_GROUP.label : resolveAgeGroup(runner, activeAgeGroups);
+            const ag = disableAgeGroupRanking ? OVERALL_GROUP.label : normalizeAgeGroupLabel(runner.ageGroup);
+            if (!ag) continue;
             const bucket = runner.gender === 'F' ? femaleWinners : maleWinners;
-            if (bucket[ag] && bucket[ag].length < topN) bucket[ag].push(runner);
+            if (ag in bucket && bucket[ag].length < topN) bucket[ag].push(runner);
         }
         return { maleWinners, femaleWinners };
-    }, [displayedRunners, campaign, activeAgeGroups, disableAgeGroupRanking, topN]);
+    }, [displayedRunners, activeAgeGroups, disableAgeGroupRanking, topN]);
 
     const rankBg = ['#f59e0b', '#9ca3af', '#92400e', '#e2e8f0', '#e2e8f0'];
     const rankFg = ['#000', '#fff', '#fff', '#475569', '#475569'];
