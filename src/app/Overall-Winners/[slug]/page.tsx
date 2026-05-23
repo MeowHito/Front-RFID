@@ -3,7 +3,7 @@
 import Image from 'next/image';
 import Link from 'next/link';
 import { useEffect, useState, useMemo, useRef, useCallback } from 'react';
-import { buildA4Canvas, triggerDownload } from '@/lib/winner-canvas';
+import { buildLandscapeTableCanvas, triggerDownload, LandscapeRunner } from '@/lib/winner-canvas';
 import { useParams } from 'next/navigation';
 
 interface Runner {
@@ -179,26 +179,6 @@ export default function OverallWinnersBySlugPage() {
         };
     }, [autoMode]);
 
-    const downloadSection = useCallback(async (
-        el: HTMLDivElement | null,
-        genderTitle: string,
-        accentColor: string
-    ) => {
-        if (!el) return;
-        setDownloading(genderTitle);
-        try {
-            const canvas = await buildA4Canvas(
-                [el],
-                campaign?.name || '',
-                `${selectedCategory} — ${genderTitle}`,
-                accentColor
-            );
-            if (canvas) triggerDownload(canvas, `${campaign?.name || 'winners'}-${genderTitle}`);
-        } catch (e) { console.error(e); } finally {
-            setDownloading(null);
-        }
-    }, [campaign, selectedCategory]);
-
     const topN = Math.max(1, campaign?.overallDisplayCount || 5);
 
     const { maleWinners, femaleWinners } = useMemo(() => {
@@ -213,6 +193,23 @@ export default function OverallWinnersBySlugPage() {
             femaleWinners: sorted.filter(r => r.gender === 'F').slice(0, topN),
         };
     }, [displayedRunners, topN]);
+
+    const downloadLandscape = useCallback(async () => {
+        setDownloading('landscape');
+        try {
+            const canvas = await buildLandscapeTableCanvas(
+                campaign?.name || '',
+                selectedCategory,
+                [{
+                    maleRunners: maleWinners as LandscapeRunner[],
+                    femaleRunners: femaleWinners as LandscapeRunner[],
+                }]
+            );
+            if (canvas) triggerDownload(canvas, `${campaign?.name || 'winners'}-overall`);
+        } catch (e) { console.error(e); } finally {
+            setDownloading(null);
+        }
+    }, [campaign, selectedCategory, maleWinners, femaleWinners]);
 
     const rankBg = ['#f59e0b', '#9ca3af', '#92400e', '#e2e8f0', '#e2e8f0'];
     const rankFg = ['#000', '#fff', '#fff', '#475569', '#475569'];
@@ -234,10 +231,13 @@ export default function OverallWinnersBySlugPage() {
                 {idx + 1}
             </div>
             <span style={{ fontSize: isMobile ? 12 : '1.55vh', fontWeight: 700, color: '#1e293b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1, textTransform: 'uppercase' }}>
-                {runner.bib} {runner.firstName} {runner.lastName}
+                {`${runner.bib}  ${runner.firstName} ${runner.lastName}`}
             </span>
-            <span style={{ fontFamily: 'monospace', fontWeight: 800, fontSize: isMobile ? 11 : '1.5vh', color: '#1e293b', flexShrink: 0 }}>
-                {runner.netTimeStr || formatTime(runner.netTime || runner.gunTime || runner.elapsedTime)}
+            <span style={{ fontFamily: 'monospace', fontWeight: 800, fontSize: isMobile ? 11 : '1.5vh', color: '#1e293b', flexShrink: 0, minWidth: isMobile ? 60 : '7vh', textAlign: 'right' }}>
+                {runner.gunTimeStr || formatTime(runner.gunTime)}
+            </span>
+            <span style={{ fontFamily: 'monospace', fontWeight: 800, fontSize: isMobile ? 11 : '1.5vh', color: '#1e293b', flexShrink: 0, minWidth: isMobile ? 60 : '7vh', textAlign: 'right', marginLeft: isMobile ? 10 : 14 }}>
+                {runner.netTimeStr || formatTime(runner.netTime)}
             </span>
         </div>
     );
@@ -247,7 +247,9 @@ export default function OverallWinnersBySlugPage() {
             <div style={{ width: isMobile ? 22 : '2.4vh', height: isMobile ? 22 : '2.4vh', minWidth: 18, minHeight: 18, borderRadius: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: isMobile ? 12 : '1.4vh', fontWeight: 900, flexShrink: 0, background: '#f1f5f9', color: '#cbd5e1' }}>
                 {idx + 1}
             </div>
-            <span style={{ fontSize: isMobile ? 11 : '1.2vh', color: '#cbd5e1', fontStyle: 'italic' }}>—</span>
+            <span style={{ fontSize: isMobile ? 11 : '1.2vh', color: '#cbd5e1', fontStyle: 'italic', flex: 1 }}>—</span>
+            <span style={{ minWidth: isMobile ? 60 : '7vh' }} />
+            <span style={{ minWidth: isMobile ? 60 : '7vh', marginLeft: isMobile ? 10 : 14 }} />
         </div>
     );
 
@@ -267,6 +269,12 @@ export default function OverallWinnersBySlugPage() {
             </div>
             <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: 8, overflow: 'hidden', display: 'flex', flexDirection: 'column', flexShrink: 0, minHeight: isMobile ? 180 : '28vh' }}>
                 <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'flex-start', flex: 1, padding: isMobile ? '4px' : '0.35vh 4px', minHeight: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: isMobile ? '2px 10px 3px' : '0.1vh 10px 0.2vh', borderBottom: '1px solid #f1f5f9' }}>
+                        <div style={{ width: isMobile ? 22 : '2.4vh', minWidth: 18, flexShrink: 0 }} />
+                        <span style={{ fontSize: isMobile ? 9 : '1.1vh', fontWeight: 700, color: '#94a3b8', flex: 1, textTransform: 'uppercase', letterSpacing: 0.5 }}>Name</span>
+                        <span style={{ fontSize: isMobile ? 9 : '1.1vh', fontWeight: 700, color: '#94a3b8', flexShrink: 0, minWidth: isMobile ? 60 : '7vh', textAlign: 'right', letterSpacing: 0.5 }}>GunTime</span>
+                        <span style={{ fontSize: isMobile ? 9 : '1.1vh', fontWeight: 700, color: '#94a3b8', flexShrink: 0, minWidth: isMobile ? 60 : '7vh', textAlign: 'right', letterSpacing: 0.5, marginLeft: isMobile ? 10 : 14 }}>NetTime</span>
+                    </div>
                     {Array.from({ length: topN }, (_, i) => i).map(i => list[i] ? renderRunnerRow(list[i], i) : renderEmptyRow(i))}
                 </div>
             </div>
@@ -301,22 +309,13 @@ export default function OverallWinnersBySlugPage() {
                     {campaign && !initialLoading && (
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
                             <button
-                                onClick={() => downloadSection(maleColRef.current, '♂ MALE OVERALL', '#2563eb')}
+                                onClick={downloadLandscape}
                                 disabled={!!downloading}
-                                title="Download Male Overall"
+                                title="Download Overall Winners (Landscape)"
                                 style={{ display: 'flex', alignItems: 'center', gap: 5, padding: isMobile ? '5px 10px' : '0.35vh 0.7vw', background: '#1d4ed8', border: '1px solid #2563eb', borderRadius: 7, color: 'white', fontSize: isMobile ? 11 : '1.15vh', fontWeight: 800, cursor: 'pointer', whiteSpace: 'nowrap', opacity: downloading ? 0.6 : 1, transition: 'opacity 0.15s', fontFamily: "'Prompt','Inter',sans-serif" }}
                             >
                                 <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="1" x2="8" y2="11"/><polyline points="4 7 8 11 12 7"/><line x1="2" y1="14" x2="14" y2="14"/></svg>
-                                ♂ Male
-                            </button>
-                            <button
-                                onClick={() => downloadSection(femaleColRef.current, '♀ FEMALE OVERALL', '#db2777')}
-                                disabled={!!downloading}
-                                title="Download Female Overall"
-                                style={{ display: 'flex', alignItems: 'center', gap: 5, padding: isMobile ? '5px 10px' : '0.35vh 0.7vw', background: '#be185d', border: '1px solid #db2777', borderRadius: 7, color: 'white', fontSize: isMobile ? 11 : '1.15vh', fontWeight: 800, cursor: 'pointer', whiteSpace: 'nowrap', opacity: downloading ? 0.6 : 1, transition: 'opacity 0.15s', fontFamily: "'Prompt','Inter',sans-serif" }}
-                            >
-                                <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="1" x2="8" y2="11"/><polyline points="4 7 8 11 12 7"/><line x1="2" y1="14" x2="14" y2="14"/></svg>
-                                ♀ Female
+                                Download
                             </button>
                         </div>
                     )}
@@ -370,8 +369,8 @@ export default function OverallWinnersBySlugPage() {
                 </div>
             ) : (
                 <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: isMobile ? 12 : '1vw', flex: isMobile ? undefined : 1, minHeight: 0, paddingBottom: isMobile ? 16 : 0 }}>
-                    {renderColumn('♂ MALE OVERALL', '#2563eb', maleWinners, maleColRef, () => downloadSection(maleColRef.current, '♂ MALE OVERALL', '#2563eb'))}
-                    {renderColumn('♀ FEMALE OVERALL', '#db2777', femaleWinners, femaleColRef, () => downloadSection(femaleColRef.current, '♀ FEMALE OVERALL', '#db2777'))}
+                    {renderColumn('♂ MALE OVERALL', '#2563eb', maleWinners, maleColRef, downloadLandscape)}
+                    {renderColumn('♀ FEMALE OVERALL', '#db2777', femaleWinners, femaleColRef, downloadLandscape)}
                 </div>
             )}
         </div>

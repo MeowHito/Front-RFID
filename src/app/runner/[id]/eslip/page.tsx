@@ -105,6 +105,24 @@ function formatTime(ms?: number | null): string {
     return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
 }
 
+function effectiveFinishMs(runner: RunnerData): number | undefined {
+    return runner.gunTime || runner.netTime || undefined;
+}
+
+function effectivePace(runner: RunnerData): string {
+    if (runner.netPace) return runner.netPace;
+    if (runner.gunPace) return runner.gunPace;
+    const dist = parseDistanceValue(runner.category);
+    const ms = runner.gunTime || runner.netTime;
+    if (ms && ms > 0 && dist && dist > 0) {
+        const paceMin = (ms / 60000) / dist;
+        const pM = Math.floor(paceMin);
+        const pS = Math.round((paceMin - pM) * 60);
+        return `${pM}:${pS.toString().padStart(2, '0')}`;
+    }
+    return '-';
+}
+
 function parseDistanceValue(value: unknown): number | null {
     const raw = String(value || '').replace(/,/g, '');
     const match = raw.match(/-?\d+(?:\.\d+)?/);
@@ -144,8 +162,8 @@ function Template1({ runner, timings, campaign, bgImage, slipRef, showField }: T
     const displayName = `${runner.firstName} ${runner.lastName}`.trim();
     const genderLabel = runner.gender === 'M' ? 'Male' : 'Female';
     const dist = parseDistanceValue(runner.category);
-    const pace = runner.netPace || runner.gunPace || '-';
-    const gunTimeStr = runner.gunTimeStr || formatTime(runner.gunTime);
+    const pace = effectivePace(runner);
+    const gunTimeStr = runner.gunTimeStr || formatTime(effectiveFinishMs(runner));
     const netTimeStr = runner.netTimeStr || formatTime(runner.netTime);
     const sortedTimings = [...timings].sort((a, b) => (a.order || 0) - (b.order || 0));
     const displayTimings = sortedTimings.slice(-6);
@@ -271,8 +289,8 @@ function Template2({ runner, timings, campaign, bgImage, slipRef, showField, tex
     const displayName = `${runner.firstName} ${runner.lastName}`.trim();
     const genderLabel = runner.gender === 'M' ? 'Male' : 'Female';
     const dist = parseDistanceValue(runner.category);
-    const pace = runner.netPace || runner.gunPace || '-';
-    const gunTimeStr = runner.gunTimeStr || formatTime(runner.gunTime);
+    const pace = effectivePace(runner);
+    const gunTimeStr = runner.gunTimeStr || formatTime(effectiveFinishMs(runner));
     const netTimeStr = runner.netTimeStr || formatTime(runner.netTime);
     const sortedTimings = [...timings].sort((a, b) => (a.order || 0) - (b.order || 0));
     const displayTimings = sortedTimings.slice(-7);
@@ -409,8 +427,8 @@ function Template3({ runner, timings, campaign, slipRef, showField }: TemplatePr
     const displayName = `${runner.firstName} ${runner.lastName}`.trim();
     const genderLabel = runner.gender === 'M' ? 'Male' : 'Female';
     const dist = parseDistanceValue(runner.category);
-    const pace = runner.netPace || runner.gunPace || '-';
-    const gunTimeStr = runner.gunTimeStr || formatTime(runner.gunTime);
+    const pace = effectivePace(runner);
+    const gunTimeStr = runner.gunTimeStr || formatTime(effectiveFinishMs(runner));
     const netTimeStr = runner.netTimeStr || formatTime(runner.netTime);
     const sortedTimings = [...timings].sort((a, b) => (a.order || 0) - (b.order || 0));
     const displayTimings = sortedTimings.slice(-7);
@@ -521,9 +539,9 @@ function resolveFieldValue(field: FieldKey, staticText: string, runner: RunnerDa
         case 'overallRank': return String(runner.overallRank ?? '-');
         case 'genderRank':  return String(runner.genderRank ?? runner.genderNetRank ?? '-');
         case 'categoryRank':return String(runner.categoryRank ?? runner.categoryNetRank ?? '-');
-        case 'gunTime':     return runner.gunTimeStr ?? fmt(runner.gunTime);
+        case 'gunTime':     return runner.gunTimeStr ?? fmt(effectiveFinishMs(runner));
         case 'netTime':     return runner.netTimeStr ?? fmt(runner.netTime);
-        case 'pace':        return runner.netPace ?? runner.gunPace ?? '-';
+        case 'pace':        return effectivePace(runner);
         case 'eventDate':   return campaign?.eventDate ? new Date(campaign.eventDate).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' }) : '';
         case 'location':    return campaign?.location ?? '';
         case 'static':      return staticText;

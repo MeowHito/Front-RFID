@@ -423,11 +423,21 @@ export default function EventLivePage() {
         const statusDiff = (statusOrder[a.status] ?? 6) - (statusOrder[b.status] ?? 6);
         if (statusDiff !== 0) return statusDiff;
 
-        const aRank = a.overallRank ?? 0;
-        const bRank = b.overallRank ?? 0;
-        if (aRank > 0 && bRank > 0 && aRank !== bRank) return aRank - bRank;
-
         if (a.status === 'finished' && b.status === 'finished') {
+            // CP-complete runners always rank before CP-incomplete runners
+            const aLookup = a.eventId ? cpDistanceLookup[a.eventId] : null;
+            const bLookup = b.eventId ? cpDistanceLookup[b.eventId] : null;
+            const aTotalCp = aLookup?.totalCheckpoints ?? 0;
+            const bTotalCp = bLookup?.totalCheckpoints ?? 0;
+            if (aTotalCp > 0 || bTotalCp > 0) {
+                const aComplete = aTotalCp > 0 && (a.passedCount ?? 0) >= aTotalCp;
+                const bComplete = bTotalCp > 0 && (b.passedCount ?? 0) >= bTotalCp;
+                if (aComplete !== bComplete) return aComplete ? -1 : 1;
+            }
+            // Within same completeness group: overallRank → time → scan time
+            const aRank = a.overallRank ?? 0;
+            const bRank = b.overallRank ?? 0;
+            if (aRank > 0 && bRank > 0 && aRank !== bRank) return aRank - bRank;
             const aTime = getRunnerPrimaryTimeMs(a);
             const bTime = getRunnerPrimaryTimeMs(b);
             if (aTime > 0 && bTime > 0 && aTime !== bTime) return aTime - bTime;
@@ -438,6 +448,10 @@ export default function EventLivePage() {
             if (aScan > 0 && bScan > 0 && aScan !== bScan) return aScan - bScan;
             return compareStableBibOrder(a, b);
         }
+
+        const aRank = a.overallRank ?? 0;
+        const bRank = b.overallRank ?? 0;
+        if (aRank > 0 && bRank > 0 && aRank !== bRank) return aRank - bRank;
 
         if (a.status === 'in_progress' && b.status === 'in_progress') {
             const aPassed = a.passedCount ?? 0;
@@ -1578,7 +1592,8 @@ export default function EventLivePage() {
                                         switch (key) {
                                             case 'rank': {
                                                 const hideRank = ['dnf', 'dns', 'dq', 'not_started'].includes(runner.status);
-                                                const displayRank = runner.overallRank || rank;
+                                                // CP-incomplete finished runners use position-based rank (DB overallRank ignores CP completion)
+                                                const displayRank = (runner.status === 'finished' && showProgressAlert) ? rank : (runner.overallRank || rank);
                                                 // All ranks (1 → last) are rendered in the primary text color;
                                                 // only DNS/DNF/DQ/not-started fall back to the muted grey "-".
                                                 const rankColor = hideRank
