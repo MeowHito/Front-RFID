@@ -163,19 +163,19 @@ export function triggerDownload(canvas: HTMLCanvasElement, filename: string) {
 // ─── Landscape table canvas ───────────────────────────────────────────────────
 
 const L_W = 1754;
-const L_PAD = 60;
-const L_HDR_H = 108;
-const L_SEC_HDR_H = 46;
-const L_COL_HDR_H = 34;
-const L_ROW_H = 40;
-const L_SEC_GAP = 28;
-const L_AG_HDR_H = 38;
+const L_PAD = 72;
+const L_HDR_H = 140;
+const L_SEC_HDR_H = 58;
+const L_COL_HDR_H = 42;
+const L_ROW_H = 52;
+const L_SEC_GAP = 32;
+const L_AG_HDR_H = 50;
 const L_FTR_H = 160;
 const L_TABLE_W = L_W - 2 * L_PAD;
-const L_POS_W = 60;
-const L_BIB_W = 90;
-const L_GUN_W = 165;
-const L_NET_W = 165;
+const L_POS_W = 70;
+const L_BIB_W = 100;
+const L_GUN_W = 185;
+const L_NET_W = 185;
 const L_NAME_W = L_TABLE_W - L_POS_W - L_BIB_W - L_GUN_W - L_NET_W;
 
 function fmtMs(ms: number | undefined | null): string {
@@ -255,17 +255,17 @@ export async function buildLandscapeTableCanvas(
     let y = L_PAD;
     ctx.textAlign = 'center';
     if (title) {
-        ctx.font = 'bold 30px Prompt, Sarabun, Arial, sans-serif';
+        ctx.font = 'bold 42px Prompt, Sarabun, Arial, sans-serif';
         ctx.fillStyle = '#1e293b';
-        ctx.fillText(title, L_W / 2, y + 34);
+        ctx.fillText(title, L_W / 2, y + 46);
     }
     if (subtitle) {
-        ctx.font = '20px Prompt, Sarabun, Arial, sans-serif';
+        ctx.font = 'bold 30px Prompt, Sarabun, Arial, sans-serif';
         ctx.fillStyle = '#475569';
-        ctx.fillText(subtitle, L_W / 2, y + 66);
+        ctx.fillText(subtitle, L_W / 2, y + 90);
     }
     ctx.strokeStyle = defaultMaleColor;
-    ctx.lineWidth = 2;
+    ctx.lineWidth = 3;
     ctx.beginPath();
     ctx.moveTo(L_PAD, y + L_HDR_H - 8);
     ctx.lineTo(L_W - L_PAD, y + L_HDR_H - 8);
@@ -280,25 +280,25 @@ export async function buildLandscapeTableCanvas(
         // Section header bar
         ctx.fillStyle = secColor;
         ctx.fillRect(L_PAD, y, L_TABLE_W, L_SEC_HDR_H);
-        ctx.font = 'bold 20px Prompt, Sarabun, Arial, sans-serif';
+        ctx.font = 'bold 26px Prompt, Sarabun, Arial, sans-serif';
         ctx.fillStyle = '#ffffff';
         ctx.textAlign = 'left';
-        ctx.fillText(secTitle, L_PAD + 18, y + L_SEC_HDR_H / 2 + 7);
+        ctx.fillText(secTitle, L_PAD + 22, y + L_SEC_HDR_H / 2 + 9);
         y += L_SEC_HDR_H;
 
         // Column header row
-        ctx.fillStyle = '#f8fafc';
+        ctx.fillStyle = '#f1f5f9';
         ctx.fillRect(L_PAD, y, L_TABLE_W, L_COL_HDR_H);
         ctx.strokeStyle = '#e2e8f0';
         ctx.lineWidth = 1;
         ctx.strokeRect(L_PAD, y, L_TABLE_W, L_COL_HDR_H);
 
         const drawHdr = (label: string, x: number, w: number, align: 'left' | 'center' | 'right') => {
-            ctx.font = 'bold 12px Prompt, Sarabun, Arial, sans-serif';
-            ctx.fillStyle = '#94a3b8';
+            ctx.font = 'bold 15px Prompt, Sarabun, Arial, sans-serif';
+            ctx.fillStyle = '#64748b';
             ctx.textAlign = align;
-            const tx = align === 'right' ? x + w - 10 : align === 'center' ? x + w / 2 : x + 10;
-            ctx.fillText(label, tx, y + L_COL_HDR_H / 2 + 4);
+            const tx = align === 'right' ? x + w - 12 : align === 'center' ? x + w / 2 : x + 12;
+            ctx.fillText(label, tx, y + L_COL_HDR_H / 2 + 5);
         };
         let cx = L_PAD;
         drawHdr('POS.', cx, L_POS_W, 'center'); cx += L_POS_W;
@@ -323,46 +323,46 @@ export async function buildLandscapeTableCanvas(
             // Rank badge
             const bg = RANK_BG[i] || '#e2e8f0';
             const fg = RANK_FG[i] || '#475569';
-            const bsz = 28;
+            const bsz = 36;
             const bx = cx + (L_POS_W - bsz) / 2;
             const by = y + (L_ROW_H - bsz) / 2;
             ctx.fillStyle = bg;
-            rrect(ctx, bx, by, bsz, bsz, 5);
+            rrect(ctx, bx, by, bsz, bsz, 6);
             ctx.fill();
-            ctx.font = 'bold 13px Prompt, Sarabun, Arial, sans-serif';
+            ctx.font = 'bold 16px Prompt, Sarabun, Arial, sans-serif';
             ctx.fillStyle = fg;
             ctx.textAlign = 'center';
-            ctx.fillText(String(i + 1), bx + bsz / 2, by + bsz / 2 + 5);
+            ctx.fillText(String(i + 1), bx + bsz / 2, by + bsz / 2 + 6);
             cx += L_POS_W;
 
             // BIB
-            ctx.font = 'bold 14px Prompt, Sarabun, Arial, sans-serif';
+            ctx.font = 'bold 17px Prompt, Sarabun, Arial, sans-serif';
             ctx.fillStyle = '#1e293b';
             ctx.textAlign = 'center';
-            ctx.fillText(r.bib, cx + L_BIB_W / 2, y + L_ROW_H / 2 + 5);
+            ctx.fillText(r.bib, cx + L_BIB_W / 2, y + L_ROW_H / 2 + 6);
             cx += L_BIB_W;
 
             // Name (truncate if needed)
             ctx.textAlign = 'left';
-            ctx.font = 'bold 14px Prompt, Sarabun, Arial, sans-serif';
+            ctx.font = 'bold 18px Prompt, Sarabun, Arial, sans-serif';
             ctx.fillStyle = '#1e293b';
             const full = `${r.firstName} ${r.lastName}`.toUpperCase();
-            const maxW = L_NAME_W - 16;
+            const maxW = L_NAME_W - 20;
             let display = full;
             if (ctx.measureText(display).width > maxW) {
                 while (ctx.measureText(display + '…').width > maxW && display.length > 1) display = display.slice(0, -1);
                 display += '…';
             }
-            ctx.fillText(display, cx + 10, y + L_ROW_H / 2 + 5);
+            ctx.fillText(display, cx + 12, y + L_ROW_H / 2 + 6);
             cx += L_NAME_W;
 
             // Times
-            ctx.font = '800 14px "Courier New", monospace';
+            ctx.font = '800 18px "Courier New", monospace';
             ctx.fillStyle = '#1e293b';
             ctx.textAlign = 'right';
-            ctx.fillText(r.gunTimeStr || fmtMs(r.gunTime), cx + L_GUN_W - 10, y + L_ROW_H / 2 + 5);
+            ctx.fillText(r.gunTimeStr || fmtMs(r.gunTime), cx + L_GUN_W - 12, y + L_ROW_H / 2 + 6);
             cx += L_GUN_W;
-            ctx.fillText(r.netTimeStr || fmtMs(r.netTime), cx + L_NET_W - 10, y + L_ROW_H / 2 + 5);
+            ctx.fillText(r.netTimeStr || fmtMs(r.netTime), cx + L_NET_W - 12, y + L_ROW_H / 2 + 6);
 
             y += L_ROW_H;
         }
@@ -371,12 +371,12 @@ export async function buildLandscapeTableCanvas(
     for (const sec of sections) {
         // Optional age group label bar
         if (sec.label) {
-            ctx.fillStyle = '#334155';
+            ctx.fillStyle = '#1e3a5f';
             ctx.fillRect(L_PAD, y, L_TABLE_W, L_AG_HDR_H);
-            ctx.font = 'bold 16px Prompt, Sarabun, Arial, sans-serif';
+            ctx.font = 'bold 22px Prompt, Sarabun, Arial, sans-serif';
             ctx.fillStyle = '#e2e8f0';
             ctx.textAlign = 'center';
-            ctx.fillText(sec.label, L_W / 2, y + L_AG_HDR_H / 2 + 6);
+            ctx.fillText(`กลุ่มอายุ ${sec.label}`, L_W / 2, y + L_AG_HDR_H / 2 + 8);
             y += L_AG_HDR_H;
         }
 

@@ -205,7 +205,7 @@ export default function OverallWinnersBySlugPage() {
                     femaleRunners: femaleWinners as LandscapeRunner[],
                 }]
             );
-            if (canvas) triggerDownload(canvas, `${campaign?.name || 'winners'}-overall`);
+            if (canvas) triggerDownload(canvas, `${campaign?.name || 'winners'}-Overall`);
         } catch (e) { console.error(e); } finally {
             setDownloading(null);
         }

@@ -37,6 +37,8 @@ interface Campaign {
     uuid?: string;
     categories?: { name: string; distance?: string }[];
     ageGroupDisplayCount?: number;
+    excludeOverallFromAgeGroup?: number;
+    excludeAgeGroupTop?: number;
 }
 
 interface AgeGroupBucket {
@@ -318,6 +320,17 @@ export default function ResultWinnersBySlugPage() {
     const { maleWinners, femaleWinners } = useMemo(() => {
         const finished = displayedRunners.filter(r => r.status === 'finished' && (r.netTime || r.gunTime));
 
+        // Build excluded bibs from overall rank (excludeOverallFromAgeGroup)
+        const excludeOv = Math.max(0, campaign?.excludeOverallFromAgeGroup || 0);
+        const excludeAG = Math.max(0, campaign?.excludeAgeGroupTop || 0);
+        const excludedBibs = new Set<string>();
+        if (excludeOv > 0) {
+            const overallSorted = [...finished].sort((a, b) =>
+                (a.netTime || a.gunTime || a.elapsedTime || Infinity) - (b.netTime || b.gunTime || b.elapsedTime || Infinity)
+            );
+            overallSorted.slice(0, excludeOv).forEach(r => excludedBibs.add(r.bib));
+        }
+
         // Sort by RaceTiger's ageGroupRank; fall back to netTime for runners without a rank yet
         const sorted = [...finished].sort((a, b) => {
             const ar = (a.ageGroupRank && a.ageGroupRank > 0) ? a.ageGroupRank : Infinity;
@@ -331,13 +344,15 @@ export default function ResultWinnersBySlugPage() {
         for (const g of activeAgeGroups) { maleWinners[g.label] = []; femaleWinners[g.label] = []; }
 
         for (const runner of sorted) {
+            if (excludedBibs.has(runner.bib)) continue;
+            if (excludeAG > 0 && runner.ageGroupRank && runner.ageGroupRank > 0 && runner.ageGroupRank <= excludeAG) continue;
             const ag = disableAgeGroupRanking ? OVERALL_GROUP.label : normalizeAgeGroupLabel(runner.ageGroup);
             if (!ag) continue;
             const bucket = runner.gender === 'F' ? femaleWinners : maleWinners;
             if (ag in bucket && bucket[ag].length < topN) bucket[ag].push(runner);
         }
         return { maleWinners, femaleWinners };
-    }, [displayedRunners, activeAgeGroups, disableAgeGroupRanking, topN]);
+    }, [displayedRunners, activeAgeGroups, disableAgeGroupRanking, topN, campaign]);
 
     const downloadLandscapeSection = useCallback(async (ageGroupLabel: string) => {
         setDownloading(ageGroupLabel);
@@ -352,7 +367,7 @@ export default function ResultWinnersBySlugPage() {
                 selectedCategory,
                 sections
             );
-            if (canvas) triggerDownload(canvas, `${campaign?.name || 'winners'}-${ageGroupLabel}`);
+            if (canvas) triggerDownload(canvas, `${campaign?.name || 'winners'}-AgeGroup-${ageGroupLabel}`);
         } catch (e) { console.error(e); } finally {
             setDownloading(null);
         }
@@ -371,7 +386,7 @@ export default function ResultWinnersBySlugPage() {
                 selectedCategory,
                 sections
             );
-            if (canvas) triggerDownload(canvas, `${campaign?.name || 'winners'}-all`);
+            if (canvas) triggerDownload(canvas, `${campaign?.name || 'winners'}-AgeGroup-All`);
         } catch (e) { console.error(e); } finally {
             setDownloading(null);
         }
