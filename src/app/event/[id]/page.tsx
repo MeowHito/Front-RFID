@@ -330,6 +330,19 @@ export default function EventLivePage() {
     const [cpTimingPickerOpen, setCpTimingPickerOpen] = useState<string | null>(null);
     const [clearingCheckpoint, setClearingCheckpoint] = useState<string | null>(null);
 
+    // Manual Status bulk modal
+    const [showManualStatusModal, setShowManualStatusModal] = useState(false);
+    const [manualSelectedIds, setManualSelectedIds] = useState<Set<string>>(new Set());
+    const [manualStatus, setManualStatus] = useState('dnf');
+    const [manualCheckpoint, setManualCheckpoint] = useState('');
+    const [manualNote, setManualNote] = useState('');
+    const [manualSearch, setManualSearch] = useState('');
+    const [manualSaving, setManualSaving] = useState(false);
+    const [manualSaveError, setManualSaveError] = useState<string | null>(null);
+    const [manualSaveSuccess, setManualSaveSuccess] = useState<string | null>(null);
+    const [manualCheckpoints, setManualCheckpoints] = useState<{name: string; orderNum: number; type: string}[]>([]);
+    const [manualCheckpointsLoading, setManualCheckpointsLoading] = useState(false);
+
     const toApiData = (payload: any) => payload?.data ?? payload;
 
     // Compute rank deltas: compare current overall rank vs previous refresh
@@ -876,6 +889,27 @@ export default function EventLivePage() {
         return counts;
     }, [runners, filterCategory, resolveRunnerCategoryKey]);
 
+    // Runners shown in Manual Status modal — filtered by current category + modal search
+    const manualModalRunners = useMemo(() => {
+        let base = runners;
+        if (filterCategory) {
+            base = base.filter(r => resolveRunnerCategoryKey(r) === filterCategory);
+        }
+        if (manualSearch.trim()) {
+            const q = manualSearch.trim().toLowerCase();
+            base = base.filter(r =>
+                r.bib.toLowerCase().includes(q) ||
+                `${r.firstName} ${r.lastName}`.toLowerCase().includes(q) ||
+                `${r.firstNameTh || ''} ${r.lastNameTh || ''}`.toLowerCase().trim().includes(q)
+            );
+        }
+        return [...base].sort((a, b) => {
+            const aN = parseInt(a.bib) || 0;
+            const bN = parseInt(b.bib) || 0;
+            return aN !== bN ? aN - bN : a.bib.localeCompare(b.bib);
+        });
+    }, [runners, filterCategory, manualSearch, resolveRunnerCategoryKey]);
+
     const followedRunnersForEvent = useMemo(
         () => getFollowedRunnersForEvent(followedRunners, eventKey, campaign?._id),
         [followedRunners, eventKey, campaign?._id]
@@ -1016,6 +1050,69 @@ export default function EventLivePage() {
             setEditSaveError(err instanceof Error ? err.message : (language === 'th' ? 'บันทึกข้อมูลไม่สำเร็จ' : 'Failed to save runner status'));
         } finally {
             setEditSaving(false);
+        }
+    };
+
+    const openManualStatusModal = async () => {
+        setShowManualStatusModal(true);
+        setManualSelectedIds(new Set());
+        setManualStatus('dnf');
+        setManualCheckpoint('');
+        setManualNote('');
+        setManualSearch('');
+        setManualSaveError(null);
+        setManualSaveSuccess(null);
+        if (campaign?._id && manualCheckpoints.length === 0) {
+            setManualCheckpointsLoading(true);
+            try {
+                const cpRes = await fetch(`/api/checkpoints/campaign/${campaign._id}`, { cache: 'no-store' });
+                if (cpRes.ok) {
+                    const cpData = await cpRes.json();
+                    const cps = (Array.isArray(cpData) ? cpData : cpData?.data || [])
+                        .map((cp: any) => ({ name: cp.name || '', orderNum: cp.orderNum ?? 0, type: cp.type || 'checkpoint' }))
+                        .sort((a: any, b: any) => a.orderNum - b.orderNum);
+                    setManualCheckpoints(cps);
+                }
+            } catch { /* ignore */ }
+            setManualCheckpointsLoading(false);
+        }
+    };
+
+    const handleManualStatusSave = async () => {
+        if (manualSelectedIds.size === 0) return;
+        setManualSaving(true);
+        setManualSaveError(null);
+        setManualSaveSuccess(null);
+        try {
+            const updates = [...manualSelectedIds].map(id => ({
+                id,
+                status: manualStatus,
+                statusCheckpoint: manualCheckpoint || undefined,
+                statusNote: manualNote || undefined,
+                changedBy: 'admin',
+            }));
+            const res = await fetch('/api/runners/bulk-status', {
+                method: 'PUT',
+                headers: authHeaders(),
+                body: JSON.stringify({ runners: updates }),
+            });
+            if (!res.ok) {
+                let msg = language === 'th' ? 'บันทึกไม่สำเร็จ' : 'Failed to update statuses';
+                try { const j = await res.json(); msg = j.message || j.error || msg; } catch {}
+                throw new Error(msg);
+            }
+            const count = manualSelectedIds.size;
+            setRunners(prev => prev.map(r =>
+                manualSelectedIds.has(r._id)
+                    ? { ...r, status: manualStatus, statusCheckpoint: manualCheckpoint, statusNote: manualNote, statusChangedAt: new Date().toISOString() }
+                    : r
+            ));
+            setManualSelectedIds(new Set());
+            setManualSaveSuccess(language === 'th' ? `บันทึกแล้ว ${count} คน เป็น ${manualStatus.toUpperCase()}` : `Updated ${count} runners to ${manualStatus.toUpperCase()}`);
+        } catch (err) {
+            setManualSaveError(err instanceof Error ? err.message : (language === 'th' ? 'บันทึกไม่สำเร็จ' : 'Failed to save'));
+        } finally {
+            setManualSaving(false);
         }
     };
 
@@ -1195,6 +1292,22 @@ export default function EventLivePage() {
                                 ))}
                             </div>
                         </div>
+                    )}
+                    {isAdmin && (
+                        <button
+                            onClick={openManualStatusModal}
+                            title={language === 'th' ? 'แก้ไขสถานะทีละหลายคน' : 'Manual Status — bulk edit runner statuses'}
+                            className="ml-1 flex shrink-0 items-center gap-1 rounded-md px-2.5 py-1 text-[11px] font-bold transition-all duration-150"
+                            style={{ border: '1.5px solid rgba(249,115,22,0.4)', background: 'rgba(249,115,22,0.08)', color: isDark ? '#fb923c' : '#ea580c' }}
+                            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(249,115,22,0.18)'; }}
+                            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(249,115,22,0.08)'; }}
+                        >
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>
+                                <path d="M15 5l4 4"/>
+                            </svg>
+                            {!isMobile && <span>Manual Status</span>}
+                        </button>
                     )}
                 </div>
                 {/* Status filter moved to header right side */}
@@ -2308,6 +2421,266 @@ export default function EventLivePage() {
                     </div>
                 </div>
             )}
+            {/* ===== MANUAL STATUS BULK MODAL ===== */}
+            {showManualStatusModal && (
+                <div
+                    onClick={() => setShowManualStatusModal(false)}
+                    className="fixed inset-0 z-[1100] flex items-end justify-center bg-black/60 sm:items-center"
+                >
+                    <div
+                        onClick={e => e.stopPropagation()}
+                        className="flex h-[92vh] w-full flex-col rounded-t-2xl shadow-[0_-8px_40px_rgba(0,0,0,0.3)] sm:h-[88vh] sm:max-w-2xl sm:rounded-xl"
+                        style={{ background: isDark ? '#1e293b' : '#fff' }}
+                    >
+                        {/* Modal Header */}
+                        <div className="flex shrink-0 items-center justify-between border-b px-5 py-3.5" style={{ borderColor: themeStyles.border }}>
+                            <div>
+                                <h2 className="m-0 text-sm font-bold" style={{ color: themeStyles.text }}>
+                                    {language === 'th' ? 'แก้ไขสถานะนักวิ่งหลายคน' : 'Manual Status — Bulk Edit'}
+                                </h2>
+                                <p className="m-0 mt-0.5 text-[11px]" style={{ color: themeStyles.textSecondary }}>
+                                    {language === 'th' ? `ระยะ: ${filterCategory || 'ทั้งหมด'} · ${manualModalRunners.length} คน` : `Distance: ${filterCategory || 'All'} · ${manualModalRunners.length} runners`}
+                                </p>
+                            </div>
+                            <button
+                                onClick={() => setShowManualStatusModal(false)}
+                                className="flex h-7 w-7 items-center justify-center rounded-full border-none text-lg font-bold"
+                                style={{ background: isDark ? '#334155' : '#f1f5f9', color: themeStyles.textMuted }}
+                            >
+                                ×
+                            </button>
+                        </div>
+
+                        {/* Controls */}
+                        <div className="shrink-0 border-b px-5 py-3 space-y-2.5" style={{ borderColor: themeStyles.border }}>
+                            {/* Search */}
+                            <input
+                                type="text"
+                                value={manualSearch}
+                                onChange={e => setManualSearch(e.target.value)}
+                                placeholder={language === 'th' ? 'ค้นหาชื่อหรือเลข BIB...' : 'Search by name or BIB...'}
+                                className="w-full rounded-lg border px-3 py-2 text-[13px] outline-none"
+                                style={{ borderColor: themeStyles.border, background: isDark ? '#0f172a' : '#f8fafc', color: themeStyles.text }}
+                            />
+
+                            {/* Status selector */}
+                            <div className="flex flex-wrap items-center gap-1.5">
+                                <span className="shrink-0 text-[10px] font-bold uppercase" style={{ color: themeStyles.textSecondary }}>
+                                    {language === 'th' ? 'สถานะ:' : 'Set Status:'}
+                                </span>
+                                {[
+                                    { value: 'dnf', label: 'DNF', color: '#dc2626' },
+                                    { value: 'dns', label: 'DNS', color: '#dc2626' },
+                                    { value: 'dq', label: 'DQ', color: '#7c2d12' },
+                                    { value: 'in_progress', label: 'Racing', color: '#f97316' },
+                                    { value: 'not_started', label: 'Not Started', color: '#94a3b8' },
+                                    { value: 'finished', label: 'Finish', color: '#22c55e' },
+                                ].map(opt => (
+                                    <button
+                                        key={opt.value}
+                                        onClick={() => setManualStatus(opt.value)}
+                                        className="cursor-pointer rounded-md px-3 py-1 text-[11px] font-bold transition-all duration-150"
+                                        style={{
+                                            border: manualStatus === opt.value ? `2px solid ${opt.color}` : '2px solid transparent',
+                                            background: manualStatus === opt.value ? opt.color : (isDark ? '#334155' : '#f1f5f9'),
+                                            color: manualStatus === opt.value ? '#fff' : themeStyles.text,
+                                        }}
+                                    >
+                                        {opt.label}
+                                    </button>
+                                ))}
+                            </div>
+
+                            {/* Checkpoint + Note */}
+                            <div className="flex gap-2">
+                                <div className="flex-1">
+                                    <label className="mb-1 block text-[10px] font-bold uppercase" style={{ color: themeStyles.textSecondary }}>
+                                        {language === 'th' ? 'จุด Checkpoint' : 'Checkpoint'}
+                                    </label>
+                                    {manualCheckpointsLoading ? (
+                                        <div className="rounded-lg border px-3 py-1.5 text-[12px]" style={{ borderColor: themeStyles.border, color: themeStyles.textSecondary, background: isDark ? '#0f172a' : '#f8fafc' }}>
+                                            {language === 'th' ? 'กำลังโหลด...' : 'Loading...'}
+                                        </div>
+                                    ) : manualCheckpoints.length > 0 ? (
+                                        <select
+                                            value={manualCheckpoint}
+                                            onChange={e => setManualCheckpoint(e.target.value)}
+                                            className="w-full rounded-lg border px-3 py-1.5 text-[12px]"
+                                            style={{ borderColor: themeStyles.border, background: isDark ? '#0f172a' : '#f8fafc', color: themeStyles.text }}
+                                        >
+                                            <option value="">{language === 'th' ? '— ไม่ระบุ —' : '— None —'}</option>
+                                            {manualCheckpoints.map(cp => (
+                                                <option key={cp.name} value={cp.name}>{cp.name}</option>
+                                            ))}
+                                        </select>
+                                    ) : (
+                                        <input
+                                            type="text"
+                                            value={manualCheckpoint}
+                                            onChange={e => setManualCheckpoint(e.target.value)}
+                                            placeholder="e.g. CP3, FINISH"
+                                            className="w-full rounded-lg border px-3 py-1.5 text-[12px]"
+                                            style={{ borderColor: themeStyles.border, background: isDark ? '#0f172a' : '#f8fafc', color: themeStyles.text }}
+                                        />
+                                    )}
+                                </div>
+                                <div className="flex-1">
+                                    <label className="mb-1 block text-[10px] font-bold uppercase" style={{ color: themeStyles.textSecondary }}>
+                                        {language === 'th' ? 'หมายเหตุ' : 'Note'}
+                                    </label>
+                                    <input
+                                        type="text"
+                                        value={manualNote}
+                                        onChange={e => setManualNote(e.target.value)}
+                                        placeholder={language === 'th' ? 'เช่น ขาเจ็บ, หลงทาง' : 'e.g. injury, lost route'}
+                                        className="w-full rounded-lg border px-3 py-1.5 text-[12px]"
+                                        style={{ borderColor: themeStyles.border, background: isDark ? '#0f172a' : '#f8fafc', color: themeStyles.text }}
+                                    />
+                                </div>
+                            </div>
+
+                            {/* Select All / Deselect All */}
+                            <div className="flex items-center gap-2">
+                                <button
+                                    onClick={() => setManualSelectedIds(new Set(manualModalRunners.map(r => r._id)))}
+                                    className="rounded-md border-none px-3 py-1 text-[11px] font-bold"
+                                    style={{ background: isDark ? '#334155' : '#e2e8f0', color: themeStyles.text }}
+                                >
+                                    {language === 'th' ? `เลือกทั้งหมด (${manualModalRunners.length})` : `Select All (${manualModalRunners.length})`}
+                                </button>
+                                <button
+                                    onClick={() => setManualSelectedIds(new Set())}
+                                    className="rounded-md border-none px-3 py-1 text-[11px] font-bold"
+                                    style={{ background: isDark ? '#334155' : '#e2e8f0', color: themeStyles.text }}
+                                >
+                                    {language === 'th' ? 'ยกเลิกทั้งหมด' : 'Deselect All'}
+                                </button>
+                                {manualSelectedIds.size > 0 && (
+                                    <span className="text-[11px] font-semibold text-orange-500">
+                                        {language === 'th' ? `เลือก ${manualSelectedIds.size} คน` : `${manualSelectedIds.size} selected`}
+                                    </span>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Runner List */}
+                        <div className="flex-1 overflow-y-auto">
+                            {manualModalRunners.length === 0 ? (
+                                <div className="flex h-40 items-center justify-center text-sm" style={{ color: themeStyles.textSecondary }}>
+                                    {language === 'th' ? 'ไม่พบนักวิ่ง' : 'No runners found'}
+                                </div>
+                            ) : (
+                                <div>
+                                    {manualModalRunners.map(runner => {
+                                        const isChecked = manualSelectedIds.has(runner._id);
+                                        const statusColor: Record<string, string> = { finished: '#22c55e', in_progress: '#f97316', dnf: '#dc2626', dns: '#dc2626', dq: '#7c2d12', not_started: '#94a3b8' };
+                                        return (
+                                            <div
+                                                key={runner._id}
+                                                onClick={() => {
+                                                    setManualSelectedIds(prev => {
+                                                        const next = new Set(prev);
+                                                        if (next.has(runner._id)) next.delete(runner._id);
+                                                        else next.add(runner._id);
+                                                        return next;
+                                                    });
+                                                }}
+                                                className="flex cursor-pointer items-center gap-3 border-b px-5 py-2.5 transition-colors"
+                                                style={{
+                                                    borderColor: themeStyles.border,
+                                                    background: isChecked ? (isDark ? 'rgba(249,115,22,0.10)' : 'rgba(249,115,22,0.06)') : 'transparent',
+                                                }}
+                                                onMouseEnter={e => { if (!isChecked) (e.currentTarget as HTMLElement).style.background = isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.02)'; }}
+                                                onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = isChecked ? (isDark ? 'rgba(249,115,22,0.10)' : 'rgba(249,115,22,0.06)') : 'transparent'; }}
+                                            >
+                                                <div
+                                                    className="flex h-4.5 w-4.5 shrink-0 items-center justify-center rounded"
+                                                    style={{
+                                                        width: 18, height: 18,
+                                                        border: isChecked ? '2px solid #f97316' : `2px solid ${themeStyles.border}`,
+                                                        background: isChecked ? '#f97316' : 'transparent',
+                                                    }}
+                                                >
+                                                    {isChecked && (
+                                                        <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                                            <polyline points="2 6 5 9 10 3"/>
+                                                        </svg>
+                                                    )}
+                                                </div>
+                                                <span className="w-12 shrink-0 font-mono text-[12px] font-bold" style={{ color: '#3b82f6' }}>
+                                                    {runner.bib}
+                                                </span>
+                                                <div className="min-w-0 flex-1">
+                                                    <div className="truncate text-[13px] font-semibold" style={{ color: themeStyles.text }}>
+                                                        {runner.firstName} {runner.lastName}
+                                                        {(runner.firstNameTh || runner.lastNameTh) && (
+                                                            <span className="ml-1.5 text-[11px] font-normal" style={{ color: themeStyles.textSecondary }}>
+                                                                {runner.firstNameTh} {runner.lastNameTh}
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                    <div className="text-[10px]" style={{ color: themeStyles.textSecondary }}>
+                                                        {runner.category} {runner.gender && `· ${runner.gender}`} {runner.ageGroup && `· ${runner.ageGroup}`}
+                                                    </div>
+                                                </div>
+                                                <span
+                                                    className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold"
+                                                    style={{ background: `${statusColor[runner.status] || '#94a3b8'}22`, color: statusColor[runner.status] || '#94a3b8' }}
+                                                >
+                                                    {runner.status === 'not_started' ? 'Wait' : runner.status === 'in_progress' ? 'Racing' : runner.status.toUpperCase()}
+                                                </span>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Footer */}
+                        <div className="shrink-0 border-t px-5 py-3" style={{ borderColor: themeStyles.border }}>
+                            {manualSaveError && (
+                                <div className="mb-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[12px] font-semibold text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-300">
+                                    {manualSaveError}
+                                </div>
+                            )}
+                            {manualSaveSuccess && (
+                                <div className="mb-2 rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-[12px] font-semibold text-green-700 dark:border-green-800 dark:bg-green-950 dark:text-green-300">
+                                    ✓ {manualSaveSuccess}
+                                </div>
+                            )}
+                            <div className="flex items-center justify-between gap-3">
+                                <span className="text-[11px]" style={{ color: themeStyles.textSecondary }}>
+                                    {manualSelectedIds.size > 0
+                                        ? (language === 'th' ? `เลือก ${manualSelectedIds.size} คน → ${manualStatus.toUpperCase()}` : `${manualSelectedIds.size} selected → ${manualStatus.toUpperCase()}`)
+                                        : (language === 'th' ? 'ยังไม่ได้เลือกนักวิ่ง' : 'No runners selected')}
+                                </span>
+                                <div className="flex gap-2">
+                                    <button
+                                        onClick={() => setShowManualStatusModal(false)}
+                                        className="rounded-lg border bg-transparent px-4 py-2 text-[12px] font-semibold"
+                                        style={{ borderColor: themeStyles.border, color: themeStyles.text }}
+                                    >
+                                        {language === 'th' ? 'ปิด' : 'Close'}
+                                    </button>
+                                    <button
+                                        onClick={handleManualStatusSave}
+                                        disabled={manualSaving || manualSelectedIds.size === 0}
+                                        className="rounded-lg border-none px-5 py-2 text-[12px] font-bold text-white transition-opacity"
+                                        style={{
+                                            background: manualSelectedIds.size === 0 ? '#94a3b8' : '#f97316',
+                                            cursor: (manualSaving || manualSelectedIds.size === 0) ? 'not-allowed' : 'pointer',
+                                            opacity: (manualSaving || manualSelectedIds.size === 0) ? 0.6 : 1,
+                                        }}
+                                    >
+                                        {manualSaving ? '...' : (language === 'th' ? `บันทึก${manualSelectedIds.size > 0 ? ` (${manualSelectedIds.size})` : ''}` : `Save${manualSelectedIds.size > 0 ? ` (${manualSelectedIds.size})` : ''}`)}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* ===== CHECKPOINT TIMING DATE/TIME PICKER POPUP ===== */}
             {cpTimingPickerOpen && (() => {
                 // Find the ISO value for the checkpoint being edited
