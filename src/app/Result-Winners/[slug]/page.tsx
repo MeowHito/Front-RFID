@@ -320,15 +320,15 @@ export default function ResultWinnersBySlugPage() {
     const { maleWinners, femaleWinners } = useMemo(() => {
         const finished = displayedRunners.filter(r => r.status === 'finished' && (r.netTime || r.gunTime));
 
-        // Build excluded bibs from overall rank (excludeOverallFromAgeGroup)
+        // Build excluded bibs — top N male + top N female by overall time
         const excludeOv = Math.max(0, campaign?.excludeOverallFromAgeGroup || 0);
         const excludeAG = Math.max(0, campaign?.excludeAgeGroupTop || 0);
         const excludedBibs = new Set<string>();
         if (excludeOv > 0) {
-            const overallSorted = [...finished].sort((a, b) =>
-                (a.netTime || a.gunTime || a.elapsedTime || Infinity) - (b.netTime || b.gunTime || b.elapsedTime || Infinity)
-            );
-            overallSorted.slice(0, excludeOv).forEach(r => excludedBibs.add(r.bib));
+            const byTime = (a: Runner, b: Runner) =>
+                (a.netTime || a.gunTime || a.elapsedTime || Infinity) - (b.netTime || b.gunTime || b.elapsedTime || Infinity);
+            finished.filter(r => r.gender !== 'F').sort(byTime).slice(0, excludeOv).forEach(r => excludedBibs.add(r.bib));
+            finished.filter(r => r.gender === 'F').sort(byTime).slice(0, excludeOv).forEach(r => excludedBibs.add(r.bib));
         }
 
         // Sort by RaceTiger's ageGroupRank; fall back to netTime for runners without a rank yet

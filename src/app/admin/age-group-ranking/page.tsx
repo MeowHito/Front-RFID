@@ -258,9 +258,11 @@ export default function AgeGroupRankingPage() {
     }, [campaign, selectedCategory, previewRunners, disableAgeGroupRanking]);
 
     const { maleWinners, femaleWinners } = useMemo(() => {
+        // Exclude top N male + top N female by overall time
         const excludedBibs = new Set<string>();
         if (excludeTop > 0) {
-            sortedFinishedRunners.slice(0, excludeTop).forEach(r => excludedBibs.add(r.bib));
+            sortedFinishedRunners.filter(r => r.gender !== 'F').slice(0, excludeTop).forEach(r => excludedBibs.add(r.bib));
+            sortedFinishedRunners.filter(r => r.gender === 'F').slice(0, excludeTop).forEach(r => excludedBibs.add(r.bib));
         }
 
         const male: Record<string, Runner[]> = {};
