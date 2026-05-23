@@ -873,6 +873,32 @@ export default function CertificatesPage() {
         setActiveTool('');
     };
 
+    // Stat preset elements — labeled value blocks for Overall Rank / Gender Rank / Pace.
+    // `orient='vertical'` stacks label above value (multi-line text); `'horizontal'` puts them inline.
+    const addStatElement = (stat: 'rank' | 'gender_rank' | 'pace', orient: 'vertical' | 'horizontal') => {
+        pushUndo(elements);
+        const cfg = stat === 'rank'
+            ? { label: 'OVERALL RANK', token: '#{{rank}}' }
+            : stat === 'gender_rank'
+                ? { label: 'GENDER RANK', token: '#{{gender_rank}}' }
+                : { label: 'PACE (min/km)', token: '{{pace}}' };
+        const content = orient === 'vertical' ? `${cfg.label}\n${cfg.token}` : `${cfg.label}: ${cfg.token}`;
+        const el: CertElement = {
+            id: uid(), type: 'text', content,
+            x: 50, y: 50,
+            width: orient === 'vertical' ? 22 : 32,
+            fontSize: orient === 'vertical' ? 16 : 14,
+            fontFamily: 'Sarabun, sans-serif',
+            color: '#ffffff',
+            fontWeight: 'bold', fontStyle: 'normal',
+            textAlign: 'center',
+            opacity: 1, letterSpacing: 1,
+        };
+        setElements(prev => [...prev, el]);
+        setSelectedId(el.id);
+        setActiveTool('');
+    };
+
     const addTableElement = () => {
         pushUndo(elements);
         const el: CertElement = {
@@ -1143,6 +1169,22 @@ export default function CertificatesPage() {
                                 <button onClick={() => addFlagElement('flag')} style={{ width: '100%', padding: '6px 8px', borderRadius: 5, border: '1px solid #d1d5db', fontSize: 11, background: '#fff', cursor: 'pointer', fontWeight: 600, marginBottom: 3, textAlign: 'left' }}>🇹🇭 Flag only</button>
                                 <button onClick={() => addFlagElement('name')} style={{ width: '100%', padding: '6px 8px', borderRadius: 5, border: '1px solid #d1d5db', fontSize: 11, background: '#fff', cursor: 'pointer', fontWeight: 600, marginBottom: 3, textAlign: 'left' }}>Aa Country name</button>
                                 <button onClick={() => addFlagElement('both')} style={{ width: '100%', padding: '6px 8px', borderRadius: 5, border: '1px solid #d1d5db', fontSize: 11, background: '#fff', cursor: 'pointer', fontWeight: 600, marginBottom: 3, textAlign: 'left' }}>🇹🇭 Thailand (both)</button>
+
+                                <div style={{ height: 1, background: '#e5e7eb', margin: '8px 0' }} />
+                                <div style={{ fontWeight: 700, fontSize: 11, marginBottom: 4, color: '#374151' }}>Stat Blocks</div>
+                                <div style={{ fontSize: 9, color: '#64748b', marginBottom: 6, lineHeight: 1.4 }}>เพิ่ม label + value พร้อมจัดวาง (แนวตั้ง = ทับกันเป็นบรรทัด, แนวนอน = อยู่ในบรรทัดเดียว)</div>
+
+                                <div style={{ fontSize: 10, fontWeight: 700, color: '#475569', margin: '4px 0 2px' }}>Overall Rank</div>
+                                <button onClick={() => addStatElement('rank', 'vertical')} style={{ width: '100%', padding: '6px 8px', borderRadius: 5, border: '1px solid #a78bfa', fontSize: 11, background: '#f5f3ff', color: '#6d28d9', cursor: 'pointer', fontWeight: 700, marginBottom: 3, textAlign: 'left' }}>↕ Vertical (label/value)</button>
+                                <button onClick={() => addStatElement('rank', 'horizontal')} style={{ width: '100%', padding: '6px 8px', borderRadius: 5, border: '1px solid #a78bfa', fontSize: 11, background: '#f5f3ff', color: '#6d28d9', cursor: 'pointer', fontWeight: 700, marginBottom: 3, textAlign: 'left' }}>↔ Horizontal (label: value)</button>
+
+                                <div style={{ fontSize: 10, fontWeight: 700, color: '#475569', margin: '6px 0 2px' }}>Gender Rank</div>
+                                <button onClick={() => addStatElement('gender_rank', 'vertical')} style={{ width: '100%', padding: '6px 8px', borderRadius: 5, border: '1px solid #f472b6', fontSize: 11, background: '#fdf2f8', color: '#be185d', cursor: 'pointer', fontWeight: 700, marginBottom: 3, textAlign: 'left' }}>↕ Vertical (label/value)</button>
+                                <button onClick={() => addStatElement('gender_rank', 'horizontal')} style={{ width: '100%', padding: '6px 8px', borderRadius: 5, border: '1px solid #f472b6', fontSize: 11, background: '#fdf2f8', color: '#be185d', cursor: 'pointer', fontWeight: 700, marginBottom: 3, textAlign: 'left' }}>↔ Horizontal (label: value)</button>
+
+                                <div style={{ fontSize: 10, fontWeight: 700, color: '#475569', margin: '6px 0 2px' }}>Pace (min/km)</div>
+                                <button onClick={() => addStatElement('pace', 'vertical')} style={{ width: '100%', padding: '6px 8px', borderRadius: 5, border: '1px solid #34d399', fontSize: 11, background: '#ecfdf5', color: '#047857', cursor: 'pointer', fontWeight: 700, marginBottom: 3, textAlign: 'left' }}>↕ Vertical (label/value)</button>
+                                <button onClick={() => addStatElement('pace', 'horizontal')} style={{ width: '100%', padding: '6px 8px', borderRadius: 5, border: '1px solid #34d399', fontSize: 11, background: '#ecfdf5', color: '#047857', cursor: 'pointer', fontWeight: 700, marginBottom: 3, textAlign: 'left' }}>↔ Horizontal (label: value)</button>
                             </>}
                             {activeTool === 'shapes' && <>
                                 <div style={{ fontWeight: 700, fontSize: 12, marginBottom: 8, color: '#374151' }}>Shapes</div>

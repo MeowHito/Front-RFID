@@ -1,40 +1,57 @@
 'use client';
 
-import { useEffect, useState, useRef, useCallback } from 'react';
+// IMPORTANT: Types, constants, helpers and renderers below MUST match the editor at
+// /admin/certificates/page.tsx. If you add a new field or element type there, mirror
+// it here too — otherwise the runner-facing certificate will render `{{token}}` raw
+// or drop entire elements.
+
+import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 
-// ─── Types — must match /admin/certificates editor ────────────────────────────
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+type ElementType = 'text' | 'image' | 'shape' | 'flag' | 'table';
+type ShapeKind = 'rect' | 'circle' | 'triangle';
+type FlagMode = 'flag' | 'name' | 'both';
+type TableFieldKey =
+    | 'checkpoint' | 'distance' | 'cumulative' | 'sector' | 'pace'
+    | 'overall_rank' | 'gender_rank' | 'split_no';
+
+interface TableColumn {
+    field: TableFieldKey;
+    header: string;
+    width: number;
+    align: 'left' | 'center' | 'right';
+}
 
 interface CertElement {
     id: string;
+    type?: ElementType;
     content: string;
-    x: number;
-    y: number;
-    width: number;
-    height?: number;
-    fontSize: number;
-    fontFamily: string;
-    color: string;
-    fontWeight: 'normal' | 'bold';
-    fontStyle: 'normal' | 'italic';
+    x: number; y: number; width: number; height?: number;
+    fontSize: number; fontFamily: string; color: string;
+    fontWeight: 'normal' | 'bold'; fontStyle: 'normal' | 'italic';
     textAlign: 'left' | 'center' | 'right';
-    opacity: number;
-    letterSpacing: number;
-    type?: 'text' | 'image';
-    src?: string;
-    aspectRatio?: number;
-    // effects (mirrors editor)
+    opacity: number; letterSpacing: number;
     rotation?: number;
     borderRadius?: number;
-    brightness?: number;
-    contrast?: number;
-    blur?: number;
-    shadowEnabled?: boolean;
-    shadowColor?: string;
-    shadowBlur?: number;
-    shadowX?: number;
-    shadowY?: number;
+    brightness?: number; contrast?: number; blur?: number;
+    shadowEnabled?: boolean; shadowColor?: string;
+    shadowBlur?: number; shadowX?: number; shadowY?: number;
+    // image
+    src?: string; aspectRatio?: number;
+    // shape
+    shape?: ShapeKind;
+    fillColor?: string; strokeColor?: string; strokeWidth?: number;
+    // flag
+    flagMode?: FlagMode; flagCode?: string;
+    // table
+    columns?: TableColumn[];
+    headerBg?: string; headerColor?: string;
+    rowBg?: string; rowAltBg?: string;
+    borderColor?: string; borderWidth?: number;
+    showHeader?: boolean; headerFontSize?: number;
 }
 
 interface RunnerData {
@@ -47,14 +64,22 @@ interface RunnerData {
     gender?: string;
     category?: string;
     ageGroup?: string;
+    age?: number;
+    team?: string;
+    teamName?: string;
+    nationality?: string;
     status: string;
     netTime?: number;
     gunTime?: number;
     finishTime?: string;
+    netPace?: string;
+    gunPace?: string;
     overallRank?: number;
     genderRank?: number;
     ageGroupRank?: number;
     categoryRank?: number;
+    totalFinishers?: number;
+    genderFinishers?: number;
 }
 
 interface CampaignData {
@@ -72,6 +97,19 @@ interface CampaignData {
     certBgColor?: string | null;
 }
 
+interface SplitRecord {
+    checkpoint: string;
+    splitTime?: number;
+    elapsedTime?: number;
+    distanceFromStart?: number;
+    netPace?: string;
+    splitPace?: string;
+    splitNo?: number;
+    splitDesc?: string;
+    overallRank?: number;
+    genderRank?: number;
+}
+
 // ─── Constants — must match editor ────────────────────────────────────────────
 
 const CANVAS_REF_W = 1200;
@@ -86,22 +124,58 @@ function paperRatioWH(paper?: string | null): number {
 }
 
 const FIELD_PREVIEWS: Record<string, string> = {
-    '{{name}}': '-', '{{name_th}}': '-', '{{bib}}': '-',
-    '{{category}}': '-', '{{gender}}': '-', '{{time}}': '-',
-    '{{gun_time}}': '-', '{{rank}}': '-', '{{gender_rank}}': '-',
-    '{{age_rank}}': '-', '{{event_name}}': '-', '{{event_date}}': '-',
+    '{{name}}': '-', '{{name_th}}': '-',
+    '{{first_name}}': '-', '{{last_name}}': '-',
+    '{{bib}}': '-', '{{category}}': '-', '{{distance}}': '-',
+    '{{gender}}': '-', '{{age}}': '-', '{{age_group}}': '-',
+    '{{team}}': '-', '{{country}}': '-', '{{flag}}': '',
+    '{{time}}': '-', '{{gun_time}}': '-',
+    '{{pace}}': '-', '{{gun_pace}}': '-',
+    '{{rank}}': '-', '{{gender_rank}}': '-', '{{age_rank}}': '-',
+    '{{rank_total}}': '-', '{{gender_rank_total}}': '-',
+    '{{event_name}}': '-', '{{event_date}}': '-',
 };
+
+const NATIONALITY_MAP: Record<string, { code: string; name: string }> = {
+    'TH': { code: 'TH', name: 'Thailand' }, 'THA': { code: 'TH', name: 'Thailand' }, 'THAI': { code: 'TH', name: 'Thailand' }, 'THAILAND': { code: 'TH', name: 'Thailand' },
+    'US': { code: 'US', name: 'United States' }, 'USA': { code: 'US', name: 'United States' }, 'AMERICAN': { code: 'US', name: 'United States' },
+    'GB': { code: 'GB', name: 'United Kingdom' }, 'UK': { code: 'GB', name: 'United Kingdom' }, 'BRITISH': { code: 'GB', name: 'United Kingdom' },
+    'JP': { code: 'JP', name: 'Japan' }, 'JPN': { code: 'JP', name: 'Japan' }, 'JAPAN': { code: 'JP', name: 'Japan' },
+    'CN': { code: 'CN', name: 'China' }, 'CHN': { code: 'CN', name: 'China' }, 'CHINESE': { code: 'CN', name: 'China' }, 'CHINA': { code: 'CN', name: 'China' },
+    'KR': { code: 'KR', name: 'Korea' }, 'KOR': { code: 'KR', name: 'Korea' }, 'KOREA': { code: 'KR', name: 'Korea' },
+    'MY': { code: 'MY', name: 'Malaysia' }, 'MYS': { code: 'MY', name: 'Malaysia' }, 'MALAYSIA': { code: 'MY', name: 'Malaysia' },
+    'SG': { code: 'SG', name: 'Singapore' }, 'SGP': { code: 'SG', name: 'Singapore' }, 'SINGAPORE': { code: 'SG', name: 'Singapore' },
+    'ID': { code: 'ID', name: 'Indonesia' }, 'IDN': { code: 'ID', name: 'Indonesia' }, 'INDONESIA': { code: 'ID', name: 'Indonesia' },
+    'PH': { code: 'PH', name: 'Philippines' }, 'PHL': { code: 'PH', name: 'Philippines' }, 'PHILIPPINES': { code: 'PH', name: 'Philippines' },
+    'VN': { code: 'VN', name: 'Vietnam' }, 'VNM': { code: 'VN', name: 'Vietnam' }, 'VIETNAM': { code: 'VN', name: 'Vietnam' },
+    'AU': { code: 'AU', name: 'Australia' }, 'AUS': { code: 'AU', name: 'Australia' }, 'AUSTRALIA': { code: 'AU', name: 'Australia' },
+    'NZ': { code: 'NZ', name: 'New Zealand' }, 'NZL': { code: 'NZ', name: 'New Zealand' },
+    'FR': { code: 'FR', name: 'France' }, 'FRA': { code: 'FR', name: 'France' }, 'FRANCE': { code: 'FR', name: 'France' },
+    'DE': { code: 'DE', name: 'Germany' }, 'DEU': { code: 'DE', name: 'Germany' }, 'GERMANY': { code: 'DE', name: 'Germany' },
+    'CA': { code: 'CA', name: 'Canada' }, 'CAN': { code: 'CA', name: 'Canada' }, 'CANADA': { code: 'CA', name: 'Canada' },
+    'IN': { code: 'IN', name: 'India' }, 'IND': { code: 'IN', name: 'India' }, 'INDIA': { code: 'IN', name: 'India' },
+    'HK': { code: 'HK', name: 'Hong Kong' }, 'HKG': { code: 'HK', name: 'Hong Kong' }, 'TW': { code: 'TW', name: 'Taiwan' }, 'TWN': { code: 'TW', name: 'Taiwan' },
+};
+
+const DEFAULT_COLUMNS: TableColumn[] = [
+    { field: 'distance',     header: 'Distance', width: 16, align: 'left'   },
+    { field: 'cumulative',   header: 'Time',     width: 16, align: 'center' },
+    { field: 'sector',       header: 'Sector',   width: 16, align: 'center' },
+    { field: 'pace',         header: 'Pace',     width: 16, align: 'center' },
+    { field: 'overall_rank', header: 'Overall',  width: 18, align: 'center' },
+    { field: 'gender_rank',  header: 'Gender',   width: 18, align: 'right'  },
+];
 
 // Fallback layout when the campaign has no saved cert layout yet — mirrors editor's DEFAULT_ELEMENTS.
 const DEFAULT_ELEMENTS: CertElement[] = [
-    { id: 'title', content: 'Certificate of Achievement', x: 50, y: 12, width: 80, fontSize: 44, fontFamily: 'Playfair Display, serif', color: '#d4af37', fontWeight: 'bold', fontStyle: 'normal', textAlign: 'center', opacity: 1, letterSpacing: 3 },
-    { id: 'event', content: '{{event_name}}', x: 50, y: 24, width: 75, fontSize: 20, fontFamily: 'Sarabun, sans-serif', color: '#ffffff', fontWeight: 'normal', fontStyle: 'normal', textAlign: 'center', opacity: 0.85, letterSpacing: 1 },
-    { id: 'presented', content: 'This certificate is presented to', x: 50, y: 34, width: 60, fontSize: 15, fontFamily: 'Sarabun, sans-serif', color: '#ffffff', fontWeight: 'normal', fontStyle: 'italic', textAlign: 'center', opacity: 0.65, letterSpacing: 0 },
-    { id: 'name', content: '{{name}}', x: 50, y: 47, width: 70, fontSize: 48, fontFamily: 'Playfair Display, serif', color: '#ffffff', fontWeight: 'bold', fontStyle: 'normal', textAlign: 'center', opacity: 1, letterSpacing: 2 },
-    { id: 'details', content: 'BIB: {{bib}}   |   {{category}}   |   {{gender}}', x: 50, y: 59, width: 65, fontSize: 15, fontFamily: 'Sarabun, sans-serif', color: '#ffffff', fontWeight: 'normal', fontStyle: 'normal', textAlign: 'center', opacity: 0.8, letterSpacing: 0 },
-    { id: 'time', content: '{{time}}', x: 50, y: 70, width: 40, fontSize: 38, fontFamily: 'Sarabun, sans-serif', color: '#d4af37', fontWeight: 'bold', fontStyle: 'normal', textAlign: 'center', opacity: 1, letterSpacing: 2 },
-    { id: 'rank', content: 'Overall #{{rank}}  |  Gender #{{gender_rank}}  |  Age #{{age_rank}}', x: 50, y: 81, width: 70, fontSize: 13, fontFamily: 'Sarabun, sans-serif', color: '#ffffff', fontWeight: 'normal', fontStyle: 'normal', textAlign: 'center', opacity: 0.6, letterSpacing: 0 },
-    { id: 'date', content: '{{event_date}}', x: 15, y: 92, width: 24, fontSize: 12, fontFamily: 'Sarabun, sans-serif', color: '#ffffff', fontWeight: 'normal', fontStyle: 'normal', textAlign: 'center', opacity: 0.55, letterSpacing: 0 },
+    { id: 'title', type: 'text', content: 'Certificate of Achievement', x: 50, y: 12, width: 80, fontSize: 44, fontFamily: 'Playfair Display, serif', color: '#d4af37', fontWeight: 'bold', fontStyle: 'normal', textAlign: 'center', opacity: 1, letterSpacing: 3 },
+    { id: 'event', type: 'text', content: '{{event_name}}', x: 50, y: 24, width: 75, fontSize: 20, fontFamily: 'Sarabun, sans-serif', color: '#ffffff', fontWeight: 'normal', fontStyle: 'normal', textAlign: 'center', opacity: 0.85, letterSpacing: 1 },
+    { id: 'presented', type: 'text', content: 'This certificate is presented to', x: 50, y: 34, width: 60, fontSize: 15, fontFamily: 'Sarabun, sans-serif', color: '#ffffff', fontWeight: 'normal', fontStyle: 'italic', textAlign: 'center', opacity: 0.65, letterSpacing: 0 },
+    { id: 'name', type: 'text', content: '{{name}}', x: 50, y: 47, width: 70, fontSize: 48, fontFamily: 'Playfair Display, serif', color: '#ffffff', fontWeight: 'bold', fontStyle: 'normal', textAlign: 'center', opacity: 1, letterSpacing: 2 },
+    { id: 'details', type: 'text', content: 'BIB: {{bib}}   |   {{category}}   |   {{gender}}', x: 50, y: 59, width: 65, fontSize: 15, fontFamily: 'Sarabun, sans-serif', color: '#ffffff', fontWeight: 'normal', fontStyle: 'normal', textAlign: 'center', opacity: 0.8, letterSpacing: 0 },
+    { id: 'time', type: 'text', content: '{{time}}', x: 50, y: 70, width: 40, fontSize: 38, fontFamily: 'Sarabun, sans-serif', color: '#d4af37', fontWeight: 'bold', fontStyle: 'normal', textAlign: 'center', opacity: 1, letterSpacing: 2 },
+    { id: 'rank', type: 'text', content: 'Overall #{{rank}}  |  Gender #{{gender_rank}}  |  Age #{{age_rank}}', x: 50, y: 81, width: 70, fontSize: 13, fontFamily: 'Sarabun, sans-serif', color: '#ffffff', fontWeight: 'normal', fontStyle: 'normal', textAlign: 'center', opacity: 0.6, letterSpacing: 0 },
+    { id: 'date', type: 'text', content: '{{event_date}}', x: 15, y: 92, width: 24, fontSize: 12, fontFamily: 'Sarabun, sans-serif', color: '#ffffff', fontWeight: 'normal', fontStyle: 'normal', textAlign: 'center', opacity: 0.55, letterSpacing: 0 },
 ];
 
 // ─── Helpers — must match editor ─────────────────────────────────────────────
@@ -112,27 +186,71 @@ function formatTime(ms?: number | null): string {
     return `${Math.floor(s / 3600).toString().padStart(2, '0')}:${Math.floor((s % 3600) / 60).toString().padStart(2, '0')}:${(s % 60).toString().padStart(2, '0')}`;
 }
 
+function categoryToDistance(cat?: string): string {
+    if (!cat) return '-';
+    const m = cat.match(/(\d+(?:\.\d+)?)\s*K/i);
+    return m ? `${m[1]}K` : cat;
+}
+
+function countryFlagEmoji(code: string): string {
+    if (!code) return '';
+    const c = code.trim().toUpperCase();
+    if (c.length !== 2) return '';
+    const A = 0x1F1E6;
+    return String.fromCodePoint(A + (c.charCodeAt(0) - 65)) + String.fromCodePoint(A + (c.charCodeAt(1) - 65));
+}
+
+function resolveNationality(raw: string | undefined): { code: string; name: string } {
+    if (!raw) return { code: '', name: '-' };
+    const key = raw.trim().toUpperCase();
+    if (NATIONALITY_MAP[key]) return NATIONALITY_MAP[key];
+    if (key.length === 2) return { code: key, name: key };
+    return { code: '', name: raw };
+}
+
 function substituteFields(content: string, runner: RunnerData | null, campaign: CampaignData | null): string {
     if (!runner) return content.replace(/\{\{[^}]+\}\}/g, m => FIELD_PREVIEWS[m] ?? m);
     const netTime = typeof runner.netTime === 'number' && runner.netTime > 0
         ? formatTime(runner.netTime)
         : (runner.finishTime || '-');
     const gunTime = typeof runner.gunTime === 'number' && runner.gunTime > 0 ? formatTime(runner.gunTime) : '-';
+    const nat = resolveNationality(runner.nationality);
+    const totFinish = runner.totalFinishers && runner.totalFinishers > 0 ? runner.totalFinishers : null;
+    const genFinish = runner.genderFinishers && runner.genderFinishers > 0 ? runner.genderFinishers : null;
+    const teamName = runner.team || runner.teamName || '-';
+    const fullName = `${runner.firstName || ''} ${runner.lastName || ''}`.trim() || '-';
+    const ageRank = runner.ageGroupRank && runner.ageGroupRank > 0
+        ? String(runner.ageGroupRank)
+        : (runner.categoryRank && runner.categoryRank > 0 ? String(runner.categoryRank) : '-');
     const map: Record<string, string> = {
-        '{{name}}': `${runner.firstName || ''} ${runner.lastName || ''}`.trim() || '-',
+        '{{name}}': fullName,
         '{{name_th}}': runner.firstNameTh
             ? `${runner.firstNameTh} ${runner.lastNameTh ?? ''}`.trim()
-            : `${runner.firstName || ''} ${runner.lastName || ''}`.trim() || '-',
+            : fullName,
+        '{{first_name}}': runner.firstName ?? '-',
+        '{{last_name}}': runner.lastName ?? '-',
         '{{bib}}': runner.bib ?? '-',
         '{{category}}': runner.category ?? '-',
+        '{{distance}}': categoryToDistance(runner.category),
         '{{gender}}': runner.gender === 'M' ? 'Male' : runner.gender === 'F' ? 'Female' : (runner.gender || '-'),
+        '{{age}}': runner.age ? String(runner.age) : '-',
+        '{{age_group}}': runner.ageGroup ?? '-',
+        '{{team}}': teamName,
+        '{{country}}': nat.name,
+        '{{flag}}': nat.code ? countryFlagEmoji(nat.code) : '',
         '{{time}}': netTime,
         '{{gun_time}}': gunTime,
+        '{{pace}}': runner.netPace || '-',
+        '{{gun_pace}}': runner.gunPace || '-',
         '{{rank}}': runner.overallRank && runner.overallRank > 0 ? String(runner.overallRank) : '-',
         '{{gender_rank}}': runner.genderRank && runner.genderRank > 0 ? String(runner.genderRank) : '-',
-        '{{age_rank}}': runner.ageGroupRank && runner.ageGroupRank > 0
-            ? String(runner.ageGroupRank)
-            : (runner.categoryRank && runner.categoryRank > 0 ? String(runner.categoryRank) : '-'),
+        '{{age_rank}}': ageRank,
+        '{{rank_total}}': runner.overallRank && runner.overallRank > 0 && totFinish
+            ? `${runner.overallRank} / ${totFinish}`
+            : (runner.overallRank ? String(runner.overallRank) : '-'),
+        '{{gender_rank_total}}': runner.genderRank && runner.genderRank > 0 && genFinish
+            ? `${runner.genderRank} / ${genFinish}`
+            : (runner.genderRank ? String(runner.genderRank) : '-'),
         '{{event_name}}': campaign?.nameTh ?? campaign?.name ?? '-',
         '{{event_date}}': campaign?.eventDate
             ? new Date(campaign.eventDate).toLocaleDateString('th-TH', { day: 'numeric', month: 'long', year: 'numeric' })
@@ -141,9 +259,103 @@ function substituteFields(content: string, runner: RunnerData | null, campaign: 
     return content.replace(/\{\{[^}]+\}\}/g, m => map[m] ?? m);
 }
 
-function getElementHeight(el: CertElement, ratioWH: number): number {
-    if (el.type !== 'image') return 0;
-    return Math.max(4, Math.min(100, el.width * ratioWH / Math.max(0.1, el.aspectRatio || 1)));
+function getElementHeight(el: CertElement, paperAspect: number): number {
+    if (el.type === 'image') {
+        return Math.max(4, Math.min(100, el.width * paperAspect / Math.max(0.1, el.aspectRatio || 1)));
+    }
+    if (el.type === 'shape' || el.type === 'table' || el.type === 'flag') {
+        return Math.max(2, Math.min(100, el.height ?? el.width));
+    }
+    return 0;
+}
+
+function splitsCellValue(field: TableFieldKey, row: SplitRecord, rowIdx: number): string {
+    switch (field) {
+        case 'split_no':    return row.splitNo ? String(row.splitNo) : String(rowIdx + 1);
+        case 'checkpoint':  return row.checkpoint || row.splitDesc || '-';
+        case 'distance':    return row.distanceFromStart != null ? `${row.distanceFromStart} km` : '-';
+        case 'cumulative':  return formatTime(row.elapsedTime);
+        case 'sector':      return formatTime(row.splitTime);
+        case 'pace':        return row.splitPace || row.netPace || '-';
+        case 'overall_rank': return row.overallRank ? String(row.overallRank) : '-';
+        case 'gender_rank': return row.genderRank ? String(row.genderRank) : '-';
+        default: return '-';
+    }
+}
+
+// ─── Sub-renderers ───────────────────────────────────────────────────────────
+
+function ShapeRender({ el }: { el: CertElement }) {
+    const fill = el.fillColor || '#ffffff';
+    const stroke = el.strokeColor || 'transparent';
+    const sw = el.strokeWidth ?? 0;
+    if (el.shape === 'circle') {
+        return (
+            <svg viewBox="0 0 100 100" preserveAspectRatio="none" width="100%" height="100%" style={{ display: 'block', pointerEvents: 'none' }}>
+                <ellipse cx="50" cy="50" rx={50 - sw / 2} ry={50 - sw / 2} fill={fill} stroke={stroke} strokeWidth={sw} />
+            </svg>
+        );
+    }
+    if (el.shape === 'triangle') {
+        return (
+            <svg viewBox="0 0 100 100" preserveAspectRatio="none" width="100%" height="100%" style={{ display: 'block', pointerEvents: 'none' }}>
+                <polygon points="50,2 98,98 2,98" fill={fill} stroke={stroke} strokeWidth={sw} />
+            </svg>
+        );
+    }
+    return <div style={{ width: '100%', height: '100%', background: fill, border: sw > 0 ? `${sw}px solid ${stroke}` : 'none', boxSizing: 'border-box' }} />;
+}
+
+function FlagRender({ el, runner, fontScale }: { el: CertElement; runner: RunnerData | null; fontScale: number }) {
+    const nat = runner
+        ? resolveNationality(runner.nationality)
+        : { code: el.flagCode || 'TH', name: 'Thailand' };
+    const mode = el.flagMode || 'flag';
+    const emoji = nat.code ? countryFlagEmoji(nat.code) : '';
+    const fs = el.fontSize * fontScale;
+    if (mode === 'name') return <div style={{ fontSize: fs, color: el.color, fontWeight: el.fontWeight, textAlign: el.textAlign as 'left' | 'center' | 'right', width: '100%' }}>{nat.name}</div>;
+    if (mode === 'flag') return <div style={{ fontSize: fs * 1.4, lineHeight: 1, textAlign: el.textAlign as 'left' | 'center' | 'right', width: '100%' }}>{emoji || '🏳️'}</div>;
+    return <div style={{ fontSize: fs, color: el.color, fontWeight: el.fontWeight, textAlign: el.textAlign as 'left' | 'center' | 'right', width: '100%' }}>{emoji} {nat.name}</div>;
+}
+
+function TableRender({ el, splits, fontScale }: { el: CertElement; splits: SplitRecord[]; fontScale: number }) {
+    const cols = el.columns && el.columns.length > 0 ? el.columns : DEFAULT_COLUMNS;
+    const totalW = cols.reduce((s, c) => s + c.width, 0) || 1;
+    const headerBg = el.headerBg || 'rgba(0,0,0,0.08)';
+    const headerColor = el.headerColor || el.color;
+    const rowBg = el.rowBg || 'transparent';
+    const rowAltBg = el.rowAltBg || rowBg;
+    const borderColor = el.borderColor || 'rgba(0,0,0,0.2)';
+    const borderWidth = el.borderWidth ?? 0;
+    const showHeader = el.showHeader !== false;
+    const fs = el.fontSize * fontScale;
+    const hfs = (el.headerFontSize ?? el.fontSize) * fontScale;
+    return (
+        <table style={{ width: '100%', height: '100%', borderCollapse: 'collapse', tableLayout: 'fixed', fontFamily: el.fontFamily, color: el.color, fontWeight: el.fontWeight, pointerEvents: 'none' }}>
+            {showHeader && (
+                <thead>
+                    <tr style={{ background: headerBg, color: headerColor }}>
+                        {cols.map((c, i) => (
+                            <th key={i} style={{ width: `${(c.width / totalW) * 100}%`, padding: '4px 6px', textAlign: c.align, fontSize: hfs, fontWeight: 700, border: borderWidth > 0 ? `${borderWidth}px solid ${borderColor}` : 'none' }}>{c.header}</th>
+                        ))}
+                    </tr>
+                </thead>
+            )}
+            <tbody>
+                {splits.length === 0 ? (
+                    <tr><td colSpan={cols.length} style={{ textAlign: 'center', padding: 6, fontSize: fs, opacity: 0.7 }}>No checkpoint data</td></tr>
+                ) : splits.map((r, i) => (
+                    <tr key={i} style={{ background: i % 2 === 0 ? rowBg : rowAltBg }}>
+                        {cols.map((c, j) => (
+                            <td key={j} style={{ padding: '3px 6px', textAlign: c.align, fontSize: fs, fontVariantNumeric: 'tabular-nums', border: borderWidth > 0 ? `${borderWidth}px solid ${borderColor}` : 'none' }}>
+                                {splitsCellValue(c.field, r, i)}
+                            </td>
+                        ))}
+                    </tr>
+                ))}
+            </tbody>
+        </table>
+    );
 }
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
@@ -152,6 +364,7 @@ export default function CertificatePage() {
     const { id: runnerId } = useParams<{ id: string }>();
     const [runner, setRunner] = useState<RunnerData | null>(null);
     const [campaign, setCampaign] = useState<CampaignData | null>(null);
+    const [timingRecords, setTimingRecords] = useState<Record<string, unknown>[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
     const [downloading, setDownloading] = useState(false);
@@ -173,6 +386,7 @@ export default function CertificatePage() {
                 }
                 setRunner(json.data.runner);
                 setCampaign(json.data.campaign || null);
+                setTimingRecords(Array.isArray(json.data.timingRecords) ? json.data.timingRecords : []);
             } catch {
                 if (!cancelled) setError('โหลดข้อมูลไม่สำเร็จ');
             } finally {
@@ -197,17 +411,29 @@ export default function CertificatePage() {
         return () => window.removeEventListener('resize', measure);
     }, []);
 
+    const splits: SplitRecord[] = useMemo(() => timingRecords.map(r => ({
+        checkpoint: (r.splitDesc as string) || (r.checkpoint as string) || '-',
+        splitTime: r.splitTime as number,
+        elapsedTime: (r.elapsedTime as number) ?? (r.totalNetTime as number) ?? (r.netTime as number),
+        distanceFromStart: r.distanceFromStart as number,
+        netPace: (r.netPace as string) || (r.splitPace as string),
+        splitPace: r.splitPace as string,
+        splitNo: r.splitNo as number,
+        splitDesc: r.splitDesc as string,
+        overallRank: r.overallRank as number,
+        genderRank: r.genderRank as number,
+    })), [timingRecords]);
+
     const handleDownload = useCallback(async () => {
         if (!certRef.current || !runner) return;
         setDownloading(true);
         try {
             const { toPng } = await import('html-to-image');
-            // Capture at 2x device width for crisp output regardless of viewport size.
             await document.fonts.ready;
             const dataUrl = await toPng(certRef.current, {
                 pixelRatio: 2,
                 cacheBust: true,
-                backgroundColor: '#1a1a2e',
+                backgroundColor: campaign?.certBgColor || '#1a1a2e',
                 skipFonts: true,
             });
             const link = document.createElement('a');
@@ -220,7 +446,7 @@ export default function CertificatePage() {
         } finally {
             setDownloading(false);
         }
-    }, [runner]);
+    }, [runner, campaign]);
 
     if (loading) return (
         <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f8fafc' }}>
@@ -262,7 +488,7 @@ export default function CertificatePage() {
         : paper === 'hd-landscape' ? '1920/1080'
         : paper === 'hd-portrait' ? '1080/1920'
         : '297/210';
-    const ratioWH = paperRatioWH(paper);
+    const paperAspect = paperRatioWH(paper);
 
     return (
         <div style={{ minHeight: '100vh', background: '#f1f5f9', padding: '16px 12px 32px', fontFamily: "'Sarabun', sans-serif" }}>
@@ -311,8 +537,13 @@ export default function CertificatePage() {
                             <img src={bgImage} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', opacity: bgOpacity, pointerEvents: 'none', zIndex: 0 }} />
                         )}
                         {elements.map(el => {
-                            const imageHeight = getElementHeight(el, ratioWH);
+                            const isText = !el.type || el.type === 'text';
                             const isImage = el.type === 'image';
+                            const isShape = el.type === 'shape';
+                            const isFlag = el.type === 'flag';
+                            const isTable = el.type === 'table';
+                            const hasHeight = isImage || isShape || isFlag || isTable;
+                            const heightPct = getElementHeight(el, paperAspect);
                             const rot = el.rotation || 0;
                             const br = el.borderRadius || 0;
                             const filterParts: string[] = [];
@@ -321,11 +552,14 @@ export default function CertificatePage() {
                                 if (typeof el.contrast === 'number' && el.contrast !== 100) filterParts.push(`contrast(${el.contrast}%)`);
                                 if (typeof el.blur === 'number' && el.blur > 0) filterParts.push(`blur(${el.blur}px)`);
                             }
+                            const filterStr = filterParts.length > 0 ? filterParts.join(' ') : undefined;
                             const shadowStr = el.shadowEnabled
                                 ? `${el.shadowX || 0}px ${el.shadowY ?? 2}px ${el.shadowBlur ?? 4}px ${el.shadowColor || 'rgba(0,0,0,0.5)'}`
                                 : undefined;
-                            if (isImage && shadowStr) filterParts.push(`drop-shadow(${shadowStr})`);
-                            const imgFilter = filterParts.length > 0 ? filterParts.join(' ') : undefined;
+                            const textShadow = isText && shadowStr ? shadowStr : undefined;
+                            const boxShadow = !isText && !isImage && shadowStr ? shadowStr : undefined;
+                            const imgDropShadow = isImage && shadowStr ? `drop-shadow(${shadowStr})` : '';
+                            const combinedImgFilter = [filterStr, imgDropShadow].filter(Boolean).join(' ') || undefined;
                             return (
                                 <div
                                     key={el.id}
@@ -334,7 +568,7 @@ export default function CertificatePage() {
                                         left: `${el.x}%`,
                                         top: `${el.y}%`,
                                         width: `${el.width}%`,
-                                        height: isImage ? `${imageHeight}%` : undefined,
+                                        height: hasHeight ? `${heightPct}%` : undefined,
                                         transform: `translate(-50%,-50%) rotate(${rot}deg)`,
                                         fontSize: `${el.fontSize * scale}px`,
                                         fontFamily: el.fontFamily,
@@ -344,23 +578,26 @@ export default function CertificatePage() {
                                         textAlign: el.textAlign,
                                         opacity: el.opacity,
                                         letterSpacing: `${el.letterSpacing * scale}px`,
-                                        padding: isImage ? 0 : '2px 4px',
+                                        padding: isText ? '2px 4px' : 0,
                                         boxSizing: 'border-box',
                                         whiteSpace: 'pre-wrap',
                                         wordBreak: 'break-word',
                                         lineHeight: 1.3,
-                                        textShadow: !isImage && shadowStr ? shadowStr : undefined,
-                                        borderRadius: isImage && br > 0 ? `${br}px` : undefined,
-                                        overflow: isImage && br > 0 ? 'hidden' : undefined,
+                                        display: hasHeight ? 'block' : undefined,
+                                        borderRadius: (isImage || isShape) && br > 0 ? `${br}px` : undefined,
+                                        overflow: (isImage || isShape) && br > 0 ? 'hidden' : undefined,
+                                        textShadow,
+                                        boxShadow,
                                         zIndex: 1,
                                     }}
                                 >
                                     {isImage && el.src ? (
                                         // eslint-disable-next-line @next/next/no-img-element
-                                        <img src={el.src} alt="" style={{ width: '100%', height: '100%', objectFit: 'contain', pointerEvents: 'none', display: 'block', filter: imgFilter, borderRadius: br > 0 ? `${br}px` : undefined }} />
-                                    ) : (
-                                        substituteFields(el.content, runner, campaign)
-                                    )}
+                                        <img src={el.src} alt="" style={{ width: '100%', height: '100%', objectFit: 'contain', pointerEvents: 'none', display: 'block', filter: combinedImgFilter, borderRadius: br > 0 ? `${br}px` : undefined }} />
+                                    ) : isShape ? <ShapeRender el={el} />
+                                    : isFlag ? <FlagRender el={el} runner={runner} fontScale={scale} />
+                                    : isTable ? <TableRender el={el} splits={splits} fontScale={scale} />
+                                    : substituteFields(el.content, runner, campaign)}
                                 </div>
                             );
                         })}
