@@ -586,6 +586,43 @@ export default function ResultWinnersBySlugPage() {
                 </div>
             </header>
 
+            {/* Campaign name + current category banner */}
+            {campaign && (
+                <div style={{
+                    display: 'flex', flexDirection: isMobile ? 'column' : 'row',
+                    alignItems: 'center', justifyContent: 'center',
+                    gap: isMobile ? 6 : '1.2vw',
+                    padding: isMobile ? '10px 16px' : '0.7vh 1.5vw',
+                    background: '#1e293b', borderRadius: 10,
+                    marginBottom: isMobile ? 8 : '0.8vh',
+                    border: '1px solid #334155', flexShrink: 0, textAlign: 'center',
+                }}>
+                    <span style={{
+                        fontSize: isMobile ? 15 : '2.2vh', fontWeight: 900,
+                        color: '#f1f5f9', letterSpacing: 1,
+                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                        maxWidth: isMobile ? '100%' : '50vw',
+                    }}>
+                        {campaign.name}
+                    </span>
+                    {selectedCategory && (
+                        <span style={{
+                            display: 'inline-flex', alignItems: 'center',
+                            background: '#22c55e', color: '#052e16',
+                            borderRadius: 999, fontWeight: 900,
+                            fontSize: isMobile ? 13 : '1.8vh',
+                            padding: isMobile ? '3px 14px' : '0.2vh 1.2vw',
+                            whiteSpace: 'nowrap', flexShrink: 0,
+                        }}>
+                            {selectedCategory}
+                            {campaign.categories?.find(c => c.name === selectedCategory)?.distance
+                                ? ` · ${campaign.categories.find(c => c.name === selectedCategory)!.distance}`
+                                : ''}
+                        </span>
+                    )}
+                </div>
+            )}
+
             {/* Content */}
             {loading ? (
                 <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', fontSize: isMobile ? 16 : '2vh' }}>
