@@ -407,7 +407,7 @@ export default function ResultWinnersBySlugPage() {
                 const list = winners[g.label] || [];
                 const rows = Array.from({ length: topN }, (_, i) => i);
                 return (
-                    <div key={g.label} style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: 8, overflow: 'hidden', display: 'flex', flexDirection: 'column', flexShrink: 0, minHeight: isMobile ? 150 : '18vh' }}>
+                    <div key={g.label} style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: 8, overflow: 'hidden', display: 'flex', flexDirection: 'column', flexShrink: 0, minHeight: topN >= 5 ? (isMobile ? 150 : '18vh') : 'auto' }}>
                         <div style={{ background: bgAgeHeader, color: 'white', fontWeight: 800, fontSize: isMobile ? 13 : '1.5vh', padding: isMobile ? '4px 12px' : '0.25vh 12px', textAlign: 'center', flexShrink: 0 }}>
                             {disableAgeGroupRanking ? 'OVERALL RANKING' : g.label}
                         </div>
