@@ -25,6 +25,8 @@ interface Runner {
     gender?: string;
     category?: string;
     ageGroup?: string;
+    age?: number;
+    birthDate?: string;
     nationality?: string;
     status?: string;
     netTime?: number;
@@ -34,6 +36,29 @@ interface Runner {
     overallRank?: number;
     genderRank?: number;
     ageGroupRank?: number;
+}
+
+function calculateAgeGroup(birthDate?: string, gender?: string): string {
+    if (!birthDate) return '';
+    const birth = new Date(birthDate);
+    if (isNaN(birth.getTime())) return '';
+    const today = new Date();
+    let age = today.getFullYear() - birth.getFullYear();
+    const m = today.getMonth() - birth.getMonth();
+    if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) age--;
+    const prefix = gender === 'F' ? 'F' : 'M';
+    if (age < 18) return `${prefix} U18`;
+    if (age < 30) return `${prefix} 18-29`;
+    if (age < 40) return `${prefix} 30-39`;
+    if (age < 50) return `${prefix} 40-49`;
+    if (age < 60) return `${prefix} 50-59`;
+    if (age < 70) return `${prefix} 60-69`;
+    return `${prefix} 70+`;
+}
+
+function resolveAgeGroup(r: Runner): string {
+    if (r.ageGroup && r.ageGroup.trim()) return r.ageGroup;
+    return calculateAgeGroup(r.birthDate, r.gender);
 }
 
 function formatTime(ms?: number): string {
@@ -164,10 +189,11 @@ export default function ExportPage() {
         try {
             const eventName = campaign.nameTh || campaign.name || '';
             const distanceLabel = selectedCategoryLabel();
-            const columns = ['BIB', 'FirstName', 'LastName', 'Gender', 'Category', 'AgeGroup', 'Nationality', 'Status'];
+            const titleLine = distanceLabel ? `${eventName} — ${distanceLabel}` : eventName;
+            const columns = ['BIB', 'FirstName', 'LastName', 'Gender', 'Category', 'AgeGroup', 'Nationality', 'GunTime', 'NetTime', 'Status'];
             const aoa: (string | number)[][] = [];
-            // Title row — event name in col A, distance label in col B
-            aoa.push([eventName, distanceLabel]);
+            // Title row — full event + distance merged across all columns so nothing gets cut off
+            aoa.push([titleLine]);
             // Blank spacer
             aoa.push([]);
             // Header
@@ -180,21 +206,23 @@ export default function ExportPage() {
                     r.lastName || '',
                     r.gender || '',
                     r.category || '',
-                    r.ageGroup || '',
+                    resolveAgeGroup(r) || '',
                     r.nationality || '',
+                    formatTime(r.gunTime),
+                    formatTime(r.netTime),
                     statusLabel(r.status),
                 ]);
             }
             const ws = XLSX.utils.aoa_to_sheet(aoa);
             // Column widths
             ws['!cols'] = [
-                { wch: 10 }, { wch: 16 }, { wch: 16 }, { wch: 8 },
-                { wch: 14 }, { wch: 12 }, { wch: 14 }, { wch: 12 },
+                { wch: 10 }, { wch: 16 }, { wch: 18 }, { wch: 8 },
+                { wch: 14 }, { wch: 12 }, { wch: 12 }, { wch: 12 },
+                { wch: 12 }, { wch: 12 },
             ];
-            // Merge title row across part of header so event name reads cleanly
+            // Merge title across all data columns so the event name is never truncated
             ws['!merges'] = ws['!merges'] || [];
-            // Merge A1:A1 stays; merge B1:H1 so distance spans the rest
-            ws['!merges'].push({ s: { r: 0, c: 1 }, e: { r: 0, c: 7 } });
+            ws['!merges'].push({ s: { r: 0, c: 0 }, e: { r: 0, c: columns.length - 1 } });
             // Bold the title and header rows by setting cell styles (basic xlsx supports cellStyles in pro; keep simple by not requiring styles)
             const wb = XLSX.utils.book_new();
             XLSX.utils.book_append_sheet(wb, ws, 'Results');
@@ -338,7 +366,7 @@ export default function ExportPage() {
                                                     <td style={{ padding: '6px 10px', fontSize: 12 }}>{r.lastName || '-'}</td>
                                                     <td style={{ padding: '6px 10px', fontSize: 12 }}>{r.gender || '-'}</td>
                                                     <td style={{ padding: '6px 10px', fontSize: 12 }}>{r.category || '-'}</td>
-                                                    <td style={{ padding: '6px 10px', fontSize: 12 }}>{r.ageGroup || '-'}</td>
+                                                    <td style={{ padding: '6px 10px', fontSize: 12 }}>{resolveAgeGroup(r) || '-'}</td>
                                                     <td style={{ padding: '6px 10px', fontSize: 12 }}>{r.nationality || '-'}</td>
                                                     <td style={{ padding: '6px 10px', fontSize: 12, fontVariantNumeric: 'tabular-nums' }}>{formatTime(r.gunTime)}</td>
                                                     <td style={{ padding: '6px 10px', fontSize: 12, fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>{formatTime(r.netTime)}</td>
