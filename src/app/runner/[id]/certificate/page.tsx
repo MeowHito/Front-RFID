@@ -370,6 +370,9 @@ export default function CertificatePage() {
     const [downloading, setDownloading] = useState(false);
     const canvasWrapRef = useRef<HTMLDivElement>(null);
     const certRef = useRef<HTMLDivElement>(null);
+    // Full-size offscreen mirror used for download so the captured image
+    // is consistent regardless of the visitor's screen width (fixes mobile).
+    const certFullRef = useRef<HTMLDivElement>(null);
     const [canvasW, setCanvasW] = useState(800);
 
     useEffect(() => {
@@ -425,12 +428,13 @@ export default function CertificatePage() {
     })), [timingRecords]);
 
     const handleDownload = useCallback(async () => {
-        if (!certRef.current || !runner) return;
+        const target = certFullRef.current || certRef.current;
+        if (!target || !runner) return;
         setDownloading(true);
         try {
             const { toPng } = await import('html-to-image');
             await document.fonts.ready;
-            const dataUrl = await toPng(certRef.current, {
+            const dataUrl = await toPng(target, {
                 pixelRatio: 2,
                 cacheBust: true,
                 backgroundColor: campaign?.certBgColor || '#1a1a2e',
@@ -490,6 +494,83 @@ export default function CertificatePage() {
         : '297/210';
     const paperAspect = paperRatioWH(paper);
 
+    // Renders the certificate body. Used twice: visible (responsive scale)
+    // and an offscreen mirror at fixed CANVAS_REF_W so the downloaded image
+    // is identical regardless of device width.
+    const renderCertBody = (renderScale: number) => (
+        <>
+            {bgImage && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={bgImage} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', opacity: bgOpacity, pointerEvents: 'none', zIndex: 0 }} />
+            )}
+            {elements.map(el => {
+                const isText = !el.type || el.type === 'text';
+                const isImage = el.type === 'image';
+                const isShape = el.type === 'shape';
+                const isFlag = el.type === 'flag';
+                const isTable = el.type === 'table';
+                const hasHeight = isImage || isShape || isFlag || isTable;
+                const heightPct = getElementHeight(el, paperAspect);
+                const rot = el.rotation || 0;
+                const br = el.borderRadius || 0;
+                const filterParts: string[] = [];
+                if (isImage) {
+                    if (typeof el.brightness === 'number' && el.brightness !== 100) filterParts.push(`brightness(${el.brightness}%)`);
+                    if (typeof el.contrast === 'number' && el.contrast !== 100) filterParts.push(`contrast(${el.contrast}%)`);
+                    if (typeof el.blur === 'number' && el.blur > 0) filterParts.push(`blur(${el.blur}px)`);
+                }
+                const filterStr = filterParts.length > 0 ? filterParts.join(' ') : undefined;
+                const shadowStr = el.shadowEnabled
+                    ? `${el.shadowX || 0}px ${el.shadowY ?? 2}px ${el.shadowBlur ?? 4}px ${el.shadowColor || 'rgba(0,0,0,0.5)'}`
+                    : undefined;
+                const textShadow = isText && shadowStr ? shadowStr : undefined;
+                const boxShadow = !isText && !isImage && shadowStr ? shadowStr : undefined;
+                const imgDropShadow = isImage && shadowStr ? `drop-shadow(${shadowStr})` : '';
+                const combinedImgFilter = [filterStr, imgDropShadow].filter(Boolean).join(' ') || undefined;
+                return (
+                    <div
+                        key={el.id}
+                        style={{
+                            position: 'absolute',
+                            left: `${el.x}%`,
+                            top: `${el.y}%`,
+                            width: `${el.width}%`,
+                            height: hasHeight ? `${heightPct}%` : undefined,
+                            transform: `translate(-50%,-50%) rotate(${rot}deg)`,
+                            fontSize: `${el.fontSize * renderScale}px`,
+                            fontFamily: el.fontFamily,
+                            color: el.color,
+                            fontWeight: el.fontWeight,
+                            fontStyle: el.fontStyle,
+                            textAlign: el.textAlign,
+                            opacity: el.opacity,
+                            letterSpacing: `${el.letterSpacing * renderScale}px`,
+                            padding: isText ? '2px 4px' : 0,
+                            boxSizing: 'border-box',
+                            whiteSpace: 'pre-wrap',
+                            wordBreak: 'break-word',
+                            lineHeight: 1.3,
+                            display: hasHeight ? 'block' : undefined,
+                            borderRadius: (isImage || isShape) && br > 0 ? `${br}px` : undefined,
+                            overflow: (isImage || isShape) && br > 0 ? 'hidden' : undefined,
+                            textShadow,
+                            boxShadow,
+                            zIndex: 1,
+                        }}
+                    >
+                        {isImage && el.src ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={el.src} alt="" style={{ width: '100%', height: '100%', objectFit: 'contain', pointerEvents: 'none', display: 'block', filter: combinedImgFilter, borderRadius: br > 0 ? `${br}px` : undefined }} />
+                        ) : isShape ? <ShapeRender el={el} />
+                        : isFlag ? <FlagRender el={el} runner={runner} fontScale={renderScale} />
+                        : isTable ? <TableRender el={el} splits={splits} fontScale={renderScale} />
+                        : substituteFields(el.content, runner, campaign)}
+                    </div>
+                );
+            })}
+        </>
+    );
+
     return (
         <div style={{ minHeight: '100vh', background: '#f1f5f9', padding: '16px 12px 32px', fontFamily: "'Sarabun', sans-serif" }}>
             <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;700&family=Prompt:wght@400;700&family=Kanit:wght@400;700&family=Playfair+Display:wght@400;700&display=swap" />
@@ -532,81 +613,40 @@ export default function CertificatePage() {
                             userSelect: 'none',
                         }}
                     >
-                        {bgImage && (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img src={bgImage} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', opacity: bgOpacity, pointerEvents: 'none', zIndex: 0 }} />
-                        )}
-                        {elements.map(el => {
-                            const isText = !el.type || el.type === 'text';
-                            const isImage = el.type === 'image';
-                            const isShape = el.type === 'shape';
-                            const isFlag = el.type === 'flag';
-                            const isTable = el.type === 'table';
-                            const hasHeight = isImage || isShape || isFlag || isTable;
-                            const heightPct = getElementHeight(el, paperAspect);
-                            const rot = el.rotation || 0;
-                            const br = el.borderRadius || 0;
-                            const filterParts: string[] = [];
-                            if (isImage) {
-                                if (typeof el.brightness === 'number' && el.brightness !== 100) filterParts.push(`brightness(${el.brightness}%)`);
-                                if (typeof el.contrast === 'number' && el.contrast !== 100) filterParts.push(`contrast(${el.contrast}%)`);
-                                if (typeof el.blur === 'number' && el.blur > 0) filterParts.push(`blur(${el.blur}px)`);
-                            }
-                            const filterStr = filterParts.length > 0 ? filterParts.join(' ') : undefined;
-                            const shadowStr = el.shadowEnabled
-                                ? `${el.shadowX || 0}px ${el.shadowY ?? 2}px ${el.shadowBlur ?? 4}px ${el.shadowColor || 'rgba(0,0,0,0.5)'}`
-                                : undefined;
-                            const textShadow = isText && shadowStr ? shadowStr : undefined;
-                            const boxShadow = !isText && !isImage && shadowStr ? shadowStr : undefined;
-                            const imgDropShadow = isImage && shadowStr ? `drop-shadow(${shadowStr})` : '';
-                            const combinedImgFilter = [filterStr, imgDropShadow].filter(Boolean).join(' ') || undefined;
-                            return (
-                                <div
-                                    key={el.id}
-                                    style={{
-                                        position: 'absolute',
-                                        left: `${el.x}%`,
-                                        top: `${el.y}%`,
-                                        width: `${el.width}%`,
-                                        height: hasHeight ? `${heightPct}%` : undefined,
-                                        transform: `translate(-50%,-50%) rotate(${rot}deg)`,
-                                        fontSize: `${el.fontSize * scale}px`,
-                                        fontFamily: el.fontFamily,
-                                        color: el.color,
-                                        fontWeight: el.fontWeight,
-                                        fontStyle: el.fontStyle,
-                                        textAlign: el.textAlign,
-                                        opacity: el.opacity,
-                                        letterSpacing: `${el.letterSpacing * scale}px`,
-                                        padding: isText ? '2px 4px' : 0,
-                                        boxSizing: 'border-box',
-                                        whiteSpace: 'pre-wrap',
-                                        wordBreak: 'break-word',
-                                        lineHeight: 1.3,
-                                        display: hasHeight ? 'block' : undefined,
-                                        borderRadius: (isImage || isShape) && br > 0 ? `${br}px` : undefined,
-                                        overflow: (isImage || isShape) && br > 0 ? 'hidden' : undefined,
-                                        textShadow,
-                                        boxShadow,
-                                        zIndex: 1,
-                                    }}
-                                >
-                                    {isImage && el.src ? (
-                                        // eslint-disable-next-line @next/next/no-img-element
-                                        <img src={el.src} alt="" style={{ width: '100%', height: '100%', objectFit: 'contain', pointerEvents: 'none', display: 'block', filter: combinedImgFilter, borderRadius: br > 0 ? `${br}px` : undefined }} />
-                                    ) : isShape ? <ShapeRender el={el} />
-                                    : isFlag ? <FlagRender el={el} runner={runner} fontScale={scale} />
-                                    : isTable ? <TableRender el={el} splits={splits} fontScale={scale} />
-                                    : substituteFields(el.content, runner, campaign)}
-                                </div>
-                            );
-                        })}
+                        {renderCertBody(scale)}
                     </div>
                 </div>
 
                 <p style={{ textAlign: 'center', fontSize: 11, color: '#94a3b8', marginTop: 12 }}>
                     Certificate generated by Action Timing · {campaign?.name || ''}
                 </p>
+            </div>
+
+            {/* Offscreen full-size mirror used for download capture so
+                the exported PNG is consistent across desktop and mobile. */}
+            <div
+                aria-hidden
+                style={{
+                    position: 'fixed',
+                    left: -99999,
+                    top: 0,
+                    width: CANVAS_REF_W,
+                    pointerEvents: 'none',
+                    opacity: 0,
+                }}
+            >
+                <div
+                    ref={certFullRef}
+                    style={{
+                        position: 'relative',
+                        width: CANVAS_REF_W,
+                        aspectRatio,
+                        background: bgColor,
+                        overflow: 'hidden',
+                    }}
+                >
+                    {renderCertBody(1)}
+                </div>
             </div>
         </div>
     );

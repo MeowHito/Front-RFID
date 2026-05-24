@@ -236,6 +236,33 @@ function formatTime(ms: number | undefined | null): string {
     return `${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
 }
 
+// Parse "HH:MM:SS" or "MM:SS" into milliseconds. Returns null on bad input.
+function parseTimeStrToMs(str: string): number | null {
+    if (!str || !str.trim()) return null;
+    const parts = str.trim().split(':');
+    if (parts.length === 3) {
+        const h = parseInt(parts[0], 10);
+        const m = parseInt(parts[1], 10);
+        const s = parseInt(parts[2], 10);
+        if (!isNaN(h) && !isNaN(m) && !isNaN(s)) return (h * 3600 + m * 60 + s) * 1000;
+    }
+    if (parts.length === 2) {
+        const m = parseInt(parts[0], 10);
+        const s = parseInt(parts[1], 10);
+        if (!isNaN(m) && !isNaN(s)) return (m * 60 + s) * 1000;
+    }
+    return null;
+}
+
+function msToHHMMSS(ms?: number): string {
+    if (!ms || ms <= 0) return '';
+    const totalSec = Math.floor(ms / 1000);
+    const h = Math.floor(totalSec / 3600);
+    const m = Math.floor((totalSec % 3600) / 60);
+    const s = totalSec % 60;
+    return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+}
+
 function formatDisplayTimeString(value?: string | null, showMilliseconds = false): string {
     const trimmed = String(value || '').trim();
     if (!trimmed) return '';
@@ -318,6 +345,8 @@ export default function EventLivePage() {
     const [editStatus, setEditStatus] = useState('');
     const [editCheckpoint, setEditCheckpoint] = useState('');
     const [editNote, setEditNote] = useState('');
+    const [editGunTime, setEditGunTime] = useState('');
+    const [editChipTime, setEditChipTime] = useState('');
     const [editSaving, setEditSaving] = useState(false);
     const [editSaveError, setEditSaveError] = useState<string | null>(null);
 
@@ -343,6 +372,8 @@ export default function EventLivePage() {
     const [manualCheckpoints, setManualCheckpoints] = useState<{name: string; orderNum: number; type: string}[]>([]);
     const [manualCheckpointsLoading, setManualCheckpointsLoading] = useState(false);
     const [manualSort, setManualSort] = useState<'rank' | 'name' | 'bib'>('rank');
+    // Per-runner gun/net time edits inside the bulk Manual Status modal.
+    const [manualTimeEdits, setManualTimeEdits] = useState<Record<string, { gun?: string; net?: string }>>({});
 
     const toApiData = (payload: any) => payload?.data ?? payload;
 
@@ -967,7 +998,8 @@ export default function EventLivePage() {
     }, [allRankedRunners, searchQuery, filterGender, followedRunnerIds, filterCategory, filterStatus, resolveRunnerCategoryKey]);
 
     // Compute live gender and category ranks from sorted runners
-    // These are computed AFTER sorting so rank=position within gender/category group
+    // These are computed AFTER sorting so rank=position within gender/category group.
+    // CAT rank is scoped to gender + ageGroup so M40-49 and F40-49 rank separately.
     const liveRanks = useMemo(() => {
         const genderCounters: Record<string, number> = {};
         const categoryCounters: Record<string, number> = {};
@@ -979,7 +1011,7 @@ export default function EventLivePage() {
             if (runner.status === 'dnf' && !((runner.passedCount ?? 0) > 0)) continue;
             const eventKey = runner.eventId || '_';
             const genderKey = `${eventKey}::${runner.gender || '_'}`;
-            const catKey = `${eventKey}::${runner.ageGroup || '_'}`;
+            const catKey = `${eventKey}::${runner.gender || '_'}::${runner.ageGroup || '_'}`;
             genderCounters[genderKey] = (genderCounters[genderKey] || 0) + 1;
             categoryCounters[catKey] = (categoryCounters[catKey] || 0) + 1;
             ranks.set(runner._id, { genRank: genderCounters[genderKey], catRank: categoryCounters[catKey] });
@@ -999,6 +1031,8 @@ export default function EventLivePage() {
         setEditStatus(runner.status);
         setEditCheckpoint(runner.statusCheckpoint || runner.latestCheckpoint || '');
         setEditNote(runner.statusNote || '');
+        setEditGunTime(msToHHMMSS(runner.gunTime) || runner.gunTimeStr || '');
+        setEditChipTime(msToHHMMSS(runner.netTime) || runner.netTimeStr || '');
         setEditSaveError(null);
         setEditTimingChanges({});
         setEditTimingSaveMsg(null);
@@ -1070,9 +1104,55 @@ export default function EventLivePage() {
                 throw new Error(message);
             }
 
+            // Save gun/net time edits if changed
+            const gunMs = parseTimeStrToMs(editGunTime);
+            const chipMs = parseTimeStrToMs(editChipTime);
+            const originalGunMs = editingRunner.gunTime || 0;
+            const originalChipMs = editingRunner.netTime || 0;
+            const gunChanged = gunMs !== null && gunMs !== originalGunMs;
+            const chipChanged = chipMs !== null && chipMs !== originalChipMs;
+            const gunCleared = editGunTime.trim() === '' && originalGunMs > 0;
+            const chipCleared = editChipTime.trim() === '' && originalChipMs > 0;
+            if (gunChanged || chipChanged || gunCleared || chipCleared) {
+                const updateData: Record<string, unknown> = {};
+                if (gunChanged) {
+                    updateData.gunTime = gunMs;
+                    updateData.gunTimeStr = editGunTime.trim();
+                } else if (gunCleared) {
+                    updateData.gunTime = 0;
+                    updateData.gunTimeStr = '';
+                }
+                if (chipChanged) {
+                    updateData.netTime = chipMs;
+                    updateData.netTimeStr = editChipTime.trim();
+                } else if (chipCleared) {
+                    updateData.netTime = 0;
+                    updateData.netTimeStr = '';
+                }
+                try {
+                    await fetch(`/api/runners/${editingRunner._id}`, {
+                        method: 'PUT',
+                        headers: authHeaders(),
+                        body: JSON.stringify(updateData),
+                    });
+                } catch { /* non-fatal */ }
+            }
+
+            const updatedGun = gunChanged ? gunMs! : (gunCleared ? 0 : originalGunMs);
+            const updatedChip = chipChanged ? chipMs! : (chipCleared ? 0 : originalChipMs);
             setRunners(prev => prev.map(r =>
                 r._id === editingRunner._id
-                    ? { ...r, status: editStatus, statusCheckpoint: editCheckpoint, statusNote: editNote, statusChangedAt: new Date().toISOString() }
+                    ? {
+                        ...r,
+                        status: editStatus,
+                        statusCheckpoint: editCheckpoint,
+                        statusNote: editNote,
+                        statusChangedAt: new Date().toISOString(),
+                        gunTime: updatedGun,
+                        netTime: updatedChip,
+                        gunTimeStr: gunChanged ? editGunTime.trim() : (gunCleared ? '' : r.gunTimeStr),
+                        netTimeStr: chipChanged ? editChipTime.trim() : (chipCleared ? '' : r.netTimeStr),
+                    }
                     : r
             ));
             setEditingRunner(null);
@@ -1092,6 +1172,7 @@ export default function EventLivePage() {
         setManualSearch('');
         setManualSaveError(null);
         setManualSaveSuccess(null);
+        setManualTimeEdits({});
         if (campaign?._id && manualCheckpoints.length === 0) {
             setManualCheckpointsLoading(true);
             try {
@@ -1109,36 +1190,103 @@ export default function EventLivePage() {
     };
 
     const handleManualStatusSave = async () => {
-        if (manualSelectedIds.size === 0) return;
+        // Gather time edits to commit; valid if any field parses cleanly.
+        const timeEditEntries = Object.entries(manualTimeEdits).filter(([, e]) => {
+            const gunOk = e.gun !== undefined && parseTimeStrToMs(e.gun) !== null;
+            const netOk = e.net !== undefined && parseTimeStrToMs(e.net) !== null;
+            const gunClear = e.gun !== undefined && e.gun.trim() === '';
+            const netClear = e.net !== undefined && e.net.trim() === '';
+            return gunOk || netOk || gunClear || netClear;
+        });
+        if (manualSelectedIds.size === 0 && timeEditEntries.length === 0) return;
         setManualSaving(true);
         setManualSaveError(null);
         setManualSaveSuccess(null);
         try {
-            const updates = [...manualSelectedIds].map(id => ({
-                id,
-                status: manualStatus,
-                statusCheckpoint: manualCheckpoint || undefined,
-                statusNote: manualNote || undefined,
-                changedBy: 'admin',
-            }));
-            const res = await fetch('/api/runners/bulk-status', {
-                method: 'PUT',
-                headers: authHeaders(),
-                body: JSON.stringify({ runners: updates }),
-            });
-            if (!res.ok) {
-                let msg = language === 'th' ? 'บันทึกไม่สำเร็จ' : 'Failed to update statuses';
-                try { const j = await res.json(); msg = j.message || j.error || msg; } catch {}
-                throw new Error(msg);
+            // 1. Bulk status update for checked runners
+            if (manualSelectedIds.size > 0) {
+                const updates = [...manualSelectedIds].map(id => ({
+                    id,
+                    status: manualStatus,
+                    statusCheckpoint: manualCheckpoint || undefined,
+                    statusNote: manualNote || undefined,
+                    changedBy: 'admin',
+                }));
+                const res = await fetch('/api/runners/bulk-status', {
+                    method: 'PUT',
+                    headers: authHeaders(),
+                    body: JSON.stringify({ runners: updates }),
+                });
+                if (!res.ok) {
+                    let msg = language === 'th' ? 'บันทึกไม่สำเร็จ' : 'Failed to update statuses';
+                    try { const j = await res.json(); msg = j.message || j.error || msg; } catch {}
+                    throw new Error(msg);
+                }
             }
-            const count = manualSelectedIds.size;
-            setRunners(prev => prev.map(r =>
-                manualSelectedIds.has(r._id)
-                    ? { ...r, status: manualStatus, statusCheckpoint: manualCheckpoint, statusNote: manualNote, statusChangedAt: new Date().toISOString() }
-                    : r
+
+            // 2. Per-runner gun/net time edits
+            const timeUpdates: { id: string; data: Record<string, unknown> }[] = [];
+            for (const [id, e] of timeEditEntries) {
+                const runner = runners.find(r => r._id === id);
+                if (!runner) continue;
+                const data: Record<string, unknown> = {};
+                if (e.gun !== undefined) {
+                    if (e.gun.trim() === '') {
+                        data.gunTime = 0;
+                        data.gunTimeStr = '';
+                    } else {
+                        const ms = parseTimeStrToMs(e.gun);
+                        if (ms !== null && ms !== (runner.gunTime || 0)) {
+                            data.gunTime = ms;
+                            data.gunTimeStr = e.gun.trim();
+                        }
+                    }
+                }
+                if (e.net !== undefined) {
+                    if (e.net.trim() === '') {
+                        data.netTime = 0;
+                        data.netTimeStr = '';
+                    } else {
+                        const ms = parseTimeStrToMs(e.net);
+                        if (ms !== null && ms !== (runner.netTime || 0)) {
+                            data.netTime = ms;
+                            data.netTimeStr = e.net.trim();
+                        }
+                    }
+                }
+                if (Object.keys(data).length > 0) timeUpdates.push({ id, data });
+            }
+            await Promise.all(timeUpdates.map(u =>
+                fetch(`/api/runners/${u.id}`, {
+                    method: 'PUT',
+                    headers: authHeaders(),
+                    body: JSON.stringify(u.data),
+                }).catch(() => null)
             ));
+
+            const statusCount = manualSelectedIds.size;
+            const timeCount = timeUpdates.length;
+            setRunners(prev => prev.map(r => {
+                const statusChange = manualSelectedIds.has(r._id);
+                const t = timeUpdates.find(u => u.id === r._id);
+                if (!statusChange && !t) return r;
+                return {
+                    ...r,
+                    ...(statusChange ? { status: manualStatus, statusCheckpoint: manualCheckpoint, statusNote: manualNote, statusChangedAt: new Date().toISOString() } : {}),
+                    ...(t?.data.gunTime !== undefined ? { gunTime: t.data.gunTime as number } : {}),
+                    ...(t?.data.gunTimeStr !== undefined ? { gunTimeStr: t.data.gunTimeStr as string } : {}),
+                    ...(t?.data.netTime !== undefined ? { netTime: t.data.netTime as number } : {}),
+                    ...(t?.data.netTimeStr !== undefined ? { netTimeStr: t.data.netTimeStr as string } : {}),
+                };
+            }));
             setManualSelectedIds(new Set());
-            setManualSaveSuccess(language === 'th' ? `บันทึกแล้ว ${count} คน เป็น ${manualStatus.toUpperCase()}` : `Updated ${count} runners to ${manualStatus.toUpperCase()}`);
+            setManualTimeEdits({});
+            const parts: string[] = [];
+            if (statusCount > 0) parts.push(language === 'th' ? `${statusCount} คน → ${manualStatus.toUpperCase()}` : `${statusCount} → ${manualStatus.toUpperCase()}`);
+            if (timeCount > 0) parts.push(language === 'th' ? `แก้เวลา ${timeCount} คน` : `${timeCount} time edits`);
+            setManualSaveSuccess(parts.length > 0
+                ? (language === 'th' ? `บันทึกแล้ว: ${parts.join(' · ')}` : `Saved: ${parts.join(' · ')}`)
+                : (language === 'th' ? 'บันทึกแล้ว' : 'Saved'));
         } catch (err) {
             setManualSaveError(err instanceof Error ? err.message : (language === 'th' ? 'บันทึกไม่สำเร็จ' : 'Failed to save'));
         } finally {
@@ -2287,6 +2435,54 @@ export default function EventLivePage() {
                             style={{ borderColor: themeStyles.border, background: isDark ? '#0f172a' : '#fff', color: themeStyles.text }}
                         />
 
+                        {/* ===== GUN / NET TIME ===== */}
+                        <div className="mb-3.5 grid grid-cols-2 gap-3">
+                            <div>
+                                <label className="mb-1 block text-[11px] font-bold uppercase" style={{ color: themeStyles.textSecondary }}>
+                                    ⏱ {language === 'th' ? 'Gun Time' : 'Gun Time'}
+                                </label>
+                                <input
+                                    value={editGunTime}
+                                    onChange={e => setEditGunTime(e.target.value)}
+                                    placeholder="HH:MM:SS"
+                                    inputMode="numeric"
+                                    className="w-full rounded-md border px-3 py-2 font-mono text-[13px] box-border"
+                                    style={{
+                                        borderColor: editGunTime && parseTimeStrToMs(editGunTime) === null ? '#dc2626' : themeStyles.border,
+                                        background: isDark ? '#0f172a' : '#fff',
+                                        color: themeStyles.text,
+                                    }}
+                                />
+                                {editGunTime && parseTimeStrToMs(editGunTime) === null && (
+                                    <div className="mt-1 text-[10px] text-red-500">
+                                        {language === 'th' ? 'รูปแบบ: HH:MM:SS' : 'Format: HH:MM:SS'}
+                                    </div>
+                                )}
+                            </div>
+                            <div>
+                                <label className="mb-1 block text-[11px] font-bold uppercase" style={{ color: themeStyles.textSecondary }}>
+                                    🏃 {language === 'th' ? 'Chip Time (Net)' : 'Chip Time (Net)'}
+                                </label>
+                                <input
+                                    value={editChipTime}
+                                    onChange={e => setEditChipTime(e.target.value)}
+                                    placeholder="HH:MM:SS"
+                                    inputMode="numeric"
+                                    className="w-full rounded-md border px-3 py-2 font-mono text-[13px] box-border"
+                                    style={{
+                                        borderColor: editChipTime && parseTimeStrToMs(editChipTime) === null ? '#dc2626' : themeStyles.border,
+                                        background: isDark ? '#0f172a' : '#fff',
+                                        color: themeStyles.text,
+                                    }}
+                                />
+                                {editChipTime && parseTimeStrToMs(editChipTime) === null && (
+                                    <div className="mt-1 text-[10px] text-red-500">
+                                        {language === 'th' ? 'รูปแบบ: HH:MM:SS' : 'Format: HH:MM:SS'}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+
                         {/* ===== CHECKPOINT TIMING SECTION ===== */}
                         <div className="mb-3.5 border-t pt-3.5" style={{ borderTopColor: themeStyles.border }}>
                             <label className="mb-2 block text-[11px] font-bold uppercase" style={{ color: themeStyles.textSecondary }}>
@@ -2571,8 +2767,8 @@ export default function EventLivePage() {
                             {/* Runner name */}
                             <div className="min-w-0 flex-1 overflow-hidden">{language === 'th' ? 'นักวิ่ง' : 'Runner'}</div>
                             {/* Desktop-only columns */}
-                            {!isMobile && <div className="w-16 shrink-0 text-right">{language === 'th' ? 'เวลาปืน' : 'Gun'}</div>}
-                            {!isMobile && <div className="w-16 shrink-0 text-right">{language === 'th' ? 'เวลาชิป' : 'Net'}</div>}
+                            {!isMobile && <div className="w-20 shrink-0 text-right">{language === 'th' ? 'เวลาปืน' : 'Gun'}</div>}
+                            {!isMobile && <div className="w-20 shrink-0 text-right">{language === 'th' ? 'เวลาชิป' : 'Net'}</div>}
                             {!isMobile && <div className="w-24 shrink-0">{language === 'th' ? 'ความคืบหน้า' : 'Progress'}</div>}
                             {/* Status */}
                             <div className="shrink-0 w-24 text-center">{language === 'th' ? 'สถานะ' : 'Status'}</div>
@@ -2716,25 +2912,55 @@ export default function EventLivePage() {
                                                     </div>
                                                 </div>
 
-                                                {/* Gun Time — desktop only */}
-                                                {!isMobile && (
-                                                    <div className="w-16 shrink-0 text-right">
-                                                        <div className="font-mono text-[11px] font-semibold" style={{ color: themeStyles.text }}>
-                                                            {gunStr && gunStr !== '-' ? gunStr : <span style={{ color: themeStyles.textSecondary }}>—</span>}
+                                                {/* Gun Time — desktop editable */}
+                                                {!isMobile && (() => {
+                                                    const orig = msToHHMMSS(runner.gunTime) || runner.gunTimeStr || '';
+                                                    const draft = manualTimeEdits[runner._id]?.gun;
+                                                    const val = draft !== undefined ? draft : orig;
+                                                    const dirty = draft !== undefined && draft !== orig;
+                                                    const invalid = !!val && parseTimeStrToMs(val) === null;
+                                                    return (
+                                                        <div className="w-20 shrink-0" onClick={e => e.stopPropagation()}>
+                                                            <input
+                                                                value={val}
+                                                                onChange={e => setManualTimeEdits(prev => ({ ...prev, [runner._id]: { ...prev[runner._id], gun: e.target.value } }))}
+                                                                placeholder="HH:MM:SS"
+                                                                className="w-full rounded border px-1.5 py-0.5 text-right font-mono text-[11px] outline-none box-border"
+                                                                style={{
+                                                                    borderColor: invalid ? '#dc2626' : dirty ? '#f97316' : themeStyles.border,
+                                                                    background: dirty ? (isDark ? 'rgba(249,115,22,0.08)' : 'rgba(249,115,22,0.05)') : (isDark ? '#0f172a' : '#fff'),
+                                                                    color: themeStyles.text,
+                                                                }}
+                                                            />
+                                                            <div className="text-[9px] uppercase tracking-wide" style={{ color: themeStyles.textSecondary }}>Gun</div>
                                                         </div>
-                                                        <div className="text-[9px] uppercase tracking-wide" style={{ color: themeStyles.textSecondary }}>Gun</div>
-                                                    </div>
-                                                )}
+                                                    );
+                                                })()}
 
-                                                {/* Net Time — desktop only */}
-                                                {!isMobile && (
-                                                    <div className="w-16 shrink-0 text-right">
-                                                        <div className="font-mono text-[11px] font-semibold" style={{ color: netStr && netStr !== '-' ? '#22c55e' : themeStyles.textSecondary }}>
-                                                            {netStr && netStr !== '-' ? netStr : '—'}
+                                                {/* Net Time — desktop editable */}
+                                                {!isMobile && (() => {
+                                                    const orig = msToHHMMSS(runner.netTime) || runner.netTimeStr || '';
+                                                    const draft = manualTimeEdits[runner._id]?.net;
+                                                    const val = draft !== undefined ? draft : orig;
+                                                    const dirty = draft !== undefined && draft !== orig;
+                                                    const invalid = !!val && parseTimeStrToMs(val) === null;
+                                                    return (
+                                                        <div className="w-20 shrink-0" onClick={e => e.stopPropagation()}>
+                                                            <input
+                                                                value={val}
+                                                                onChange={e => setManualTimeEdits(prev => ({ ...prev, [runner._id]: { ...prev[runner._id], net: e.target.value } }))}
+                                                                placeholder="HH:MM:SS"
+                                                                className="w-full rounded border px-1.5 py-0.5 text-right font-mono text-[11px] outline-none box-border"
+                                                                style={{
+                                                                    borderColor: invalid ? '#dc2626' : dirty ? '#16a34a' : themeStyles.border,
+                                                                    background: dirty ? (isDark ? 'rgba(22,163,74,0.08)' : 'rgba(22,163,74,0.05)') : (isDark ? '#0f172a' : '#fff'),
+                                                                    color: dirty || (val && val !== '-') ? (dirty ? '#16a34a' : themeStyles.text) : themeStyles.textSecondary,
+                                                                }}
+                                                            />
+                                                            <div className="text-[9px] uppercase tracking-wide" style={{ color: themeStyles.textSecondary }}>Net</div>
                                                         </div>
-                                                        <div className="text-[9px] uppercase tracking-wide" style={{ color: themeStyles.textSecondary }}>Net</div>
-                                                    </div>
-                                                )}
+                                                    );
+                                                })()}
 
                                                 {/* Progress — desktop only */}
                                                 {!isMobile && (
@@ -2816,11 +3042,30 @@ export default function EventLivePage() {
                                     ✓ {manualSaveSuccess}
                                 </div>
                             )}
+                            {(() => {
+                                const timeEditCount = Object.values(manualTimeEdits).filter(e => {
+                                    const gunOk = e.gun !== undefined;
+                                    const netOk = e.net !== undefined;
+                                    return gunOk || netOk;
+                                }).length;
+                                const canSave = manualSelectedIds.size > 0 || timeEditCount > 0;
+                                const summaryParts: string[] = [];
+                                if (manualSelectedIds.size > 0) {
+                                    summaryParts.push(language === 'th'
+                                        ? `เลือก ${manualSelectedIds.size} คน → ${manualStatus.toUpperCase()}`
+                                        : `${manualSelectedIds.size} selected → ${manualStatus.toUpperCase()}`);
+                                }
+                                if (timeEditCount > 0) {
+                                    summaryParts.push(language === 'th'
+                                        ? `แก้เวลา ${timeEditCount} คน`
+                                        : `${timeEditCount} time edits`);
+                                }
+                                return (
                             <div className="flex items-center justify-between gap-3">
                                 <span className="text-[11px]" style={{ color: themeStyles.textSecondary }}>
-                                    {manualSelectedIds.size > 0
-                                        ? (language === 'th' ? `เลือก ${manualSelectedIds.size} คน → ${manualStatus.toUpperCase()}` : `${manualSelectedIds.size} selected → ${manualStatus.toUpperCase()}`)
-                                        : (language === 'th' ? 'ยังไม่ได้เลือกนักวิ่ง' : 'No runners selected')}
+                                    {summaryParts.length > 0
+                                        ? summaryParts.join(' · ')
+                                        : (language === 'th' ? 'ยังไม่ได้เลือกนักวิ่งหรือแก้เวลา' : 'No runners selected or time edits')}
                                 </span>
                                 <div className="flex gap-2">
                                     <button
@@ -2832,18 +3077,20 @@ export default function EventLivePage() {
                                     </button>
                                     <button
                                         onClick={handleManualStatusSave}
-                                        disabled={manualSaving || manualSelectedIds.size === 0}
+                                        disabled={manualSaving || !canSave}
                                         className="rounded-lg border-none px-5 py-2 text-[12px] font-bold text-white transition-opacity"
                                         style={{
-                                            background: manualSelectedIds.size === 0 ? '#94a3b8' : '#f97316',
-                                            cursor: (manualSaving || manualSelectedIds.size === 0) ? 'not-allowed' : 'pointer',
-                                            opacity: (manualSaving || manualSelectedIds.size === 0) ? 0.6 : 1,
+                                            background: !canSave ? '#94a3b8' : '#f97316',
+                                            cursor: (manualSaving || !canSave) ? 'not-allowed' : 'pointer',
+                                            opacity: (manualSaving || !canSave) ? 0.6 : 1,
                                         }}
                                     >
                                         {manualSaving ? '...' : (language === 'th' ? `บันทึก${manualSelectedIds.size > 0 ? ` (${manualSelectedIds.size})` : ''}` : `Save${manualSelectedIds.size > 0 ? ` (${manualSelectedIds.size})` : ''}`)}
                                     </button>
                                 </div>
                             </div>
+                                );
+                            })()}
                         </div>
                     </div>
                 </div>
