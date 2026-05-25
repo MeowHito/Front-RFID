@@ -1040,16 +1040,21 @@ export default function EventLivePage() {
             setEditTimingLoading(true);
             try {
                 const [cpRes, trRes] = await Promise.all([
-                    fetch(`/api/checkpoints/campaign/${campaign._id}`, { cache: 'no-store' }),
+                    fetch(`/api/checkpoints/mapping/event/${runner.eventId}`, { cache: 'no-store' }),
                     fetch(`/api/timing/runner/${runner.eventId}/${runner._id}`, { cache: 'no-store' }),
                 ]);
                 if (cpRes.ok) {
                     const cpData = await cpRes.json();
-                    const cps = (Array.isArray(cpData) ? cpData : cpData?.data || []).map((cp: any) => ({
-                        name: cp.name || '',
-                        orderNum: cp.orderNum ?? 0,
-                        type: cp.type || 'checkpoint',
-                    })).sort((a: any, b: any) => a.orderNum - b.orderNum);
+                    const list = Array.isArray(cpData) ? cpData : cpData?.data || [];
+                    const cps = list.map((m: any) => {
+                        const cp = typeof m.checkpointId === 'object' && m.checkpointId !== null ? m.checkpointId : null;
+                        return {
+                            name: cp?.name || '',
+                            orderNum: m.orderNum ?? cp?.orderNum ?? 0,
+                            type: cp?.type || 'checkpoint',
+                        };
+                    }).filter((cp: { name: string }) => !!cp.name)
+                      .sort((a: { orderNum: number }, b: { orderNum: number }) => a.orderNum - b.orderNum);
                     setEditCheckpoints(cps);
                 }
                 if (trRes.ok) {
@@ -1171,19 +1176,31 @@ export default function EventLivePage() {
         setManualSaveError(null);
         setManualSaveSuccess(null);
         setManualTimeEdits({});
-        if (campaign?._id && manualCheckpoints.length === 0) {
+        // Scope checkpoints to the event of the runners currently shown (matches filterCategory).
+        const targetEventId = manualModalRunners[0]?.eventId
+            || runners.find(r => !filterCategory || resolveRunnerCategoryKey(r) === filterCategory)?.eventId;
+        if (targetEventId) {
             setManualCheckpointsLoading(true);
             try {
-                const cpRes = await fetch(`/api/checkpoints/campaign/${campaign._id}`, { cache: 'no-store' });
+                const cpRes = await fetch(`/api/checkpoints/mapping/event/${targetEventId}`, { cache: 'no-store' });
                 if (cpRes.ok) {
                     const cpData = await cpRes.json();
-                    const cps = (Array.isArray(cpData) ? cpData : cpData?.data || [])
-                        .map((cp: any) => ({ name: cp.name || '', orderNum: cp.orderNum ?? 0, type: cp.type || 'checkpoint' }))
-                        .sort((a: any, b: any) => a.orderNum - b.orderNum);
+                    const list = Array.isArray(cpData) ? cpData : cpData?.data || [];
+                    const cps = list.map((m: any) => {
+                        const cp = typeof m.checkpointId === 'object' && m.checkpointId !== null ? m.checkpointId : null;
+                        return {
+                            name: cp?.name || '',
+                            orderNum: m.orderNum ?? cp?.orderNum ?? 0,
+                            type: cp?.type || 'checkpoint',
+                        };
+                    }).filter((cp: { name: string }) => !!cp.name)
+                      .sort((a: { orderNum: number }, b: { orderNum: number }) => a.orderNum - b.orderNum);
                     setManualCheckpoints(cps);
                 }
             } catch { /* ignore */ }
             setManualCheckpointsLoading(false);
+        } else {
+            setManualCheckpoints([]);
         }
     };
 

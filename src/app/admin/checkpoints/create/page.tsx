@@ -33,7 +33,8 @@ interface Checkpoint {
     description?: string;
     readerId?: string;
     kmCumulative?: number;
-    cutoffTime?: string;
+    cutoffTime?: string; // LEGACY (global). Per-distance cutoffs live in cutoffTimes.
+    cutoffTimes?: Record<string, string>; // key: category name, value: ISO datetime
     distanceMappings?: string[];
 }
 
@@ -521,6 +522,7 @@ export default function RouteMappingPage() {
                     readerId: cp.readerId || '',
                     kmCumulative: cp.kmCumulative,
                     cutoffTime: cp.cutoffTime,
+                    cutoffTimes: cp.cutoffTimes || {},
                     distanceMappings: cp.distanceMappings || [],
                 };
                 const res = await fetch(`/api/checkpoints/${cpId}`, {
@@ -652,6 +654,7 @@ export default function RouteMappingPage() {
                     readerId: cp.readerId || '',
                     kmCumulative: cp.kmCumulative,
                     cutoffTime: cp.cutoffTime,
+                    cutoffTimes: cp.cutoffTimes || {},
                     distanceMappings: newMappings,
                 };
                 const res = await fetch(`/api/checkpoints/${cp._id}`, {
@@ -1511,7 +1514,15 @@ export default function RouteMappingPage() {
                                             const isDirty = dirtyIds.has(cp._id);
                                             const isStart = cp.type === 'start';
                                             const isFinish = cp.type === 'finish';
-                                            const hasCutoff = cp.cutoffTime && cp.cutoffTime !== '-' && cp.cutoffTime !== '';
+                                            const cutoffForCategory = selectedCategory
+                                                ? (cp.cutoffTimes?.[selectedCategory] ?? '')
+                                                : '';
+                                            // Backward compat: if no per-category cutoffTimes entries exist at all,
+                                            // surface the legacy cutoffTime so existing data is editable. As soon as
+                                            // a user sets a per-distance value, the legacy field is ignored.
+                                            const hasAnyPerCategoryCutoff = !!cp.cutoffTimes && Object.values(cp.cutoffTimes).some(v => !!v && v !== '-');
+                                            const effectiveCutoff = cutoffForCategory || (hasAnyPerCategoryCutoff ? '' : (cp.cutoffTime || ''));
+                                            const hasCutoff = effectiveCutoff && effectiveCutoff !== '-' && effectiveCutoff !== '';
                                             const kmHasValue = cp.kmCumulative !== undefined && cp.kmCumulative !== null && cp.kmCumulative > 0;
                                             const mode: 'rfid' | 'manual' =
                                                 (cp.description === 'manual' || cp.description === 'rfid') ? cp.description : 'rfid';
@@ -1652,16 +1663,23 @@ export default function RouteMappingPage() {
                                                                 <circle cx="16" cy="16" r="2" />
                                                             </svg>
                                                             {hasCutoff
-                                                                ? `${parseCutoffDate(cp.cutoffTime)}  ${parseCutoffTime(cp.cutoffTime)}`
+                                                                ? `${parseCutoffDate(effectiveCutoff)}  ${parseCutoffTime(effectiveCutoff)}`
                                                                 : (language === 'th' ? 'ตั้งเวลา...' : 'Set cutoff...')
                                                             }
                                                         </button>
                                                         {cutoffPickerCpId === cp._id && (
                                                             <CutoffDateTimePicker
-                                                                value={cp.cutoffTime || ''}
+                                                                value={effectiveCutoff}
                                                                 anchorRect={cutoffPickerAnchor}
                                                                 onChange={val => {
-                                                                    updateCheckpoint(cp._id, { cutoffTime: val });
+                                                                    if (!selectedCategory) return;
+                                                                    const nextMap = { ...(cp.cutoffTimes || {}) };
+                                                                    if (val) {
+                                                                        nextMap[selectedCategory] = val;
+                                                                    } else {
+                                                                        delete nextMap[selectedCategory];
+                                                                    }
+                                                                    updateCheckpoint(cp._id, { cutoffTimes: nextMap });
                                                                 }}
                                                                 onClose={() => setCutoffPickerCpId(null)}
                                                             />
