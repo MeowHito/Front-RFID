@@ -1710,6 +1710,11 @@ export default function EventLivePage() {
                                         if (totalCps > 0 && completedCpCount > 0) {
                                             progressLabel = `${completedCpCount}/${totalCps} CP`;
                                         }
+                                    } else if (['dns', 'not_started'].includes(runner.status)) {
+                                        // DNS / not_started = runner never showed up. Progress is always 0%
+                                        // regardless of any residual latestCheckpoint/passedCount/splitDesc
+                                        // values left on the Runner doc by stale RaceTiger sync data.
+                                        progressPct = 0;
                                     } else {
                                         // Calculate progress for ALL non-finished statuses
                                         const evLookup = checkpointMeta.evLookup;
@@ -2849,6 +2854,9 @@ export default function EventLivePage() {
                                         if (runner.status === 'finished' || isFinishLike) {
                                             progressPct = 100;
                                             if (totalCps > 0 && completedCpCount > 0) progressLabel = `${completedCpCount}/${totalCps} CP`;
+                                        } else if (['dns', 'not_started'].includes(runner.status)) {
+                                            // DNS = runner never started — always 0%, ignore any stale data
+                                            progressPct = 0;
                                         } else {
                                             if ((runner.passedCount ?? 0) > 0 && totalCps > 0) {
                                                 const ratio = Math.round((runner.passedCount! / totalCps) * 100);
