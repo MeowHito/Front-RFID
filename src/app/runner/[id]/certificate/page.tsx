@@ -368,7 +368,11 @@ export default function CertificatePage() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
     const [downloading, setDownloading] = useState(false);
-    const canvasWrapRef = useRef<HTMLDivElement>(null);
+    // Callback-ref via state so the measure effect re-runs when the cert
+    // wrapper mounts *after* data loads — the previous useRef + []-deps
+    // version measured before mount on mobile and got stuck at the default,
+    // making fonts render ~2× too big on narrow screens.
+    const [canvasWrapEl, setCanvasWrapEl] = useState<HTMLDivElement | null>(null);
     const certRef = useRef<HTMLDivElement>(null);
     // Full-size offscreen mirror used for download so the captured image
     // is consistent regardless of the visitor's screen width (fixes mobile).
@@ -401,18 +405,17 @@ export default function CertificatePage() {
 
     // Track rendered canvas width so we can scale font sizes consistently with the editor.
     useEffect(() => {
-        const measure = () => {
-            if (canvasWrapRef.current) setCanvasW(canvasWrapRef.current.clientWidth);
-        };
+        if (!canvasWrapEl) return;
+        const measure = () => setCanvasW(canvasWrapEl.clientWidth);
         measure();
-        if (typeof ResizeObserver !== 'undefined' && canvasWrapRef.current) {
+        if (typeof ResizeObserver !== 'undefined') {
             const obs = new ResizeObserver(measure);
-            obs.observe(canvasWrapRef.current);
+            obs.observe(canvasWrapEl);
             return () => obs.disconnect();
         }
         window.addEventListener('resize', measure);
         return () => window.removeEventListener('resize', measure);
-    }, []);
+    }, [canvasWrapEl]);
 
     const splits: SplitRecord[] = useMemo(() => timingRecords.map(r => ({
         checkpoint: (r.splitDesc as string) || (r.checkpoint as string) || '-',
@@ -432,18 +435,59 @@ export default function CertificatePage() {
         if (!target || !runner) return;
         setDownloading(true);
         try {
-            const { toPng } = await import('html-to-image');
+            const { toBlob } = await import('html-to-image');
             await document.fonts.ready;
-            const dataUrl = await toPng(target, {
+            // Wait for background + element images to finish loading — on iOS
+            // the offscreen mirror can otherwise be captured before images paint.
+            const imgs = Array.from(target.querySelectorAll('img'));
+            await Promise.all(imgs.map(img => (
+                img.complete && img.naturalWidth > 0
+                    ? Promise.resolve()
+                    : new Promise<void>(resolve => {
+                        const done = () => resolve();
+                        img.addEventListener('load', done, { once: true });
+                        img.addEventListener('error', done, { once: true });
+                        setTimeout(done, 5000);
+                    })
+            )));
+
+            const blob = await toBlob(target, {
                 pixelRatio: 2,
                 cacheBust: true,
                 backgroundColor: campaign?.certBgColor || '#1a1a2e',
                 skipFonts: true,
             });
+            if (!blob) throw new Error('Render produced no blob');
+
+            const filename = `certificate-${runner.bib || 'runner'}.png`;
+            const file = new File([blob], filename, { type: 'image/png' });
+
+            // iOS Safari: <a download> saves to Files, not Photos. Use the Web
+            // Share API so the iOS share sheet offers "Save Image" → Photos.
+            const navAny = navigator as Navigator & {
+                canShare?: (data: { files?: File[] }) => boolean;
+                share?: (data: { files?: File[]; title?: string }) => Promise<void>;
+            };
+            if (typeof navAny.canShare === 'function'
+                && typeof navAny.share === 'function'
+                && navAny.canShare({ files: [file] })) {
+                try {
+                    await navAny.share({ files: [file], title: filename });
+                    return;
+                } catch (shareErr) {
+                    if ((shareErr as { name?: string })?.name === 'AbortError') return;
+                    // Anything else: fall through to anchor download.
+                }
+            }
+
+            const url = URL.createObjectURL(blob);
             const link = document.createElement('a');
-            link.download = `certificate-${runner.bib || 'runner'}.png`;
-            link.href = dataUrl;
+            link.download = filename;
+            link.href = url;
+            document.body.appendChild(link);
             link.click();
+            document.body.removeChild(link);
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
         } catch (err) {
             console.error('Download failed', err);
             alert('ดาวน์โหลดไม่สำเร็จ');
@@ -601,7 +645,7 @@ export default function CertificatePage() {
                     </button>
                 </div>
 
-                <div ref={canvasWrapRef} style={{ width: '100%', borderRadius: 12, overflow: 'hidden', boxShadow: '0 8px 32px rgba(0,0,0,0.18)' }}>
+                <div ref={setCanvasWrapEl} style={{ width: '100%', borderRadius: 12, overflow: 'hidden', boxShadow: '0 8px 32px rgba(0,0,0,0.18)' }}>
                     <div
                         ref={certRef}
                         style={{
