@@ -459,8 +459,16 @@ export default function RunnerProfilePage() {
 
     const isFinished = runner.status === 'finished';
 
-    // Sort timings by order (needed below for fallback computations)
-    const sortedTimings = [...timings].sort((a, b) => (a.order || 0) - (b.order || 0));
+    // Sort timings by scanTime ascending so the table reflects real chronology.
+    // `order` is unreliable when admin manually adds a checkpoint (the new record
+    // gets a fresh sequence number that may slot in front of RaceTiger-synced rows
+    // whose `order` starts at 1000+). Fall back to `order` only when scanTimes tie.
+    const sortedTimings = [...timings].sort((a, b) => {
+        const ta = a.scanTime ? new Date(a.scanTime).getTime() : 0;
+        const tb = b.scanTime ? new Date(b.scanTime).getTime() : 0;
+        if (ta !== tb) return ta - tb;
+        return (a.order || 0) - (b.order || 0);
+    });
 
     // Build a checkpoint-name → distanceFromStart lookup from the event mappings,
     // since RaceTiger does NOT store per-record distance on the timing entries.

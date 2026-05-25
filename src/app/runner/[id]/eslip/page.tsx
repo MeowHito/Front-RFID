@@ -165,7 +165,14 @@ function Template1({ runner, timings, campaign, bgImage, slipRef, showField }: T
     const pace = effectivePace(runner);
     const gunTimeStr = runner.gunTimeStr || formatTime(effectiveFinishMs(runner));
     const netTimeStr = runner.netTimeStr || formatTime(runner.netTime);
-    const sortedTimings = [...timings].sort((a, b) => (a.order || 0) - (b.order || 0));
+    // Sort by scanTime ascending — order is unreliable when admin manually adds a
+    // checkpoint (the new record's `order` may slot in front of RaceTiger-synced rows).
+    const sortedTimings = [...timings].sort((a, b) => {
+        const ta = a.scanTime ? new Date(a.scanTime).getTime() : 0;
+        const tb = b.scanTime ? new Date(b.scanTime).getTime() : 0;
+        if (ta !== tb) return ta - tb;
+        return (a.order || 0) - (b.order || 0);
+    });
     const displayTimings = sortedTimings.slice(-6);
 
     return (
@@ -292,7 +299,14 @@ function Template2({ runner, timings, campaign, bgImage, slipRef, showField, tex
     const pace = effectivePace(runner);
     const gunTimeStr = runner.gunTimeStr || formatTime(effectiveFinishMs(runner));
     const netTimeStr = runner.netTimeStr || formatTime(runner.netTime);
-    const sortedTimings = [...timings].sort((a, b) => (a.order || 0) - (b.order || 0));
+    // Sort by scanTime ascending — order is unreliable when admin manually adds a
+    // checkpoint (the new record's `order` may slot in front of RaceTiger-synced rows).
+    const sortedTimings = [...timings].sort((a, b) => {
+        const ta = a.scanTime ? new Date(a.scanTime).getTime() : 0;
+        const tb = b.scanTime ? new Date(b.scanTime).getTime() : 0;
+        if (ta !== tb) return ta - tb;
+        return (a.order || 0) - (b.order || 0);
+    });
     const displayTimings = sortedTimings.slice(-7);
     const isLightText = textColorMode === 'light';
     const primaryTextClass = isLightText ? 'text-white' : 'text-black';
@@ -430,7 +444,14 @@ function Template3({ runner, timings, campaign, slipRef, showField }: TemplatePr
     const pace = effectivePace(runner);
     const gunTimeStr = runner.gunTimeStr || formatTime(effectiveFinishMs(runner));
     const netTimeStr = runner.netTimeStr || formatTime(runner.netTime);
-    const sortedTimings = [...timings].sort((a, b) => (a.order || 0) - (b.order || 0));
+    // Sort by scanTime ascending — order is unreliable when admin manually adds a
+    // checkpoint (the new record's `order` may slot in front of RaceTiger-synced rows).
+    const sortedTimings = [...timings].sort((a, b) => {
+        const ta = a.scanTime ? new Date(a.scanTime).getTime() : 0;
+        const tb = b.scanTime ? new Date(b.scanTime).getTime() : 0;
+        if (ta !== tb) return ta - tb;
+        return (a.order || 0) - (b.order || 0);
+    });
     const displayTimings = sortedTimings.slice(-7);
 
     return (
@@ -572,7 +593,12 @@ function checkpointLabelFor(t: TimingRecord): string {
 }
 
 function ESlipV2SplitsTable({ el, timings }: { el: ESlipV2Element; timings: TimingRecord[] }) {
-    const sorted = [...timings].sort((a, b) => (a.order || 0) - (b.order || 0));
+    const sorted = [...timings].sort((a, b) => {
+        const ta = a.scanTime ? new Date(a.scanTime).getTime() : 0;
+        const tb = b.scanTime ? new Date(b.scanTime).getTime() : 0;
+        if (ta !== tb) return ta - tb;
+        return (a.order || 0) - (b.order || 0);
+    });
     const rows = sorted.filter(t => !((t.checkpoint || '').toLowerCase().includes('start')));
 
     const gap = el.rowGap ?? 6;
