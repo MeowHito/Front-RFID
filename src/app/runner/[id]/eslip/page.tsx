@@ -559,7 +559,10 @@ function resolveFieldValue(field: FieldKey, staticText: string, runner: RunnerDa
         case 'ageGroup':    return runner.ageGroup ?? '';
         case 'overallRank': return String(runner.overallRank ?? '-');
         case 'genderRank':  return String(runner.genderRank ?? runner.genderNetRank ?? '-');
-        case 'categoryRank':return String(runner.categoryRank ?? runner.categoryNetRank ?? '-');
+        // Category rank is only meaningful when the runner's distance has age groups.
+        // Returning an empty string here makes V2 elements bound to this field render blank
+        // (or get skipped by the renderer's blank-check) instead of showing a misleading '-'.
+        case 'categoryRank':return runner.ageGroup ? String(runner.categoryRank ?? runner.categoryNetRank ?? '-') : '';
         case 'gunTime':     return runner.gunTimeStr ?? fmt(effectiveFinishMs(runner));
         case 'netTime':     return runner.netTimeStr ?? fmt(runner.netTime);
         case 'pace':        return effectivePace(runner);
@@ -1074,7 +1077,14 @@ export default function ESlipPage() {
                     ? <ESlipV2Renderer layout={campaign!.eslipV2Layout!} runner={runner} campaign={campaign} slipRef={slipRef} timings={timings} />
                     : (() => {
                         const vf = campaign?.eslipVisibleFields;
-                        const showField = (key: string) => !vf || vf.length === 0 || vf.includes(key);
+                        const hasAgeGroup = !!runner.ageGroup;
+                        const showField = (key: string) => {
+                            // If the runner's distance has no age groups configured (runner.ageGroup
+                            // is empty), suppress every age-group-derived field so the e-slip
+                            // doesn't show a stale "Category 1" or "AgeGroup -".
+                            if (!hasAgeGroup && (key === 'categoryRank' || key === 'ageGroup')) return false;
+                            return !vf || vf.length === 0 || vf.includes(key);
+                        };
                         const common = { runner, timings, campaign, slipRef, showField };
                         if (activeTemplate === 'template1') return <Template1 {...common} bgImage={bgImage} />;
                         if (activeTemplate === 'template2') return <Template2 {...common} bgImage={bgImage} textColorMode={photoTextColor} />;

@@ -200,7 +200,7 @@ export default function ExportPage() {
             const eventName = campaign.nameTh || campaign.name || '';
             const distanceLabel = selectedCategoryLabel();
             const titleLine = distanceLabel ? `${eventName} — ${distanceLabel}` : eventName;
-            const columns = ['BIB', 'FirstName', 'LastName', 'Gender', 'Category', 'AgeGroup', 'BirthDate (C.E.)', 'Nationality', 'GunTime', 'NetTime', 'Status'];
+            const columns = ['Overall', 'Gender Rank', 'BIB', 'FirstName', 'LastName', 'Gender', 'Category', 'AgeGroup', 'BirthDate (C.E.)', 'Nationality', 'GunTime', 'NetTime', 'Status'];
             const aoa: (string | number)[][] = [];
             // Title row — full event + distance merged across all columns so nothing gets cut off
             aoa.push([titleLine]);
@@ -211,6 +211,8 @@ export default function ExportPage() {
             // Data rows
             for (const r of runners) {
                 aoa.push([
+                    r.overallRank || '',
+                    r.genderRank || '',
                     r.bib || '',
                     r.firstName || '',
                     r.lastName || '',
@@ -225,9 +227,9 @@ export default function ExportPage() {
                 ]);
             }
             const ws = XLSX.utils.aoa_to_sheet(aoa);
-            // Column widths
+            // Column widths — match the column order above
             ws['!cols'] = [
-                { wch: 10 }, { wch: 16 }, { wch: 18 }, { wch: 8 },
+                { wch: 8 },  { wch: 12 }, { wch: 10 }, { wch: 16 }, { wch: 18 }, { wch: 8 },
                 { wch: 14 }, { wch: 12 }, { wch: 14 }, { wch: 12 },
                 { wch: 12 }, { wch: 12 }, { wch: 12 },
             ];
@@ -352,7 +354,7 @@ export default function ExportPage() {
                                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                                     <thead>
                                         <tr>
-                                            {['#', 'BIB', 'FirstName', 'LastName', 'Gender', 'Category', 'AgeGroup', 'BirthDate (C.E.)', 'Nationality', 'GunTime', 'NetTime', 'Pace', 'Status'].map((h, i) => (
+                                            {['Overall', 'Gender Rank', 'BIB', 'FirstName', 'LastName', 'Gender', 'Category', 'AgeGroup', 'BirthDate (C.E.)', 'Nationality', 'GunTime', 'NetTime', 'Pace', 'Status'].map((h, i) => (
                                                 <th key={i} style={{ padding: '8px 10px', borderBottom: '2px solid #e5e7eb', textAlign: 'left', fontWeight: 700, fontSize: 11, color: '#475569', whiteSpace: 'nowrap', background: '#f8fafc' }}>{h}</th>
                                             ))}
                                         </tr>
@@ -371,7 +373,8 @@ export default function ExportPage() {
                                                 : '#64748b';
                                             return (
                                                 <tr key={r._id || i} style={{ borderBottom: '1px solid #f3f4f6' }}>
-                                                    <td style={{ padding: '6px 10px', fontSize: 12, color: '#94a3b8' }}>{i + 1}</td>
+                                                    <td style={{ padding: '6px 10px', fontSize: 12, fontVariantNumeric: 'tabular-nums', fontWeight: 700, color: '#0f172a' }}>{r.overallRank || '-'}</td>
+                                                    <td style={{ padding: '6px 10px', fontSize: 12, fontVariantNumeric: 'tabular-nums', color: '#475569' }}>{r.genderRank || '-'}</td>
                                                     <td style={{ padding: '6px 10px', fontSize: 12, fontWeight: 700 }}>{r.bib || '-'}</td>
                                                     <td style={{ padding: '6px 10px', fontSize: 12 }}>{r.firstName || '-'}</td>
                                                     <td style={{ padding: '6px 10px', fontSize: 12 }}>{r.lastName || '-'}</td>

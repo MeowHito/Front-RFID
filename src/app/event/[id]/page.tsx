@@ -653,22 +653,14 @@ export default function EventLivePage() {
                         const cpMap: { [name: string]: number } = {};
                         const cpOrders: { [name: string]: number } = {};
                         let maxDist = 0;
-                        // Count only checkpoints the runner actually has to "reach" —
-                        // exclude START (which is the start line, not a checkpoint to pass).
-                        // This keeps the "X/Y CP" badge consistent with passedCount, which
-                        // also excludes START.
-                        let totalCheckpoints = 0;
                         for (const m of mappings) {
                             const cpObj = typeof m.checkpointId === 'object' ? m.checkpointId : null;
                             const cpName = cpObj?.name || '';
-                            const cpType = String(cpObj?.type || '').toLowerCase();
                             const dist = m.distanceFromStart ?? cpObj?.kmCumulative ?? 0;
                             if (cpName) {
                                 const key = cpName.trim().toLowerCase();
                                 cpMap[key] = dist;
                                 cpOrders[key] = m.orderNum || 0;
-                                const isStart = cpType === 'start' || key === 'start';
-                                if (!isStart && (m.orderNum || 0) > 0) totalCheckpoints++;
                             }
                             if (dist > maxDist) maxDist = dist;
                         }
@@ -677,6 +669,7 @@ export default function EventLivePage() {
                             String(c.eventId || '') === evId || String(c._id || '') === evId
                         );
                         const catDist = evCategory ? (parseDistanceValue(evCategory.distance || evCategory.name) || 0) : 0;
+                        const totalCheckpoints = Object.values(cpOrders).filter((order) => order > 0).length;
                         lookup[evId] = {
                             checkpoints: cpMap,
                             cpOrders,
@@ -847,6 +840,15 @@ export default function EventLivePage() {
     const activeColDefs = isLabMode ? LAB_COL_DEFS : COL_DEFS;
     const activeToggleableKeys = isLabMode ? LAB_TOGGLEABLE_KEYS : TOGGLEABLE_KEYS;
 
+    // Whether the currently-selected distance has any age-group data. If not, we hide
+    // the CAT column from the table — the rank value is meaningless without age groups.
+    const currentCategoryHasAgeGroups = useMemo(() => {
+        return runners.some(r =>
+            (!filterCategory || resolveRunnerCategoryKey(r) === filterCategory)
+            && !!r.ageGroup
+        );
+    }, [runners, filterCategory, resolveRunnerCategoryKey]);
+
     // Build ordered list of visible columns based on admin displayColumns + mobile
     const visibleColumns = useMemo(() => {
         const adminCols = isLabMode ? campaign?.displayColumnsLab : campaign?.displayColumns;
@@ -896,13 +898,15 @@ export default function EventLivePage() {
             if (!isLabMode) {
                 if (key === 'genRank' && !showGenRank) return false;
                 if (key === 'catRank' && !showCatRank) return false;
+                // Auto-hide CAT column when the selected distance has no age groups.
+                if (key === 'catRank' && !currentCategoryHasAgeGroups) return false;
             }
             if (isMobile && !showAllColumns) {
                 return isLabMode ? ['laps'].includes(key) : ['gunTime'].includes(key);
             }
             return true;
         });
-    }, [isAdmin, isAuthenticated, isMobile, showAllColumns, campaign?.displayColumns, campaign?.displayColumnsLab, campaign?.displayMode, showGenRank, showCatRank, isLabMode, activeColDefs, activeToggleableKeys]);
+    }, [isAdmin, isAuthenticated, isMobile, showAllColumns, campaign?.displayColumns, campaign?.displayColumnsLab, campaign?.displayMode, showGenRank, showCatRank, isLabMode, activeColDefs, activeToggleableKeys, currentCategoryHasAgeGroups]);
 
     // Compute median finish time per category for real progress estimation
     const categoryMedianTime = useMemo(() => {
