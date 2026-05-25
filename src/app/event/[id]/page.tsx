@@ -1699,7 +1699,11 @@ export default function EventLivePage() {
                                     let progressDistKm = 0;
                                     let eventTotalKm = 0;
                                     let progressLabel = '';
-                                    const isFinishCp = checkpointMeta.isFinishLike;
+                                    // Stopped runners (DNS/DNF/DQ/not_started) must never be treated as
+                                    // finish-like for progress/distance, even if RaceTiger sync left
+                                    // latestCheckpoint='FINISH' on the Runner doc before status was set.
+                                    const isStoppedStatus = ['dns', 'dnf', 'dq', 'not_started'].includes(runner.status);
+                                    const isFinishCp = checkpointMeta.isFinishLike && !isStoppedStatus;
                                     const runnerStartDate = getRunnerCategoryStartDate(runner);
                                     if (runner.status === 'finished' || isFinishCp) {
                                         progressPct = 100;
@@ -2834,7 +2838,10 @@ export default function EventLivePage() {
 
                                         // Progress calculation (same logic as main table)
                                         const checkpointMeta = getRunnerCheckpointMeta(runner);
-                                        const { evLookup, checkpointKey, checkpointOrder, totalCheckpoints: totalCps, completedCpCount, isFinishLike } = checkpointMeta;
+                                        const { evLookup, checkpointKey, checkpointOrder, totalCheckpoints: totalCps, completedCpCount, isFinishLike: rawIsFinishLike } = checkpointMeta;
+                                        // Stopped runners must never inherit a stale "FINISH" latestCheckpoint
+                                        const isStoppedStatus = ['dns', 'dnf', 'dq', 'not_started'].includes(runner.status);
+                                        const isFinishLike = rawIsFinishLike && !isStoppedStatus;
                                         let progressPct = 0;
                                         let progressDistKm = 0;
                                         let eventTotalKm = 0;
@@ -3032,7 +3039,8 @@ export default function EventLivePage() {
                                                     const isDnfSt = runner.status === 'dnf';
                                                     const cpMeta2 = getRunnerCheckpointMeta(runner);
                                                     const stCpName = cpMeta2.checkpointName || cpName;
-                                                    const isFinish2 = cpMeta2.isFinishLike;
+                                                    const stStopped = ['dns', 'dnf', 'dq', 'not_started'].includes(runner.status);
+                                                    const isFinish2 = cpMeta2.isFinishLike && !stStopped;
                                                     const showBadge = !['finished', 'in_progress', 'dnf'].includes(runner.status);
                                                     const showFinishChip = !!stCpName && isFinish2;
                                                     const showInProgChip = !!stCpName && runner.status === 'in_progress' && !isFinish2;
