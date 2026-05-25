@@ -920,14 +920,17 @@ export default function RunnerProfilePage() {
                                             ? Math.round((cumDist - prevCum) * 100) / 100
                                             : null;
 
-                                    // Pace: prefer values synced from RaceTiger; fall back to computed
+                                    // Pace: prefer values synced from RaceTiger; fall back to computed.
+                                    // Use `cumDist` (record.distanceFromStart OR the event's checkpoint
+                                    // mapping kmCumulative) so admin-added checkpoints without a stored
+                                    // distance still get a pace.
                                     let segPace = '-';
                                     const importedPace = (record.netPace || record.splitPace || record.gunPace || '').trim();
                                     if (importedPace) {
                                         segPace = `${importedPace} /km`;
-                                    } else if (record.distanceFromStart && record.distanceFromStart > 0 && displayNetTime && displayNetTime > 0) {
+                                    } else if (cumDist != null && cumDist > 0 && displayNetTime && displayNetTime > 0) {
                                         const totalMin = displayNetTime / 60000;
-                                        const paceMin = totalMin / record.distanceFromStart;
+                                        const paceMin = totalMin / cumDist;
                                         const pM = Math.floor(paceMin);
                                         const pS = Math.round((paceMin - pM) * 60);
                                         segPace = `${pM}:${pS.toString().padStart(2, '0')} /km`;

@@ -653,14 +653,22 @@ export default function EventLivePage() {
                         const cpMap: { [name: string]: number } = {};
                         const cpOrders: { [name: string]: number } = {};
                         let maxDist = 0;
+                        // Count only checkpoints the runner actually has to "reach" —
+                        // exclude START (which is the start line, not a checkpoint to pass).
+                        // This keeps the "X/Y CP" badge consistent with passedCount, which
+                        // also excludes START.
+                        let totalCheckpoints = 0;
                         for (const m of mappings) {
                             const cpObj = typeof m.checkpointId === 'object' ? m.checkpointId : null;
                             const cpName = cpObj?.name || '';
+                            const cpType = String(cpObj?.type || '').toLowerCase();
                             const dist = m.distanceFromStart ?? cpObj?.kmCumulative ?? 0;
                             if (cpName) {
                                 const key = cpName.trim().toLowerCase();
                                 cpMap[key] = dist;
                                 cpOrders[key] = m.orderNum || 0;
+                                const isStart = cpType === 'start' || key === 'start';
+                                if (!isStart && (m.orderNum || 0) > 0) totalCheckpoints++;
                             }
                             if (dist > maxDist) maxDist = dist;
                         }
@@ -669,7 +677,6 @@ export default function EventLivePage() {
                             String(c.eventId || '') === evId || String(c._id || '') === evId
                         );
                         const catDist = evCategory ? (parseDistanceValue(evCategory.distance || evCategory.name) || 0) : 0;
-                        const totalCheckpoints = Object.values(cpOrders).filter((order) => order > 0).length;
                         lookup[evId] = {
                             checkpoints: cpMap,
                             cpOrders,
