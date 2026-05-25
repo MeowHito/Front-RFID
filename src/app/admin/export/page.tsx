@@ -61,6 +61,16 @@ function resolveAgeGroup(r: Runner): string {
     return calculateAgeGroup(r.birthDate, r.gender);
 }
 
+function formatBirthDateCE(iso?: string): string {
+    if (!iso) return '';
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return '';
+    const dd = String(d.getDate()).padStart(2, '0');
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const yyyy = d.getFullYear();
+    return `${dd}/${mm}/${yyyy}`;
+}
+
 function formatTime(ms?: number): string {
     if (!ms || ms <= 0) return '-';
     const totalSec = Math.floor(ms / 1000);
@@ -190,7 +200,7 @@ export default function ExportPage() {
             const eventName = campaign.nameTh || campaign.name || '';
             const distanceLabel = selectedCategoryLabel();
             const titleLine = distanceLabel ? `${eventName} — ${distanceLabel}` : eventName;
-            const columns = ['BIB', 'FirstName', 'LastName', 'Gender', 'Category', 'AgeGroup', 'Nationality', 'GunTime', 'NetTime', 'Status'];
+            const columns = ['BIB', 'FirstName', 'LastName', 'Gender', 'Category', 'AgeGroup', 'BirthDate (C.E.)', 'Nationality', 'GunTime', 'NetTime', 'Status'];
             const aoa: (string | number)[][] = [];
             // Title row — full event + distance merged across all columns so nothing gets cut off
             aoa.push([titleLine]);
@@ -207,6 +217,7 @@ export default function ExportPage() {
                     r.gender || '',
                     r.category || '',
                     resolveAgeGroup(r) || '',
+                    formatBirthDateCE(r.birthDate),
                     r.nationality || '',
                     formatTime(r.gunTime),
                     formatTime(r.netTime),
@@ -217,8 +228,8 @@ export default function ExportPage() {
             // Column widths
             ws['!cols'] = [
                 { wch: 10 }, { wch: 16 }, { wch: 18 }, { wch: 8 },
-                { wch: 14 }, { wch: 12 }, { wch: 12 }, { wch: 12 },
-                { wch: 12 }, { wch: 12 },
+                { wch: 14 }, { wch: 12 }, { wch: 14 }, { wch: 12 },
+                { wch: 12 }, { wch: 12 }, { wch: 12 },
             ];
             // Merge title across all data columns so the event name is never truncated
             ws['!merges'] = ws['!merges'] || [];
@@ -341,7 +352,7 @@ export default function ExportPage() {
                                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                                     <thead>
                                         <tr>
-                                            {['#', 'BIB', 'FirstName', 'LastName', 'Gender', 'Category', 'AgeGroup', 'Nationality', 'GunTime', 'NetTime', 'Pace', 'Status'].map((h, i) => (
+                                            {['#', 'BIB', 'FirstName', 'LastName', 'Gender', 'Category', 'AgeGroup', 'BirthDate (C.E.)', 'Nationality', 'GunTime', 'NetTime', 'Pace', 'Status'].map((h, i) => (
                                                 <th key={i} style={{ padding: '8px 10px', borderBottom: '2px solid #e5e7eb', textAlign: 'left', fontWeight: 700, fontSize: 11, color: '#475569', whiteSpace: 'nowrap', background: '#f8fafc' }}>{h}</th>
                                             ))}
                                         </tr>
@@ -367,6 +378,7 @@ export default function ExportPage() {
                                                     <td style={{ padding: '6px 10px', fontSize: 12 }}>{r.gender || '-'}</td>
                                                     <td style={{ padding: '6px 10px', fontSize: 12 }}>{r.category || '-'}</td>
                                                     <td style={{ padding: '6px 10px', fontSize: 12 }}>{resolveAgeGroup(r) || '-'}</td>
+                                                    <td style={{ padding: '6px 10px', fontSize: 12, fontVariantNumeric: 'tabular-nums' }}>{formatBirthDateCE(r.birthDate) || '-'}</td>
                                                     <td style={{ padding: '6px 10px', fontSize: 12 }}>{r.nationality || '-'}</td>
                                                     <td style={{ padding: '6px 10px', fontSize: 12, fontVariantNumeric: 'tabular-nums' }}>{formatTime(r.gunTime)}</td>
                                                     <td style={{ padding: '6px 10px', fontSize: 12, fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>{formatTime(r.netTime)}</td>

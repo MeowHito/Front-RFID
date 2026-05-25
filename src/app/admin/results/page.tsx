@@ -158,6 +158,25 @@ function compareNumberNullable(a?: number, b?: number): number {
     return 0;
 }
 
+// Age-group filter ranges. Matches runner ageGroup strings like "18-29", "30-39",
+// "40-49", "50-59", "60+", "13-17", "U18", etc.
+const AGE_RANGES: Array<{ key: string; label: string; test: (ag: string) => boolean }> = [
+    { key: '<=17', label: '<= 17', test: (ag) => /U\s*1[0-8]|13-17|U13|<=?\s*17|^1[0-7](\b|$)/i.test(ag) },
+    { key: '18-29', label: '18-29', test: (ag) => /\b18\s*-\s*29\b/.test(ag) },
+    { key: '30-39', label: '30-39', test: (ag) => /\b30\s*-\s*39\b/.test(ag) },
+    { key: '40-49', label: '40-49', test: (ag) => /\b40\s*-\s*49\b/.test(ag) },
+    { key: '50-59', label: '50-59', test: (ag) => /\b50\s*-\s*59\b/.test(ag) },
+    { key: '>=60', label: '>= 60', test: (ag) => /\b60\s*\+|\b60\s*-\s*69\b|\b70\s*\+|>=?\s*60|\b(6[0-9]|7[0-9]|8[0-9]|9[0-9])\b/.test(ag) },
+];
+
+function matchesAgeRange(ageGroup: string | undefined, rangeKey: string): boolean {
+    const ag = (ageGroup || '').trim();
+    if (!ag) return false;
+    const def = AGE_RANGES.find(r => r.key === rangeKey);
+    if (!def) return false;
+    return def.test(ag);
+}
+
 function formatResultTime(ms?: number, raw?: string): string {
     const formatted = formatTime(ms);
     if (formatted !== '-') return formatted;
@@ -171,6 +190,8 @@ export default function ResultsPage() {
     const [selectedCategory, setSelectedCategory] = useState('all');
     const [genderFilter, setGenderFilter] = useState('all');
     const [statusFilter, setStatusFilter] = useState('all');
+    // ageGroupFilter encodes "<gender>:<range>", e.g. "M:40-49" / "F:>=60"
+    const [ageGroupFilter, setAgeGroupFilter] = useState('all');
     const [search, setSearch] = useState('');
     const [debouncedSearch, setDebouncedSearch] = useState('');
     const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -341,6 +362,14 @@ export default function ResultsPage() {
         if (statusFilter !== 'all') {
             list = list.filter(r => r.status === statusFilter);
         }
+        // Age group filter (encodes "<gender>:<range>")
+        if (ageGroupFilter !== 'all') {
+            const [agGender, agRange] = ageGroupFilter.split(':');
+            list = list.filter(r => {
+                if ((r.gender || '').toUpperCase() !== agGender.toUpperCase()) return false;
+                return matchesAgeRange(r.ageGroup, agRange);
+            });
+        }
         // Search filter
         if (debouncedSearch) {
             const q = debouncedSearch.toLowerCase().trim();
@@ -411,7 +440,7 @@ export default function ResultsPage() {
         }
 
         return list;
-    }, [runners, selectedCategory, genderFilter, statusFilter, debouncedSearch, sortBy, sortDirection, cpTimingMap]);
+    }, [runners, selectedCategory, genderFilter, statusFilter, ageGroupFilter, debouncedSearch, sortBy, sortDirection, cpTimingMap]);
 
     // ── Status counts from runner list ──
     const statusCounts = useMemo(() => {
@@ -736,6 +765,78 @@ export default function ResultsPage() {
         }
     }, [bulkGunTime, selectedIds, filteredRunners, language, fetchAllData]);
 
+    // ── CSV download (respects all active filters) ──
+    const handleDownloadCsv = useCallback(() => {
+        if (filteredRunners.length === 0) return;
+
+        const eventName = campaign?.name || '';
+        const statusLabelFor = (s: string) => {
+            const st = STATUS_LABELS[s];
+            return st ? (language === 'th' ? st.th : st.en) : (s || '-');
+        };
+        const csvTime = (ms?: number, raw?: string) => formatResultTime(ms, raw);
+
+        // CSV columns: event/category/gender/age group + bib/name/status/ranks/times + every visible checkpoint
+        const headers: string[] = [
+            'Event', 'Category', 'Gender', 'AgeGroup',
+            'BIB', 'Name', 'Status',
+            '#Overall', '#Gender', '#AgeGroup',
+            'GunTime', 'ChipTime',
+            ...filteredCheckpoints.map(cp => `${cp.name} ScanTime`),
+            ...filteredCheckpoints.map(cp => `${cp.name} Elapsed`),
+        ];
+
+        const escapeCell = (val: unknown): string => {
+            const s = val === null || val === undefined ? '' : String(val);
+            if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+            return s;
+        };
+
+        const rows: string[] = [headers.map(escapeCell).join(',')];
+        for (const r of filteredRunners) {
+            const bibTimings = cpTimingMap[r.bib] || {};
+            const name = language === 'th' && r.firstNameTh
+                ? `${r.firstNameTh} ${r.lastNameTh || ''}`.trim()
+                : `${r.firstName || ''} ${r.lastName || ''}`.trim();
+            const cells: (string | number)[] = [
+                eventName,
+                r.category || '',
+                r.gender || '',
+                r.ageGroup || '',
+                r.bib || '',
+                name,
+                statusLabelFor(r.status),
+                r.overallRank ?? '',
+                r.genderRank ?? '',
+                r.ageGroupRank ?? r.categoryRank ?? '',
+                csvTime(r.gunTime, r.gunTimeStr),
+                csvTime(r.netTime, r.netTimeStr),
+                ...filteredCheckpoints.map(cp => {
+                    const t = bibTimings[cp.name];
+                    return t?.scanTime ? formatClockTime(t.scanTime) : '';
+                }),
+                ...filteredCheckpoints.map(cp => {
+                    const t = bibTimings[cp.name];
+                    return t?.elapsedTime && t.elapsedTime > 0 ? formatTime(t.elapsedTime) : '';
+                }),
+            ];
+            rows.push(cells.map(escapeCell).join(','));
+        }
+
+        // BOM for Excel UTF-8 compatibility (Thai characters)
+        const csvContent = '﻿' + rows.join('\r\n');
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        const filenameSafe = (eventName || 'results').replace(/[^\w\-]+/g, '_');
+        link.download = `${filenameSafe}-results-${new Date().toISOString().slice(0, 10)}.csv`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+    }, [filteredRunners, filteredCheckpoints, cpTimingMap, campaign, language]);
+
     const handleBulkSetStatus = useCallback(async () => {
         if (selectedIds.size === 0) return;
         setBulkSaving(true);
@@ -989,6 +1090,20 @@ export default function ResultsPage() {
                                     <option key={key} value={key}>{language === 'th' ? val.th : val.en}</option>
                                 ))}
                             </select>
+                            <select className="form-input" value={ageGroupFilter} onChange={e => setAgeGroupFilter(e.target.value)}
+                                style={{ width: 180, fontSize: 12, padding: '5px 8px' }}>
+                                <option value="all">{language === 'th' ? 'เลือกช่วงอายุ / Choose' : 'Choose age group'}</option>
+                                <optgroup label={language === 'th' ? 'ชาย / Male' : 'Male'}>
+                                    {AGE_RANGES.map(r => (
+                                        <option key={`M:${r.key}`} value={`M:${r.key}`}>{r.label}</option>
+                                    ))}
+                                </optgroup>
+                                <optgroup label={language === 'th' ? 'หญิง / Female' : 'Female'}>
+                                    {AGE_RANGES.map(r => (
+                                        <option key={`F:${r.key}`} value={`F:${r.key}`}>{r.label}</option>
+                                    ))}
+                                </optgroup>
+                            </select>
                             <input
                                 className="form-input"
                                 placeholder={language === 'th' ? '🔍 ค้นหา BIB / ชื่อ...' : '🔍 Search BIB / name...'}
@@ -1004,6 +1119,19 @@ export default function ResultsPage() {
                                 <button onClick={() => fetchAllData(false)}
                                     style={{ padding: '4px 10px', borderRadius: 4, border: '1px solid #d1d5db', background: '#fff', fontSize: 11, cursor: 'pointer', fontWeight: 600, color: '#3b82f6' }}>
                                     ↻ {language === 'th' ? 'รีเฟรช' : 'Refresh'}
+                                </button>
+                                <button onClick={handleDownloadCsv}
+                                    disabled={filteredRunners.length === 0}
+                                    style={{
+                                        padding: '4px 12px', borderRadius: 4, border: 'none',
+                                        background: filteredRunners.length === 0 ? '#cbd5e1' : '#16a34a',
+                                        color: '#fff', fontSize: 11, fontWeight: 700,
+                                        cursor: filteredRunners.length === 0 ? 'not-allowed' : 'pointer',
+                                        display: 'inline-flex', alignItems: 'center', gap: 4,
+                                    }}
+                                    title={language === 'th' ? 'ดาวน์โหลด CSV ตามตัวกรองที่เลือก' : 'Download CSV (filtered)'}
+                                >
+                                    ⬇ {language === 'th' ? 'ดาวน์โหลด CSV' : 'Download CSV'}
                                 </button>
                                 {lastRefresh && (
                                     <span style={{ fontSize: 10, color: '#999' }}>
