@@ -5,7 +5,7 @@
 // it here too — otherwise the runner-facing certificate will render `{{token}}` raw
 // or drop entire elements.
 
-import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
+import { useEffect, useState, useRef, useCallback, useMemo, type CSSProperties } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 
@@ -378,10 +378,11 @@ export default function CertificatePage() {
     // is consistent regardless of the visitor's screen width (fixes mobile).
     const certFullRef = useRef<HTMLDivElement>(null);
     const [canvasW, setCanvasW] = useState(800);
-    // On mobile we auto-render the cert as a real <img> (data URL) so the
-    // native long-press menu ("Save Image" on iOS / "Download image" on
-    // Android) works — div compositions can't be long-pressed to save.
-    const [previewDataUrl, setPreviewDataUrl] = useState<string | null>(null);
+    // On mobile we auto-render the cert as a real <img> backed by a Blob URL
+    // (object URL). Blob URLs reliably trigger the native long-press "Save
+    // Image" menu on iOS/Android, while large data URLs often don't.
+    const [previewBlobUrl, setPreviewBlobUrl] = useState<string | null>(null);
+    const previewBlobRef = useRef<Blob | null>(null);
     const [generatingPreview, setGeneratingPreview] = useState(false);
     const isMobile = useMemo(
         () => typeof navigator !== 'undefined'
@@ -440,15 +441,15 @@ export default function CertificatePage() {
         genderRank: r.genderRank as number,
     })), [timingRecords]);
 
-    // Render the offscreen mirror to a JPEG data URL. JPEG (quality 0.82,
+    // Render the offscreen mirror to a JPEG Blob. JPEG (quality 0.82,
     // pixelRatio 1.5) keeps the file ~1MB instead of PNG's ~5MB so iOS Safari
-    // can actually hold it in memory and save it. Centralised so both the
-    // download button and the mobile auto-preview reuse the same Safari/iOS
-    // workarounds (wait for img decode, then call the encoder twice).
-    const renderCertImage = useCallback(async (): Promise<string | null> => {
+    // can actually hold it in memory and save it. Returns a Blob so we can
+    // build an object URL — those work with long-press "Save Image" on mobile
+    // browsers where huge data URLs often don't.
+    const renderCertBlob = useCallback(async (): Promise<Blob | null> => {
         const target = certFullRef.current;
         if (!target) return null;
-        const { toJpeg } = await import('html-to-image');
+        const { toBlob } = await import('html-to-image');
         await document.fonts.ready;
         const imgs = Array.from(target.querySelectorAll('img'));
         await Promise.all(imgs.map(async img => {
@@ -470,27 +471,30 @@ export default function CertificatePage() {
             cacheBust: true,
             backgroundColor: campaign?.certBgColor || '#1a1a2e',
             skipFonts: true,
+            type: 'image/jpeg' as const,
         };
         // Safari first call often drops the bg image; second call after a tick
         // reliably renders the full composition.
-        await toJpeg(target, opts).catch(() => null);
+        await toBlob(target, opts).catch(() => null);
         await new Promise(r => setTimeout(r, 120));
-        return await toJpeg(target, opts);
+        return await toBlob(target, opts);
     }, [campaign]);
 
     // On mobile, generate the preview image automatically so the user can
     // long-press it to invoke the native "Save Image" menu.
     useEffect(() => {
         if (!isMobile || !runner || !campaign?.isApproveCertificate) return;
-        if (previewDataUrl || generatingPreview) return;
+        if (previewBlobUrl || generatingPreview) return;
         let cancelled = false;
         (async () => {
             setGeneratingPreview(true);
             try {
                 // Give the offscreen mirror a frame to mount.
                 await new Promise(r => setTimeout(r, 50));
-                const url = await renderCertImage();
-                if (!cancelled && url) setPreviewDataUrl(url);
+                const blob = await renderCertBlob();
+                if (cancelled || !blob) return;
+                previewBlobRef.current = blob;
+                setPreviewBlobUrl(URL.createObjectURL(blob));
             } catch (err) {
                 console.error('Preview generation failed', err);
             } finally {
@@ -498,60 +502,65 @@ export default function CertificatePage() {
             }
         })();
         return () => { cancelled = true; };
-    }, [isMobile, runner, campaign, previewDataUrl, generatingPreview, renderCertImage]);
+    }, [isMobile, runner, campaign, previewBlobUrl, generatingPreview, renderCertBlob]);
+
+    // Release the object URL when the component unmounts or it changes.
+    useEffect(() => {
+        return () => {
+            if (previewBlobUrl) URL.revokeObjectURL(previewBlobUrl);
+        };
+    }, [previewBlobUrl]);
 
     const handleDownload = useCallback(async () => {
         if (!runner) return;
         setDownloading(true);
         try {
-            const dataUrl = previewDataUrl || await renderCertImage();
-            if (!dataUrl) throw new Error('Render failed');
+            let blob = previewBlobRef.current;
+            if (!blob) {
+                blob = await renderCertBlob();
+                if (blob) {
+                    previewBlobRef.current = blob;
+                    setPreviewBlobUrl(prev => {
+                        if (prev) URL.revokeObjectURL(prev);
+                        return URL.createObjectURL(blob!);
+                    });
+                }
+            }
+            if (!blob) throw new Error('Render failed');
             const filename = `certificate-${runner.bib || 'runner'}.jpg`;
 
-            // iOS Safari ignores the `download` attribute on <a> for large
-            // data URLs and won't save to Photos via that path. Use Web Share
-            // with a File when possible — that gives the user "Save Image"
-            // / "Save to Files" / AirDrop.
-            const isIOS = typeof navigator !== 'undefined'
-                && /iPad|iPhone|iPod/.test(navigator.userAgent);
-            if (isIOS && typeof navigator.share === 'function') {
+            // Try the Web Share API first — on iOS this opens the native
+            // sheet with "Save Image" / "Save to Files" / AirDrop, which is
+            // the only way Safari will reliably write the file to Photos.
+            if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
                 try {
-                    const blob = await (await fetch(dataUrl)).blob();
                     const file = new File([blob], filename, { type: 'image/jpeg' });
                     if (!navigator.canShare || navigator.canShare({ files: [file] })) {
                         await navigator.share({ files: [file], title: 'ใบประกาศ' });
                         return;
                     }
                 } catch (shareErr) {
-                    // User cancelled or browser blocked — fall through to
-                    // opening the image in a new tab so they can long-press.
                     if ((shareErr as Error)?.name === 'AbortError') return;
-                }
-                // Fallback for iOS when share is unavailable: open the image
-                // in a new tab; the user can long-press → Save to Photos.
-                const win = window.open();
-                if (win) {
-                    win.document.write(
-                        `<title>ใบประกาศ</title><body style="margin:0;background:#000;display:flex;align-items:center;justify-content:center;min-height:100vh"><img src="${dataUrl}" alt="certificate" style="max-width:100%;height:auto"/></body>`
-                    );
-                    win.document.close();
-                    return;
+                    // fall through to <a download>
                 }
             }
 
+            const url = URL.createObjectURL(blob);
             const link = document.createElement('a');
             link.download = filename;
-            link.href = dataUrl;
+            link.href = url;
+            link.rel = 'noopener';
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
+            setTimeout(() => URL.revokeObjectURL(url), 4000);
         } catch (err) {
             console.error('Download failed', err);
             alert('ดาวน์โหลดไม่สำเร็จ');
         } finally {
             setDownloading(false);
         }
-    }, [runner, previewDataUrl, renderCertImage]);
+    }, [runner, renderCertBlob]);
 
     if (loading) return (
         <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f8fafc' }}>
@@ -682,11 +691,6 @@ export default function CertificatePage() {
                         ← กลับ
                     </Link>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                        {isMobile && (
-                            <span style={{ fontSize: 12, color: '#475569', fontWeight: 600 }}>
-                                กดค้างเพื่อดาวน์โหลด
-                            </span>
-                        )}
                         <button
                             onClick={handleDownload}
                             disabled={downloading}
@@ -715,14 +719,26 @@ export default function CertificatePage() {
                 </div>
 
                 <div ref={setCanvasWrapEl} style={{ width: '100%', borderRadius: 12, overflow: 'hidden', boxShadow: '0 8px 32px rgba(0,0,0,0.18)', position: 'relative' }}>
-                    {isMobile && previewDataUrl ? (
-                        // On mobile we swap the composed cert for a real <img> so
-                        // the native long-press menu offers "Save Image" / "Download".
+                    {isMobile && previewBlobUrl ? (
+                        // On mobile we swap the composed cert for a real <img>
+                        // backed by an object URL so the native long-press menu
+                        // offers "Save Image" / "Download image".
                         // eslint-disable-next-line @next/next/no-img-element
                         <img
-                            src={previewDataUrl}
+                            src={previewBlobUrl}
                             alt="Certificate"
-                            style={{ width: '100%', display: 'block', aspectRatio, background: bgColor }}
+                            draggable={false}
+                            style={{
+                                width: '100%',
+                                display: 'block',
+                                aspectRatio,
+                                background: bgColor,
+                                // Allow long-press menu (which iOS suppresses if
+                                // user-select is set to none on the ancestor).
+                                WebkitTouchCallout: 'default',
+                                WebkitUserSelect: 'none',
+                                userSelect: 'none',
+                            } as CSSProperties}
                         />
                     ) : (
                         // Render the CSS-composed cert on desktop AND on mobile
