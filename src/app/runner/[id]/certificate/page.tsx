@@ -440,13 +440,15 @@ export default function CertificatePage() {
         genderRank: r.genderRank as number,
     })), [timingRecords]);
 
-    // Render the offscreen mirror to a PNG data URL. Centralised so both the
+    // Render the offscreen mirror to a JPEG data URL. JPEG (quality 0.82,
+    // pixelRatio 1.5) keeps the file ~1MB instead of PNG's ~5MB so iOS Safari
+    // can actually hold it in memory and save it. Centralised so both the
     // download button and the mobile auto-preview reuse the same Safari/iOS
-    // workarounds (wait for img decode, then call toPng twice).
-    const renderCertPng = useCallback(async (): Promise<string | null> => {
+    // workarounds (wait for img decode, then call the encoder twice).
+    const renderCertImage = useCallback(async (): Promise<string | null> => {
         const target = certFullRef.current;
         if (!target) return null;
-        const { toPng } = await import('html-to-image');
+        const { toJpeg } = await import('html-to-image');
         await document.fonts.ready;
         const imgs = Array.from(target.querySelectorAll('img'));
         await Promise.all(imgs.map(async img => {
@@ -463,16 +465,17 @@ export default function CertificatePage() {
             }
         }));
         const opts = {
-            pixelRatio: 2,
+            pixelRatio: 1.5,
+            quality: 0.82,
             cacheBust: true,
             backgroundColor: campaign?.certBgColor || '#1a1a2e',
             skipFonts: true,
         };
         // Safari first call often drops the bg image; second call after a tick
         // reliably renders the full composition.
-        await toPng(target, opts).catch(() => null);
+        await toJpeg(target, opts).catch(() => null);
         await new Promise(r => setTimeout(r, 120));
-        return await toPng(target, opts);
+        return await toJpeg(target, opts);
     }, [campaign]);
 
     // On mobile, generate the preview image automatically so the user can
@@ -486,7 +489,7 @@ export default function CertificatePage() {
             try {
                 // Give the offscreen mirror a frame to mount.
                 await new Promise(r => setTimeout(r, 50));
-                const url = await renderCertPng();
+                const url = await renderCertImage();
                 if (!cancelled && url) setPreviewDataUrl(url);
             } catch (err) {
                 console.error('Preview generation failed', err);
@@ -495,16 +498,49 @@ export default function CertificatePage() {
             }
         })();
         return () => { cancelled = true; };
-    }, [isMobile, runner, campaign, previewDataUrl, generatingPreview, renderCertPng]);
+    }, [isMobile, runner, campaign, previewDataUrl, generatingPreview, renderCertImage]);
 
     const handleDownload = useCallback(async () => {
         if (!runner) return;
         setDownloading(true);
         try {
-            const dataUrl = previewDataUrl || await renderCertPng();
+            const dataUrl = previewDataUrl || await renderCertImage();
             if (!dataUrl) throw new Error('Render failed');
+            const filename = `certificate-${runner.bib || 'runner'}.jpg`;
+
+            // iOS Safari ignores the `download` attribute on <a> for large
+            // data URLs and won't save to Photos via that path. Use Web Share
+            // with a File when possible — that gives the user "Save Image"
+            // / "Save to Files" / AirDrop.
+            const isIOS = typeof navigator !== 'undefined'
+                && /iPad|iPhone|iPod/.test(navigator.userAgent);
+            if (isIOS && typeof navigator.share === 'function') {
+                try {
+                    const blob = await (await fetch(dataUrl)).blob();
+                    const file = new File([blob], filename, { type: 'image/jpeg' });
+                    if (!navigator.canShare || navigator.canShare({ files: [file] })) {
+                        await navigator.share({ files: [file], title: 'ใบประกาศ' });
+                        return;
+                    }
+                } catch (shareErr) {
+                    // User cancelled or browser blocked — fall through to
+                    // opening the image in a new tab so they can long-press.
+                    if ((shareErr as Error)?.name === 'AbortError') return;
+                }
+                // Fallback for iOS when share is unavailable: open the image
+                // in a new tab; the user can long-press → Save to Photos.
+                const win = window.open();
+                if (win) {
+                    win.document.write(
+                        `<title>ใบประกาศ</title><body style="margin:0;background:#000;display:flex;align-items:center;justify-content:center;min-height:100vh"><img src="${dataUrl}" alt="certificate" style="max-width:100%;height:auto"/></body>`
+                    );
+                    win.document.close();
+                    return;
+                }
+            }
+
             const link = document.createElement('a');
-            link.download = `certificate-${runner.bib || 'runner'}.png`;
+            link.download = filename;
             link.href = dataUrl;
             document.body.appendChild(link);
             link.click();
@@ -515,7 +551,7 @@ export default function CertificatePage() {
         } finally {
             setDownloading(false);
         }
-    }, [runner, previewDataUrl, renderCertPng]);
+    }, [runner, previewDataUrl, renderCertImage]);
 
     if (loading) return (
         <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f8fafc' }}>
@@ -688,6 +724,38 @@ export default function CertificatePage() {
                             alt="Certificate"
                             style={{ width: '100%', display: 'block', aspectRatio, background: bgColor }}
                         />
+                    ) : isMobile && !previewDataUrl ? (
+                        // Clean skeleton while we render the JPEG — avoids
+                        // overlaying ugly loading text on top of the
+                        // CSS-composed cert (which is only a transient state).
+                        <div
+                            style={{
+                                width: '100%',
+                                aspectRatio,
+                                background: bgColor,
+                                display: 'flex',
+                                flexDirection: 'column',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: 12,
+                                color: 'rgba(255,255,255,0.85)',
+                            }}
+                        >
+                            <div
+                                style={{
+                                    width: 36,
+                                    height: 36,
+                                    border: '3px solid rgba(255,255,255,0.25)',
+                                    borderTopColor: '#fff',
+                                    borderRadius: '50%',
+                                    animation: 'certSpin 0.9s linear infinite',
+                                }}
+                            />
+                            <div style={{ fontSize: 13, fontWeight: 600, letterSpacing: 0.3 }}>
+                                กำลังเตรียมรูปภาพ...
+                            </div>
+                            <style>{`@keyframes certSpin { to { transform: rotate(360deg); } }`}</style>
+                        </div>
                     ) : (
                         <div
                             ref={certRef}
@@ -701,11 +769,6 @@ export default function CertificatePage() {
                             }}
                         >
                             {renderCertBody(scale)}
-                        </div>
-                    )}
-                    {isMobile && !previewDataUrl && generatingPreview && (
-                        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(15,23,42,0.45)', color: '#fff', fontSize: 13, fontWeight: 700, pointerEvents: 'none' }}>
-                            กำลังเตรียมรูปภาพ...
                         </div>
                     )}
                 </div>
