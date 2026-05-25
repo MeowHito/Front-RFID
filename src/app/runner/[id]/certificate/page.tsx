@@ -724,39 +724,12 @@ export default function CertificatePage() {
                             alt="Certificate"
                             style={{ width: '100%', display: 'block', aspectRatio, background: bgColor }}
                         />
-                    ) : isMobile && !previewDataUrl ? (
-                        // Clean skeleton while we render the JPEG — avoids
-                        // overlaying ugly loading text on top of the
-                        // CSS-composed cert (which is only a transient state).
-                        <div
-                            style={{
-                                width: '100%',
-                                aspectRatio,
-                                background: bgColor,
-                                display: 'flex',
-                                flexDirection: 'column',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                gap: 12,
-                                color: 'rgba(255,255,255,0.85)',
-                            }}
-                        >
-                            <div
-                                style={{
-                                    width: 36,
-                                    height: 36,
-                                    border: '3px solid rgba(255,255,255,0.25)',
-                                    borderTopColor: '#fff',
-                                    borderRadius: '50%',
-                                    animation: 'certSpin 0.9s linear infinite',
-                                }}
-                            />
-                            <div style={{ fontSize: 13, fontWeight: 600, letterSpacing: 0.3 }}>
-                                กำลังเตรียมรูปภาพ...
-                            </div>
-                            <style>{`@keyframes certSpin { to { transform: rotate(360deg); } }`}</style>
-                        </div>
                     ) : (
+                        // Render the CSS-composed cert on desktop AND on mobile
+                        // while the JPEG is still being generated in the
+                        // background — so users always see their certificate
+                        // immediately, then it silently swaps to <img> on mobile
+                        // once ready (which enables long-press save).
                         <div
                             ref={certRef}
                             style={{
