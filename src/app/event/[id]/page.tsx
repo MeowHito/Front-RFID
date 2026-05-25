@@ -1701,9 +1701,7 @@ export default function EventLivePage() {
                                     let progressLabel = '';
                                     const isFinishCp = checkpointMeta.isFinishLike;
                                     const runnerStartDate = getRunnerCategoryStartDate(runner);
-                                    if (runner.status === 'dns') {
-                                        progressPct = 0;
-                                    } else if (runner.status === 'finished' || isFinishCp) {
+                                    if (runner.status === 'finished' || isFinishCp) {
                                         progressPct = 100;
                                         if (totalCps > 0 && completedCpCount > 0) {
                                             progressLabel = `${completedCpCount}/${totalCps} CP`;
@@ -2841,9 +2839,7 @@ export default function EventLivePage() {
                                         let progressDistKm = 0;
                                         let eventTotalKm = 0;
                                         let progressLabel = '';
-                                        if (runner.status === 'dns') {
-                                            progressPct = 0;
-                                        } else if (runner.status === 'finished' || isFinishLike) {
+                                        if (runner.status === 'finished' || isFinishLike) {
                                             progressPct = 100;
                                             if (totalCps > 0 && completedCpCount > 0) progressLabel = `${completedCpCount}/${totalCps} CP`;
                                         } else {
