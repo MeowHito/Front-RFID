@@ -837,7 +837,7 @@ export default function RunnerProfilePage() {
                             <p className="runner-stat-value" style={{ fontSize: 20, fontWeight: 900, color: '#0f172a', margin: 0 }}>{categoryRank || '-'} <small style={{ fontSize: 11, color: '#94a3b8', fontWeight: 700 }}>({runner.ageGroup})</small></p>
                         </div>
                     ) : null}
-                    <div className="runner-stat-card" style={{ background: isFinished ? '#f0fdf4' : '#fff', border: `1px solid ${isFinished ? '#bbf7d0' : '#e2e8f0'}`, borderRadius: 12, padding: 12 }}>
+                    <div className="runner-stat-card" style={{ background: isFinished ? '#f0fdf4' : '#fff', border: `1px solid ${isFinished ? '#bbf7d0' : '#e2e8f0'}`, borderRadius: 12, padding: 12, ...(!runner.ageGroup ? { gridColumn: '1 / -1', textAlign: 'center' } : {}) }}>
                         <p className="runner-stat-label" style={{ fontSize: 9, fontWeight: 700, color: isFinished ? '#16a34a' : '#94a3b8', textTransform: 'uppercase', marginBottom: 2 }}>{isFinished ? 'Finish Time' : 'Elapsed'}</p>
                         <p className="runner-stat-value" style={{ fontSize: 20, fontWeight: 900, color: isFinished ? '#15803d' : '#0f172a', margin: 0 }}>{finishTimeStr}</p>
                     </div>
