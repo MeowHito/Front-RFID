@@ -437,26 +437,36 @@ export default function CertificatePage() {
         try {
             const { toBlob } = await import('html-to-image');
             await document.fonts.ready;
-            // Wait for background + element images to finish loading — on iOS
-            // the offscreen mirror can otherwise be captured before images paint.
+            // Wait for background + element images to finish loading and *decoding*
+            // — on iOS Safari the offscreen mirror can otherwise be captured before
+            // images paint, leaving the bg image missing from the PNG.
             const imgs = Array.from(target.querySelectorAll('img'));
-            await Promise.all(imgs.map(img => (
-                img.complete && img.naturalWidth > 0
-                    ? Promise.resolve()
-                    : new Promise<void>(resolve => {
+            await Promise.all(imgs.map(async img => {
+                if (!(img.complete && img.naturalWidth > 0)) {
+                    await new Promise<void>(resolve => {
                         const done = () => resolve();
                         img.addEventListener('load', done, { once: true });
                         img.addEventListener('error', done, { once: true });
                         setTimeout(done, 5000);
-                    })
-            )));
+                    });
+                }
+                if (typeof img.decode === 'function') {
+                    try { await img.decode(); } catch { /* ignore */ }
+                }
+            }));
 
-            const blob = await toBlob(target, {
+            const opts = {
                 pixelRatio: 2,
                 cacheBust: true,
                 backgroundColor: campaign?.certBgColor || '#1a1a2e',
                 skipFonts: true,
-            });
+            };
+            // Safari/iOS workaround: html-to-image's first call can return a blank
+            // or partial image (notably dropping the bg <img>). A second call after
+            // a tick reliably renders the full composition.
+            await toBlob(target, opts).catch(() => null);
+            await new Promise(r => setTimeout(r, 120));
+            const blob = await toBlob(target, opts);
             if (!blob) throw new Error('Render produced no blob');
 
             const filename = `certificate-${runner.bib || 'runner'}.png`;
