@@ -455,17 +455,9 @@ export default function EventLivePage() {
         if (statusDiff !== 0) return statusDiff;
 
         if (a.status === 'finished' && b.status === 'finished') {
-            // CP-complete runners always rank before CP-incomplete runners
-            const aLookup = a.eventId ? cpDistanceLookup[a.eventId] : null;
-            const bLookup = b.eventId ? cpDistanceLookup[b.eventId] : null;
-            const aTotalCp = aLookup?.totalCheckpoints ?? 0;
-            const bTotalCp = bLookup?.totalCheckpoints ?? 0;
-            if (aTotalCp > 0 || bTotalCp > 0) {
-                const aComplete = aTotalCp > 0 && (a.passedCount ?? 0) >= aTotalCp;
-                const bComplete = bTotalCp > 0 && (b.passedCount ?? 0) >= bTotalCp;
-                if (aComplete !== bComplete) return aComplete ? -1 : 1;
-            }
-            // Within same completeness group: overallRank → time → scan time
+            // Rank all finished runners by overallRank → time → scan time.
+            // CP-completeness no longer affects ordering: if a reader missed a scan,
+            // an admin edit will recompute the rank back to its rightful position.
             const aRank = a.overallRank ?? 0;
             const bRank = b.overallRank ?? 0;
             if (aRank > 0 && bRank > 0 && aRank !== bRank) return aRank - bRank;
@@ -600,15 +592,15 @@ export default function EventLivePage() {
         ? `/api/runners?id=${campaign?._id}`
         : `/api/runners/passtime?id=${campaign?._id}`;
 
-    // Auto-refresh runners every 10 seconds (5s for live passtime, 15s for finished)
+    // Auto-refresh runners every 10s while the race is live.
+    // When raceFinished=true, results are frozen — no polling, no rank recompute.
+    // Edits made via the admin panel trigger a full fetchEventData() refresh on their own.
     useEffect(() => {
         if (!campaign?._id) return;
-        const interval = isRaceFinished ? 15_000 : 10_000;
+        if (isRaceFinished) return;
         const refreshInterval = setInterval(async () => {
             try {
-                const url = isRaceFinished
-                    ? `/api/runners?id=${campaign._id}`
-                    : `/api/runners/passtime?id=${campaign._id}`;
+                const url = `/api/runners/passtime?id=${campaign._id}`;
                 const runnersRes = await fetch(url, { cache: 'no-store' });
                 if (runnersRes.ok) {
                     const runnersData = await runnersRes.json().catch(() => ({}));
@@ -621,7 +613,7 @@ export default function EventLivePage() {
                     }
                 }
             } catch { /* silently retry next interval */ }
-        }, interval);
+        }, 10_000);
         return () => clearInterval(refreshInterval);
     }, [campaign?._id, isRaceFinished]);
 
@@ -997,13 +989,14 @@ export default function EventLivePage() {
             });
     }, [allRankedRunners, searchQuery, filterGender, followedRunnerIds, filterCategory, filterStatus, resolveRunnerCategoryKey]);
 
-    // Compute live gender and category ranks from sorted runners
-    // These are computed AFTER sorting so rank=position within gender/category group.
+    // Compute live overall + gender + category ranks from sorted runners.
+    // Rank=position within allRankedRunners so values are unique and sequential.
     // CAT rank is scoped to gender + ageGroup so M40-49 and F40-49 rank separately.
     const liveRanks = useMemo(() => {
+        const eventCounters: Record<string, number> = {};
         const genderCounters: Record<string, number> = {};
         const categoryCounters: Record<string, number> = {};
-        const ranks = new Map<string, { genRank: number; catRank: number }>();
+        const ranks = new Map<string, { overallRank: number; genRank: number; catRank: number }>();
         for (const runner of allRankedRunners) {
             // Rank runners who have passed at least one checkpoint (finished, in_progress, or DNF with progress)
             // Skip DNS/DQ/not_started runners with no checkpoint progress
@@ -1012,9 +1005,14 @@ export default function EventLivePage() {
             const eventKey = runner.eventId || '_';
             const genderKey = `${eventKey}::${runner.gender || '_'}`;
             const catKey = `${eventKey}::${runner.gender || '_'}::${runner.ageGroup || '_'}`;
+            eventCounters[eventKey] = (eventCounters[eventKey] || 0) + 1;
             genderCounters[genderKey] = (genderCounters[genderKey] || 0) + 1;
             categoryCounters[catKey] = (categoryCounters[catKey] || 0) + 1;
-            ranks.set(runner._id, { genRank: genderCounters[genderKey], catRank: categoryCounters[catKey] });
+            ranks.set(runner._id, {
+                overallRank: eventCounters[eventKey],
+                genRank: genderCounters[genderKey],
+                catRank: categoryCounters[catKey],
+            });
         }
         return ranks;
     }, [allRankedRunners]);
@@ -1740,8 +1738,10 @@ export default function EventLivePage() {
                                         switch (key) {
                                             case 'rank': {
                                                 const hideRank = ['dnf', 'dns', 'dq', 'not_started'].includes(runner.status);
-                                                // CP-incomplete finished runners use position-based rank (DB overallRank ignores CP completion)
-                                                const displayRank = (runner.status === 'finished' && showProgressAlert) ? rank : (runner.overallRank || rank);
+                                                // Use position-based live rank so values are always unique and sequential.
+                                                // Falls back to overallRank, then idx+1 if neither is available.
+                                                const liveOverall = liveRanks.get(runner._id)?.overallRank;
+                                                const displayRank = liveOverall || runner.overallRank || rank;
                                                 // All ranks (1 → last) are rendered in the primary text color;
                                                 // only DNS/DNF/DQ/not-started fall back to the muted grey "-".
                                                 const rankColor = hideRank
@@ -2365,9 +2365,9 @@ export default function EventLivePage() {
                     <span className="text-[9px] font-semibold" style={{ color: themeStyles.textSecondary }}>
                         {language === 'th' ? 'อัพเดทล่าสุด' : 'Updated'}: {lastUpdated.toLocaleTimeString(language === 'th' ? 'th-TH' : 'en-US')}
                     </span>
-                    <span className="text-[9px] font-bold uppercase text-green-500">
-                        <span className="mr-1 inline-block h-[5px] w-[5px] rounded-full bg-green-500" style={{ animation: 'pulseLive 1.5s infinite' }} />
-                        {isRaceFinished ? 'Auto-refresh 15s' : 'Auto-refresh 10s'}
+                    <span className={`text-[9px] font-bold uppercase ${isRaceFinished ? 'text-blue-500' : 'text-green-500'}`}>
+                        {!isRaceFinished && <span className="mr-1 inline-block h-[5px] w-[5px] rounded-full bg-green-500" style={{ animation: 'pulseLive 1.5s infinite' }} />}
+                        {isRaceFinished ? (language === 'th' ? 'ผลคงที่' : 'Results frozen') : 'Auto-refresh 10s'}
                     </span>
                     <span className="font-mono text-[10px]" style={{ color: themeStyles.textSecondary }}>
                         {currentTime.toLocaleTimeString(language === 'th' ? 'th-TH' : 'en-US')}
