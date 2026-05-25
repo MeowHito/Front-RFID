@@ -206,7 +206,7 @@ const COL_DEFS: ColDef[] = [
     { key: 'progress', label: 'Progress', w: '8%', mw: '8%', align: 'right', fixed: true, desktopOnly: true },
 ];
 const TOGGLEABLE_KEYS = COL_DEFS.filter(c => !c.fixed).map(c => c.key);
-const MARATHON_PUBLIC_DEFAULT_KEYS = ['genRank', 'catRank', 'sex', 'gunTime', 'netTime', 'distFromStart'];
+const MARATHON_PUBLIC_DEFAULT_KEYS = ['genRank', 'catRank', 'sex', 'gunTime', 'netTime', 'distFromStart', 'nextStation'];
 // Default visible toggleable columns (only columns that typically have data from RaceTiger)
 const DEFAULT_VISIBLE_KEYS = MARATHON_PUBLIC_DEFAULT_KEYS;
 
@@ -1952,7 +1952,23 @@ export default function EventLivePage() {
                                                 );
                                             case 'distFromStart': {
                                                 const runnerCatDist = parseDistanceValue(runner.category);
-                                                const rawDist = runner.distanceFromStart || null;
+                                                // Many imports never populate distanceFromStart on the timing
+                                                // record itself (RaceTiger only sends the checkpoint name).
+                                                // Fall back to the per-event checkpoint mapping so the column
+                                                // still reflects the runner's progress.
+                                                let rawDist: number | null = runner.distanceFromStart ?? null;
+                                                if (rawDist == null || rawDist <= 0) {
+                                                    const evLookupDist = checkpointMeta.evLookup;
+                                                    if (evLookupDist) {
+                                                        if (isFinishCp || runner.status === 'finished') {
+                                                            const total = evLookupDist.totalDistance || runnerCatDist || 0;
+                                                            if (total > 0) rawDist = total;
+                                                        } else if (checkpointKey) {
+                                                            const mapped = evLookupDist.checkpoints[checkpointKey];
+                                                            if (mapped != null && mapped > 0) rawDist = mapped;
+                                                        }
+                                                    }
+                                                }
                                                 const displayDist = rawDist != null
                                                     ? (runnerCatDist != null && rawDist > runnerCatDist ? runnerCatDist : rawDist)
                                                     : null;

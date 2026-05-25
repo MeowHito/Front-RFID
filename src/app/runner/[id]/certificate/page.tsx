@@ -378,6 +378,16 @@ export default function CertificatePage() {
     // is consistent regardless of the visitor's screen width (fixes mobile).
     const certFullRef = useRef<HTMLDivElement>(null);
     const [canvasW, setCanvasW] = useState(800);
+    // On mobile we auto-render the cert as a real <img> (data URL) so the
+    // native long-press menu ("Save Image" on iOS / "Download image" on
+    // Android) works — div compositions can't be long-pressed to save.
+    const [previewDataUrl, setPreviewDataUrl] = useState<string | null>(null);
+    const [generatingPreview, setGeneratingPreview] = useState(false);
+    const isMobile = useMemo(
+        () => typeof navigator !== 'undefined'
+            && /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent),
+        [],
+    );
 
     useEffect(() => {
         if (!runnerId) return;
@@ -430,81 +440,82 @@ export default function CertificatePage() {
         genderRank: r.genderRank as number,
     })), [timingRecords]);
 
+    // Render the offscreen mirror to a PNG data URL. Centralised so both the
+    // download button and the mobile auto-preview reuse the same Safari/iOS
+    // workarounds (wait for img decode, then call toPng twice).
+    const renderCertPng = useCallback(async (): Promise<string | null> => {
+        const target = certFullRef.current;
+        if (!target) return null;
+        const { toPng } = await import('html-to-image');
+        await document.fonts.ready;
+        const imgs = Array.from(target.querySelectorAll('img'));
+        await Promise.all(imgs.map(async img => {
+            if (!(img.complete && img.naturalWidth > 0)) {
+                await new Promise<void>(resolve => {
+                    const done = () => resolve();
+                    img.addEventListener('load', done, { once: true });
+                    img.addEventListener('error', done, { once: true });
+                    setTimeout(done, 5000);
+                });
+            }
+            if (typeof img.decode === 'function') {
+                try { await img.decode(); } catch { /* ignore */ }
+            }
+        }));
+        const opts = {
+            pixelRatio: 2,
+            cacheBust: true,
+            backgroundColor: campaign?.certBgColor || '#1a1a2e',
+            skipFonts: true,
+        };
+        // Safari first call often drops the bg image; second call after a tick
+        // reliably renders the full composition.
+        await toPng(target, opts).catch(() => null);
+        await new Promise(r => setTimeout(r, 120));
+        return await toPng(target, opts);
+    }, [campaign]);
+
+    // On mobile, generate the preview image automatically so the user can
+    // long-press it to invoke the native "Save Image" menu.
+    useEffect(() => {
+        if (!isMobile || !runner || !campaign?.isApproveCertificate) return;
+        if (previewDataUrl || generatingPreview) return;
+        let cancelled = false;
+        (async () => {
+            setGeneratingPreview(true);
+            try {
+                // Give the offscreen mirror a frame to mount.
+                await new Promise(r => setTimeout(r, 50));
+                const url = await renderCertPng();
+                if (!cancelled && url) setPreviewDataUrl(url);
+            } catch (err) {
+                console.error('Preview generation failed', err);
+            } finally {
+                if (!cancelled) setGeneratingPreview(false);
+            }
+        })();
+        return () => { cancelled = true; };
+    }, [isMobile, runner, campaign, previewDataUrl, generatingPreview, renderCertPng]);
+
     const handleDownload = useCallback(async () => {
-        const target = certFullRef.current || certRef.current;
-        if (!target || !runner) return;
+        if (!runner) return;
         setDownloading(true);
         try {
-            const { toBlob } = await import('html-to-image');
-            await document.fonts.ready;
-            // Wait for background + element images to finish loading and *decoding*
-            // — on iOS Safari the offscreen mirror can otherwise be captured before
-            // images paint, leaving the bg image missing from the PNG.
-            const imgs = Array.from(target.querySelectorAll('img'));
-            await Promise.all(imgs.map(async img => {
-                if (!(img.complete && img.naturalWidth > 0)) {
-                    await new Promise<void>(resolve => {
-                        const done = () => resolve();
-                        img.addEventListener('load', done, { once: true });
-                        img.addEventListener('error', done, { once: true });
-                        setTimeout(done, 5000);
-                    });
-                }
-                if (typeof img.decode === 'function') {
-                    try { await img.decode(); } catch { /* ignore */ }
-                }
-            }));
-
-            const opts = {
-                pixelRatio: 2,
-                cacheBust: true,
-                backgroundColor: campaign?.certBgColor || '#1a1a2e',
-                skipFonts: true,
-            };
-            // Safari/iOS workaround: html-to-image's first call can return a blank
-            // or partial image (notably dropping the bg <img>). A second call after
-            // a tick reliably renders the full composition.
-            await toBlob(target, opts).catch(() => null);
-            await new Promise(r => setTimeout(r, 120));
-            const blob = await toBlob(target, opts);
-            if (!blob) throw new Error('Render produced no blob');
-
-            const filename = `certificate-${runner.bib || 'runner'}.png`;
-            const file = new File([blob], filename, { type: 'image/png' });
-
-            // iOS Safari: <a download> saves to Files, not Photos. Use the Web
-            // Share API so the iOS share sheet offers "Save Image" → Photos.
-            const navAny = navigator as Navigator & {
-                canShare?: (data: { files?: File[] }) => boolean;
-                share?: (data: { files?: File[]; title?: string }) => Promise<void>;
-            };
-            if (typeof navAny.canShare === 'function'
-                && typeof navAny.share === 'function'
-                && navAny.canShare({ files: [file] })) {
-                try {
-                    await navAny.share({ files: [file], title: filename });
-                    return;
-                } catch (shareErr) {
-                    if ((shareErr as { name?: string })?.name === 'AbortError') return;
-                    // Anything else: fall through to anchor download.
-                }
-            }
-
-            const url = URL.createObjectURL(blob);
+            const dataUrl = previewDataUrl || await renderCertPng();
+            if (!dataUrl) throw new Error('Render failed');
             const link = document.createElement('a');
-            link.download = filename;
-            link.href = url;
+            link.download = `certificate-${runner.bib || 'runner'}.png`;
+            link.href = dataUrl;
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
-            setTimeout(() => URL.revokeObjectURL(url), 1000);
         } catch (err) {
             console.error('Download failed', err);
             alert('ดาวน์โหลดไม่สำเร็จ');
         } finally {
             setDownloading(false);
         }
-    }, [runner, campaign]);
+    }, [runner, previewDataUrl, renderCertPng]);
 
     if (loading) return (
         <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f8fafc' }}>
@@ -634,41 +645,69 @@ export default function CertificatePage() {
                     <Link href={`/runner/${runnerId}`} style={{ color: '#2563eb', fontSize: 14, textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 4, fontWeight: 600 }}>
                         ← กลับ
                     </Link>
-                    <button
-                        onClick={handleDownload}
-                        disabled={downloading}
-                        style={{
-                            padding: '10px 22px',
-                            background: downloading ? '#94a3b8' : '#2563eb',
-                            color: '#fff',
-                            border: 'none',
-                            borderRadius: 10,
-                            fontWeight: 700,
-                            fontSize: 14,
-                            cursor: downloading ? 'wait' : 'pointer',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 6,
-                        }}
-                    >
-                        {downloading ? '⏳ กำลังสร้างไฟล์...' : '📥 ดาวน์โหลดใบประกาศ'}
-                    </button>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                        {isMobile && (
+                            <span style={{ fontSize: 12, color: '#475569', fontWeight: 600 }}>
+                                กดค้างเพื่อดาวน์โหลด
+                            </span>
+                        )}
+                        <button
+                            onClick={handleDownload}
+                            disabled={downloading}
+                            style={{
+                                padding: '10px 22px',
+                                background: downloading ? '#94a3b8' : '#2563eb',
+                                color: '#fff',
+                                border: 'none',
+                                borderRadius: 10,
+                                fontWeight: 700,
+                                fontSize: 14,
+                                cursor: downloading ? 'wait' : 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 8,
+                            }}
+                        >
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                                <path d="M12 3v12" />
+                                <path d="m7 10 5 5 5-5" />
+                                <path d="M5 21h14" />
+                            </svg>
+                            <span>{downloading ? 'กำลังสร้างไฟล์...' : 'ดาวน์โหลดใบประกาศ'}</span>
+                        </button>
+                    </div>
                 </div>
 
-                <div ref={setCanvasWrapEl} style={{ width: '100%', borderRadius: 12, overflow: 'hidden', boxShadow: '0 8px 32px rgba(0,0,0,0.18)' }}>
-                    <div
-                        ref={certRef}
-                        style={{
-                            position: 'relative',
-                            width: '100%',
-                            aspectRatio,
-                            background: bgColor,
-                            overflow: 'hidden',
-                            userSelect: 'none',
-                        }}
-                    >
-                        {renderCertBody(scale)}
-                    </div>
+                <div ref={setCanvasWrapEl} style={{ width: '100%', borderRadius: 12, overflow: 'hidden', boxShadow: '0 8px 32px rgba(0,0,0,0.18)', position: 'relative' }}>
+                    {isMobile && previewDataUrl ? (
+                        // On mobile we swap the composed cert for a real <img> so
+                        // the native long-press menu offers "Save Image" / "Download".
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                            src={previewDataUrl}
+                            alt="Certificate"
+                            style={{ width: '100%', display: 'block', aspectRatio, background: bgColor }}
+                        />
+                    ) : (
+                        <div
+                            ref={certRef}
+                            style={{
+                                position: 'relative',
+                                width: '100%',
+                                aspectRatio,
+                                background: bgColor,
+                                overflow: 'hidden',
+                                userSelect: 'none',
+                            }}
+                        >
+                            {renderCertBody(scale)}
+                        </div>
+                    )}
+                    {isMobile && !previewDataUrl && generatingPreview && (
+                        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(15,23,42,0.45)', color: '#fff', fontSize: 13, fontWeight: 700, pointerEvents: 'none' }}>
+                            กำลังเตรียมรูปภาพ...
+                        </div>
+                    )}
                 </div>
 
                 <p style={{ textAlign: 'center', fontSize: 11, color: '#94a3b8', marginTop: 12 }}>

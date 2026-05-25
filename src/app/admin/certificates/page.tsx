@@ -250,7 +250,20 @@ const SIDEBAR_TOOLS = [
     { id: 'bg', icon: '🖼', label: 'BG' },
     { id: 'runners', icon: '🏅', label: 'RUNNERS' },
     { id: 'layers', icon: '◇', label: 'LAYERS' },
+    { id: 'templates', icon: '🧩', label: 'TEMPLATES' },
 ];
+
+interface CertTemplateSummary {
+    _id: string;
+    name?: string;
+    nameTh?: string;
+    nameEn?: string;
+    eventDate?: string;
+    certPaperSize?: string;
+    certBgColor?: string;
+    elementCount?: number;
+    updatedAt?: string;
+}
 
 // ============= HELPERS =============
 function formatTime(ms?: number): string {
@@ -482,6 +495,12 @@ export default function CertificatesPage() {
     const [ctxMenu, setCtxMenu] = useState<CtxMenu | null>(null);
     const [ctxSubmenu, setCtxSubmenu] = useState<'layer' | null>(null);
     const [activeTool, setActiveTool] = useState<string>('');
+
+    // Templates tab
+    const [templates, setTemplates] = useState<CertTemplateSummary[]>([]);
+    const [templatesLoading, setTemplatesLoading] = useState(false);
+    const [templateApplyingId, setTemplateApplyingId] = useState<string | null>(null);
+    const templateImportRef = useRef<HTMLInputElement>(null);
 
     const paperInfo = PAPER_SIZES[paperSize];
     const paperAspect = paperInfo.h / paperInfo.w; // used by image height calc
@@ -966,6 +985,109 @@ export default function CertificatesPage() {
         finally { setSaving(false); }
     };
 
+    const handleDownloadTemplate = useCallback(() => {
+        const payload = {
+            version: 1,
+            kind: 'rfid-cert-template',
+            exportedAt: new Date().toISOString(),
+            name: campaign?.nameTh || campaign?.name || 'template',
+            paperSize,
+            bgImage,
+            bgColor,
+            bgOpacity,
+            layout: elements,
+        };
+        const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const safeName = (payload.name || 'cert-template').replace(/[^a-z0-9ก-๙_-]+/gi, '-').slice(0, 60);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `cert-template-${safeName}.json`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        showToast('ดาวน์โหลด template แล้ว', 'success');
+    }, [campaign, paperSize, bgImage, bgColor, bgOpacity, elements]);
+
+    const applyTemplate = useCallback((tpl: {
+        paperSize?: string;
+        bgImage?: string;
+        bgColor?: string;
+        bgOpacity?: number;
+        layout?: CertElement[];
+    }) => {
+        pushUndo(elements);
+        if (tpl.paperSize && PAPER_SIZES[tpl.paperSize as PaperSize]) setPaperSize(tpl.paperSize as PaperSize);
+        if (typeof tpl.bgImage === 'string') setBgImage(tpl.bgImage);
+        if (typeof tpl.bgColor === 'string') setBgColor(tpl.bgColor);
+        if (typeof tpl.bgOpacity === 'number') setBgOpacity(tpl.bgOpacity);
+        if (Array.isArray(tpl.layout) && tpl.layout.length > 0) {
+            // Reassign IDs so existing selections / refs don't collide.
+            setElements(tpl.layout.map(el => ({ ...el, id: uid() })));
+        }
+        setSelectedId(null);
+        showToast('โหลด template แล้ว (อย่าลืมกด Save Changes)', 'success');
+    }, [elements, pushUndo]);
+
+    const handleImportTemplate = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        e.target.value = '';
+        if (!file) return;
+        try {
+            const text = await file.text();
+            const json = JSON.parse(text);
+            if (json?.kind !== 'rfid-cert-template' || !Array.isArray(json?.layout)) {
+                showToast('ไฟล์ template ไม่ถูกต้อง', 'error');
+                return;
+            }
+            applyTemplate(json);
+        } catch {
+            showToast('อ่านไฟล์ template ไม่ได้', 'error');
+        }
+    }, [applyTemplate]);
+
+    const fetchTemplates = useCallback(async () => {
+        setTemplatesLoading(true);
+        try {
+            const res = await fetch('/api/campaigns/cert-templates', { cache: 'no-store' });
+            if (!res.ok) throw new Error('fetch failed');
+            const data: CertTemplateSummary[] = await res.json();
+            setTemplates(Array.isArray(data) ? data : []);
+        } catch {
+            showToast('โหลด template ไม่ได้', 'error');
+        } finally {
+            setTemplatesLoading(false);
+        }
+    }, []);
+
+    const applyTemplateFromCampaign = useCallback(async (id: string) => {
+        setTemplateApplyingId(id);
+        try {
+            const res = await fetch(`/api/campaigns/${id}?full=true`, { cache: 'no-store' });
+            if (!res.ok) throw new Error('fetch failed');
+            const data = await res.json();
+            applyTemplate({
+                paperSize: data.certPaperSize,
+                bgImage: data.certBackgroundImage,
+                bgColor: data.certBgColor,
+                bgOpacity: data.certBgOpacity,
+                layout: data.certLayout,
+            });
+        } catch {
+            showToast('โหลด template ไม่ได้', 'error');
+        } finally {
+            setTemplateApplyingId(null);
+        }
+    }, [applyTemplate]);
+
+    // Auto-load template list when the tab is opened for the first time.
+    useEffect(() => {
+        if (activeTool === 'templates' && templates.length === 0 && !templatesLoading) {
+            fetchTemplates();
+        }
+    }, [activeTool, templates.length, templatesLoading, fetchTemplates]);
+
     const handlePrint = useCallback(async () => {
         if (!selectedRunner) { showToast('เลือกนักวิ่งก่อนพิมพ์', 'error'); return; }
         setGenerating(true);
@@ -1255,6 +1377,59 @@ export default function CertificatesPage() {
                                     </div>
                                 ))}
                             </>}
+                            {activeTool === 'templates' && <>
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                                    <div style={{ fontWeight: 700, fontSize: 12, color: '#374151' }}>Templates</div>
+                                    <button onClick={fetchTemplates} title="Refresh" style={{ padding: '2px 6px', borderRadius: 4, border: '1px solid #d1d5db', background: '#f8fafc', fontSize: 10, cursor: 'pointer' }}>↻</button>
+                                </div>
+                                <div style={{ fontSize: 9, color: '#64748b', marginBottom: 6, lineHeight: 1.4 }}>
+                                    คลิก template เพื่อโหลดเข้าตัวแก้ไข (ทับ layout ปัจจุบัน — undo ได้). 1 งาน = 1 template
+                                </div>
+                                <input ref={templateImportRef} type="file" accept="application/json,.json" style={{ display: 'none' }} onChange={handleImportTemplate} />
+                                <button onClick={() => templateImportRef.current?.click()} style={{ width: '100%', padding: '6px', borderRadius: 6, border: '1px dashed #a78bfa', background: '#f5f3ff', color: '#6d28d9', fontSize: 11, fontWeight: 700, cursor: 'pointer', marginBottom: 8 }}>📂 Import จากไฟล์ JSON</button>
+                                {templatesLoading ? (
+                                    <div style={{ padding: 12, textAlign: 'center', color: '#999', fontSize: 11 }}>Loading...</div>
+                                ) : templates.length === 0 ? (
+                                    <div style={{ padding: 12, textAlign: 'center', color: '#94a3b8', fontSize: 10, lineHeight: 1.4 }}>ยังไม่มี template ที่บันทึก<br/>กด Save Changes ในงานใด ๆ เพื่อสร้าง template แรก</div>
+                                ) : (
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                                        {templates.map(tpl => {
+                                            const isCurrent = campaign?._id === tpl._id;
+                                            const isApplying = templateApplyingId === tpl._id;
+                                            const dateStr = tpl.eventDate ? new Date(tpl.eventDate).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' }) : '';
+                                            return (
+                                                <button
+                                                    key={tpl._id}
+                                                    onClick={() => applyTemplateFromCampaign(tpl._id)}
+                                                    disabled={isApplying}
+                                                    style={{
+                                                        textAlign: 'left',
+                                                        padding: '8px 10px',
+                                                        borderRadius: 6,
+                                                        border: isCurrent ? '1.5px solid #3b82f6' : '1px solid #e5e7eb',
+                                                        background: isCurrent ? '#eff6ff' : '#fff',
+                                                        cursor: isApplying ? 'wait' : 'pointer',
+                                                        position: 'relative',
+                                                    }}
+                                                    title={isCurrent ? 'งานนี้ (template ปัจจุบัน)' : 'คลิกเพื่อโหลด template นี้'}
+                                                >
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+                                                        <div style={{ width: 14, height: 14, borderRadius: 3, background: tpl.certBgColor || '#1a1a2e', border: '1px solid #cbd5e1', flexShrink: 0 }} />
+                                                        <div style={{ fontSize: 11, fontWeight: 700, color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1 }}>{tpl.nameTh || tpl.name || '(no name)'}</div>
+                                                        {isCurrent && <span style={{ fontSize: 8, fontWeight: 700, color: '#1d4ed8' }}>ปัจจุบัน</span>}
+                                                    </div>
+                                                    <div style={{ display: 'flex', gap: 6, fontSize: 9, color: '#64748b' }}>
+                                                        {tpl.certPaperSize && <span>{PAPER_SIZES[tpl.certPaperSize as PaperSize]?.label ?? tpl.certPaperSize}</span>}
+                                                        <span>· {tpl.elementCount ?? 0} elements</span>
+                                                        {dateStr && <span>· {dateStr}</span>}
+                                                    </div>
+                                                    {isApplying && <div style={{ position: 'absolute', inset: 0, background: 'rgba(255,255,255,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 6, fontSize: 10, fontWeight: 700, color: '#1d4ed8' }}>กำลังโหลด...</div>}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                )}
+                            </>}
                         </div>
                     )}
 
@@ -1270,6 +1445,7 @@ export default function CertificatesPage() {
                             <div style={{ flex: 1 }} />
                             {selectedRunner && <span style={{ fontSize: 10, color: '#94a3b8' }}>Preview: {selectedRunner.bib} - {selectedRunner.firstName}</span>}
                             <button onClick={handlePrint} disabled={generating || !selectedRunner} title="Print" style={{ padding: '4px 10px', borderRadius: 5, border: 'none', background: !selectedRunner ? '#334155' : '#2563eb', color: !selectedRunner ? '#64748b' : '#fff', fontSize: 11, fontWeight: 700, cursor: !selectedRunner ? 'default' : 'pointer' }}>🖨 Preview</button>
+                            <button onClick={handleDownloadTemplate} title="ดาวน์โหลด layout/bg/paper เป็นไฟล์ template" style={{ padding: '4px 10px', borderRadius: 5, border: '1px solid #475569', background: '#0f172a', color: '#e2e8f0', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>⬇ Download Template</button>
                             <button onClick={handleSave} disabled={saving} style={{ padding: '4px 14px', borderRadius: 5, border: 'none', background: saving ? '#334155' : '#22c55e', color: '#fff', fontSize: 11, fontWeight: 700, cursor: saving ? 'not-allowed' : 'pointer' }}>{saving ? '...' : 'Save Changes'}</button>
                         </div>
 
