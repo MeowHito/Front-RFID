@@ -364,8 +364,10 @@ export default function ResultWinnersBySlugPage() {
                 femaleRunners: femaleWinners[ageGroupLabel] || [],
             }];
             const suffix = gender === 'male' ? '-Male' : gender === 'female' ? '-Female' : '';
+            const distance = campaign?.categories?.find(c => c.name === selectedCategory)?.distance || selectedCategory || '';
+            const distPart = distance ? `-${distance}` : '';
             const blob = await buildWinnersExcel(campaign?.name || '', selectedCategory, sections, gender);
-            if (blob) triggerExcelDownload(blob, `${campaign?.name || 'winners'}-AgeGroup-${ageGroupLabel}${suffix}`);
+            if (blob) triggerExcelDownload(blob, `${campaign?.name || 'winners'}${distPart}-AgeGroup-${ageGroupLabel}${suffix}`);
         } catch (e) { console.error(e); } finally {
             setDownloading(null);
         }
@@ -380,8 +382,10 @@ export default function ResultWinnersBySlugPage() {
                 femaleRunners: femaleWinners[g.label] || [],
             }));
             const suffix = gender === 'male' ? '-Male' : gender === 'female' ? '-Female' : '';
+            const distance = campaign?.categories?.find(c => c.name === selectedCategory)?.distance || selectedCategory || '';
+            const distPart = distance ? `-${distance}` : '';
             const blob = await buildWinnersExcel(campaign?.name || '', selectedCategory, sections, gender);
-            if (blob) triggerExcelDownload(blob, `${campaign?.name || 'winners'}-AgeGroup-All${suffix}`);
+            if (blob) triggerExcelDownload(blob, `${campaign?.name || 'winners'}${distPart}-AgeGroup-All${suffix}`);
         } catch (e) { console.error(e); } finally {
             setDownloading(null);
         }

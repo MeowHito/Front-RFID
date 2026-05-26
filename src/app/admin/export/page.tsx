@@ -31,6 +31,8 @@ interface Runner {
     status?: string;
     netTime?: number;
     gunTime?: number;
+    netTimeStr?: string;
+    gunTimeStr?: string;
     netPace?: string;
     gunPace?: string;
     overallRank?: number;
@@ -71,13 +73,18 @@ function formatBirthDateCE(iso?: string): string {
     return `${dd}/${mm}/${yyyy}`;
 }
 
-function formatTime(ms?: number): string {
-    if (!ms || ms <= 0) return '-';
-    const totalSec = Math.floor(ms / 1000);
-    const h = Math.floor(totalSec / 3600);
-    const m = Math.floor((totalSec % 3600) / 60);
-    const s = totalSec % 60;
-    return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+function formatTime(ms?: number, fallback?: string): string {
+    if (ms && ms > 0) {
+        const totalSec = Math.floor(ms / 1000);
+        const h = Math.floor(totalSec / 3600);
+        const m = Math.floor((totalSec % 3600) / 60);
+        const s = totalSec % 60;
+        return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+    }
+    // Fall back to the *Str fields — RaceTiger occasionally provides the
+    // formatted time string without a parseable millisecond count, and we
+    // want those still to appear in the export instead of "-".
+    return fallback && fallback.trim() ? fallback.trim() : '-';
 }
 
 const STATUS_ORDER: Record<string, number> = {
@@ -158,6 +165,21 @@ export default function ExportPage() {
         return all;
     }, [campaign]);
 
+    const reloadRunners = useCallback(async () => {
+        if (!campaign?._id) return;
+        setFetching(true);
+        try {
+            const data = await fetchAllRunners(selectedCategory);
+            data.sort(sortRunners);
+            setRunners(data);
+        } catch {
+            showToast(language === 'th' ? 'โหลดข้อมูลไม่สำเร็จ' : 'Failed to load', 'error');
+        } finally {
+            setFetching(false);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [campaign?._id, selectedCategory, fetchAllRunners, language]);
+
     useEffect(() => {
         if (!campaign?._id) return;
         let cancelled = false;
@@ -177,6 +199,20 @@ export default function ExportPage() {
         return () => { cancelled = true; };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [campaign?._id, selectedCategory, fetchAllRunners]);
+
+    // Re-fetch whenever the tab is refocused so admin status/CP edits made in
+    // /admin/results show up here without a manual refresh.
+    useEffect(() => {
+        if (!campaign?._id) return;
+        const onFocus = () => { reloadRunners(); };
+        const onVisible = () => { if (document.visibilityState === 'visible') reloadRunners(); };
+        window.addEventListener('focus', onFocus);
+        document.addEventListener('visibilitychange', onVisible);
+        return () => {
+            window.removeEventListener('focus', onFocus);
+            document.removeEventListener('visibilitychange', onVisible);
+        };
+    }, [campaign?._id, reloadRunners]);
 
     const categoryDistance = (catName: string): string => {
         if (catName === 'all') return '';
@@ -221,8 +257,8 @@ export default function ExportPage() {
                     resolveAgeGroup(r) || '',
                     formatBirthDateCE(r.birthDate),
                     r.nationality || '',
-                    formatTime(r.gunTime),
-                    formatTime(r.netTime),
+                    formatTime(r.gunTime, r.gunTimeStr),
+                    formatTime(r.netTime, r.netTimeStr),
                     statusLabel(r.status),
                 ]);
             }
@@ -320,6 +356,20 @@ export default function ExportPage() {
 
                             <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
                                 <button
+                                    onClick={reloadRunners}
+                                    disabled={fetching || !campaign?._id}
+                                    title={language === 'th' ? 'ดึงข้อมูลล่าสุด' : 'Reload latest data'}
+                                    style={{
+                                        padding: '9px 14px', borderRadius: 6, border: '1px solid #cbd5e1',
+                                        background: '#fff', color: '#0f172a', fontWeight: 600, fontSize: 13,
+                                        cursor: fetching ? 'wait' : 'pointer', opacity: fetching ? 0.6 : 1,
+                                        display: 'inline-flex', alignItems: 'center', gap: 6,
+                                    }}
+                                >
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="23 4 23 10 17 10" /><polyline points="1 20 1 14 7 14" /><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" /></svg>
+                                    {language === 'th' ? 'รีเฟรช' : 'Refresh'}
+                                </button>
+                                <button
                                     onClick={handleExportExcel}
                                     disabled={exporting || fetching || runners.length === 0}
                                     style={{
@@ -383,8 +433,8 @@ export default function ExportPage() {
                                                     <td style={{ padding: '6px 10px', fontSize: 12 }}>{resolveAgeGroup(r) || '-'}</td>
                                                     <td style={{ padding: '6px 10px', fontSize: 12, fontVariantNumeric: 'tabular-nums' }}>{formatBirthDateCE(r.birthDate) || '-'}</td>
                                                     <td style={{ padding: '6px 10px', fontSize: 12 }}>{r.nationality || '-'}</td>
-                                                    <td style={{ padding: '6px 10px', fontSize: 12, fontVariantNumeric: 'tabular-nums' }}>{formatTime(r.gunTime)}</td>
-                                                    <td style={{ padding: '6px 10px', fontSize: 12, fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>{formatTime(r.netTime)}</td>
+                                                    <td style={{ padding: '6px 10px', fontSize: 12, fontVariantNumeric: 'tabular-nums' }}>{formatTime(r.gunTime, r.gunTimeStr)}</td>
+                                                    <td style={{ padding: '6px 10px', fontSize: 12, fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>{formatTime(r.netTime, r.netTimeStr)}</td>
                                                     <td style={{ padding: '6px 10px', fontSize: 12, fontVariantNumeric: 'tabular-nums' }}>{r.netPace || r.gunPace || '-'}</td>
                                                     <td style={{ padding: '6px 10px', fontSize: 11 }}>
                                                         <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 12, background: statusBg, color: statusColor, fontWeight: 700 }}>

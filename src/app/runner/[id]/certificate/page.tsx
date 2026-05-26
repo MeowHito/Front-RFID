@@ -529,10 +529,13 @@ export default function CertificatePage() {
             if (!blob) throw new Error('Render failed');
             const filename = `certificate-${runner.bib || 'runner'}.jpg`;
 
-            // Try the Web Share API first — on iOS this opens the native
-            // sheet with "Save Image" / "Save to Files" / AirDrop, which is
-            // the only way Safari will reliably write the file to Photos.
-            if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
+            // Try the Web Share API only on mobile — on iOS this opens the
+            // native sheet with "Save Image" / "Save to Files" / AirDrop, the
+            // only way Safari can reliably write to Photos. On macOS the same
+            // API also exists but it pops the share sheet instead of just
+            // saving the file, so we skip it there and fall through to a
+            // plain `<a download>` click.
+            if (isMobile && typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
                 try {
                     const file = new File([blob], filename, { type: 'image/jpeg' });
                     if (!navigator.canShare || navigator.canShare({ files: [file] })) {
@@ -560,7 +563,7 @@ export default function CertificatePage() {
         } finally {
             setDownloading(false);
         }
-    }, [runner, renderCertBlob]);
+    }, [runner, renderCertBlob, isMobile]);
 
     if (loading) return (
         <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f8fafc' }}>
@@ -590,9 +593,21 @@ export default function CertificatePage() {
         </div>
     );
 
-    const elements: CertElement[] = (Array.isArray(campaign.certLayout) && campaign.certLayout.length > 0)
+    const rawElements: CertElement[] = (Array.isArray(campaign.certLayout) && campaign.certLayout.length > 0)
         ? campaign.certLayout
         : DEFAULT_ELEMENTS;
+    // If this runner's distance has no age groups (ageGroup is missing/empty),
+    // hide certificate elements that depend on rank tokens — showing
+    // "Overall #-  |  Gender #-  |  Age #-" looks broken.
+    const hasAgeGroup = !!(runner?.ageGroup && String(runner.ageGroup).trim() !== '');
+    const RANK_TOKEN_RE = /\{\{(rank|gender_rank|age_rank|rank_total|gender_rank_total)\}\}/;
+    const elements: CertElement[] = hasAgeGroup
+        ? rawElements
+        : rawElements.filter(el => {
+            const isText = !el.type || el.type === 'text';
+            if (!isText) return true;
+            return !RANK_TOKEN_RE.test(el.content || '');
+        });
     const bgImage = campaign.certBackgroundImage || '';
     const bgColor = campaign.certBgColor || '#1a1a2e';
     const bgOpacity = typeof campaign.certBgOpacity === 'number' ? campaign.certBgOpacity : 1;

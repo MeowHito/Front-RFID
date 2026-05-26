@@ -442,14 +442,18 @@ export default function ResultsPage() {
         return list;
     }, [runners, selectedCategory, genderFilter, statusFilter, ageGroupFilter, debouncedSearch, sortBy, sortDirection, cpTimingMap]);
 
-    // ── Status counts from runner list ──
+    // ── Status counts from runner list (scoped to currently selected category) ──
+    const categoryScopedRunners = useMemo(() => {
+        const safe = Array.isArray(runners) ? runners : [];
+        if (selectedCategory === 'all') return safe;
+        return safe.filter(r => r.category === selectedCategory);
+    }, [runners, selectedCategory]);
     const statusCounts = useMemo(() => {
         const counts: Record<string, number> = {};
-        const safe = Array.isArray(runners) ? runners : [];
-        safe.forEach(r => { counts[r.status] = (counts[r.status] || 0) + 1; });
+        categoryScopedRunners.forEach(r => { counts[r.status] = (counts[r.status] || 0) + 1; });
         return counts;
-    }, [runners]);
-    const totalRunners = Array.isArray(runners) ? runners.length : 0;
+    }, [categoryScopedRunners]);
+    const totalRunners = categoryScopedRunners.length;
     const getStatusCount = (st: string) => statusCounts[st] || 0;
 
     // ── Unique categories from runners ──
@@ -703,6 +707,10 @@ export default function ResultsPage() {
             setEditTimingSaveMsg(language === 'th' ? `บันทึกเวลา ${savedCount} จุด เรียบร้อย` : `Saved ${savedCount} checkpoint time(s)`);
             await loadEditData(editingRunner);
             await fetchAllData(true);
+            // Backend caches checkpoint-by-campaign for 5s — schedule a second
+            // refresh just past the TTL so newly-saved scan times reliably show
+            // up on the table even if the first refresh hit cached data.
+            setTimeout(() => { fetchAllData(true); }, 5500);
             setTimeout(() => setEditTimingSaveMsg(null), 3000);
         } finally {
             setEditTimingSaving(false);

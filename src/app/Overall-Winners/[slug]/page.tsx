@@ -204,7 +204,9 @@ export default function OverallWinnersBySlugPage() {
                 gender,
             );
             const suffix = gender === 'male' ? '-Male' : gender === 'female' ? '-Female' : '';
-            if (blob) triggerExcelDownload(blob, `${campaign?.name || 'winners'}-Overall${suffix}`);
+            const distance = campaign?.categories?.find(c => c.name === selectedCategory)?.distance || selectedCategory || '';
+            const distPart = distance ? `-${distance}` : '';
+            if (blob) triggerExcelDownload(blob, `${campaign?.name || 'winners'}${distPart}-Overall${suffix}`);
         } catch (e) { console.error(e); } finally {
             setDownloading(null);
         }
