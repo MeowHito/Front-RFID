@@ -265,7 +265,26 @@ export default function ResultsPage() {
                 const res = await fetch(`/api/checkpoints/campaign/${campaign._id}`, { cache: 'no-store' });
                 if (!res.ok) return;
                 const data: Checkpoint[] = await res.json();
-                const sorted = [...data].sort((a, b) => (a.orderNum ?? 999) - (b.orderNum ?? 999));
+                // Order: START → CP1, CP2, … (numeric suffix ascending) → FINISH.
+                // The persisted orderNum sometimes places FINISH right after START
+                // because it was created first; force a logical race order here so
+                // the columns read left-to-right the way the runners pass them.
+                const cpRank = (cp: Checkpoint): [number, number, number] => {
+                    const name = (cp.name || '').trim();
+                    const up = name.toUpperCase();
+                    if (up === 'START') return [0, 0, cp.orderNum ?? 0];
+                    if (up === 'FINISH' || cp.type === 'finish') return [2, 0, cp.orderNum ?? 0];
+                    const numMatch = name.match(/(\d+)/);
+                    const cpNum = numMatch ? parseInt(numMatch[1], 10) : Number.MAX_SAFE_INTEGER;
+                    return [1, cpNum, cp.orderNum ?? 0];
+                };
+                const sorted = [...data].sort((a, b) => {
+                    const ra = cpRank(a);
+                    const rb = cpRank(b);
+                    if (ra[0] !== rb[0]) return ra[0] - rb[0];
+                    if (ra[1] !== rb[1]) return ra[1] - rb[1];
+                    return ra[2] - rb[2];
+                });
                 setCheckpoints(sorted);
             } catch { setCheckpoints([]); }
         })();
