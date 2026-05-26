@@ -596,18 +596,35 @@ export default function CertificatePage() {
     const rawElements: CertElement[] = (Array.isArray(campaign.certLayout) && campaign.certLayout.length > 0)
         ? campaign.certLayout
         : DEFAULT_ELEMENTS;
-    // If this runner's distance has no age groups (ageGroup is missing/empty),
-    // hide certificate elements that depend on the category/age-group rank —
-    // showing "CATEGORY -" looks broken. Overall and Gender ranks are kept.
+    // If this runner's distance has no age groups, hide the line that shows
+    // the category/age-group rank. Many templates pack OVERALL / GENDER /
+    // CATEGORY / GUN TIME into a single multi-line text element, so we must
+    // edit the content line-by-line (drop only the {{age_rank}} line) and
+    // keep the element itself — otherwise the whole stats block disappears.
+    // If the element ends up empty, drop it; otherwise pass it through unchanged.
     const hasAgeGroup = !!(runner?.ageGroup && String(runner.ageGroup).trim() !== '');
     const AGE_RANK_TOKEN_RE = /\{\{age_rank\}\}/;
     const elements: CertElement[] = hasAgeGroup
         ? rawElements
-        : rawElements.filter(el => {
-            const isText = !el.type || el.type === 'text';
-            if (!isText) return true;
-            return !AGE_RANK_TOKEN_RE.test(el.content || '');
-        });
+        : rawElements
+            .map(el => {
+                const isText = !el.type || el.type === 'text';
+                if (!isText) return el;
+                const content = el.content || '';
+                if (!AGE_RANK_TOKEN_RE.test(content)) return el;
+                const cleaned = content
+                    .split(/\r?\n/)
+                    .filter(line => !AGE_RANK_TOKEN_RE.test(line))
+                    .join('\n')
+                    .replace(/\n{3,}/g, '\n\n')
+                    .trim();
+                return { ...el, content: cleaned };
+            })
+            .filter(el => {
+                const isText = !el.type || el.type === 'text';
+                if (!isText) return true;
+                return (el.content || '').trim() !== '';
+            });
     const bgImage = campaign.certBackgroundImage || '';
     const bgColor = campaign.certBgColor || '#1a1a2e';
     const bgOpacity = typeof campaign.certBgOpacity === 'number' ? campaign.certBgOpacity : 1;
