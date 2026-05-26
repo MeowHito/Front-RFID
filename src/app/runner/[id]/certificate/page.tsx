@@ -597,16 +597,16 @@ export default function CertificatePage() {
         ? campaign.certLayout
         : DEFAULT_ELEMENTS;
     // If this runner's distance has no age groups (ageGroup is missing/empty),
-    // hide certificate elements that depend on rank tokens — showing
-    // "Overall #-  |  Gender #-  |  Age #-" looks broken.
+    // hide certificate elements that depend on the category/age-group rank —
+    // showing "CATEGORY -" looks broken. Overall and Gender ranks are kept.
     const hasAgeGroup = !!(runner?.ageGroup && String(runner.ageGroup).trim() !== '');
-    const RANK_TOKEN_RE = /\{\{(rank|gender_rank|age_rank|rank_total|gender_rank_total)\}\}/;
+    const AGE_RANK_TOKEN_RE = /\{\{age_rank\}\}/;
     const elements: CertElement[] = hasAgeGroup
         ? rawElements
         : rawElements.filter(el => {
             const isText = !el.type || el.type === 'text';
             if (!isText) return true;
-            return !RANK_TOKEN_RE.test(el.content || '');
+            return !AGE_RANK_TOKEN_RE.test(el.content || '');
         });
     const bgImage = campaign.certBackgroundImage || '';
     const bgColor = campaign.certBgColor || '#1a1a2e';
