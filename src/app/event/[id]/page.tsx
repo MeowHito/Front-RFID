@@ -173,7 +173,7 @@ type ColDef = { key: string; label: string; w: string; mw: string; align: 'left'
 const COL_DEFS: ColDef[] = [
     { key: 'rank', label: 'Rank', w: '3%', mw: '4%', align: 'center', fixed: true },
     { key: 'genRank', label: 'Gen', w: '3%', mw: '4%', align: 'center' },
-    { key: 'catRank', label: 'Cat', w: '3%', mw: '4%', align: 'center' },
+    { key: 'catRank', label: 'Cat', w: '6%', mw: '9%', align: 'center' },
     { key: 'runner', label: 'Runner', w: '15%', mw: '22%', align: 'left', fixed: true },
     { key: 'sex', label: 'Sex', w: '3%', mw: '5%', align: 'center' },
     { key: 'status', label: 'Status', w: '8%', mw: '10%', align: 'left', fixed: true },
@@ -323,6 +323,7 @@ export default function EventLivePage() {
     const [filterGender, setFilterGender] = useState<RunnerFilterGender>('ALL');
     const [filterCategory, setFilterCategory] = useState(catFromUrl);
     const [filterStatus, setFilterStatus] = useState('ALL');
+    const [filterAgeGroup, setFilterAgeGroup] = useState('');
     // Runner detail is now handled by /runner/[id] page
 
     const [showGenRank, setShowGenRank] = useState(true);
@@ -812,6 +813,25 @@ export default function EventLivePage() {
         return runner.category;
     }, [categories]);
 
+    // Distinct age groups present in the currently-selected distance, sorted by the
+    // leading age number ("<=17" → 17, "18-29" → 18, ">=60" → 60).
+    const ageGroupOptions = useMemo(() => {
+        const set = new Set<string>();
+        for (const r of runners) {
+            if (filterCategory && resolveRunnerCategoryKey(r) !== filterCategory) continue;
+            if (r.ageGroup) set.add(r.ageGroup);
+        }
+        const sortKey = (s: string) => { const m = s.match(/\d+/); return m ? parseInt(m[0], 10) : 9999; };
+        return Array.from(set).sort((a, b) => sortKey(a) - sortKey(b) || a.localeCompare(b));
+    }, [runners, filterCategory, resolveRunnerCategoryKey]);
+
+    // Reset the age-group filter whenever it no longer applies to the selected distance.
+    useEffect(() => {
+        if (filterAgeGroup && !ageGroupOptions.includes(filterAgeGroup)) {
+            setFilterAgeGroup('');
+        }
+    }, [ageGroupOptions, filterAgeGroup]);
+
     const getRunnerCategoryStartDate = useCallback((runner: Runner): Date | null => {
         if (!campaign?.eventDate) return null;
         const categoryList = Array.isArray(campaign.categories) ? campaign.categories : [];
@@ -996,9 +1016,10 @@ export default function EventLivePage() {
                 const matchesFollowed = filterGender !== 'FOLLOWED' || followedRunnerIds.has(runner._id);
                 const matchesCategory = !filterCategory || resolveRunnerCategoryKey(runner) === filterCategory;
                 const matchesStatus = filterStatus === 'ALL' || runner.status === filterStatus;
-                return matchesSearch && matchesGender && matchesFollowed && matchesCategory && matchesStatus;
+                const matchesAgeGroup = !filterAgeGroup || runner.ageGroup === filterAgeGroup;
+                return matchesSearch && matchesGender && matchesFollowed && matchesCategory && matchesStatus && matchesAgeGroup;
             });
-    }, [allRankedRunners, searchQuery, filterGender, followedRunnerIds, filterCategory, filterStatus, resolveRunnerCategoryKey]);
+    }, [allRankedRunners, searchQuery, filterGender, followedRunnerIds, filterCategory, filterStatus, filterAgeGroup, resolveRunnerCategoryKey]);
 
     // Compute live overall + gender + category ranks from sorted runners.
     // Rank=position within allRankedRunners so values are unique and sequential.
@@ -1565,9 +1586,24 @@ export default function EventLivePage() {
                     )}
                 </div>
 
-                {/* Row 2 (mobile): Search input + Gender filter — full width, gender flush right */}
+                {/* Row 2 (mobile): Search input + Age group + Gender filter — full width */}
                 {isMobile && (
                     <div className="flex w-full items-center gap-2">
+                        {/* Age group filter — shown when the selected distance has age groups */}
+                        {ageGroupOptions.length > 0 && (
+                            <select
+                                value={filterAgeGroup}
+                                onChange={(e) => setFilterAgeGroup(e.target.value)}
+                                title={language === 'th' ? 'ช่วงอายุ' : 'Age group'}
+                                className="shrink-0 cursor-pointer rounded-lg border border-[var(--border)] bg-[var(--muted)] px-2 py-1.5 text-[10px] font-bold text-[var(--foreground)] outline-none"
+                                style={{ WebkitAppearance: 'menulist' }}
+                            >
+                                <option value="">{language === 'th' ? 'ทุกอายุ' : 'All ages'}</option>
+                                {ageGroupOptions.map(ag => (
+                                    <option key={ag} value={ag}>{ag}</option>
+                                ))}
+                            </select>
+                        )}
                         {/* Search */}
                         <div className="relative min-w-0 flex-1">
                             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={themeStyles.textSecondary} strokeWidth="2" className="absolute left-2.5 top-1/2 -translate-y-1/2">
@@ -1621,6 +1657,22 @@ export default function EventLivePage() {
                                 </button>
                             ))}
                         </div>
+
+                        {/* Age group filter — desktop only, shown when the selected distance has age groups */}
+                        {ageGroupOptions.length > 0 && (
+                            <select
+                                value={filterAgeGroup}
+                                onChange={(e) => setFilterAgeGroup(e.target.value)}
+                                title={language === 'th' ? 'ช่วงอายุ' : 'Age group'}
+                                className="cursor-pointer rounded-lg border border-[var(--border)] bg-[var(--muted)] px-2.5 py-1.5 text-[11px] font-bold text-[var(--foreground)] outline-none"
+                                style={{ WebkitAppearance: 'menulist' }}
+                            >
+                                <option value="">{language === 'th' ? 'ทุกช่วงอายุ' : 'All ages'}</option>
+                                {ageGroupOptions.map(ag => (
+                                    <option key={ag} value={ag}>{ag}</option>
+                                ))}
+                            </select>
+                        )}
 
                         {/* Search */}
                         <div className="relative">
@@ -1804,9 +1856,17 @@ export default function EventLivePage() {
                                                 const hideCatRank = ['dnf', 'dns', 'dq', 'not_started'].includes(runner.status);
                                                 const liveCat = liveRanks.get(runner._id)?.catRank;
                                                 const displayCatRank = hideCatRank ? '-' : (runner.ageGroupRank || runner.ageGroupNetRank || liveCat || '-');
+                                                // Age group label sits right after the CAT rank number (same number size,
+                                                // age group as a smaller muted suffix), moved here from the runner column.
+                                                const catAgeGroup = runner.ageGroup || '';
                                                 return (
                                                     <td key={key} className={isMobile ? 'px-0.5 py-1 text-center' : 'px-1.5 py-1.5 text-center'}>
-                                                        <span className={isMobile ? 'text-[11px] font-bold' : 'text-xs font-bold'} style={{ color: isMobile ? '#0f172a' : themeStyles.textMuted }}>{displayCatRank}</span>
+                                                        <span className="inline-flex items-baseline justify-center gap-1 whitespace-nowrap">
+                                                            <span className={isMobile ? 'text-[11px] font-bold' : 'text-xs font-bold'} style={{ color: isMobile ? '#0f172a' : themeStyles.textMuted }}>{displayCatRank}</span>
+                                                            {catAgeGroup ? (
+                                                                <span className={isMobile ? 'text-[9px] font-semibold' : 'text-[10px] font-semibold'} style={{ color: themeStyles.textMuted }}>{catAgeGroup}</span>
+                                                            ) : null}
+                                                        </span>
                                                     </td>
                                                 );
                                             }
@@ -1824,7 +1884,8 @@ export default function EventLivePage() {
                                                                     BIB {runner.bib}
                                                                 </span>
                                                                 {(() => { const d = rankDeltas.get(runner.bib); if (!d) return null; return <span className={isMobile ? 'text-[8px] font-extrabold' : 'text-[9px] font-extrabold'} style={{ color: d > 0 ? '#16a34a' : '#dc2626' }}>{d > 0 ? `▲${d}` : `▼${Math.abs(d)}`}</span>; })()}
-                                                                {runner.nationality ? `${runner.nationality} | ` : ''}{runner.ageGroup || runner.category}
+                                                                {/* Age group moved to the CAT column; show nationality here, falling back to category when there is no age group. */}
+                                                                {runner.nationality ? runner.nationality : ''}{!runner.ageGroup && runner.category ? `${runner.nationality ? ' | ' : ''}${runner.category}` : ''}
                                                             </span>
                                                         </div>
                                                     </td>

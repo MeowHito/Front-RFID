@@ -75,25 +75,27 @@ const COLS_SINGLE = [
     { width: 16 },
 ];
 
+// Compact sizing — age group + gender share a single header row and rows are
+// shorter so several age groups fit on one A4 page.
 const ROW_H = {
-    TITLE: 38,
-    SUBTITLE: 26,
-    AGE_BAR: 32,
-    GENDER_HDR: 32,
-    COL_HDR: 22,
-    DATA: 26,
-    FOOTER_SIG: 24,
-    FOOTER_LBL: 20,
+    TITLE: 28,
+    SUBTITLE: 18,
+    AGE_BAR: 22,
+    GENDER_HDR: 22,
+    COL_HDR: 15,
+    DATA: 18,
+    FOOTER_SIG: 22,
+    FOOTER_LBL: 18,
 };
 
 const FONT_SZ = {
-    TITLE: 22,
-    SUBTITLE: 15,
-    AGE_BAR: 14,
-    GENDER_HDR: 14,
-    COL_HDR: 11,
-    DATA: 13,
-    FOOTER: 11,
+    TITLE: 17,
+    SUBTITLE: 12,
+    AGE_BAR: 11,
+    GENDER_HDR: 12,
+    COL_HDR: 9,
+    DATA: 11,
+    FOOTER: 10,
 };
 
 export async function buildWinnersExcel(
@@ -218,22 +220,15 @@ export async function buildWinnersExcel(
     };
 
     // ── Render sections ───────────────────────────────────────────────────────
+    // Age group label is folded into the gender bar so each group costs one fewer
+    // row — e.g. "กลุ่มอายุ 18-29   ♂ MALE WINNERS".
     for (const sec of sections) {
-        // Age group label
-        if (sec.label) {
-            ws.mergeCells(row, 1, row, totalCols);
-            const c = ws.getCell(row, 1);
-            c.value = `กลุ่มอายุ  ${sec.label}`;
-            c.fill = fill(CLR.AGE_BAR);
-            c.font = { bold: true, size: FONT_SZ.AGE_BAR, color: { argb: argb(CLR.TXT_WHITE) }, name: 'Calibri' };
-            c.alignment = { horizontal: 'center', vertical: 'middle' };
-            ws.getRow(row).height = ROW_H.AGE_BAR;
-            row++;
-        }
+        const agePrefix = sec.label ? `กลุ่มอายุ ${sec.label}   ` : '';
 
         if (isBoth) {
-            addGenderBar('♂  MALE WINNERS', CLR.MALE, 1, 5);
-            addGenderBar('♀  FEMALE WINNERS', CLR.FEMALE, 7, 11);
+            addGenderBar(`${agePrefix}♂  MALE WINNERS`, CLR.MALE, 1, 5);
+            addGenderBar(`${agePrefix}♀  FEMALE WINNERS`, CLR.FEMALE, 7, 11);
+            clearSpacer();
             row++;
 
             addColHdr(1, CLR.M_COL_HDR);
@@ -249,7 +244,7 @@ export async function buildWinnersExcel(
                 row++;
             }
         } else if (showGender === 'male') {
-            addGenderBar('♂  MALE WINNERS', CLR.MALE, 1, 5);
+            addGenderBar(`${agePrefix}♂  MALE WINNERS`, CLR.MALE, 1, 5);
             row++;
             addColHdr(1, CLR.M_COL_HDR);
             row++;
@@ -259,7 +254,7 @@ export async function buildWinnersExcel(
                 row++;
             }
         } else {
-            addGenderBar('♀  FEMALE WINNERS', CLR.FEMALE, 1, 5);
+            addGenderBar(`${agePrefix}♀  FEMALE WINNERS`, CLR.FEMALE, 1, 5);
             row++;
             addColHdr(1, CLR.F_COL_HDR);
             row++;
