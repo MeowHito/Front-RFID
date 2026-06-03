@@ -63,6 +63,7 @@ const menuSections: MenuSection[] = [
         items: [
             { href: '/admin/live-monitor', label: 'MC Ai', labelEn: 'MC Ai', icon: 'desktop', iconColor: '#00c0ef' },
             { href: '/admin/checkpoint-monitor', label: 'Checkpoint Monitor', labelEn: 'Checkpoint Monitor', icon: 'map-location-dot', iconColor: '#f97316' },
+            { href: '/admin/scan', label: 'สแกน QR/บาร์โค้ด', labelEn: 'QR/Barcode Scan', icon: 'qrcode', iconColor: '#2563eb' },
         ]
     },
     {

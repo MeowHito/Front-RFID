@@ -43,6 +43,7 @@ export const ROUTE_TO_MODULE: Record<string, string> = {
     '/admin/id-card-import': 'participants',
     '/admin/live-monitor': 'rfidCheckin',
     '/admin/checkpoint-monitor': 'checkpoints',
+    '/admin/scan': 'checkpoints', // QR/barcode timing scan — station role allowed
     '/admin/rfid-config': 'rfidCheckin',
     '/admin/chip-mapping': 'rfidCheckin',
     '/admin/raw-data': 'rfidCheckin',
