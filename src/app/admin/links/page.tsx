@@ -122,7 +122,7 @@ export default function LinksPage() {
 
     return (
         <AdminLayout breadcrumbItems={[{ label: language === 'th' ? 'ลิงก์แชร์' : 'Share Links' }]}>
-            <div className="max-w-4xl mx-auto">
+            <div className="w-full">
                 {/* Header */}
                 <div className="mb-5">
                     <h2 className="text-xl font-extrabold text-slate-800 m-0">
