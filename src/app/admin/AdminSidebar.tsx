@@ -46,6 +46,7 @@ const menuSections: MenuSection[] = [
         headerEn: 'PARTICIPANTS',
         items: [
             { href: '/admin/participants', label: 'นำเข้าข้อมูลผู้เข้าแข่งขัน', labelEn: 'Import Participants', icon: 'file-import' },
+            { href: '/admin/applicants-import', label: 'นำเข้ารายชื่อผู้สมัคร (Excel)', labelEn: 'Import Applicants (Excel)', icon: 'file-import', iconColor: '#0ea5e9' },
             { href: '/admin/categories', label: 'ประเภทกลุ่มอายุ', labelEn: 'Age Groups', icon: 'layer-group' },
             { href: '/admin/bib-check', label: 'เช็คบิบ', labelEn: 'Check BIB', icon: 'magnifying-glass' },
         ]

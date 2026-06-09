@@ -58,6 +58,12 @@ const LINK_ROWS: LinkRow[] = [
         labelEn: '🏅 Certificate Search (BIB / Name)',
         buildUrl: (origin, campaign) => `${origin}/certificate-search/${campaign?.slug || campaign?._id || ''}`,
     },
+    {
+        id: 'applicant-status',
+        label: '📋 ตรวจสอบข้อมูลการสมัคร (ชื่อ / BIB / เลขบัตร / เบอร์)',
+        labelEn: '📋 Applicant Status Check (Name / BIB / ID / Phone)',
+        buildUrl: (origin, campaign) => `${origin}/applicant-status/${campaign?.slug || campaign?._id || ''}`,
+    },
 ];
 
 export default function LinksPage() {

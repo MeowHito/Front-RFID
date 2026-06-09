@@ -1,0 +1,246 @@
+'use client';
+
+import { useEffect, useState, useCallback } from 'react';
+import { useParams } from 'next/navigation';
+import Link from 'next/link';
+
+interface Applicant {
+    _id: string;
+    idCard?: string;
+    bib?: string;
+    firstName?: string;
+    lastName?: string;
+    fullName?: string;
+    phone?: string;
+    age?: number | null;
+    gender?: string;
+    ageGroup?: string;
+    shirtSize?: string;
+    category?: string;
+    team?: string;
+}
+
+function genderLabel(g?: string): string {
+    if (!g) return '-';
+    const v = g.trim().toLowerCase();
+    if (v === 'm' || v === 'male' || g.includes('ชาย')) return 'ชาย';
+    if (v === 'f' || v === 'female' || g.includes('หญิง')) return 'หญิง';
+    return g;
+}
+
+const COLORS = {
+    primary: '#003fb1',
+    primaryDark: '#1a56db',
+    surface: '#f8f9fb',
+    card: '#ffffff',
+    border: '#e2e8f0',
+    text: '#191c1e',
+    textMuted: '#434654',
+    label: '#737686',
+};
+
+export default function ApplicantStatusPage() {
+    const { slug } = useParams<{ slug: string }>();
+    const [campaignName, setCampaignName] = useState('');
+    const [query, setQuery] = useState('');
+    const [results, setResults] = useState<Applicant[]>([]);
+    const [searching, setSearching] = useState(false);
+    const [searched, setSearched] = useState(false);
+    const [error, setError] = useState('');
+
+    useEffect(() => {
+        if (!slug) return;
+        (async () => {
+            try {
+                const res = await fetch(`/api/campaigns/${slug}`, { cache: 'no-store' });
+                if (res.ok) {
+                    const data = await res.json();
+                    setCampaignName(data?.nameTh || data?.nameEn || data?.name || '');
+                }
+            } catch { /* */ }
+        })();
+    }, [slug]);
+
+    const handleSearch = useCallback(async (e?: React.FormEvent) => {
+        if (e) e.preventDefault();
+        const term = query.trim();
+        if (!term) return;
+        setSearching(true);
+        setError('');
+        setSearched(true);
+        setResults([]);
+        try {
+            const res = await fetch(`/api/applicants/search?campaign=${encodeURIComponent(slug)}&q=${encodeURIComponent(term)}`, { cache: 'no-store' });
+            if (!res.ok) {
+                setError('ค้นหาไม่สำเร็จ ลองใหม่อีกครั้ง');
+                return;
+            }
+            const data = await res.json();
+            setResults(data?.results || []);
+        } catch {
+            setError('เกิดข้อผิดพลาด ลองใหม่อีกครั้ง');
+        } finally {
+            setSearching(false);
+        }
+    }, [query, slug]);
+
+    const clearSearch = () => {
+        setQuery('');
+        setResults([]);
+        setSearched(false);
+        setError('');
+    };
+
+    return (
+        <div style={{ minHeight: '100vh', background: COLORS.surface, fontFamily: "'Inter','Hanken Grotesk',sans-serif" }}>
+            {/* Header */}
+            <header style={{
+                position: 'sticky', top: 0, zIndex: 50, background: '#fff',
+                borderBottom: `1px solid ${COLORS.border}`, height: 64,
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                padding: '0 20px',
+            }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <div style={{ width: 40, height: 40, borderRadius: 12, background: 'rgba(0,63,177,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22 }}>🏃</div>
+                    <h1 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: COLORS.primary, letterSpacing: '-0.02em' }}>
+                        {campaignName || 'ตรวจสอบข้อมูลการสมัคร'}
+                    </h1>
+                </div>
+            </header>
+
+            {/* Hero */}
+            <div style={{ background: `linear-gradient(135deg, ${COLORS.primary}, ${COLORS.primaryDark})`, padding: '40px 20px 56px' }}>
+                <div style={{ maxWidth: 720, margin: '0 auto', textAlign: 'center' }}>
+                    <h2 style={{ margin: 0, color: '#fff', fontSize: 30, fontWeight: 800, lineHeight: 1.2, letterSpacing: '-0.02em' }}>
+                        ตรวจสอบข้อมูลการสมัคร
+                    </h2>
+                    <p style={{ margin: '10px 0 0', color: 'rgba(255,255,255,0.85)', fontSize: 15 }}>
+                        ค้นหาด้วย เลขบัตรประชาชน / BIB / ชื่อ / นามสกุล / เบอร์โทร
+                    </p>
+                </div>
+            </div>
+
+            {/* Search + Results */}
+            <main style={{ maxWidth: 720, margin: '-32px auto 0', padding: '0 16px 48px' }}>
+                {/* Search box */}
+                <form onSubmit={handleSearch} style={{
+                    background: COLORS.card, border: `1px solid ${COLORS.border}`, borderRadius: 16,
+                    padding: 8, display: 'flex', alignItems: 'center', gap: 6,
+                    boxShadow: '0 8px 30px -8px rgba(0,0,0,0.12)',
+                }}>
+                    <span style={{ paddingLeft: 12, paddingRight: 4, fontSize: 20, color: COLORS.label }}>🔍</span>
+                    <input
+                        value={query}
+                        onChange={(e) => setQuery(e.target.value)}
+                        placeholder="เช่น ดีใจ ใจดี หรือ 001"
+                        style={{
+                            flex: 1, border: 'none', outline: 'none', fontSize: 16,
+                            color: COLORS.text, padding: '12px 4px', background: 'transparent',
+                        }}
+                    />
+                    <button type="submit" disabled={searching} style={{
+                        background: COLORS.primary, color: '#fff', border: 'none',
+                        padding: '12px 22px', borderRadius: 12, fontWeight: 700, fontSize: 15,
+                        cursor: searching ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap',
+                        opacity: searching ? 0.7 : 1,
+                    }}>
+                        {searching ? '...' : 'ค้นหา'}
+                    </button>
+                </form>
+
+                {/* Results header */}
+                {searched && !searching && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '24px 4px 12px' }}>
+                        <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: COLORS.text }}>
+                            ผลการค้นหา ({results.length} รายการ)
+                        </h3>
+                        <button onClick={clearSearch} style={{ background: 'none', border: 'none', color: COLORS.primary, fontWeight: 600, fontSize: 14, cursor: 'pointer' }}>
+                            ↻ ล้างการค้นหา
+                        </button>
+                    </div>
+                )}
+
+                {/* Error / empty */}
+                {searched && !searching && error && (
+                    <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 12, padding: 16, color: '#dc2626', fontWeight: 600, fontSize: 14 }}>
+                        {error}
+                    </div>
+                )}
+                {searched && !searching && !error && results.length === 0 && (
+                    <div style={{ background: COLORS.card, border: `1px solid ${COLORS.border}`, borderRadius: 16, padding: '36px 20px', textAlign: 'center' }}>
+                        <div style={{ fontSize: 40, marginBottom: 8 }}>🔎</div>
+                        <p style={{ margin: 0, color: COLORS.textMuted, fontSize: 15, fontWeight: 600 }}>
+                            ไม่พบข้อมูลสำหรับ &ldquo;{query}&rdquo;
+                        </p>
+                        <p style={{ margin: '6px 0 0', color: COLORS.label, fontSize: 13 }}>
+                            ลองค้นหาด้วยชื่อ นามสกุล BIB หรือเลขบัตรประชาชน
+                        </p>
+                    </div>
+                )}
+
+                {/* Results table (desktop) */}
+                {!searching && results.length > 0 && (
+                    <>
+                        <div style={{ background: COLORS.card, border: `1px solid ${COLORS.border}`, borderRadius: 16, overflow: 'hidden', boxShadow: '0 4px 20px -8px rgba(0,0,0,0.08)' }} className="applicant-table-wrap">
+                            <div style={{ overflowX: 'auto' }}>
+                                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
+                                    <thead>
+                                        <tr style={{ background: '#f3f4f6', borderBottom: `2px solid ${COLORS.border}` }}>
+                                            <th style={thStyle}>BIB</th>
+                                            <th style={{ ...thStyle, textAlign: 'left' }}>ชื่อ-นามสกุล</th>
+                                            <th style={thStyle}>อายุ</th>
+                                            <th style={thStyle}>เพศ</th>
+                                            <th style={thStyle}>กลุ่มอายุ</th>
+                                            <th style={thStyle}>ขนาดเสื้อ</th>
+                                            <th style={thStyle}>เบอร์โทร</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {results.map((r, idx) => (
+                                            <tr key={r._id || idx} style={{ borderBottom: `1px solid #f1f5f9` }}>
+                                                <td style={{ ...tdStyle, fontWeight: 700, color: COLORS.primary, textAlign: 'center' }}>{r.bib || '-'}</td>
+                                                <td style={{ ...tdStyle, textAlign: 'left', fontWeight: 600, color: COLORS.text }}>
+                                                    {r.fullName || `${r.firstName || ''} ${r.lastName || ''}`.trim() || '-'}
+                                                    {r.team ? <span style={{ display: 'block', fontSize: 12, color: COLORS.label, fontWeight: 400 }}>{r.team}</span> : null}
+                                                </td>
+                                                <td style={{ ...tdStyle, textAlign: 'center' }}>{r.age != null && r.age > 0 ? `${r.age} ปี` : '-'}</td>
+                                                <td style={{ ...tdStyle, textAlign: 'center' }}>
+                                                    <span style={{
+                                                        padding: '3px 12px', borderRadius: 12, fontSize: 12, fontWeight: 600,
+                                                        background: genderLabel(r.gender) === 'หญิง' ? '#fce7f3' : '#dbeafe',
+                                                        color: genderLabel(r.gender) === 'หญิง' ? '#be185d' : '#1d4ed8',
+                                                    }}>
+                                                        {genderLabel(r.gender)}
+                                                    </span>
+                                                </td>
+                                                <td style={{ ...tdStyle, textAlign: 'center' }}>{r.ageGroup || '-'}</td>
+                                                <td style={{ ...tdStyle, textAlign: 'center', fontWeight: 600 }}>{r.shirtSize || '-'}</td>
+                                                <td style={{ ...tdStyle, textAlign: 'center', fontFamily: 'monospace' }}>{r.phone || '-'}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                        <p style={{ fontSize: 12, color: COLORS.label, marginTop: 12, textAlign: 'center' }}>
+                            ระบบแสดงทุกรายการที่ตรงกับคำค้น รวมถึงชื่อที่ซ้ำกัน
+                        </p>
+                    </>
+                )}
+            </main>
+
+            <footer style={{ textAlign: 'center', padding: '16px', borderTop: `1px solid ${COLORS.border}` }}>
+                <Link href="/" style={{ color: COLORS.label, fontSize: 13, textDecoration: 'none' }}>
+                    Powered by RFID Timing
+                </Link>
+            </footer>
+        </div>
+    );
+}
+
+const thStyle: React.CSSProperties = {
+    padding: '12px 14px', textAlign: 'center', fontWeight: 700, color: '#434654', fontSize: 13, whiteSpace: 'nowrap',
+};
+const tdStyle: React.CSSProperties = {
+    padding: '14px', textAlign: 'center', color: '#434654', verticalAlign: 'middle',
+};
