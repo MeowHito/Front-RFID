@@ -33,13 +33,15 @@ interface ApplicantRow {
 type FieldKey = keyof Omit<ApplicantRow, 'extra'>;
 
 // Header keyword → field. Checked in order, so more specific entries come first.
-const HEADER_MAP: { field: FieldKey; keywords: string[] }[] = [
+// `exclude` lets a field bow out for look-alike headers (e.g. "หมายเลขออเดอร์"
+// is an order number, not a BIB; "ชื่อทีม"/"ชื่ออีเว้นท์" are not a person's name).
+const HEADER_MAP: { field: FieldKey; keywords: string[]; exclude?: string[] }[] = [
     { field: 'idCard', keywords: ['เลขบัตร', 'บัตรประชาชน', 'ประชาชน', 'เลขประจำตัว', 'idcard', 'id card', 'citizen', 'cid', 'national'] },
     { field: 'fullName', keywords: ['ชื่อ-นามสกุล', 'ชื่อ - นามสกุล', 'ชื่อ นามสกุล', 'ชื่อสกุล', 'ชื่อ-สกุล', 'fullname', 'full name'] },
     { field: 'lastName', keywords: ['นามสกุล', 'สกุล', 'lastname', 'last name', 'surname'] },
-    { field: 'firstName', keywords: ['ชื่อจริง', 'ชื่อ', 'firstname', 'first name', 'name'] },
-    { field: 'bib', keywords: ['bib', 'บิบ', 'หมายเลข', 'เลขวิ่ง', 'เบอร์วิ่ง', 'เบอร์เสื้อ', 'number', 'no.'] },
-    { field: 'phone', keywords: ['เบอร์โทร', 'เบอร์', 'โทรศัพท์', 'โทร', 'phone', 'mobile', 'tel'] },
+    { field: 'firstName', keywords: ['ชื่อจริง', 'ชื่อ', 'firstname', 'first name', 'name'], exclude: ['ทีม', 'team', 'อีเว้นท์', 'อีเวนท์', 'event', 'อีเมล'] },
+    { field: 'bib', keywords: ['bib', 'บิบ', 'หมายเลข', 'เลขวิ่ง', 'เบอร์วิ่ง', 'เบอร์เสื้อ', 'number', 'no.'], exclude: ['ออเดอร์', 'order', 'โทร'] },
+    { field: 'phone', keywords: ['เบอร์โทร', 'เบอร์', 'โทรศัพท์', 'โทร', 'phone', 'mobile', 'tel'], exclude: ['ฉุกเฉิน', 'ติดต่อฉุกเฉิน'] },
     { field: 'ageGroup', keywords: ['กลุ่มอายุ', 'รุ่นอายุ', 'age group', 'agegroup', 'รุ่น'] },
     { field: 'age', keywords: ['อายุ', 'age'] },
     { field: 'gender', keywords: ['เพศ', 'gender', 'sex'] },
@@ -50,10 +52,32 @@ const HEADER_MAP: { field: FieldKey; keywords: string[] }[] = [
 
 function detectField(header: string): FieldKey | null {
     const h = header.toLowerCase().replace(/\s+/g, ' ').trim();
-    for (const { field, keywords } of HEADER_MAP) {
+    for (const { field, keywords, exclude } of HEADER_MAP) {
+        if (exclude && exclude.some(k => h.includes(k.toLowerCase()))) continue;
         if (keywords.some(k => h.includes(k.toLowerCase()))) return field;
     }
     return null;
+}
+
+/**
+ * Find the row most likely to be the header. Exported rosters often put a title
+ * row (e.g. "ชื่ออีเว้นท์ | 100K") above the real column headers, so we can't
+ * blindly assume row 0 — pick the row whose cells map to the most known fields.
+ */
+function detectHeaderRow(aoa: unknown[][]): number {
+    const scan = Math.min(aoa.length, 8);
+    let bestIdx = 0;
+    let bestScore = -1;
+    for (let i = 0; i < scan; i++) {
+        const cells = aoa[i] || [];
+        let score = 0;
+        for (const c of cells) {
+            const s = String(c ?? '').trim();
+            if (s && detectField(s)) score++;
+        }
+        if (score > bestScore) { bestScore = score; bestIdx = i; }
+    }
+    return bestIdx;
 }
 
 function blankRow(): ApplicantRow {
@@ -123,34 +147,58 @@ export default function ApplicantsImportPage() {
         })();
     }, [loadCount]);
 
-    const parseSheet = useCallback((records: Record<string, unknown>[], headers: string[]) => {
-        const mapping = headers.map(h => ({ raw: h, field: detectField(h) }));
-        setDetectedHeaders(mapping);
-        const parsed: ApplicantRow[] = records.map(rec => {
-            const row = blankRow();
-            for (const { raw, field } of mapping) {
-                const val = rec[raw];
-                const str = val === null || val === undefined ? '' : String(val).trim();
-                if (!str) continue;
-                if (field) {
-                    // Don't clobber an already-filled field with a second matching column
-                    if (!row[field]) (row[field] as string) = str;
-                } else {
-                    row.extra[raw] = str;
+    // Parse every sheet in the workbook (rosters often split distances across
+    // sheets, e.g. 100K / 50K / 25K / 10K) and merge them into one roster.
+    // Returns the number of parsed rows so the caller can flag empty files.
+    const parseWorkbook = useCallback((workbook: XLSX.WorkBook): number => {
+        const allRows: ApplicantRow[] = [];
+        const multiSheet = workbook.SheetNames.length > 1;
+        let displayMapping: { raw: string; field: FieldKey | null }[] | null = null;
+
+        for (const sheetName of workbook.SheetNames) {
+            const sheet = workbook.Sheets[sheetName];
+            if (!sheet) continue;
+            const aoa = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: '' });
+            if (aoa.length === 0) continue;
+
+            const headerIdx = detectHeaderRow(aoa);
+            const headers = (aoa[headerIdx] || []).map(h => String(h ?? '').trim());
+            const mapping = headers.map(h => ({ raw: h, field: h ? detectField(h) : null }));
+            if (!displayMapping) displayMapping = mapping.filter(m => m.raw);
+
+            for (let r = headerIdx + 1; r < aoa.length; r++) {
+                const cells = aoa[r] || [];
+                if (cells.every(c => String(c ?? '').trim() === '')) continue;
+                const row = blankRow();
+                headers.forEach((h, ci) => {
+                    const field = mapping[ci].field;
+                    const str = String(cells[ci] ?? '').trim();
+                    if (!str) return;
+                    if (field) {
+                        // Don't clobber an already-filled field with a second matching column
+                        if (!row[field]) (row[field] as string) = str;
+                    } else if (h) {
+                        row.extra[h] = str;
+                    }
+                });
+                // In multi-sheet exports the sheet name is the distance/category
+                if (!row.category && multiSheet) row.category = sheetName.trim();
+                // Compose fullName / split if needed
+                if (!row.fullName && (row.firstName || row.lastName)) {
+                    row.fullName = `${row.firstName} ${row.lastName}`.trim();
                 }
+                if (row.fullName && !row.firstName && !row.lastName) {
+                    const parts = row.fullName.split(/\s+/);
+                    row.firstName = parts.shift() || '';
+                    row.lastName = parts.join(' ');
+                }
+                if (row.fullName || row.idCard || row.bib || row.phone) allRows.push(row);
             }
-            // Compose fullName / split if needed
-            if (!row.fullName && (row.firstName || row.lastName)) {
-                row.fullName = `${row.firstName} ${row.lastName}`.trim();
-            }
-            if (row.fullName && !row.firstName && !row.lastName) {
-                const parts = row.fullName.split(/\s+/);
-                row.firstName = parts.shift() || '';
-                row.lastName = parts.join(' ');
-            }
-            return row;
-        }).filter(r => r.fullName || r.idCard || r.bib || r.phone);
-        setRows(parsed);
+        }
+
+        setDetectedHeaders(displayMapping || []);
+        setRows(allRows);
+        return allRows.length;
     }, []);
 
     const processFile = useCallback((file: File) => {
@@ -161,20 +209,16 @@ export default function ApplicantsImportPage() {
             try {
                 const data = new Uint8Array(ev.target?.result as ArrayBuffer);
                 const workbook = XLSX.read(data, { type: 'array' });
-                const sheet = workbook.Sheets[workbook.SheetNames[0]];
-                const records = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: '' });
-                if (records.length === 0) {
+                const count = parseWorkbook(workbook);
+                if (count === 0) {
                     showToast(language === 'th' ? 'ไฟล์ว่างเปล่า' : 'Empty file', 'error');
-                    return;
                 }
-                const headers = Object.keys(records[0]);
-                parseSheet(records, headers);
             } catch {
                 showToast(language === 'th' ? 'ไม่สามารถอ่านไฟล์ได้' : 'Cannot read file', 'error');
             }
         };
         reader.readAsArrayBuffer(file);
-    }, [language, parseSheet]);
+    }, [language, parseWorkbook]);
 
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
