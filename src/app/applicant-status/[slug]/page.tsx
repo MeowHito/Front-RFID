@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 
@@ -40,7 +40,21 @@ const COLORS = {
 };
 
 export default function ApplicantStatusPage() {
-    const { slug } = useParams<{ slug: string }>();
+    const { slug: rawSlug } = useParams<{ slug: string }>();
+    // useParams can return a still-percent-encoded segment for non-ASCII (Thai)
+    // slugs. Decode it fully so we encode exactly once when calling the API —
+    // otherwise the slug gets double-encoded (%E0 → %25E0) and the backend 404s.
+    const slug = useMemo(() => {
+        let s = rawSlug || '';
+        try {
+            while (/%[0-9A-Fa-f]{2}/.test(s)) {
+                const decoded = decodeURIComponent(s);
+                if (decoded === s) break;
+                s = decoded;
+            }
+        } catch { /* leave as-is on malformed input */ }
+        return s;
+    }, [rawSlug]);
     const [campaignName, setCampaignName] = useState('');
     const [query, setQuery] = useState('');
     const [results, setResults] = useState<Applicant[]>([]);
@@ -52,7 +66,7 @@ export default function ApplicantStatusPage() {
         if (!slug) return;
         (async () => {
             try {
-                const res = await fetch(`/api/campaigns/${slug}`, { cache: 'no-store' });
+                const res = await fetch(`/api/campaigns/${encodeURIComponent(slug)}`, { cache: 'no-store' });
                 if (res.ok) {
                     const data = await res.json();
                     setCampaignName(data?.nameTh || data?.nameEn || data?.name || '');

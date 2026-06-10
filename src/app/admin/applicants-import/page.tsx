@@ -45,8 +45,8 @@ const HEADER_MAP: { field: FieldKey; keywords: string[]; exclude?: string[] }[] 
     { field: 'ageGroup', keywords: ['กลุ่มอายุ', 'รุ่นอายุ', 'age group', 'agegroup', 'รุ่น'] },
     { field: 'age', keywords: ['อายุ', 'age'] },
     { field: 'gender', keywords: ['เพศ', 'gender', 'sex'] },
-    { field: 'shirtSize', keywords: ['ขนาดเสื้อ', 'ไซส์เสื้อ', 'เสื้อ', 'ขนาด', 'shirt', 'size'] },
-    { field: 'category', keywords: ['ประเภท', 'ระยะ', 'category', 'distance'] },
+    { field: 'shirtSize', keywords: ['ขนาดเสื้อ', 'ไซส์เสื้อ', 'เสื้อ', 'ขนาด', 'shirt', 'size'], exclude: ['ประเภท', 'type'] },
+    { field: 'category', keywords: ['ประเภท', 'ระยะ', 'category', 'distance'], exclude: ['เสื้อ', 'shirt'] },
     { field: 'team', keywords: ['ทีม', 'กลุ่ม', 'team', 'club'] },
 ];
 
