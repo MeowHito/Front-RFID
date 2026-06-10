@@ -155,7 +155,7 @@ export default function ApplicantStatusPage() {
                     <input
                         value={query}
                         onChange={(e) => setQuery(e.target.value)}
-                        placeholder="เช่น ดีใจ ใจดี หรือ 001"
+                        placeholder="ค้นหาด้วย เลขบัตรประชาชน / BIB / ชื่อ / นามสกุล / เบอร์โทร"
                         style={{
                             flex: 1, border: 'none', outline: 'none', fontSize: 16,
                             color: COLORS.text, padding: '12px 4px', background: 'transparent',
@@ -224,7 +224,6 @@ export default function ApplicantStatusPage() {
                                         <th style={thStyle}>เพศ</th>
                                         <th style={thStyle}>กลุ่มอายุ</th>
                                         <th style={thStyle}>ขนาดเสื้อ</th>
-                                        <th style={thStyle}>เบอร์โทร</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -247,7 +246,6 @@ export default function ApplicantStatusPage() {
                                             </td>
                                             <td style={{ ...tdStyle, textAlign: 'center' }}>{ageGroupLabel(r.ageGroup)}</td>
                                             <td style={{ ...tdStyle, textAlign: 'center', fontWeight: 600 }}>{r.shirtSize || '-'}</td>
-                                            <td style={{ ...tdStyle, textAlign: 'center', fontFamily: 'monospace' }}>{r.phone || '-'}</td>
                                         </tr>
                                     ))}
                                 </tbody>
@@ -271,7 +269,6 @@ export default function ApplicantStatusPage() {
                                     { label: 'อายุ', value: r.age != null && r.age > 0 ? `${r.age} ปี` : '-' },
                                     { label: 'กลุ่มอายุ', value: ageGroupLabel(r.ageGroup) },
                                     { label: 'ขนาดเสื้อ', value: r.shirtSize || '-' },
-                                    { label: 'เบอร์โทร', value: r.phone || '-' },
                                 ];
                                 return (
                                     <div key={r._id || idx} style={{ background: COLORS.card, border: `1px solid ${COLORS.border}`, borderRadius: 16, overflow: 'hidden', boxShadow: '0 4px 20px -10px rgba(0,0,0,0.1)' }}>
