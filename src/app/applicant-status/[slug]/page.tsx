@@ -2,7 +2,6 @@
 
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useParams } from 'next/navigation';
-import Link from 'next/link';
 
 interface Applicant {
     _id: string;
@@ -26,6 +25,16 @@ function genderLabel(g?: string): string {
     if (v === 'm' || v === 'male' || g.includes('ชาย')) return 'ชาย';
     if (v === 'f' || v === 'female' || g.includes('หญิง')) return 'หญิง';
     return g;
+}
+
+// Roster age groups arrive as e.g. "(กลุ่มอายุ 30-39 ปี ชาย)" — show just the
+// numeric range "30-39 ปี". "ไม่มีการแข่งขันกลุ่มอายุ" and blanks become "-".
+function ageGroupLabel(g?: string): string {
+    if (!g) return '-';
+    const range = g.match(/\d+\s*-\s*\d+/);
+    if (range) return `${range[0].replace(/\s+/g, '')} ปี`;
+    if (/ไม่มี/.test(g)) return '-';
+    return g.replace(/[()]/g, '').replace(/กลุ่มอายุ/g, '').replace(/ชาย|หญิง|male|female/gi, '').trim() || '-';
 }
 
 const COLORS = {
@@ -192,62 +201,104 @@ export default function ApplicantStatusPage() {
                     </div>
                 )}
 
-                {/* Results table (desktop) */}
+                {/* Results — table on desktop, stacked cards on mobile */}
                 {!searching && results.length > 0 && (
                     <>
-                        <div style={{ background: COLORS.card, border: `1px solid ${COLORS.border}`, borderRadius: 16, overflow: 'hidden', boxShadow: '0 4px 20px -8px rgba(0,0,0,0.08)' }} className="applicant-table-wrap">
-                            <div style={{ overflowX: 'auto' }}>
-                                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
-                                    <thead>
-                                        <tr style={{ background: '#f3f4f6', borderBottom: `2px solid ${COLORS.border}` }}>
-                                            <th style={thStyle}>BIB</th>
-                                            <th style={{ ...thStyle, textAlign: 'left' }}>ชื่อ-นามสกุล</th>
-                                            <th style={thStyle}>อายุ</th>
-                                            <th style={thStyle}>เพศ</th>
-                                            <th style={thStyle}>กลุ่มอายุ</th>
-                                            <th style={thStyle}>ขนาดเสื้อ</th>
-                                            <th style={thStyle}>เบอร์โทร</th>
+                        <style>{`
+                            @media (max-width: 640px) {
+                                .aps-desktop-table { display: none !important; }
+                                .aps-mobile-cards { display: flex !important; }
+                            }
+                        `}</style>
+
+                        {/* Desktop table */}
+                        <div className="aps-desktop-table" style={{ display: 'block', background: COLORS.card, border: `1px solid ${COLORS.border}`, borderRadius: 16, overflow: 'hidden', boxShadow: '0 4px 20px -8px rgba(0,0,0,0.08)' }}>
+                            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
+                                <thead>
+                                    <tr style={{ background: '#f3f4f6', borderBottom: `2px solid ${COLORS.border}` }}>
+                                        <th style={thStyle}>BIB</th>
+                                        <th style={{ ...thStyle, textAlign: 'left' }}>ชื่อ-นามสกุล</th>
+                                        <th style={thStyle}>อายุ</th>
+                                        <th style={thStyle}>เพศ</th>
+                                        <th style={thStyle}>กลุ่มอายุ</th>
+                                        <th style={thStyle}>ขนาดเสื้อ</th>
+                                        <th style={thStyle}>เบอร์โทร</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {results.map((r, idx) => (
+                                        <tr key={r._id || idx} style={{ borderBottom: `1px solid #f1f5f9` }}>
+                                            <td style={{ ...tdStyle, fontWeight: 700, color: COLORS.primary, textAlign: 'center' }}>{r.bib || '-'}</td>
+                                            <td style={{ ...tdStyle, textAlign: 'left', fontWeight: 600, color: COLORS.text }}>
+                                                {r.fullName || `${r.firstName || ''} ${r.lastName || ''}`.trim() || '-'}
+                                                {r.team ? <span style={{ display: 'block', fontSize: 12, color: COLORS.label, fontWeight: 400 }}>{r.team}</span> : null}
+                                            </td>
+                                            <td style={{ ...tdStyle, textAlign: 'center' }}>{r.age != null && r.age > 0 ? `${r.age} ปี` : '-'}</td>
+                                            <td style={{ ...tdStyle, textAlign: 'center' }}>
+                                                <span style={{
+                                                    padding: '3px 12px', borderRadius: 12, fontSize: 12, fontWeight: 600,
+                                                    background: genderLabel(r.gender) === 'หญิง' ? '#fce7f3' : '#dbeafe',
+                                                    color: genderLabel(r.gender) === 'หญิง' ? '#be185d' : '#1d4ed8',
+                                                }}>
+                                                    {genderLabel(r.gender)}
+                                                </span>
+                                            </td>
+                                            <td style={{ ...tdStyle, textAlign: 'center' }}>{ageGroupLabel(r.ageGroup)}</td>
+                                            <td style={{ ...tdStyle, textAlign: 'center', fontWeight: 600 }}>{r.shirtSize || '-'}</td>
+                                            <td style={{ ...tdStyle, textAlign: 'center', fontFamily: 'monospace' }}>{r.phone || '-'}</td>
                                         </tr>
-                                    </thead>
-                                    <tbody>
-                                        {results.map((r, idx) => (
-                                            <tr key={r._id || idx} style={{ borderBottom: `1px solid #f1f5f9` }}>
-                                                <td style={{ ...tdStyle, fontWeight: 700, color: COLORS.primary, textAlign: 'center' }}>{r.bib || '-'}</td>
-                                                <td style={{ ...tdStyle, textAlign: 'left', fontWeight: 600, color: COLORS.text }}>
-                                                    {r.fullName || `${r.firstName || ''} ${r.lastName || ''}`.trim() || '-'}
-                                                    {r.team ? <span style={{ display: 'block', fontSize: 12, color: COLORS.label, fontWeight: 400 }}>{r.team}</span> : null}
-                                                </td>
-                                                <td style={{ ...tdStyle, textAlign: 'center' }}>{r.age != null && r.age > 0 ? `${r.age} ปี` : '-'}</td>
-                                                <td style={{ ...tdStyle, textAlign: 'center' }}>
-                                                    <span style={{
-                                                        padding: '3px 12px', borderRadius: 12, fontSize: 12, fontWeight: 600,
-                                                        background: genderLabel(r.gender) === 'หญิง' ? '#fce7f3' : '#dbeafe',
-                                                        color: genderLabel(r.gender) === 'หญิง' ? '#be185d' : '#1d4ed8',
-                                                    }}>
-                                                        {genderLabel(r.gender)}
-                                                    </span>
-                                                </td>
-                                                <td style={{ ...tdStyle, textAlign: 'center' }}>{r.ageGroup || '-'}</td>
-                                                <td style={{ ...tdStyle, textAlign: 'center', fontWeight: 600 }}>{r.shirtSize || '-'}</td>
-                                                <td style={{ ...tdStyle, textAlign: 'center', fontFamily: 'monospace' }}>{r.phone || '-'}</td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
+                                    ))}
+                                </tbody>
+                            </table>
                         </div>
+
+                        {/* Mobile cards — everything fits in one screen, no horizontal scroll */}
+                        <div className="aps-mobile-cards" style={{ display: 'none', flexDirection: 'column', gap: 12 }}>
+                            {results.map((r, idx) => {
+                                const name = r.fullName || `${r.firstName || ''} ${r.lastName || ''}`.trim() || '-';
+                                const female = genderLabel(r.gender) === 'หญิง';
+                                const fields: { label: string; value: string }[] = [
+                                    { label: 'อายุ', value: r.age != null && r.age > 0 ? `${r.age} ปี` : '-' },
+                                    { label: 'กลุ่มอายุ', value: ageGroupLabel(r.ageGroup) },
+                                    { label: 'ขนาดเสื้อ', value: r.shirtSize || '-' },
+                                    { label: 'เบอร์โทร', value: r.phone || '-' },
+                                ];
+                                return (
+                                    <div key={r._id || idx} style={{ background: COLORS.card, border: `1px solid ${COLORS.border}`, borderRadius: 16, padding: 16, boxShadow: '0 4px 20px -10px rgba(0,0,0,0.1)' }}>
+                                        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 10 }}>
+                                            <span style={{ flexShrink: 0, background: 'rgba(0,63,177,0.08)', color: COLORS.primary, fontWeight: 800, fontSize: 13, padding: '4px 10px', borderRadius: 8 }}>
+                                                BIB {r.bib || '-'}
+                                            </span>
+                                            <div style={{ minWidth: 0 }}>
+                                                <div style={{ fontWeight: 700, fontSize: 16, color: COLORS.text, lineHeight: 1.3, wordBreak: 'break-word' }}>{name}</div>
+                                                {r.team ? <div style={{ fontSize: 12, color: COLORS.label, marginTop: 2 }}>{r.team}</div> : null}
+                                            </div>
+                                            <span style={{
+                                                marginLeft: 'auto', flexShrink: 0, padding: '3px 12px', borderRadius: 12, fontSize: 12, fontWeight: 600,
+                                                background: female ? '#fce7f3' : '#dbeafe', color: female ? '#be185d' : '#1d4ed8',
+                                            }}>
+                                                {genderLabel(r.gender)}
+                                            </span>
+                                        </div>
+                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 12px', borderTop: `1px solid ${COLORS.border}`, paddingTop: 10 }}>
+                                            {fields.map(f => (
+                                                <div key={f.label} style={{ display: 'flex', justifyContent: 'space-between', gap: 8, fontSize: 14 }}>
+                                                    <span style={{ color: COLORS.label }}>{f.label}</span>
+                                                    <span style={{ color: COLORS.text, fontWeight: 600, textAlign: 'right', wordBreak: 'break-word' }}>{f.value}</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+
                         <p style={{ fontSize: 12, color: COLORS.label, marginTop: 12, textAlign: 'center' }}>
                             ระบบแสดงทุกรายการที่ตรงกับคำค้น รวมถึงชื่อที่ซ้ำกัน
                         </p>
                     </>
                 )}
             </main>
-
-            <footer style={{ textAlign: 'center', padding: '16px', borderTop: `1px solid ${COLORS.border}` }}>
-                <Link href="/" style={{ color: COLORS.label, fontSize: 13, textDecoration: 'none' }}>
-                    Powered by RFID Timing
-                </Link>
-            </footer>
         </div>
     );
 }
