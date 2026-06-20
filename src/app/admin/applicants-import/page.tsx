@@ -172,14 +172,11 @@ export default function ApplicantsImportPage() {
                 const row = blankRow();
                 headers.forEach((h, ci) => {
                     const field = mapping[ci].field;
+                    if (!field) return; // unmapped columns are ignored — we only keep displayed data
                     const str = String(cells[ci] ?? '').trim();
                     if (!str) return;
-                    if (field) {
-                        // Don't clobber an already-filled field with a second matching column
-                        if (!row[field]) (row[field] as string) = str;
-                    } else if (h) {
-                        row.extra[h] = str;
-                    }
+                    // Don't clobber an already-filled field with a second matching column
+                    if (!row[field]) (row[field] as string) = str;
                 });
                 // In multi-sheet exports the sheet name is the distance/category
                 if (!row.category && multiSheet) row.category = sheetName.trim();
@@ -243,25 +240,40 @@ export default function ApplicantsImportPage() {
         if (!campaign?._id || rows.length === 0) return;
         setSaving(true);
         try {
-            const payload = {
-                campaignId: campaign._id,
-                mode,
-                rows: rows.map(r => ({
-                    idCard: r.idCard, bib: r.bib, firstName: r.firstName, lastName: r.lastName,
-                    fullName: r.fullName, phone: r.phone, age: r.age, gender: r.gender,
-                    ageGroup: r.ageGroup, shirtSize: r.shirtSize, category: r.category,
-                    team: r.team, extra: r.extra,
-                })),
-            };
-            const res = await fetch('/api/applicants/bulk', {
-                method: 'POST', headers: authHeaders(), body: JSON.stringify(payload),
-            });
-            if (!res.ok) {
-                const err = await res.json().catch(() => ({}));
-                throw new Error(err?.message || err?.error || `HTTP ${res.status}`);
+            // Send only the fields we actually store/display — never the bulky `extra`
+            // (addresses, emails, emergency contacts, etc.). A full roster's extra
+            // columns push the payload past the reverse-proxy body limit → HTTP 413.
+            const slim = rows.map(r => ({
+                idCard: r.idCard, bib: r.bib, firstName: r.firstName, lastName: r.lastName,
+                fullName: r.fullName, phone: r.phone, age: r.age, gender: r.gender,
+                ageGroup: r.ageGroup, shirtSize: r.shirtSize, category: r.category,
+                team: r.team,
+            }));
+
+            // Upload in batches so very large rosters stay well under the proxy's
+            // request-size limit. The first batch honours the chosen mode; the rest
+            // append so we never wipe what we just inserted.
+            const BATCH = 500;
+            let inserted = 0;
+            for (let i = 0; i < slim.length; i += BATCH) {
+                const chunk = slim.slice(i, i + BATCH);
+                const res = await fetch('/api/applicants/bulk', {
+                    method: 'POST',
+                    headers: authHeaders(),
+                    body: JSON.stringify({
+                        campaignId: campaign._id,
+                        mode: i === 0 ? mode : 'append',
+                        rows: chunk,
+                    }),
+                });
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({}));
+                    throw new Error(err?.message || err?.error || `HTTP ${res.status}`);
+                }
+                const data = await res.json();
+                inserted += data.inserted ?? chunk.length;
             }
-            const data = await res.json();
-            showToast(language === 'th' ? `บันทึกสำเร็จ ${data.inserted} รายการ` : `Imported ${data.inserted} rows`, 'success');
+            showToast(language === 'th' ? `บันทึกสำเร็จ ${inserted} รายการ` : `Imported ${inserted} rows`, 'success');
             setRows([]);
             setFileName('');
             setDetectedHeaders([]);
