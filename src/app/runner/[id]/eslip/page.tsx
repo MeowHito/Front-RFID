@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
+import { computeAwardsForCategory, formatAwardLabel } from '@/lib/awards';
 
 
 interface RunnerData {
@@ -58,6 +59,10 @@ interface CampaignData {
     eslipVisibleFields?: string[];
     eslipMode?: string;
     eslipV2Layout?: ESlipV2Layout;
+    overallDisplayCount?: number;
+    ageGroupDisplayCount?: number;
+    excludeOverallFromAgeGroup?: number;
+    excludeAgeGroupTop?: number;
 }
 
 // ─── E-Slip V2 types (mirrors admin/eslip2/page.tsx) ──────────────────────────
@@ -66,7 +71,7 @@ type FieldKey =
     | 'eventName' | 'bib' | 'runnerName' | 'firstName' | 'lastName'
     | 'category' | 'distance' | 'gender' | 'ageGroup'
     | 'overallRank' | 'genderRank' | 'categoryRank'
-    | 'gunTime' | 'netTime' | 'pace'
+    | 'gunTime' | 'netTime' | 'pace' | 'award'
     | 'eventDate' | 'location' | 'static';
 
 interface ESlipV2Element {
@@ -139,6 +144,7 @@ interface TemplateProps {
     slipRef: React.RefObject<HTMLDivElement | null>;
     showField: (key: string) => boolean;
     textColorMode?: 'light' | 'dark';
+    awardLabel?: string | null;
 }
 
 /** Auto-shrink text to always fit one line within its container */
@@ -158,7 +164,7 @@ function FitName({ children, className, style, maxSize = 28 }: { children: strin
 }
 
 // ==================== TEMPLATE 1: Dark Photo Background ====================
-function Template1({ runner, timings, campaign, bgImage, slipRef, showField }: TemplateProps) {
+function Template1({ runner, timings, campaign, bgImage, slipRef, showField, awardLabel }: TemplateProps) {
     const displayName = `${runner.firstName} ${runner.lastName}`.trim();
     const genderLabel = runner.gender === 'M' ? 'Male' : 'Female';
     const dist = parseDistanceValue(runner.category);
@@ -217,7 +223,7 @@ function Template1({ runner, timings, campaign, bgImage, slipRef, showField }: T
                     </div>
 
                     {/* Ranks + Times — unified card */}
-                    {(showField('overallRank') || showField('genderRank') || showField('categoryRank') || showField('gunTime') || showField('netTime')) && (
+                    {(showField('overallRank') || showField('genderRank') || showField('categoryRank') || showField('gunTime') || showField('netTime') || (showField('award') && !!awardLabel)) && (
                         <div className="bg-white/10 border border-white/10 rounded-2xl p-4">
                             {/* Top row: Overall / Gender / Category */}
                             {(showField('overallRank') || showField('genderRank') || showField('categoryRank')) && (
@@ -245,6 +251,15 @@ function Template1({ runner, timings, campaign, bgImage, slipRef, showField }: T
                                         <div className="text-[10px] font-black text-white uppercase mb-1">Net Time</div>
                                         <div className="text-xl font-black text-green-400">{netTimeStr}</div>
                                     </div>}
+                                </div>
+                            )}
+                            {/* AWARD — placed right below the Net Time row */}
+                            {showField('award') && awardLabel && (
+                                <div className="flex justify-center pt-3 mt-3 border-t border-amber-300/30">
+                                    <div className="text-center">
+                                        <div className="text-[10px] font-black text-amber-300 uppercase mb-1 tracking-[2px]">🏆 Award</div>
+                                        <div className="text-lg font-black text-amber-300">{awardLabel}</div>
+                                    </div>
                                 </div>
                             )}
                         </div>
@@ -292,7 +307,7 @@ function Template1({ runner, timings, campaign, bgImage, slipRef, showField }: T
 }
 
 // ==================== TEMPLATE 2: Semi-transparent Photo Background ====================
-function Template2({ runner, timings, campaign, bgImage, slipRef, showField, textColorMode = 'dark' }: TemplateProps) {
+function Template2({ runner, timings, campaign, bgImage, slipRef, showField, textColorMode = 'dark', awardLabel }: TemplateProps) {
     const displayName = `${runner.firstName} ${runner.lastName}`.trim();
     const genderLabel = runner.gender === 'M' ? 'Male' : 'Female';
     const dist = parseDistanceValue(runner.category);
@@ -368,6 +383,17 @@ function Template2({ runner, timings, campaign, bgImage, slipRef, showField, tex
                         </div>
                     )}
 
+                    {/* AWARD — placed right below Net Time */}
+                    {showField('award') && awardLabel && (
+                        <div className="flex justify-center mb-4">
+                            <div className="inline-flex items-center gap-2 rounded-full bg-amber-400/90 px-4 py-1.5 shadow-sm">
+                                <span className="text-sm leading-none">🏆</span>
+                                <span className="text-[9px] font-extrabold uppercase tracking-[1.5px] text-amber-900">Award</span>
+                                <span className="text-sm font-black text-amber-950">{awardLabel}</span>
+                            </div>
+                        </div>
+                    )}
+
                     {/* Stats Panel */}
                     {(showField('distance') || showField('pace')) && (
                         <>
@@ -437,7 +463,7 @@ function Template2({ runner, timings, campaign, bgImage, slipRef, showField, tex
 }
 
 // ==================== TEMPLATE 3: Clean White Card ====================
-function Template3({ runner, timings, campaign, slipRef, showField }: TemplateProps) {
+function Template3({ runner, timings, campaign, slipRef, showField, awardLabel }: TemplateProps) {
     const displayName = `${runner.firstName} ${runner.lastName}`.trim();
     const genderLabel = runner.gender === 'M' ? 'Male' : 'Female';
     const dist = parseDistanceValue(runner.category);
@@ -481,6 +507,17 @@ function Template3({ runner, timings, campaign, slipRef, showField }: TemplatePr
                             <div className="text-[8px] font-extrabold text-green-600 uppercase mb-1">Net Time</div>
                             <div className="text-lg font-black text-green-600">{netTimeStr}</div>
                         </div>}
+                    </div>
+                )}
+
+                {/* AWARD — placed right below Net Time */}
+                {showField('award') && awardLabel && (
+                    <div className="bg-gradient-to-r from-amber-50 to-amber-100 border border-amber-300 rounded-xl py-2.5 px-3 text-center mb-4 flex items-center justify-center gap-2">
+                        <span className="text-base leading-none">🏆</span>
+                        <div className="text-left leading-tight">
+                            <div className="text-[8px] font-extrabold text-amber-600 uppercase tracking-[1.5px]">Award</div>
+                            <div className="text-base font-black text-amber-700">{awardLabel}</div>
+                        </div>
                     </div>
                 )}
 
@@ -545,7 +582,7 @@ function Template3({ runner, timings, campaign, slipRef, showField }: TemplatePr
 
 // ─── E-Slip V2 Renderer ────────────────────────────────────────────────────────
 
-function resolveFieldValue(field: FieldKey, staticText: string, runner: RunnerData, campaign: CampaignData | null): string {
+function resolveFieldValue(field: FieldKey, staticText: string, runner: RunnerData, campaign: CampaignData | null, awardLabel?: string | null): string {
     const fmt = formatTime;
     switch (field) {
         case 'eventName':   return campaign?.name ?? '';
@@ -566,6 +603,7 @@ function resolveFieldValue(field: FieldKey, staticText: string, runner: RunnerDa
         case 'gunTime':     return runner.gunTimeStr ?? fmt(effectiveFinishMs(runner));
         case 'netTime':     return runner.netTimeStr ?? fmt(runner.netTime);
         case 'pace':        return effectivePace(runner);
+        case 'award':       return awardLabel ?? '';
         case 'eventDate':   return campaign?.eventDate ? new Date(campaign.eventDate).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' }) : '';
         case 'location':    return campaign?.location ?? '';
         case 'static':      return staticText;
@@ -646,12 +684,13 @@ function ESlipV2SplitsTable({ el, timings }: { el: ESlipV2Element; timings: Timi
     );
 }
 
-function ESlipV2Renderer({ layout, runner, campaign, slipRef, timings }: {
+function ESlipV2Renderer({ layout, runner, campaign, slipRef, timings, awardLabel }: {
     layout: ESlipV2Layout;
     runner: RunnerData;
     campaign: CampaignData | null;
     slipRef: React.RefObject<HTMLDivElement | null>;
     timings: TimingRecord[];
+    awardLabel?: string | null;
 }) {
     const wrapperRef = useRef<HTMLDivElement>(null);
     const [scale, setScale] = useState(1);
@@ -717,7 +756,7 @@ function ESlipV2Renderer({ layout, runner, campaign, slipRef, timings }: {
             {layout.elements.map(el => {
                 const isImage = el.type === 'image';
                 const isSplits = el.type === 'splits';
-                const text = (isImage || isSplits) ? '' : el.prefix + resolveFieldValue(el.field, el.staticText, runner, campaign) + el.suffix;
+                const text = (isImage || isSplits) ? '' : el.prefix + resolveFieldValue(el.field, el.staticText, runner, campaign, awardLabel) + el.suffix;
                 return (
                     <div
                         key={el.id}
@@ -780,6 +819,7 @@ export default function ESlipPage() {
     const [runner, setRunner] = useState<RunnerData | null>(null);
     const [timings, setTimings] = useState<TimingRecord[]>([]);
     const [campaign, setCampaign] = useState<CampaignData | null>(null);
+    const [awardLabel, setAwardLabel] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [bgImage, setBgImage] = useState<string | null>(null);
@@ -841,6 +881,31 @@ export default function ESlipPage() {
             }
         })();
     }, [runnerId]);
+
+    // Compute this runner's AWARD (Overall / Age Group) — same algorithm as the
+    // public event table + winner boards — by pulling the whole category pool.
+    useEffect(() => {
+        if (!runner || !campaign?._id || !runner.category) { setAwardLabel(null); return; }
+        let cancelled = false;
+        (async () => {
+            try {
+                const p = new URLSearchParams({ campaignId: campaign._id, category: runner.category, limit: '10000', skipStatusCounts: 'true' });
+                const res = await fetch(`/api/runners/paged?${p.toString()}`, { cache: 'no-store' });
+                if (!res.ok) { if (!cancelled) setAwardLabel(null); return; }
+                const data = await res.json();
+                const pool = Array.isArray(data?.data) ? data.data : [];
+                const awards = computeAwardsForCategory(pool, {
+                    overallDisplayCount: campaign.overallDisplayCount,
+                    ageGroupDisplayCount: campaign.ageGroupDisplayCount,
+                    excludeOverallFromAgeGroup: campaign.excludeOverallFromAgeGroup,
+                    excludeAgeGroupTop: campaign.excludeAgeGroupTop,
+                });
+                const mine = awards.get(runner._id);
+                if (!cancelled) setAwardLabel(mine ? formatAwardLabel(mine) : null);
+            } catch { if (!cancelled) setAwardLabel(null); }
+        })();
+        return () => { cancelled = true; };
+    }, [runner, campaign?._id, campaign?.overallDisplayCount, campaign?.ageGroupDisplayCount, campaign?.excludeOverallFromAgeGroup, campaign?.excludeAgeGroupTop]);
 
     const handleBgUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const input = e.currentTarget;
@@ -1074,7 +1139,7 @@ export default function ESlipPage() {
                         </div>
                     )
                     : isV2
-                    ? <ESlipV2Renderer layout={campaign!.eslipV2Layout!} runner={runner} campaign={campaign} slipRef={slipRef} timings={timings} />
+                    ? <ESlipV2Renderer layout={campaign!.eslipV2Layout!} runner={runner} campaign={campaign} slipRef={slipRef} timings={timings} awardLabel={awardLabel} />
                     : (() => {
                         const vf = campaign?.eslipVisibleFields;
                         const hasAgeGroup = !!runner.ageGroup;
@@ -1085,7 +1150,7 @@ export default function ESlipPage() {
                             if (!hasAgeGroup && (key === 'categoryRank' || key === 'ageGroup')) return false;
                             return !vf || vf.length === 0 || vf.includes(key);
                         };
-                        const common = { runner, timings, campaign, slipRef, showField };
+                        const common = { runner, timings, campaign, slipRef, showField, awardLabel };
                         if (activeTemplate === 'template1') return <Template1 {...common} bgImage={bgImage} />;
                         if (activeTemplate === 'template2') return <Template2 {...common} bgImage={bgImage} textColorMode={photoTextColor} />;
                         return <Template3 {...common} bgImage={null} />;

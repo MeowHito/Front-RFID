@@ -10,6 +10,7 @@ import { useAuth } from '@/lib/auth-context';
 import { authHeaders } from '@/lib/authHeaders';
 import CutoffDateTimePicker from '@/components/CutoffDateTimePicker';
 import { getFollowedRunnersForEvent, isRunnerFollowed, loadFollowedRunners, subscribeFollowedRunners, type FollowedRunner } from '@/lib/followed-runners';
+import { computeAwardsForCategory, formatAwardLabel, type AwardResult } from '@/lib/awards';
 
 interface Campaign {
     _id: string;
@@ -170,12 +171,6 @@ function parseElapsedTimeToMs(value?: string | null): number {
     if (parts.length === 3) return (parts[0] * 3600 + parts[1] * 60 + parts[2]) * 1000;
     if (parts.length === 2) return (parts[0] * 60 + parts[1]) * 1000;
     return 0;
-}
-
-// Strip gender prefix ("M30-39") and Thai "ปี" suffix so age-group labels match
-// the same way the /admin/age-group-ranking + winner pages normalize them.
-function normalizeAgeGroupLabel(value?: string | null): string {
-    return String(value || '').replace(/^[MF]\s*/i, '').replace(/\s*ปี$/i, '').trim();
 }
 
 type ColDef = { key: string; label: string; w: string; mw: string; align: 'left' | 'center' | 'right'; fixed?: boolean; desktopOnly?: boolean };
@@ -890,58 +885,22 @@ export default function EventLivePage() {
     //     runner whose RaceTiger ageGroupRank <= `excludeAgeGroupTop`.
     // A runner who earns an Overall award never also receives an Age-group award.
     const awardByRunnerId = useMemo(() => {
-        const map = new Map<string, { type: 'overall' | 'ageGroup'; position: number }>();
-        const overallDisplayCount = Math.max(1, Number(campaign?.overallDisplayCount) || 5);
-        const ageGroupDisplayCount = Math.max(1, Number(campaign?.ageGroupDisplayCount) || 5);
-        const excludeOv = Math.max(0, Number(campaign?.excludeOverallFromAgeGroup) || 0);
-        const excludeAG = Math.max(0, Number(campaign?.excludeAgeGroupTop) || 0);
-
-        const timeOf = (r: Runner) => r.netTime || r.gunTime || r.elapsedTime || Infinity;
-        const isFemale = (r: Runner) => r.gender === 'F';
-
-        // One award pool per distance
+        const cfg = {
+            overallDisplayCount: campaign?.overallDisplayCount,
+            ageGroupDisplayCount: campaign?.ageGroupDisplayCount,
+            excludeOverallFromAgeGroup: campaign?.excludeOverallFromAgeGroup,
+            excludeAgeGroupTop: campaign?.excludeAgeGroupTop,
+        };
+        // One award pool per distance (resolved category)
         const byCategory = new Map<string, Runner[]>();
         for (const r of runners) {
-            if (r.status !== 'finished' || !(r.netTime || r.gunTime || r.elapsedTime)) continue;
             const key = resolveRunnerCategoryKey(r);
             if (!byCategory.has(key)) byCategory.set(key, []);
             byCategory.get(key)!.push(r);
         }
-
-        for (const finished of byCategory.values()) {
-            for (const female of [false, true]) {
-                const group = finished.filter(r => isFemale(r) === female);
-                const byTime = [...group].sort((a, b) => timeOf(a) - timeOf(b));
-
-                // Overall winners (per gender)
-                byTime.slice(0, overallDisplayCount).forEach((r, i) => {
-                    map.set(r._id, { type: 'overall', position: i + 1 });
-                });
-
-                // Age-group winners (per gender)
-                const excludedBibs = new Set<string>();
-                if (excludeOv > 0) byTime.slice(0, excludeOv).forEach(r => excludedBibs.add(r.bib));
-
-                const byAgeRank = [...group].sort((a, b) => {
-                    const ar = (a.ageGroupRank && a.ageGroupRank > 0) ? a.ageGroupRank : Infinity;
-                    const br = (b.ageGroupRank && b.ageGroupRank > 0) ? b.ageGroupRank : Infinity;
-                    if (ar !== br) return ar - br;
-                    return timeOf(a) - timeOf(b);
-                });
-
-                const bucketCount = new Map<string, number>();
-                for (const r of byAgeRank) {
-                    if (map.has(r._id)) continue; // already an Overall winner — never gets age group
-                    if (excludedBibs.has(r.bib)) continue;
-                    if (excludeAG > 0 && r.ageGroupRank && r.ageGroupRank > 0 && r.ageGroupRank <= excludeAG) continue;
-                    const ag = normalizeAgeGroupLabel(r.ageGroup);
-                    if (!ag) continue;
-                    const taken = bucketCount.get(ag) || 0;
-                    if (taken >= ageGroupDisplayCount) continue;
-                    bucketCount.set(ag, taken + 1);
-                    map.set(r._id, { type: 'ageGroup', position: taken + 1 });
-                }
-            }
+        const map = new Map<string, AwardResult>();
+        for (const pool of byCategory.values()) {
+            for (const [id, award] of computeAwardsForCategory(pool, cfg)) map.set(id, award);
         }
         return map;
     }, [runners, resolveRunnerCategoryKey, campaign?.overallDisplayCount, campaign?.ageGroupDisplayCount, campaign?.excludeOverallFromAgeGroup, campaign?.excludeAgeGroupTop]);
@@ -1949,9 +1908,7 @@ export default function EventLivePage() {
                                             }
                                             case 'award': {
                                                 const award = awardByRunnerId.get(runner._id);
-                                                const awardLabel = award
-                                                    ? `${award.type === 'overall' ? 'Overall' : 'Age Group'} ${award.position}`
-                                                    : '-';
+                                                const awardLabel = award ? formatAwardLabel(award) : '-';
                                                 return (
                                                     <td key={key} className={isMobile ? 'px-0.5 py-1 text-center' : 'px-1.5 py-1.5 text-center'}>
                                                         <span className={isMobile ? 'text-[11px] font-bold' : 'text-xs font-bold'} style={{ color: isMobile ? '#0f172a' : themeStyles.textMuted }}>{awardLabel}</span>
