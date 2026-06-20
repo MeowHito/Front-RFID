@@ -28,6 +28,11 @@ interface Campaign {
     displayColumnsLab?: string[];
     displayMode?: string;
     raceFinished?: boolean;
+    // Award config (shared with /admin/age-group-ranking + winner pages)
+    overallDisplayCount?: number;
+    ageGroupDisplayCount?: number;
+    excludeOverallFromAgeGroup?: number;
+    excludeAgeGroupTop?: number;
 }
 
 interface RaceCategory {
@@ -167,6 +172,12 @@ function parseElapsedTimeToMs(value?: string | null): number {
     return 0;
 }
 
+// Strip gender prefix ("M30-39") and Thai "ปี" suffix so age-group labels match
+// the same way the /admin/age-group-ranking + winner pages normalize them.
+function normalizeAgeGroupLabel(value?: string | null): string {
+    return String(value || '').replace(/^[MF]\s*/i, '').replace(/\s*ปี$/i, '').trim();
+}
+
 type ColDef = { key: string; label: string; w: string; mw: string; align: 'left' | 'center' | 'right'; fixed?: boolean; desktopOnly?: boolean };
 
 // Marathon column definitions
@@ -174,6 +185,7 @@ const COL_DEFS: ColDef[] = [
     { key: 'rank', label: 'Rank', w: '3%', mw: '4%', align: 'center', fixed: true },
     { key: 'genRank', label: 'Gen', w: '3%', mw: '4%', align: 'center' },
     { key: 'catRank', label: 'Cat', w: '6%', mw: '9%', align: 'center' },
+    { key: 'award', label: 'Award', w: '7%', mw: '12%', align: 'center' },
     { key: 'runner', label: 'Runner', w: '15%', mw: '22%', align: 'left', fixed: true },
     { key: 'sex', label: 'Sex', w: '3%', mw: '5%', align: 'center' },
     { key: 'status', label: 'Status', w: '8%', mw: '10%', align: 'left', fixed: true },
@@ -206,7 +218,7 @@ const COL_DEFS: ColDef[] = [
     { key: 'progress', label: 'Progress', w: '8%', mw: '8%', align: 'right', fixed: true, desktopOnly: true },
 ];
 const TOGGLEABLE_KEYS = COL_DEFS.filter(c => !c.fixed).map(c => c.key);
-const MARATHON_PUBLIC_DEFAULT_KEYS = ['genRank', 'catRank', 'sex', 'gunTime', 'netTime', 'distFromStart', 'nextStation'];
+const MARATHON_PUBLIC_DEFAULT_KEYS = ['genRank', 'catRank', 'award', 'sex', 'gunTime', 'netTime', 'distFromStart', 'nextStation'];
 // Default visible toggleable columns (only columns that typically have data from RaceTiger)
 const DEFAULT_VISIBLE_KEYS = MARATHON_PUBLIC_DEFAULT_KEYS;
 
@@ -868,6 +880,71 @@ export default function EventLivePage() {
             && !!r.ageGroup
         );
     }, [runners, filterCategory, resolveRunnerCategoryKey]);
+
+    // Award assignment per runner — mirrors /admin/age-group-ranking and the public
+    // Overall-Winners / Result-Winners boards so the AWARD column matches what is
+    // published there. Awards are computed once per distance (resolved category):
+    //   • Overall: top `overallDisplayCount` finishers per gender, ranked by time.
+    //   • Age group: top `ageGroupDisplayCount` per (gender, age group), after
+    //     excluding the top `excludeOverallFromAgeGroup` overall per gender and any
+    //     runner whose RaceTiger ageGroupRank <= `excludeAgeGroupTop`.
+    // A runner who earns an Overall award never also receives an Age-group award.
+    const awardByRunnerId = useMemo(() => {
+        const map = new Map<string, { type: 'overall' | 'ageGroup'; position: number }>();
+        const overallDisplayCount = Math.max(1, Number(campaign?.overallDisplayCount) || 5);
+        const ageGroupDisplayCount = Math.max(1, Number(campaign?.ageGroupDisplayCount) || 5);
+        const excludeOv = Math.max(0, Number(campaign?.excludeOverallFromAgeGroup) || 0);
+        const excludeAG = Math.max(0, Number(campaign?.excludeAgeGroupTop) || 0);
+
+        const timeOf = (r: Runner) => r.netTime || r.gunTime || r.elapsedTime || Infinity;
+        const isFemale = (r: Runner) => r.gender === 'F';
+
+        // One award pool per distance
+        const byCategory = new Map<string, Runner[]>();
+        for (const r of runners) {
+            if (r.status !== 'finished' || !(r.netTime || r.gunTime || r.elapsedTime)) continue;
+            const key = resolveRunnerCategoryKey(r);
+            if (!byCategory.has(key)) byCategory.set(key, []);
+            byCategory.get(key)!.push(r);
+        }
+
+        for (const finished of byCategory.values()) {
+            for (const female of [false, true]) {
+                const group = finished.filter(r => isFemale(r) === female);
+                const byTime = [...group].sort((a, b) => timeOf(a) - timeOf(b));
+
+                // Overall winners (per gender)
+                byTime.slice(0, overallDisplayCount).forEach((r, i) => {
+                    map.set(r._id, { type: 'overall', position: i + 1 });
+                });
+
+                // Age-group winners (per gender)
+                const excludedBibs = new Set<string>();
+                if (excludeOv > 0) byTime.slice(0, excludeOv).forEach(r => excludedBibs.add(r.bib));
+
+                const byAgeRank = [...group].sort((a, b) => {
+                    const ar = (a.ageGroupRank && a.ageGroupRank > 0) ? a.ageGroupRank : Infinity;
+                    const br = (b.ageGroupRank && b.ageGroupRank > 0) ? b.ageGroupRank : Infinity;
+                    if (ar !== br) return ar - br;
+                    return timeOf(a) - timeOf(b);
+                });
+
+                const bucketCount = new Map<string, number>();
+                for (const r of byAgeRank) {
+                    if (map.has(r._id)) continue; // already an Overall winner — never gets age group
+                    if (excludedBibs.has(r.bib)) continue;
+                    if (excludeAG > 0 && r.ageGroupRank && r.ageGroupRank > 0 && r.ageGroupRank <= excludeAG) continue;
+                    const ag = normalizeAgeGroupLabel(r.ageGroup);
+                    if (!ag) continue;
+                    const taken = bucketCount.get(ag) || 0;
+                    if (taken >= ageGroupDisplayCount) continue;
+                    bucketCount.set(ag, taken + 1);
+                    map.set(r._id, { type: 'ageGroup', position: taken + 1 });
+                }
+            }
+        }
+        return map;
+    }, [runners, resolveRunnerCategoryKey, campaign?.overallDisplayCount, campaign?.ageGroupDisplayCount, campaign?.excludeOverallFromAgeGroup, campaign?.excludeAgeGroupTop]);
 
     // Build ordered list of visible columns based on admin displayColumns + mobile
     const visibleColumns = useMemo(() => {
@@ -1867,6 +1944,17 @@ export default function EventLivePage() {
                                                                 <span className={isMobile ? 'text-[9px] font-semibold' : 'text-[10px] font-semibold'} style={{ color: themeStyles.textMuted }}>{catAgeGroup}</span>
                                                             ) : null}
                                                         </span>
+                                                    </td>
+                                                );
+                                            }
+                                            case 'award': {
+                                                const award = awardByRunnerId.get(runner._id);
+                                                const awardLabel = award
+                                                    ? `${award.type === 'overall' ? 'Overall' : 'Age Group'} ${award.position}`
+                                                    : '-';
+                                                return (
+                                                    <td key={key} className={isMobile ? 'px-0.5 py-1 text-center' : 'px-1.5 py-1.5 text-center'}>
+                                                        <span className={isMobile ? 'text-[11px] font-bold' : 'text-xs font-bold'} style={{ color: isMobile ? '#0f172a' : themeStyles.textMuted }}>{awardLabel}</span>
                                                     </td>
                                                 );
                                             }

@@ -12,6 +12,7 @@ const MARATHON_COLUMNS: ColDef[] = [
     { key: 'rank', thLabel: 'Rank', thLabelTh: 'อันดับ', width: '3%', align: 'center', fixed: true },
     { key: 'genRank', thLabel: 'Gen', thLabelTh: 'Gen', width: '3%', align: 'center' },
     { key: 'catRank', thLabel: 'Cat', thLabelTh: 'Cat', width: '3%', align: 'center' },
+    { key: 'award', thLabel: 'Award', thLabelTh: 'รางวัล', width: '6%', align: 'center' },
     { key: 'runner', thLabel: 'Runner', thLabelTh: 'นักวิ่ง', width: '15%', align: 'left', fixed: true },
     { key: 'sex', thLabel: 'Sex', thLabelTh: 'เพศ', width: '3%', align: 'center' },
     { key: 'status', thLabel: 'Status', thLabelTh: 'สถานะ', width: '8%', align: 'left', fixed: true },
@@ -52,7 +53,7 @@ const LAB_COLUMNS: ColDef[] = [
 const MARATHON_TOGGLEABLE = MARATHON_COLUMNS.filter(c => !c.fixed).map(c => c.key);
 const LAB_TOGGLEABLE = LAB_COLUMNS.filter(c => !c.fixed).map(c => c.key);
 
-const MARATHON_PUBLIC_DEFAULT_KEYS = ['genRank', 'catRank', 'sex', 'gunTime', 'netTime', 'distFromStart'];
+const MARATHON_PUBLIC_DEFAULT_KEYS = ['genRank', 'catRank', 'award', 'sex', 'gunTime', 'netTime', 'distFromStart'];
 
 type DisplayMode = 'marathon' | 'lab';
 
@@ -206,7 +207,7 @@ export default function DisplaySettingsPage() {
 
     // Sample data per mode
     const marathonSample: Record<string, string> = {
-        rank: '1', genRank: '1', catRank: '1', runner: 'John Doe', sex: 'M',
+        rank: '1', genRank: '1', catRank: '1', award: 'Overall 1', runner: 'John Doe', sex: 'M',
         status: 'FINISH', gunTime: '1:23:45', netTime: '1:22:30', genNet: '1',
         gunPace: '5:30', netPace: '5:25', finish: '120', genFin: '55', progress: '100%',
         chipCode: '026F86D3', printingCode: 'AF755693', splitNo: '3',

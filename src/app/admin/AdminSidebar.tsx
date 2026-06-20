@@ -93,6 +93,7 @@ const menuSections: MenuSection[] = [
             { href: '/admin/general-chart', label: 'กราฟสถิติ', labelEn: 'General Chart', icon: 'bar-chart', iconColor: '#0ea5e9' },
             { href: '/admin/display', label: 'การแสดงผล', labelEn: 'Display Settings', icon: 'desktop' },
             { href: '/admin/age-group-ranking', label: 'อันดับกลุ่มอายุ', labelEn: 'Age Group Ranking', icon: 'ranking-star' },
+            { href: '/admin/target-time-ranking', label: 'อันดับเวลาตามเป้าหมาย', labelEn: 'Target Time Ranking', icon: 'stopwatch' },
             { href: '/admin/certificates', label: 'ใบประกาศ', labelEn: 'Certificates', icon: 'print' },
             { href: '/admin/eslip', label: 'E-Slip', labelEn: 'E-Slip', icon: 'id-card' },
             { href: '/admin/eslip2', label: 'E-Slip 2 Editor', labelEn: 'E-Slip 2 Editor', icon: 'paint-brush', iconColor: '#8b5cf6' },
@@ -134,6 +135,7 @@ function SidebarIcon({ name, color }: { name: string; color?: string }) {
         'credit-card': <svg style={style} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="1" y="4" width="22" height="16" rx="2" /><line x1="1" y1="10" x2="23" y2="10" /><line x1="5" y1="15" x2="9" y2="15" /><line x1="13" y1="15" x2="15" y2="15" /></svg>,
         'ranking-star': <svg style={style} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2l2.09 6.26L20 9.27l-4.91 3.82L16.18 20 12 16.77 7.82 20l1.09-6.91L4 9.27l5.91-1.01L12 2z" /></svg>,
         'bar-chart': <svg style={style} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="12" width="4" height="9" rx="1" /><rect x="10" y="7" width="4" height="14" rx="1" /><rect x="17" y="3" width="4" height="18" rx="1" /></svg>,
+        'stopwatch': <svg style={style} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="10" y1="2" x2="14" y2="2" /><circle cx="12" cy="14" r="8" /><line x1="12" y1="14" x2="12" y2="10" /><line x1="18.5" y1="7.5" x2="20" y2="6" /></svg>,
         'video': <svg style={style} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="23 7 16 12 23 17 23 7" /><rect x="1" y="5" width="15" height="14" rx="2" ry="2" /></svg>,
         'signal': <svg style={style} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M2 12a10 10 0 0 1 20 0" /><path d="M5 12a7 7 0 0 1 14 0" /><path d="M8 12a4 4 0 0 1 8 0" /><circle cx="12" cy="16" r="1" fill="currentColor" /></svg>,
     };
