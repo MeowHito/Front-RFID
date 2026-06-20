@@ -114,6 +114,13 @@ export default function ApplicantStatusPage() {
         setError('');
     };
 
+    // Only show the "ประเภท" (distance/category) column when at least one result
+    // actually carries it — some imported rosters omit the column entirely.
+    const hasCategory = useMemo(
+        () => results.some(r => (r.category || '').trim() !== ''),
+        [results],
+    );
+
     return (
         <div style={{ minHeight: '100vh', background: COLORS.surface, fontFamily: "'Inter','Hanken Grotesk',sans-serif" }}>
             {/* Header */}
@@ -220,6 +227,7 @@ export default function ApplicantStatusPage() {
                                     <tr style={{ background: '#f3f4f6', borderBottom: `2px solid ${COLORS.border}` }}>
                                         <th style={thStyle}>BIB</th>
                                         <th style={{ ...thStyle, textAlign: 'left' }}>ชื่อ-นามสกุล</th>
+                                        {hasCategory && <th style={thStyle}>ประเภท</th>}
                                         <th style={thStyle}>อายุ</th>
                                         <th style={thStyle}>เพศ</th>
                                         <th style={thStyle}>กลุ่มอายุ</th>
@@ -234,6 +242,7 @@ export default function ApplicantStatusPage() {
                                                 {r.fullName || `${r.firstName || ''} ${r.lastName || ''}`.trim() || '-'}
                                                 {r.team ? <span style={{ display: 'block', fontSize: 12, color: COLORS.label, fontWeight: 400 }}>{r.team}</span> : null}
                                             </td>
+                                            {hasCategory && <td style={{ ...tdStyle, textAlign: 'center', fontWeight: 600 }}>{r.category || '-'}</td>}
                                             <td style={{ ...tdStyle, textAlign: 'center' }}>{r.age != null && r.age > 0 ? `${r.age} ปี` : '-'}</td>
                                             <td style={{ ...tdStyle, textAlign: 'center' }}>
                                                 <span style={{
@@ -266,6 +275,7 @@ export default function ApplicantStatusPage() {
                                             </span>
                                         ),
                                     },
+                                    ...(hasCategory ? [{ label: 'ประเภท', value: r.category || '-' }] : []),
                                     { label: 'อายุ', value: r.age != null && r.age > 0 ? `${r.age} ปี` : '-' },
                                     { label: 'กลุ่มอายุ', value: ageGroupLabel(r.ageGroup) },
                                     { label: 'ขนาดเสื้อ', value: r.shirtSize || '-' },
