@@ -883,12 +883,12 @@ export default function RunnerProfilePage() {
 
                 {/* AWARD — the prize this runner earns (Overall / Age Group), computed the
                     same way as the public event table + winner boards. Only shown when the
-                    runner actually places into an award slot. Overall placings also show
+                    runner actually places into an award slot. Age Group placings also show
                     the runner's age group in parentheses. */}
                 {award && (award.overall || award.ageGroup) && (() => {
                     const parts: string[] = [];
-                    if (award.overall) parts.push(`Overall ${award.overall}${runner.ageGroup ? ` (${runner.ageGroup})` : ''}`);
-                    if (award.ageGroup) parts.push(`Age Group ${award.ageGroup}`);
+                    if (award.overall) parts.push(`Overall ${award.overall}`);
+                    if (award.ageGroup) parts.push(`Age Group ${award.ageGroup}${runner.ageGroup ? ` (${runner.ageGroup})` : ''}`);
                     return (
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, marginBottom: 16, padding: '14px 16px', borderRadius: 12, background: 'linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%)', border: '1px solid #fcd34d' }}>
                             <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#b45309" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }} aria-hidden="true">

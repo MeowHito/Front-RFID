@@ -1899,7 +1899,7 @@ export default function EventLivePage() {
                                                         <span className="inline-flex items-baseline justify-center gap-1 whitespace-nowrap">
                                                             <span className={isMobile ? 'text-[11px] font-bold' : 'text-xs font-bold'} style={{ color: isMobile ? '#0f172a' : themeStyles.textMuted }}>{displayCatRank}</span>
                                                             {catAgeGroup ? (
-                                                                <span className={isMobile ? 'text-[9px] font-semibold' : 'text-[10px] font-semibold'} style={{ color: themeStyles.textMuted }}>{catAgeGroup}</span>
+                                                                <span className={isMobile ? 'text-[9px] font-semibold' : 'text-[10px] font-semibold'} style={{ color: themeStyles.textMuted }}>({catAgeGroup})</span>
                                                             ) : null}
                                                         </span>
                                                     </td>
