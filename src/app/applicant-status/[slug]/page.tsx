@@ -17,6 +17,7 @@ interface Applicant {
     shirtSize?: string;
     category?: string;
     team?: string;
+    challenge?: string;
 }
 
 function genderLabel(g?: string): string {
@@ -118,6 +119,13 @@ export default function ApplicantStatusPage() {
     // actually carries it — some imported rosters omit the column entirely.
     const hasCategory = useMemo(
         () => results.some(r => (r.category || '').trim() !== ''),
+        [results],
+    );
+
+    // Only show the "Challenge" column when at least one result carries it — some
+    // imported rosters omit the column entirely, so it stays hidden in that case.
+    const hasChallenge = useMemo(
+        () => results.some(r => (r.challenge || '').trim() !== ''),
         [results],
     );
 
@@ -232,6 +240,7 @@ export default function ApplicantStatusPage() {
                                         <th style={thStyle}>เพศ</th>
                                         <th style={thStyle}>กลุ่มอายุ</th>
                                         <th style={thStyle}>ขนาดเสื้อ</th>
+                                        {hasChallenge && <th style={thStyle}>Challenge</th>}
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -255,6 +264,7 @@ export default function ApplicantStatusPage() {
                                             </td>
                                             <td style={{ ...tdStyle, textAlign: 'center' }}>{ageGroupLabel(r.ageGroup)}</td>
                                             <td style={{ ...tdStyle, textAlign: 'center', fontWeight: 600 }}>{r.shirtSize || '-'}</td>
+                                            {hasChallenge && <td style={{ ...tdStyle, textAlign: 'center', fontWeight: 600 }}>{r.challenge || '-'}</td>}
                                         </tr>
                                     ))}
                                 </tbody>
@@ -279,6 +289,7 @@ export default function ApplicantStatusPage() {
                                     { label: 'อายุ', value: r.age != null && r.age > 0 ? `${r.age} ปี` : '-' },
                                     { label: 'กลุ่มอายุ', value: ageGroupLabel(r.ageGroup) },
                                     { label: 'ขนาดเสื้อ', value: r.shirtSize || '-' },
+                                    ...(hasChallenge ? [{ label: 'Challenge', value: r.challenge || '-' }] : []),
                                 ];
                                 return (
                                     <div key={r._id || idx} style={{ background: COLORS.card, border: `1px solid ${COLORS.border}`, borderRadius: 16, overflow: 'hidden', boxShadow: '0 4px 20px -10px rgba(0,0,0,0.1)' }}>

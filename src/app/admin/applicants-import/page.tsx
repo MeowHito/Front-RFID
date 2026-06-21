@@ -27,6 +27,7 @@ interface ApplicantRow {
     shirtSize: string;
     category: string;
     team: string;
+    challenge: string;
     extra: Record<string, string>;
 }
 
@@ -36,6 +37,7 @@ type FieldKey = keyof Omit<ApplicantRow, 'extra'>;
 // `exclude` lets a field bow out for look-alike headers (e.g. "หมายเลขออเดอร์"
 // is an order number, not a BIB; "ชื่อทีม"/"ชื่ออีเว้นท์" are not a person's name).
 const HEADER_MAP: { field: FieldKey; keywords: string[]; exclude?: string[] }[] = [
+    { field: 'challenge', keywords: ['challenge', 'เลือกเวลาในการลงแข่งขัน'] },
     { field: 'idCard', keywords: ['เลขบัตร', 'บัตรประชาชน', 'ประชาชน', 'เลขประจำตัว', 'idcard', 'id card', 'citizen', 'cid', 'national'] },
     { field: 'fullName', keywords: ['ชื่อ-นามสกุล', 'ชื่อ - นามสกุล', 'ชื่อ นามสกุล', 'ชื่อสกุล', 'ชื่อ-สกุล', 'fullname', 'full name'] },
     { field: 'lastName', keywords: ['นามสกุล', 'สกุล', 'lastname', 'last name', 'surname'] },
@@ -81,7 +83,7 @@ function detectHeaderRow(aoa: unknown[][]): number {
 }
 
 function blankRow(): ApplicantRow {
-    return { idCard: '', bib: '', firstName: '', lastName: '', fullName: '', phone: '', age: '', gender: '', ageGroup: '', shirtSize: '', category: '', team: '', extra: {} };
+    return { idCard: '', bib: '', firstName: '', lastName: '', fullName: '', phone: '', age: '', gender: '', ageGroup: '', shirtSize: '', category: '', team: '', challenge: '', extra: {} };
 }
 
 const PREVIEW_COLS: { field: FieldKey; th: string; en: string }[] = [
@@ -93,6 +95,7 @@ const PREVIEW_COLS: { field: FieldKey; th: string; en: string }[] = [
     { field: 'gender', th: 'เพศ', en: 'Gender' },
     { field: 'ageGroup', th: 'กลุ่มอายุ', en: 'Age Group' },
     { field: 'shirtSize', th: 'ขนาดเสื้อ', en: 'Shirt' },
+    { field: 'challenge', th: 'Challenge', en: 'Challenge' },
 ];
 
 export default function ApplicantsImportPage() {
@@ -247,7 +250,7 @@ export default function ApplicantsImportPage() {
                 idCard: r.idCard, bib: r.bib, firstName: r.firstName, lastName: r.lastName,
                 fullName: r.fullName, phone: r.phone, age: r.age, gender: r.gender,
                 ageGroup: r.ageGroup, shirtSize: r.shirtSize, category: r.category,
-                team: r.team,
+                team: r.team, challenge: r.challenge,
             }));
 
             // Upload in batches so very large rosters stay well under the proxy's
