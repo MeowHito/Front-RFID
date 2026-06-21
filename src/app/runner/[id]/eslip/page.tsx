@@ -898,7 +898,6 @@ export default function ESlipPage() {
                     overallDisplayCount: campaign.overallDisplayCount,
                     ageGroupDisplayCount: campaign.ageGroupDisplayCount,
                     excludeOverallFromAgeGroup: campaign.excludeOverallFromAgeGroup,
-                    excludeAgeGroupTop: campaign.excludeAgeGroupTop,
                 });
                 const mine = awards.get(runner._id);
                 if (!cancelled) setAwardLabel(mine ? formatAwardLabel(mine) : null);

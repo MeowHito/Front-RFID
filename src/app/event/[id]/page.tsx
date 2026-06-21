@@ -10,7 +10,7 @@ import { useAuth } from '@/lib/auth-context';
 import { authHeaders } from '@/lib/authHeaders';
 import CutoffDateTimePicker from '@/components/CutoffDateTimePicker';
 import { getFollowedRunnersForEvent, isRunnerFollowed, loadFollowedRunners, subscribeFollowedRunners, type FollowedRunner } from '@/lib/followed-runners';
-import { computeAwardsForCategory, formatAwardLabel, type AwardResult } from '@/lib/awards';
+import { computeAwardsForCategory, type AwardResult } from '@/lib/awards';
 
 interface Campaign {
     _id: string;
@@ -889,7 +889,6 @@ export default function EventLivePage() {
             overallDisplayCount: campaign?.overallDisplayCount,
             ageGroupDisplayCount: campaign?.ageGroupDisplayCount,
             excludeOverallFromAgeGroup: campaign?.excludeOverallFromAgeGroup,
-            excludeAgeGroupTop: campaign?.excludeAgeGroupTop,
         };
         // One award pool per distance (resolved category)
         const byCategory = new Map<string, Runner[]>();
@@ -1908,10 +1907,18 @@ export default function EventLivePage() {
                                             }
                                             case 'award': {
                                                 const award = awardByRunnerId.get(runner._id);
-                                                const awardLabel = award ? formatAwardLabel(award) : '-';
+                                                const textCls = isMobile ? 'text-[11px] font-bold' : 'text-xs font-bold';
+                                                const textColor = isMobile ? '#0f172a' : themeStyles.textMuted;
                                                 return (
                                                     <td key={key} className={isMobile ? 'px-0.5 py-1 text-center' : 'px-1.5 py-1.5 text-center'}>
-                                                        <span className={isMobile ? 'text-[11px] font-bold' : 'text-xs font-bold'} style={{ color: isMobile ? '#0f172a' : themeStyles.textMuted }}>{awardLabel}</span>
+                                                        {award && (award.overall || award.ageGroup) ? (
+                                                            <span className="inline-flex flex-col items-center leading-tight whitespace-nowrap">
+                                                                {award.overall ? <span className={textCls} style={{ color: textColor }}>Overall {award.overall}</span> : null}
+                                                                {award.ageGroup ? <span className={textCls} style={{ color: textColor }}>Age Group {award.ageGroup}</span> : null}
+                                                            </span>
+                                                        ) : (
+                                                            <span className={textCls} style={{ color: textColor }}>-</span>
+                                                        )}
                                                     </td>
                                                 );
                                             }

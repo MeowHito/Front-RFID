@@ -173,7 +173,6 @@ export default function AgeGroupRankingPage() {
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [excludeTop, setExcludeTop] = useState<number>(0);
-    const [excludeAgeGroupTop, setExcludeAgeGroupTop] = useState<number>(0);
     const [ageGroupDisplayCount, setAgeGroupDisplayCount] = useState<number>(DEFAULT_TOP_N);
     const [overallDisplayCount, setOverallDisplayCount] = useState<number>(DEFAULT_TOP_N);
     const [selectedCategory, setSelectedCategory] = useState('');
@@ -194,7 +193,6 @@ export default function AgeGroupRankingPage() {
                 const data = await res.json();
                 setCampaign(data);
                 setExcludeTop(Math.max(0, Number(data?.excludeOverallFromAgeGroup) || 0));
-                setExcludeAgeGroupTop(Math.max(0, Number(data?.excludeAgeGroupTop) || 0));
                 setAgeGroupDisplayCount(Math.max(1, Number(data?.ageGroupDisplayCount) || DEFAULT_TOP_N));
                 setOverallDisplayCount(Math.max(1, Number(data?.overallDisplayCount) || DEFAULT_TOP_N));
                 setSelectedCategory(data?.categories?.[0]?.name || '');
@@ -274,7 +272,6 @@ export default function AgeGroupRankingPage() {
 
         for (const runner of sortedFinishedRunners) {
             if (excludedBibs.has(runner.bib)) continue;
-            if (excludeAgeGroupTop > 0 && runner.ageGroupRank && runner.ageGroupRank > 0 && runner.ageGroupRank <= excludeAgeGroupTop) continue;
             const groupLabel = disableAgeGroupRanking ? OVERALL_GROUP.label : resolveAgeGroup(runner, activeAgeGroups);
             const bucket = runner.gender === 'F' ? female : male;
             if (bucket[groupLabel] && bucket[groupLabel].length < ageGroupDisplayCount) {
@@ -283,7 +280,7 @@ export default function AgeGroupRankingPage() {
         }
 
         return { maleWinners: male, femaleWinners: female };
-    }, [sortedFinishedRunners, activeAgeGroups, disableAgeGroupRanking, excludeTop, excludeAgeGroupTop, ageGroupDisplayCount]);
+    }, [sortedFinishedRunners, activeAgeGroups, disableAgeGroupRanking, excludeTop, ageGroupDisplayCount]);
 
     const overallMaleWinners = useMemo(() => {
         return sortedFinishedRunners.filter(r => r.gender !== 'F').slice(0, overallDisplayCount);
@@ -431,11 +428,6 @@ export default function AgeGroupRankingPage() {
         setExcludeTop(normalized);
     };
 
-    const updateExcludeAgeGroupTop = (value: number) => {
-        const normalized = Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0;
-        setExcludeAgeGroupTop(normalized);
-    };
-
     const updateAgeGroupDisplayCount = (value: number) => {
         const normalized = Number.isFinite(value) ? Math.max(1, Math.floor(value)) : DEFAULT_TOP_N;
         setAgeGroupDisplayCount(normalized);
@@ -455,7 +447,6 @@ export default function AgeGroupRankingPage() {
                 headers: authHeaders(),
                 body: JSON.stringify({
                     excludeOverallFromAgeGroup: excludeTop,
-                    excludeAgeGroupTop: excludeAgeGroupTop,
                     disableAgeGroupRanking: false,
                     ageGroupDisplayCount: ageGroupDisplayCount,
                     overallDisplayCount: overallDisplayCount,
@@ -559,34 +550,6 @@ export default function AgeGroupRankingPage() {
                                         />
                                         <span className="text-[11px] font-bold" style={{ color: '#0369a1' }}>
                                             {language === 'th' ? 'อันดับแรก / กลุ่มอายุ' : 'top per age group'}
-                                        </span>
-                                    </div>
-                                    <div className="flex flex-wrap items-center gap-1.5 rounded-lg border border-orange-200 bg-orange-50 px-2 py-1.5">
-                                        <span className="text-[11px] font-bold" style={{ color: '#92400e' }}>
-                                            {language === 'th' ? 'ตัดอันดับ AgeGroup ออก:' : 'Exclude AgeGroup rank:'}
-                                        </span>
-                                        <button
-                                            type="button"
-                                            onClick={() => updateExcludeAgeGroupTop(0)}
-                                            className="rounded-md border px-2 py-1 text-[10px] font-bold transition-all"
-                                            style={excludeAgeGroupTop === 0
-                                                ? { backgroundColor: '#fef08a', borderColor: '#eab308', color: '#854d0e' }
-                                                : { backgroundColor: '#ffffff', borderColor: '#d1d5db', color: '#6b7280' }
-                                            }
-                                        >
-                                            {language === 'th' ? 'ไม่ตัด' : 'None'}
-                                        </button>
-                                        <input
-                                            type="number"
-                                            min={0}
-                                            value={excludeAgeGroupTop === 0 ? '' : excludeAgeGroupTop}
-                                            placeholder="0"
-                                            onChange={(e) => updateExcludeAgeGroupTop(e.target.value === '' ? 0 : Number(e.target.value))}
-                                            className="h-9 w-20 rounded-lg border-2 border-orange-400 bg-white text-center font-semibold outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100"
-                                            style={{ color: '#92400e', fontSize: '15px' }}
-                                        />
-                                        <span className="text-[11px] font-bold" style={{ color: '#92400e' }}>
-                                            {language === 'th' ? 'อันดับ' : 'rank(s)'}
                                         </span>
                                     </div>
                                 </div>

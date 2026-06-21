@@ -5,15 +5,17 @@
 // Result-Winners boards so every surface shows the same winners:
 //   • Overall: top `overallDisplayCount` finishers per gender, ranked by time.
 //   • Age group: top `ageGroupDisplayCount` per (gender, age group), after
-//     excluding the top `excludeOverallFromAgeGroup` overall per gender and any
-//     runner whose RaceTiger ageGroupRank <= `excludeAgeGroupTop`.
-// A runner who earns an Overall award never also receives an Age-group award.
+//     excluding the top `excludeOverallFromAgeGroup` overall per gender.
+// A runner can hold BOTH an Overall and an Age-group award at the same time:
+//   • If `excludeOverallFromAgeGroup` = 0 (no exclusion) the overall winners are
+//     also eligible for their age-group award → e.g. "Overall 1, Age Group 1".
+//   • If it is > 0, the top N overall per gender are removed from age-group
+//     contention → they keep only their Overall award.
 
 export interface AwardConfig {
     overallDisplayCount?: number;
     ageGroupDisplayCount?: number;
     excludeOverallFromAgeGroup?: number;
-    excludeAgeGroupTop?: number;
 }
 
 export interface AwardRunnerLike {
@@ -28,7 +30,8 @@ export interface AwardRunnerLike {
     ageGroupRank?: number;
 }
 
-export type AwardResult = { type: 'overall' | 'ageGroup'; position: number; ageGroup?: string };
+// A runner may earn an overall placing, an age-group placing, or both.
+export type AwardResult = { overall?: number; ageGroup?: number; ageGroupLabel?: string };
 
 /** Strip gender prefix ("M30-39") and Thai "ปี" suffix so labels group consistently. */
 export function normalizeAgeGroupLabel(value?: string | null): string {
@@ -49,9 +52,13 @@ export function computeAwardsForCategory(
     const overallDisplayCount = Math.max(1, Number(cfg.overallDisplayCount) || 5);
     const ageGroupDisplayCount = Math.max(1, Number(cfg.ageGroupDisplayCount) || 5);
     const excludeOv = Math.max(0, Number(cfg.excludeOverallFromAgeGroup) || 0);
-    const excludeAG = Math.max(0, Number(cfg.excludeAgeGroupTop) || 0);
 
     const finished = runners.filter(r => r.status === 'finished' && (r.netTime || r.gunTime || r.elapsedTime));
+    const ensure = (id: string): AwardResult => {
+        let a = map.get(id);
+        if (!a) { a = {}; map.set(id, a); }
+        return a;
+    };
 
     for (const female of [false, true]) {
         const group = finished.filter(r => (r.gender === 'F') === female);
@@ -59,10 +66,11 @@ export function computeAwardsForCategory(
 
         // Overall winners (per gender)
         byTime.slice(0, overallDisplayCount).forEach((r, i) => {
-            map.set(r._id, { type: 'overall', position: i + 1 });
+            ensure(r._id).overall = i + 1;
         });
 
-        // Age-group winners (per gender)
+        // Age-group winners (per gender) — overall winners stay eligible unless the
+        // admin chose to exclude the top `excludeOv` overall from age-group prizes.
         const excludedBibs = new Set<string>();
         if (excludeOv > 0) byTime.slice(0, excludeOv).forEach(r => excludedBibs.add(r.bib));
 
@@ -75,22 +83,25 @@ export function computeAwardsForCategory(
 
         const bucketCount = new Map<string, number>();
         for (const r of byAgeRank) {
-            if (map.has(r._id)) continue; // already an Overall winner — never gets age group
             if (excludedBibs.has(r.bib)) continue;
-            if (excludeAG > 0 && r.ageGroupRank && r.ageGroupRank > 0 && r.ageGroupRank <= excludeAG) continue;
             const ag = normalizeAgeGroupLabel(r.ageGroup);
             if (!ag) continue;
             const taken = bucketCount.get(ag) || 0;
             if (taken >= ageGroupDisplayCount) continue;
             bucketCount.set(ag, taken + 1);
-            map.set(r._id, { type: 'ageGroup', position: taken + 1, ageGroup: ag });
+            const a = ensure(r._id);
+            a.ageGroup = taken + 1;
+            a.ageGroupLabel = ag;
         }
     }
     return map;
 }
 
-/** Human label shown in the AWARD column / e-slip, e.g. "Overall 1" or "Age Group 2". */
+/** Human label shown in the AWARD column / e-slip, e.g. "Overall 1, Age Group 2". */
 export function formatAwardLabel(a: AwardResult | undefined | null): string {
     if (!a) return '';
-    return `${a.type === 'overall' ? 'Overall' : 'Age Group'} ${a.position}`;
+    const parts: string[] = [];
+    if (a.overall) parts.push(`Overall ${a.overall}`);
+    if (a.ageGroup) parts.push(`Age Group ${a.ageGroup}`);
+    return parts.join(', ');
 }

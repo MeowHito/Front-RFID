@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
 import { isRunnerFollowed, loadFollowedRunners, saveFollowedRunners, subscribeFollowedRunners, toggleFollowedRunner, type FollowedRunner } from '@/lib/followed-runners';
-import { computeAwardsForCategory, formatAwardLabel } from '@/lib/awards';
+import { computeAwardsForCategory, type AwardResult } from '@/lib/awards';
 
 
 interface RunnerData {
@@ -298,7 +298,7 @@ export default function RunnerProfilePage() {
     const [runner, setRunner] = useState<RunnerData | null>(null);
     const [timings, setTimings] = useState<TimingRecord[]>([]);
     const [campaign, setCampaign] = useState<CampaignData | null>(null);
-    const [awardLabel, setAwardLabel] = useState<string | null>(null);
+    const [award, setAward] = useState<AwardResult | null>(null);
     const [cpMappings, setCpMappings] = useState<CheckpointMappingData[]>([]);
     const [checkpointRanks, setCheckpointRanks] = useState<Record<string, number>>({});
     const [loading, setLoading] = useState(true);
@@ -375,7 +375,7 @@ export default function RunnerProfilePage() {
     // event table and winner boards do — fetch the whole category pool, then run
     // the shared award algorithm and keep only this runner's result.
     useEffect(() => {
-        if (!runner || !campaign?._id || !runner.category) { setAwardLabel(null); return; }
+        if (!runner || !campaign?._id || !runner.category) { setAward(null); return; }
         let cancelled = false;
         (async () => {
             try {
@@ -386,21 +386,19 @@ export default function RunnerProfilePage() {
                     skipStatusCounts: 'true',
                 });
                 const res = await fetch(`/api/runners/paged?${params.toString()}`, { cache: 'no-store' });
-                if (!res.ok) { if (!cancelled) setAwardLabel(null); return; }
+                if (!res.ok) { if (!cancelled) setAward(null); return; }
                 const data = await res.json();
                 const pool = Array.isArray(data?.data) ? data.data : [];
                 const awards = computeAwardsForCategory(pool, {
                     overallDisplayCount: campaign.overallDisplayCount,
                     ageGroupDisplayCount: campaign.ageGroupDisplayCount,
                     excludeOverallFromAgeGroup: campaign.excludeOverallFromAgeGroup,
-                    excludeAgeGroupTop: campaign.excludeAgeGroupTop,
                 });
-                const mine = awards.get(runner._id);
-                if (!cancelled) setAwardLabel(mine ? formatAwardLabel(mine) : null);
-            } catch { if (!cancelled) setAwardLabel(null); }
+                if (!cancelled) setAward(awards.get(runner._id) || null);
+            } catch { if (!cancelled) setAward(null); }
         })();
         return () => { cancelled = true; };
-    }, [runner, campaign?._id, campaign?.overallDisplayCount, campaign?.ageGroupDisplayCount, campaign?.excludeOverallFromAgeGroup, campaign?.excludeAgeGroupTop]);
+    }, [runner, campaign?._id, campaign?.overallDisplayCount, campaign?.ageGroupDisplayCount, campaign?.excludeOverallFromAgeGroup]);
 
     useEffect(() => {
         setFollowedRunners(loadFollowedRunners());
@@ -885,16 +883,29 @@ export default function RunnerProfilePage() {
 
                 {/* AWARD — the prize this runner earns (Overall / Age Group), computed the
                     same way as the public event table + winner boards. Only shown when the
-                    runner actually places into an award slot. */}
-                {awardLabel && (
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, marginBottom: 16, padding: '12px 16px', borderRadius: 12, background: 'linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%)', border: '1px solid #fcd34d' }}>
-                        <span style={{ fontSize: 20, lineHeight: 1 }}>🏆</span>
-                        <div style={{ textAlign: 'left' }}>
-                            <p style={{ fontSize: 9, fontWeight: 700, color: '#b45309', textTransform: 'uppercase', letterSpacing: 1, margin: 0 }}>Award</p>
-                            <p style={{ fontSize: 18, fontWeight: 900, color: '#92400e', margin: 0 }}>{awardLabel}</p>
+                    runner actually places into an award slot. Overall placings also show
+                    the runner's age group in parentheses. */}
+                {award && (award.overall || award.ageGroup) && (() => {
+                    const parts: string[] = [];
+                    if (award.overall) parts.push(`Overall ${award.overall}${runner.ageGroup ? ` (${runner.ageGroup})` : ''}`);
+                    if (award.ageGroup) parts.push(`Age Group ${award.ageGroup}`);
+                    return (
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, marginBottom: 16, padding: '14px 16px', borderRadius: 12, background: 'linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%)', border: '1px solid #fcd34d' }}>
+                            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#b45309" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }} aria-hidden="true">
+                                <path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6" />
+                                <path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18" />
+                                <path d="M4 22h16" />
+                                <path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22" />
+                                <path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22" />
+                                <path d="M18 2H6v7a6 6 0 0 0 12 0V2Z" />
+                            </svg>
+                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
+                                <span style={{ fontSize: 9, fontWeight: 700, color: '#b45309', textTransform: 'uppercase', letterSpacing: 1, lineHeight: 1.4 }}>Award</span>
+                                <span style={{ fontSize: 18, fontWeight: 900, color: '#92400e', lineHeight: 1.2 }}>{parts.join(', ')}</span>
+                            </div>
                         </div>
-                    </div>
-                )}
+                    );
+                })()}
 
                 {/* DISTANCE PROGRESS BAR — Marathon mode only */}
                 {campaign?.displayMode !== 'lab' && checkpointRows.length > 0 && (() => {
