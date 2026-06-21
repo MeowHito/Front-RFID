@@ -159,7 +159,7 @@ export default function ApplicantStatusPage() {
             </div>
 
             {/* Search + Results */}
-            <main style={{ maxWidth: 720, margin: '-32px auto 0', padding: '0 16px 48px' }}>
+            <main style={{ maxWidth: results.length > 0 ? 1040 : 720, margin: '-32px auto 0', padding: '0 16px 48px', transition: 'max-width 0.2s' }}>
                 {/* Search box */}
                 <form onSubmit={handleSearch} style={{
                     background: COLORS.card, border: `1px solid ${COLORS.border}`, borderRadius: 16,
@@ -229,7 +229,7 @@ export default function ApplicantStatusPage() {
                         `}</style>
 
                         {/* Desktop table */}
-                        <div className="aps-desktop-table" style={{ display: 'block', background: COLORS.card, border: `1px solid ${COLORS.border}`, borderRadius: 16, overflow: 'hidden', boxShadow: '0 4px 20px -8px rgba(0,0,0,0.08)' }}>
+                        <div className="aps-desktop-table" style={{ display: 'block', background: COLORS.card, border: `1px solid ${COLORS.border}`, borderRadius: 16, overflowX: 'auto', boxShadow: '0 4px 20px -8px rgba(0,0,0,0.08)' }}>
                             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
                                 <thead>
                                     <tr style={{ background: '#f3f4f6', borderBottom: `2px solid ${COLORS.border}` }}>
@@ -328,5 +328,5 @@ const thStyle: React.CSSProperties = {
     padding: '12px 14px', textAlign: 'center', fontWeight: 700, color: '#434654', fontSize: 13, whiteSpace: 'nowrap',
 };
 const tdStyle: React.CSSProperties = {
-    padding: '14px', textAlign: 'center', color: '#434654', verticalAlign: 'middle',
+    padding: '14px', textAlign: 'center', color: '#434654', verticalAlign: 'middle', whiteSpace: 'nowrap',
 };
