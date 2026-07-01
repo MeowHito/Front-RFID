@@ -12,7 +12,7 @@ type FieldKey =
     | 'eventName' | 'bib' | 'runnerName' | 'firstName' | 'lastName'
     | 'category' | 'distance' | 'gender' | 'ageGroup'
     | 'overallRank' | 'genderRank' | 'categoryRank'
-    | 'gunTime' | 'netTime' | 'pace'
+    | 'gunTime' | 'netTime' | 'pace' | 'award' | 'targetBand'
     | 'eventDate' | 'location' | 'static';
 
 export interface ESlipV2Element {
@@ -59,6 +59,37 @@ export interface ESlipV2Layout {
     elements: ESlipV2Element[];
 }
 
+// A saved E-Slip 2 template (stored in localStorage so layouts can be reused
+// across events without rebuilding — same idea as the certificate templates).
+export interface ESlipV2Template {
+    id: string;
+    name: string;
+    savedAt: number;
+    layout: ESlipV2Layout;
+}
+
+const TEMPLATES_STORAGE_KEY = 'eslip2_templates';
+
+function loadTemplates(): ESlipV2Template[] {
+    if (typeof window === 'undefined') return [];
+    try {
+        const raw = localStorage.getItem(TEMPLATES_STORAGE_KEY);
+        const arr = raw ? JSON.parse(raw) : [];
+        return Array.isArray(arr) ? arr : [];
+    } catch {
+        return [];
+    }
+}
+
+function persistTemplates(list: ESlipV2Template[]) {
+    if (typeof window === 'undefined') return;
+    try {
+        localStorage.setItem(TEMPLATES_STORAGE_KEY, JSON.stringify(list));
+    } catch {
+        /* quota / private-mode — ignore */
+    }
+}
+
 type ResizeDir = 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w' | 'nw';
 
 interface DragState {
@@ -88,6 +119,8 @@ const FIELD_PALETTE: { field: FieldKey; label: string; defaultText: string }[] =
     { field: 'gunTime', label: 'Gun Time', defaultText: '02:15:33' },
     { field: 'netTime', label: 'Net Time', defaultText: '02:14:01' },
     { field: 'pace', label: 'Avg Pace', defaultText: '6:22' },
+    { field: 'award', label: '🏆 Award', defaultText: 'Age Group 3' },
+    { field: 'targetBand', label: '🎯 Sub (เป้าหมาย)', defaultText: 'sub 45' },
     { field: 'eventDate', label: 'วันที่งาน', defaultText: '25 Jan 2025' },
     { field: 'location', label: 'สถานที่', defaultText: 'กรุงเทพมหานคร' },
     { field: 'static', label: 'ข้อความ Static', defaultText: 'OFFICIAL RESULT' },
@@ -111,6 +144,8 @@ const MOCK_DATA: Record<FieldKey, string> = {
     gunTime: '02:15:33',
     netTime: '02:14:01',
     pace: "6'22\"",
+    award: 'Age Group 3',
+    targetBand: 'sub 45',
     eventDate: '25 Jan 2025',
     location: 'กรุงเทพมหานคร',
     static: '',
@@ -443,6 +478,9 @@ export default function ESlip2EditorPage() {
     const [loading, setLoading] = useState(true);
     const [scale, setScale] = useState(0.8);
     const [bgTab, setBgTab] = useState<'color' | 'image'>('color');
+    const [templates, setTemplates] = useState<ESlipV2Template[]>([]);
+    const [templateMsg, setTemplateMsg] = useState<string | null>(null);
+    const templateImportRef = useRef<HTMLInputElement>(null);
 
     const canvasRef = useRef<HTMLDivElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
@@ -833,6 +871,76 @@ export default function ESlip2EditorPage() {
         }
     };
 
+    // ── Templates (localStorage, reusable across events) ──
+    useEffect(() => { setTemplates(loadTemplates()); }, []);
+
+    const flashTemplateMsg = (msg: string) => {
+        setTemplateMsg(msg);
+        setTimeout(() => setTemplateMsg(null), 3000);
+    };
+
+    const saveAsTemplate = () => {
+        const name = window.prompt('ตั้งชื่อเทมเพลต:', campaign?.name || 'E-Slip Template');
+        if (!name || !name.trim()) return;
+        const tpl: ESlipV2Template = {
+            id: `tpl-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+            name: name.trim(),
+            savedAt: Date.now(),
+            layout: JSON.parse(JSON.stringify(layoutRef.current)),
+        };
+        const next = [tpl, ...templates];
+        setTemplates(next);
+        persistTemplates(next);
+        flashTemplateMsg('✓ บันทึกเทมเพลตแล้ว');
+    };
+
+    const applyTemplate = (tpl: ESlipV2Template) => {
+        snapshot();
+        setLayout(ensureSplitsElement(JSON.parse(JSON.stringify(tpl.layout))));
+        setSelectedId(null);
+        flashTemplateMsg(`✓ โหลดเทมเพลต "${tpl.name}" แล้ว (อย่าลืมกดบันทึก)`);
+    };
+
+    const deleteTemplate = (id: string) => {
+        const next = templates.filter(t => t.id !== id);
+        setTemplates(next);
+        persistTemplates(next);
+    };
+
+    const exportTemplate = () => {
+        const payload = { kind: 'rfid-eslip2-template', version: 1, layout: layoutRef.current };
+        const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        const safe = (campaign?.name || 'eslip2-template').replace(/[^a-z0-9ก-๙_-]+/gi, '-').slice(0, 60);
+        link.download = `eslip2-template-${safe}.json`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+        flashTemplateMsg('✓ ดาวน์โหลดเทมเพลตแล้ว');
+    };
+
+    const importTemplate = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.currentTarget.files?.[0];
+        e.currentTarget.value = '';
+        if (!file) return;
+        try {
+            const json = JSON.parse(await file.text());
+            if (json?.kind !== 'rfid-eslip2-template' || !json?.layout?.elements) {
+                flashTemplateMsg('✕ ไฟล์เทมเพลตไม่ถูกต้อง');
+                return;
+            }
+            snapshot();
+            setLayout(ensureSplitsElement(json.layout as ESlipV2Layout));
+            setSelectedId(null);
+            flashTemplateMsg('✓ นำเข้าเทมเพลตแล้ว (อย่าลืมกดบันทึก)');
+        } catch {
+            flashTemplateMsg('✕ อ่านไฟล์เทมเพลตไม่ได้');
+        }
+    };
+
     const selectedEl = layout.elements.find(el => el.id === selectedId) ?? null;
 
     // ─── Canvas background ──────────────────────────────────────────────────
@@ -981,6 +1089,47 @@ export default function ESlip2EditorPage() {
                                 <input type="number" value={layout.canvasHeight} onChange={e => setLayout(prev => ({ ...prev, canvasHeight: Number(e.target.value) }))}
                                     style={{ width: '100%', fontSize: 12, padding: '4px 8px', border: '1px solid #e2e8f0', borderRadius: 6, fontFamily: 'inherit' }} />
                             </div>
+                        </div>
+
+                        {/* Templates */}
+                        <div style={{ padding: '10px 14px', borderBottom: '1px solid #e2e8f0' }}>
+                            <div style={{ fontSize: 11, fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>🧩 เทมเพลต</div>
+                            <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+                                <button type="button" onClick={saveAsTemplate}
+                                    style={{ flex: 1, padding: '7px 6px', borderRadius: 8, fontSize: 11, cursor: 'pointer', border: '1px dashed #7c3aed', background: '#f5f3ff', color: '#7c3aed', fontFamily: 'inherit', fontWeight: 700 }}>
+                                    💾 บันทึกเป็นเทมเพลต
+                                </button>
+                            </div>
+                            <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+                                <button type="button" onClick={exportTemplate}
+                                    style={{ flex: 1, padding: '6px 6px', borderRadius: 8, fontSize: 11, cursor: 'pointer', border: '1px solid #e2e8f0', background: '#fff', color: '#475569', fontFamily: 'inherit', fontWeight: 600 }}>
+                                    ⬇ Export
+                                </button>
+                                <label style={{ flex: 1, textAlign: 'center', padding: '6px 6px', borderRadius: 8, fontSize: 11, cursor: 'pointer', border: '1px solid #e2e8f0', background: '#fff', color: '#475569', fontFamily: 'inherit', fontWeight: 600 }}>
+                                    ⬆ Import
+                                    <input ref={templateImportRef} type="file" accept="application/json,.json" className="hidden" onChange={importTemplate} />
+                                </label>
+                            </div>
+                            {templateMsg && (
+                                <div style={{ fontSize: 11, fontWeight: 700, color: templateMsg.startsWith('✕') ? '#ef4444' : '#16a34a', marginBottom: 8 }}>{templateMsg}</div>
+                            )}
+                            {templates.length > 0 && (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                                    {templates.map(t => (
+                                        <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                            <button type="button" onClick={() => applyTemplate(t)} title="โหลดเทมเพลตนี้"
+                                                style={{ flex: 1, textAlign: 'left', padding: '6px 8px', borderRadius: 6, fontSize: 11, cursor: 'pointer', border: '1px solid #e2e8f0', background: '#fff', color: '#374151', fontFamily: 'inherit', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                🧩 {t.name}
+                                            </button>
+                                            <button type="button" onClick={() => deleteTemplate(t.id)} title="ลบเทมเพลต"
+                                                style={{ padding: '6px 8px', borderRadius: 6, fontSize: 11, cursor: 'pointer', border: '1px solid #fecaca', background: '#fff5f5', color: '#ef4444', fontFamily: 'inherit' }}>🗑</button>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                            {templates.length === 0 && (
+                                <div style={{ fontSize: 10, color: '#94a3b8', fontStyle: 'italic' }}>ยังไม่มีเทมเพลตที่บันทึกไว้ — ออกแบบเสร็จแล้วกด “บันทึกเป็นเทมเพลต” เพื่อใช้ซ้ำในงานอื่น</div>
+                            )}
                         </div>
 
                         {/* Add element palette */}

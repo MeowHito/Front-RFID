@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
@@ -63,6 +63,32 @@ interface CampaignData {
     ageGroupDisplayCount?: number;
     excludeOverallFromAgeGroup?: number;
     excludeAgeGroupTop?: number;
+    targetTimeBands?: TargetTimeBandGroup[];
+}
+
+interface TargetTimeBand {
+    label: string;
+    minMinutes: number;
+    maxMinutes: number;
+}
+
+interface TargetTimeBandGroup {
+    category: string;
+    bands: TargetTimeBand[];
+}
+
+/** Find the target-time band (e.g. "sub 45") a runner's finish time falls into,
+ *  mirroring the Target-Time-Winners board: minutes = time_ms / 60000, band is
+ *  the one where minMinutes <= minutes < maxMinutes for the runner's category. */
+function computeTargetBandLabel(runner: RunnerData, campaign: CampaignData | null): string | null {
+    if (!campaign?.targetTimeBands?.length || !runner.category) return null;
+    const group = campaign.targetTimeBands.find(g => g.category === runner.category);
+    if (!group?.bands?.length) return null;
+    const ms = runner.netTime || runner.gunTime || 0;
+    if (ms <= 0) return null;
+    const mins = ms / 60000;
+    const band = group.bands.find(b => mins >= b.minMinutes && mins < b.maxMinutes);
+    return band?.label ?? null;
 }
 
 // ─── E-Slip V2 types (mirrors admin/eslip2/page.tsx) ──────────────────────────
@@ -71,7 +97,7 @@ type FieldKey =
     | 'eventName' | 'bib' | 'runnerName' | 'firstName' | 'lastName'
     | 'category' | 'distance' | 'gender' | 'ageGroup'
     | 'overallRank' | 'genderRank' | 'categoryRank'
-    | 'gunTime' | 'netTime' | 'pace' | 'award'
+    | 'gunTime' | 'netTime' | 'pace' | 'award' | 'targetBand'
     | 'eventDate' | 'location' | 'static';
 
 interface ESlipV2Element {
@@ -145,6 +171,7 @@ interface TemplateProps {
     showField: (key: string) => boolean;
     textColorMode?: 'light' | 'dark';
     awardLabel?: string | null;
+    targetBandLabel?: string | null;
 }
 
 /** Auto-shrink text to always fit one line within its container */
@@ -164,7 +191,7 @@ function FitName({ children, className, style, maxSize = 28 }: { children: strin
 }
 
 // ==================== TEMPLATE 1: Dark Photo Background ====================
-function Template1({ runner, timings, campaign, bgImage, slipRef, showField, awardLabel }: TemplateProps) {
+function Template1({ runner, timings, campaign, bgImage, slipRef, showField, awardLabel, targetBandLabel }: TemplateProps) {
     const displayName = `${runner.firstName} ${runner.lastName}`.trim();
     const genderLabel = runner.gender === 'M' ? 'Male' : 'Female';
     const dist = parseDistanceValue(runner.category);
@@ -223,7 +250,7 @@ function Template1({ runner, timings, campaign, bgImage, slipRef, showField, awa
                     </div>
 
                     {/* Ranks + Times — unified card */}
-                    {(showField('overallRank') || showField('genderRank') || showField('categoryRank') || showField('gunTime') || showField('netTime') || (showField('award') && !!awardLabel)) && (
+                    {(showField('overallRank') || showField('genderRank') || showField('categoryRank') || showField('gunTime') || showField('netTime') || (showField('award') && !!awardLabel) || (showField('targetBand') && !!targetBandLabel)) && (
                         <div className="bg-white/10 border border-white/10 rounded-2xl p-4">
                             {/* Top row: Overall / Gender / Category */}
                             {(showField('overallRank') || showField('genderRank') || showField('categoryRank')) && (
@@ -259,6 +286,15 @@ function Template1({ runner, timings, campaign, bgImage, slipRef, showField, awa
                                     <div className="text-center">
                                         <div className="text-[10px] font-black text-amber-300 uppercase mb-1 tracking-[2px]">🏆 Award</div>
                                         <div className="text-lg font-black text-amber-300">{awardLabel}</div>
+                                    </div>
+                                </div>
+                            )}
+                            {/* SUB (target-time band) — below Award */}
+                            {showField('targetBand') && targetBandLabel && (
+                                <div className="flex justify-center pt-3 mt-3 border-t border-sky-300/30">
+                                    <div className="text-center">
+                                        <div className="text-[10px] font-black text-sky-300 uppercase mb-1 tracking-[2px]">🎯 Target</div>
+                                        <div className="text-lg font-black text-sky-300 uppercase">{targetBandLabel}</div>
                                     </div>
                                 </div>
                             )}
@@ -307,7 +343,7 @@ function Template1({ runner, timings, campaign, bgImage, slipRef, showField, awa
 }
 
 // ==================== TEMPLATE 2: Semi-transparent Photo Background ====================
-function Template2({ runner, timings, campaign, bgImage, slipRef, showField, textColorMode = 'dark', awardLabel }: TemplateProps) {
+function Template2({ runner, timings, campaign, bgImage, slipRef, showField, textColorMode = 'dark', awardLabel, targetBandLabel }: TemplateProps) {
     const displayName = `${runner.firstName} ${runner.lastName}`.trim();
     const genderLabel = runner.gender === 'M' ? 'Male' : 'Female';
     const dist = parseDistanceValue(runner.category);
@@ -394,6 +430,17 @@ function Template2({ runner, timings, campaign, bgImage, slipRef, showField, tex
                         </div>
                     )}
 
+                    {/* SUB (target-time band) — below Award */}
+                    {showField('targetBand') && targetBandLabel && (
+                        <div className="flex justify-center mb-4">
+                            <div className="inline-flex items-center gap-2 rounded-full bg-sky-400/90 px-4 py-1.5 shadow-sm">
+                                <span className="text-sm leading-none">🎯</span>
+                                <span className="text-[9px] font-extrabold uppercase tracking-[1.5px] text-sky-900">Target</span>
+                                <span className="text-sm font-black text-sky-950 uppercase">{targetBandLabel}</span>
+                            </div>
+                        </div>
+                    )}
+
                     {/* Stats Panel */}
                     {(showField('distance') || showField('pace')) && (
                         <>
@@ -463,7 +510,7 @@ function Template2({ runner, timings, campaign, bgImage, slipRef, showField, tex
 }
 
 // ==================== TEMPLATE 3: Clean White Card ====================
-function Template3({ runner, timings, campaign, slipRef, showField, awardLabel }: TemplateProps) {
+function Template3({ runner, timings, campaign, slipRef, showField, awardLabel, targetBandLabel }: TemplateProps) {
     const displayName = `${runner.firstName} ${runner.lastName}`.trim();
     const genderLabel = runner.gender === 'M' ? 'Male' : 'Female';
     const dist = parseDistanceValue(runner.category);
@@ -517,6 +564,17 @@ function Template3({ runner, timings, campaign, slipRef, showField, awardLabel }
                         <div className="text-left leading-tight">
                             <div className="text-[8px] font-extrabold text-amber-600 uppercase tracking-[1.5px]">Award</div>
                             <div className="text-base font-black text-amber-700">{awardLabel}</div>
+                        </div>
+                    </div>
+                )}
+
+                {/* SUB (target-time band) — below Award */}
+                {showField('targetBand') && targetBandLabel && (
+                    <div className="bg-gradient-to-r from-sky-50 to-sky-100 border border-sky-300 rounded-xl py-2.5 px-3 text-center mb-4 flex items-center justify-center gap-2">
+                        <span className="text-base leading-none">🎯</span>
+                        <div className="text-left leading-tight">
+                            <div className="text-[8px] font-extrabold text-sky-600 uppercase tracking-[1.5px]">Target</div>
+                            <div className="text-base font-black text-sky-700 uppercase">{targetBandLabel}</div>
                         </div>
                     </div>
                 )}
@@ -582,7 +640,7 @@ function Template3({ runner, timings, campaign, slipRef, showField, awardLabel }
 
 // ─── E-Slip V2 Renderer ────────────────────────────────────────────────────────
 
-function resolveFieldValue(field: FieldKey, staticText: string, runner: RunnerData, campaign: CampaignData | null, awardLabel?: string | null): string {
+function resolveFieldValue(field: FieldKey, staticText: string, runner: RunnerData, campaign: CampaignData | null, awardLabel?: string | null, targetBandLabel?: string | null): string {
     const fmt = formatTime;
     switch (field) {
         case 'eventName':   return campaign?.name ?? '';
@@ -604,6 +662,7 @@ function resolveFieldValue(field: FieldKey, staticText: string, runner: RunnerDa
         case 'netTime':     return runner.netTimeStr ?? fmt(runner.netTime);
         case 'pace':        return effectivePace(runner);
         case 'award':       return awardLabel ?? '';
+        case 'targetBand':  return targetBandLabel ?? '';
         case 'eventDate':   return campaign?.eventDate ? new Date(campaign.eventDate).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' }) : '';
         case 'location':    return campaign?.location ?? '';
         case 'static':      return staticText;
@@ -684,13 +743,14 @@ function ESlipV2SplitsTable({ el, timings }: { el: ESlipV2Element; timings: Timi
     );
 }
 
-function ESlipV2Renderer({ layout, runner, campaign, slipRef, timings, awardLabel }: {
+function ESlipV2Renderer({ layout, runner, campaign, slipRef, timings, awardLabel, targetBandLabel }: {
     layout: ESlipV2Layout;
     runner: RunnerData;
     campaign: CampaignData | null;
     slipRef: React.RefObject<HTMLDivElement | null>;
     timings: TimingRecord[];
     awardLabel?: string | null;
+    targetBandLabel?: string | null;
 }) {
     const wrapperRef = useRef<HTMLDivElement>(null);
     const [scale, setScale] = useState(1);
@@ -756,7 +816,7 @@ function ESlipV2Renderer({ layout, runner, campaign, slipRef, timings, awardLabe
             {layout.elements.map(el => {
                 const isImage = el.type === 'image';
                 const isSplits = el.type === 'splits';
-                const text = (isImage || isSplits) ? '' : el.prefix + resolveFieldValue(el.field, el.staticText, runner, campaign, awardLabel) + el.suffix;
+                const text = (isImage || isSplits) ? '' : el.prefix + resolveFieldValue(el.field, el.staticText, runner, campaign, awardLabel, targetBandLabel) + el.suffix;
                 return (
                     <div
                         key={el.id}
@@ -820,6 +880,7 @@ export default function ESlipPage() {
     const [timings, setTimings] = useState<TimingRecord[]>([]);
     const [campaign, setCampaign] = useState<CampaignData | null>(null);
     const [awardLabel, setAwardLabel] = useState<string | null>(null);
+    const targetBandLabel = useMemo(() => (runner ? computeTargetBandLabel(runner, campaign) : null), [runner, campaign]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [bgImage, setBgImage] = useState<string | null>(null);
@@ -1138,7 +1199,7 @@ export default function ESlipPage() {
                         </div>
                     )
                     : isV2
-                    ? <ESlipV2Renderer layout={campaign!.eslipV2Layout!} runner={runner} campaign={campaign} slipRef={slipRef} timings={timings} awardLabel={awardLabel} />
+                    ? <ESlipV2Renderer layout={campaign!.eslipV2Layout!} runner={runner} campaign={campaign} slipRef={slipRef} timings={timings} awardLabel={awardLabel} targetBandLabel={targetBandLabel} />
                     : (() => {
                         const vf = campaign?.eslipVisibleFields;
                         const hasAgeGroup = !!runner.ageGroup;
@@ -1149,7 +1210,7 @@ export default function ESlipPage() {
                             if (!hasAgeGroup && (key === 'categoryRank' || key === 'ageGroup')) return false;
                             return !vf || vf.length === 0 || vf.includes(key);
                         };
-                        const common = { runner, timings, campaign, slipRef, showField, awardLabel };
+                        const common = { runner, timings, campaign, slipRef, showField, awardLabel, targetBandLabel };
                         if (activeTemplate === 'template1') return <Template1 {...common} bgImage={bgImage} />;
                         if (activeTemplate === 'template2') return <Template2 {...common} bgImage={bgImage} textColorMode={photoTextColor} />;
                         return <Template3 {...common} bgImage={null} />;

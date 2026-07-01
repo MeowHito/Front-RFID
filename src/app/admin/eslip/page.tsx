@@ -22,6 +22,7 @@ const ESLIP_FIELDS = [
     { key: 'gunTime', label: 'Gun Time', icon: '🔫' },
     { key: 'netTime', label: 'Net Time', icon: '⏱️' },
     { key: 'award', label: 'Award', icon: '🏆' },
+    { key: 'targetBand', label: 'Sub (เป้าหมาย)', icon: '🎯' },
     { key: 'distance', label: 'Distance', icon: '📏' },
     { key: 'pace', label: 'Avg Pace', icon: '🏃' },
 ];
