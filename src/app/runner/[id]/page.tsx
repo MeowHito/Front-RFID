@@ -74,6 +74,32 @@ interface CampaignData {
     ageGroupDisplayCount?: number;
     excludeOverallFromAgeGroup?: number;
     excludeAgeGroupTop?: number;
+    targetTimeBands?: TargetTimeBandGroup[];
+}
+
+interface TargetTimeBand {
+    label: string;
+    minMinutes: number;
+    maxMinutes: number;
+}
+
+interface TargetTimeBandGroup {
+    category: string;
+    bands: TargetTimeBand[];
+}
+
+/** Find the target-time band (e.g. "sub 45") a runner's finish time falls into,
+ *  mirroring the Target-Time-Winners board + E-Slip: minutes = time_ms / 60000,
+ *  band is the one where minMinutes <= minutes < maxMinutes for the runner's category. */
+function computeTargetBandLabel(runner: RunnerData, campaign: CampaignData | null): string | null {
+    if (!campaign?.targetTimeBands?.length || !runner.category) return null;
+    const group = campaign.targetTimeBands.find(g => g.category === runner.category);
+    if (!group?.bands?.length) return null;
+    const ms = runner.netTime || runner.gunTime || 0;
+    if (ms <= 0) return null;
+    const mins = ms / 60000;
+    const band = group.bands.find(b => mins >= b.minMinutes && mins < b.maxMinutes);
+    return band?.label ?? null;
 }
 
 interface CheckpointMappingData {
@@ -529,6 +555,7 @@ export default function RunnerProfilePage() {
         || (finishTiming?.netTime || finishTiming?.elapsedTime || finishTiming?.gunTime)
         || (isFinished && lastTiming ? (lastTiming.netTime || lastTiming.elapsedTime || lastTiming.gunTime) : undefined);
     const finishTimeStr = runner.netTimeStr || runner.gunTimeStr || formatTime(finishTime);
+    const targetBandLabel = isFinished ? computeTargetBandLabel(runner, campaign) : null;
     const pace = runner.netPace || runner.gunPace || '-';
 
     // Overall rank: prefer runner field, fallback to FINISH checkpoint rank
@@ -879,6 +906,17 @@ export default function RunnerProfilePage() {
                         <p className="runner-stat-label" style={{ fontSize: 9, fontWeight: 700, color: isFinished ? '#16a34a' : '#94a3b8', textTransform: 'uppercase', marginBottom: 2 }}>{isFinished ? 'Finish Time' : 'Elapsed'}</p>
                         <p className="runner-stat-value" style={{ fontSize: 20, fontWeight: 900, color: isFinished ? '#15803d' : '#0f172a', margin: 0 }}>{finishTimeStr}</p>
                     </div>
+                    {/* SUB (target-time band) — the "sub XX" bracket this runner's finish time
+                        falls into, mirroring the E-Slip. Spans full width below Finish Time. */}
+                    {targetBandLabel && (
+                        <div className="runner-stat-card" style={{ background: 'linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%)', border: '1px solid #7dd3fc', borderRadius: 12, padding: 12, gridColumn: '1 / -1', textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                            <span style={{ fontSize: 18, lineHeight: 1 }}>🎯</span>
+                            <div style={{ textAlign: 'left' }}>
+                                <p className="runner-stat-label" style={{ fontSize: 9, fontWeight: 700, color: '#0284c7', textTransform: 'uppercase', marginBottom: 2 }}>Target</p>
+                                <p className="runner-stat-value" style={{ fontSize: 20, fontWeight: 900, color: '#0369a1', margin: 0, textTransform: 'uppercase' }}>{targetBandLabel}</p>
+                            </div>
+                        </div>
+                    )}
                 </div>
 
                 {/* AWARD — the prize this runner earns (Overall / Age Group), computed the
