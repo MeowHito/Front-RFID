@@ -48,7 +48,6 @@ interface FeaturedCampaignSettings {
     disableAgeGroupRanking?: boolean;
     ageGroupDisplayCount?: number;
     overallDisplayCount?: number;
-    bestOfDisplayCount?: number;
     excludeOverallThaiFromAgeGroup?: number;
     excludeOverallForeignFromAgeGroup?: number;
     separateOverallNationalityCategories?: string[];
@@ -181,7 +180,6 @@ export default function AgeGroupRankingPage() {
     const [saving, setSaving] = useState(false);
     const [excludeTop, setExcludeTop] = useState<number>(0);
     const [ageGroupDisplayCount, setAgeGroupDisplayCount] = useState<number>(DEFAULT_TOP_N);
-    const [bestOfDisplayCount, setBestOfDisplayCount] = useState<number>(1);
     // Nationality-split categories: how many top Thai / foreign overall winners
     // (per gender) are excluded from age-group awards — independent of the public Overall page's display count.
     const [excludeThaiTop, setExcludeThaiTop] = useState<number>(DEFAULT_TOP_N);
@@ -207,7 +205,6 @@ export default function AgeGroupRankingPage() {
                 setCampaign(data);
                 setExcludeTop(Math.max(0, Number(data?.excludeOverallFromAgeGroup) || 0));
                 setAgeGroupDisplayCount(Math.max(1, Number(data?.ageGroupDisplayCount) || DEFAULT_TOP_N));
-                setBestOfDisplayCount(Math.max(1, Number(data?.bestOfDisplayCount) || 1));
                 const overallTopN = Math.max(1, Number(data?.overallDisplayCount) || DEFAULT_TOP_N);
                 setExcludeThaiTop(data?.excludeOverallThaiFromAgeGroup != null ? Math.max(0, Number(data.excludeOverallThaiFromAgeGroup)) : overallTopN);
                 setExcludeForeignTop(data?.excludeOverallForeignFromAgeGroup != null ? Math.max(0, Number(data.excludeOverallForeignFromAgeGroup)) : overallTopN);
@@ -475,11 +472,6 @@ export default function AgeGroupRankingPage() {
         setAgeGroupDisplayCount(normalized);
     };
 
-    const updateBestOfDisplayCount = (value: number) => {
-        const normalized = Number.isFinite(value) ? Math.max(1, Math.floor(value)) : 1;
-        setBestOfDisplayCount(normalized);
-    };
-
     const updateExcludeThaiTop = (value: number) => {
         const normalized = Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0;
         setExcludeThaiTop(normalized);
@@ -501,7 +493,6 @@ export default function AgeGroupRankingPage() {
                     excludeOverallFromAgeGroup: excludeTop,
                     disableAgeGroupRanking: false,
                     ageGroupDisplayCount: ageGroupDisplayCount,
-                    bestOfDisplayCount: bestOfDisplayCount,
                     excludeOverallThaiFromAgeGroup: excludeThaiTop,
                     excludeOverallForeignFromAgeGroup: excludeForeignTop,
                     separateOverallNationalityCategories: natSplitCategories,
@@ -627,27 +618,6 @@ export default function AgeGroupRankingPage() {
                                         ? (language === 'th' ? 'กำลังบันทึก...' : 'Saving...')
                                         : (language === 'th' ? 'บันทึก' : 'Save')}
                                 </button>
-                            </div>
-
-                            <div className="mt-3 flex flex-wrap items-center gap-2">
-                                <div className="flex items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-2 py-1.5">
-                                    <span className="text-[11px] font-bold" style={{ color: '#92400e' }}>
-                                        {language === 'th'
-                                            ? `Best Of ${campaign?.name || ''} กี่อันดับ:`
-                                            : `Best Of ${campaign?.name || ''} — top ranks:`}
-                                    </span>
-                                    <input
-                                        type="number"
-                                        min={1}
-                                        value={bestOfDisplayCount}
-                                        onChange={(e) => updateBestOfDisplayCount(e.target.value === '' ? 1 : Number(e.target.value))}
-                                        className="h-9 w-20 rounded-lg border-2 border-amber-400 bg-white text-center font-semibold outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-100"
-                                        style={{ color: '#92400e', fontSize: '15px' }}
-                                    />
-                                    <span className="text-[11px] font-bold" style={{ color: '#92400e' }}>
-                                        {language === 'th' ? 'อันดับแรก / เพศ' : 'top per gender'}
-                                    </span>
-                                </div>
                             </div>
 
                             <div className="mt-4 rounded-2xl border border-gray-200 bg-[#f8fafc] p-3">

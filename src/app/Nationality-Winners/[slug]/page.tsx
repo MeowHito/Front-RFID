@@ -37,6 +37,7 @@ interface Campaign {
     uuid?: string;
     categories?: CampaignCategory[];
     overallDisplayCount?: number;
+    excludeOverallForeignFromAgeGroup?: number;
 }
 
 const REFRESH_INTERVAL = 10;
@@ -50,9 +51,10 @@ function formatTime(ms: number | undefined | null): string {
 }
 
 // "Nationality [N]" board — top N foreign (non-Thai) finishers per gender for
-// the selected distance, using the same overallDisplayCount as the Overall
-// board (independent of whether that category also splits its Overall board
-// by nationality via separateOverallNationalityCategories).
+// the selected distance. N follows excludeOverallForeignFromAgeGroup (the
+// "ต่างชาติ" count set on admin/age-group-ranking), falling back to
+// overallDisplayCount, independent of whether that category also splits its
+// Overall board by nationality via separateOverallNationalityCategories.
 export default function NationalityWinnersBySlugPage() {
     const params = useParams();
     const slug = params.slug as string;
@@ -189,7 +191,7 @@ export default function NationalityWinnersBySlugPage() {
         };
     }, [autoMode]);
 
-    const topN = Math.max(1, campaign?.overallDisplayCount || 5);
+    const topN = Math.max(1, Number(campaign?.excludeOverallForeignFromAgeGroup ?? campaign?.overallDisplayCount) || 5);
 
     const { maleWinners, femaleWinners } = useMemo(() => {
         const finished = displayedRunners.filter(r => r.status === 'finished' && (r.netTime || r.gunTime || r.elapsedTime) && !isThaiNationality(r.nationality));

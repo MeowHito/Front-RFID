@@ -18,6 +18,10 @@ interface RankingMenuDropdownProps {
     /** Raw category name (matches campaign.categories[].name), NOT the derived UI key */
     categoryName: string;
     overallDisplayCount?: number;
+    /** Top N Thai overall ranks (admin/age-group-ranking "คนไทย"). Falls back to overallDisplayCount. */
+    excludeOverallThaiFromAgeGroup?: number;
+    /** Top N foreign overall ranks (admin/age-group-ranking "ต่างชาติ"). Falls back to overallDisplayCount. */
+    excludeOverallForeignFromAgeGroup?: number;
     ageGroupDisplayCount?: number;
     bestOfDisplayCount?: number;
     rankingMenuVisibility?: RankingMenuVisibility[];
@@ -32,6 +36,8 @@ export default function RankingMenuDropdown({
     campaignSlugOrId,
     categoryName,
     overallDisplayCount,
+    excludeOverallThaiFromAgeGroup,
+    excludeOverallForeignFromAgeGroup,
     ageGroupDisplayCount,
     bestOfDisplayCount,
     rankingMenuVisibility,
@@ -60,15 +66,17 @@ export default function RankingMenuDropdown({
     }, []);
 
     const overallN = Math.max(1, Number(overallDisplayCount) || 5);
+    const overallThaiN = Math.max(1, Number(excludeOverallThaiFromAgeGroup ?? overallDisplayCount) || 5);
+    const overallForeignN = Math.max(1, Number(excludeOverallForeignFromAgeGroup ?? overallDisplayCount) || 5);
     const ageGroupN = Math.max(1, Number(ageGroupDisplayCount) || 5);
     const bestOfN = Math.max(1, Number(bestOfDisplayCount) || 1);
     const catQuery = `?category=${encodeURIComponent(categoryName)}`;
 
     const items: { key: RankingMenuItemKey; label: string; href: string }[] = [
         { key: 'topOverall', label: `TopOverall ${overallN}`, href: `/Top-Overall-Winners/${encodeURIComponent(campaignSlugOrId)}${catQuery}` },
-        { key: 'general', label: `Overall ${overallN}`, href: `/Overall-Winners/${encodeURIComponent(campaignSlugOrId)}${catQuery}` },
+        { key: 'general', label: `Overall ${overallThaiN}`, href: `/Overall-Winners/${encodeURIComponent(campaignSlugOrId)}${catQuery}` },
         { key: 'bestOf', label: `Best of Buriram ${bestOfN}`, href: `/Best-Of-Winners/${encodeURIComponent(campaignSlugOrId)}${catQuery}` },
-        { key: 'nationality', label: `Foreigner Overall ${overallN}`, href: `/Nationality-Winners/${encodeURIComponent(campaignSlugOrId)}${catQuery}` },
+        { key: 'nationality', label: `Foreigner Overall ${overallForeignN}`, href: `/Nationality-Winners/${encodeURIComponent(campaignSlugOrId)}${catQuery}` },
         { key: 'ageGroup', label: `Age group ${ageGroupN}`, href: `/Result-Winners/${encodeURIComponent(campaignSlugOrId)}${catQuery}` },
     ];
 

@@ -1673,6 +1673,8 @@ export default function EventLivePage() {
                         campaignSlugOrId={campaign.slug || campaign._id}
                         categoryName={currentCategoryName}
                         overallDisplayCount={campaign.overallDisplayCount}
+                        excludeOverallThaiFromAgeGroup={campaign.excludeOverallThaiFromAgeGroup}
+                        excludeOverallForeignFromAgeGroup={campaign.excludeOverallForeignFromAgeGroup}
                         ageGroupDisplayCount={campaign.ageGroupDisplayCount}
                         bestOfDisplayCount={campaign.bestOfDisplayCount}
                         rankingMenuVisibility={campaign.rankingMenuVisibility}

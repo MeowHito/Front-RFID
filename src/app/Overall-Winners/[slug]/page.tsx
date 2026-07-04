@@ -38,6 +38,8 @@ interface Campaign {
     uuid?: string;
     categories?: CampaignCategory[];
     overallDisplayCount?: number;
+    excludeOverallThaiFromAgeGroup?: number;
+    excludeOverallForeignFromAgeGroup?: number;
     separateOverallNationalityCategories?: string[];
 }
 
@@ -191,6 +193,10 @@ export default function OverallWinnersBySlugPage() {
     }, [autoMode]);
 
     const topN = Math.max(1, campaign?.overallDisplayCount || 5);
+    // Nationality-split categories use their own Thai / foreign counts (set via
+    // admin/age-group-ranking's "คนไทย" / "ต่างชาติ" inputs), falling back to overallDisplayCount.
+    const thaiTopN = Math.max(1, Number(campaign?.excludeOverallThaiFromAgeGroup ?? campaign?.overallDisplayCount) || 5);
+    const foreignTopN = Math.max(1, Number(campaign?.excludeOverallForeignFromAgeGroup ?? campaign?.overallDisplayCount) || 5);
     // Nationality split applies per race category — only when the selected category is in the list
     const separateNat = isNationalitySplitCategory(campaign?.separateOverallNationalityCategories, selectedCategory);
 
@@ -203,7 +209,7 @@ export default function OverallWinnersBySlugPage() {
         });
         if (separateNat) {
             const pick = (isFemale: boolean, thai: boolean) =>
-                sorted.filter(r => (r.gender === 'F') === isFemale && isThaiNationality(r.nationality) === thai).slice(0, topN);
+                sorted.filter(r => (r.gender === 'F') === isFemale && isThaiNationality(r.nationality) === thai).slice(0, thai ? thaiTopN : foreignTopN);
             return {
                 maleWinners: pick(false, true),
                 femaleWinners: pick(true, true),
@@ -217,7 +223,7 @@ export default function OverallWinnersBySlugPage() {
             foreignMaleWinners: [] as Runner[],
             foreignFemaleWinners: [] as Runner[],
         };
-    }, [displayedRunners, topN, separateNat]);
+    }, [displayedRunners, topN, thaiTopN, foreignTopN, separateNat]);
 
     const downloadGroup = useCallback(async (
         males: Runner[],
@@ -294,7 +300,7 @@ export default function OverallWinnersBySlugPage() {
         </svg>
     );
 
-    const renderColumn = (title: string, bgHeader: string, list: Runner[], colRef: { current: HTMLDivElement | null }, onDownload: () => void) => {
+    const renderColumn = (title: string, bgHeader: string, list: Runner[], colRef: { current: HTMLDivElement | null }, onDownload: () => void, rankCount: number = topN) => {
         const headerFontSize = isMobile ? (separateNat ? 13 : 16) : (separateNat ? '1.5vh' : '2vh');
         const dlButtonStyle: CSSProperties = { background: 'rgba(255,255,255,0.18)', border: 'none', borderRadius: 5, cursor: downloading ? 'default' : 'pointer', padding: isMobile ? '3px 6px' : '3px 8px', color: 'white', fontSize: isMobile ? 11 : 12, display: 'flex', alignItems: 'center', gap: 4, fontWeight: 700, flexShrink: 0 };
         return (
@@ -316,7 +322,7 @@ export default function OverallWinnersBySlugPage() {
                         <span style={{ fontSize: isMobile ? 9 : '1.1vh', fontWeight: 700, color: '#94a3b8', flexShrink: 0, minWidth: isMobile ? 60 : '7vh', textAlign: 'right', letterSpacing: 0.5 }}>GunTime</span>
                         <span style={{ fontSize: isMobile ? 9 : '1.1vh', fontWeight: 700, color: '#94a3b8', flexShrink: 0, minWidth: isMobile ? 60 : '7vh', textAlign: 'right', letterSpacing: 0.5, marginLeft: isMobile ? 10 : 14 }}>NetTime</span>
                     </div>
-                    {Array.from({ length: topN }, (_, i) => i).map(i => list[i] ? renderRunnerRow(list[i], i) : renderEmptyRow(i))}
+                    {Array.from({ length: rankCount }, (_, i) => i).map(i => list[i] ? renderRunnerRow(list[i], i) : renderEmptyRow(i))}
                 </div>
             </div>
         </div>
@@ -413,10 +419,10 @@ export default function OverallWinnersBySlugPage() {
                 <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: isMobile ? 12 : '1vw', flex: isMobile ? undefined : 1, minHeight: 0, paddingBottom: isMobile ? 16 : 0 }}>
                     {separateNat ? (
                         <>
-                            {renderColumn('♂ OVERALL THA · MALE', '#2563eb', maleWinners, maleColRef, () => downloadGroup(maleWinners, femaleWinners, 'male', '-THA'))}
-                            {renderColumn('♀ OVERALL THA · FEMALE', '#db2777', femaleWinners, femaleColRef, () => downloadGroup(maleWinners, femaleWinners, 'female', '-THA'))}
-                            {renderColumn('♂ OVERALL INT · MALE', '#4f46e5', foreignMaleWinners, foreignMaleColRef, () => downloadGroup(foreignMaleWinners, foreignFemaleWinners, 'male', '-INT'))}
-                            {renderColumn('♀ OVERALL INT · FEMALE', '#c026d3', foreignFemaleWinners, foreignFemaleColRef, () => downloadGroup(foreignMaleWinners, foreignFemaleWinners, 'female', '-INT'))}
+                            {renderColumn('♂ OVERALL THA · MALE', '#2563eb', maleWinners, maleColRef, () => downloadGroup(maleWinners, femaleWinners, 'male', '-THA'), thaiTopN)}
+                            {renderColumn('♀ OVERALL THA · FEMALE', '#db2777', femaleWinners, femaleColRef, () => downloadGroup(maleWinners, femaleWinners, 'female', '-THA'), thaiTopN)}
+                            {renderColumn('♂ OVERALL INT · MALE', '#4f46e5', foreignMaleWinners, foreignMaleColRef, () => downloadGroup(foreignMaleWinners, foreignFemaleWinners, 'male', '-INT'), foreignTopN)}
+                            {renderColumn('♀ OVERALL INT · FEMALE', '#c026d3', foreignFemaleWinners, foreignFemaleColRef, () => downloadGroup(foreignMaleWinners, foreignFemaleWinners, 'female', '-INT'), foreignTopN)}
                         </>
                     ) : (
                         <>

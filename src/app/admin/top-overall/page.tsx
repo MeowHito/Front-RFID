@@ -26,6 +26,7 @@ interface FeaturedCampaignSettings {
     name: string;
     slug?: string;
     overallDisplayCount?: number;
+    bestOfDisplayCount?: number;
     separateOverallNationalityCategories?: string[];
     categories?: { name: string; distance?: string }[];
 }
@@ -48,6 +49,7 @@ export default function TopOverallPage() {
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [overallDisplayCount, setOverallDisplayCount] = useState<number>(DEFAULT_TOP_N);
+    const [bestOfDisplayCount, setBestOfDisplayCount] = useState<number>(1);
     const [natSplitCategories, setNatSplitCategories] = useState<string[]>([]);
     const [selectedCategory, setSelectedCategory] = useState('');
     const [previewRunners, setPreviewRunners] = useState<Runner[]>([]);
@@ -66,6 +68,7 @@ export default function TopOverallPage() {
                 const data = await res.json();
                 setCampaign(data);
                 setOverallDisplayCount(Math.min(MAX_TOP_N, Math.max(MIN_TOP_N, Number(data?.overallDisplayCount) || DEFAULT_TOP_N)));
+                setBestOfDisplayCount(Math.max(1, Number(data?.bestOfDisplayCount) || 1));
                 setNatSplitCategories(Array.isArray(data?.separateOverallNationalityCategories) ? data.separateOverallNationalityCategories : []);
                 setSelectedCategory(data?.categories?.[0]?.name || '');
             }
@@ -239,6 +242,11 @@ export default function TopOverallPage() {
         setOverallDisplayCount(normalized);
     };
 
+    const updateBestOfDisplayCount = (value: number) => {
+        const normalized = Number.isFinite(value) ? Math.max(1, Math.floor(value)) : 1;
+        setBestOfDisplayCount(normalized);
+    };
+
     const handleSave = async () => {
         if (!campaign?._id) return;
         setSaving(true);
@@ -248,6 +256,7 @@ export default function TopOverallPage() {
                 headers: authHeaders(),
                 body: JSON.stringify({
                     overallDisplayCount: overallDisplayCount,
+                    bestOfDisplayCount: bestOfDisplayCount,
                     separateOverallNationalityCategories: natSplitCategories,
                 }),
             });
@@ -319,6 +328,27 @@ export default function TopOverallPage() {
                                     ? (language === 'th' ? 'กำลังบันทึก...' : 'Saving...')
                                     : (language === 'th' ? 'บันทึก' : 'Save')}
                             </button>
+                        </div>
+
+                        <div className="mt-3 flex flex-wrap items-center gap-2">
+                            <div className="flex items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-2 py-1.5">
+                                <span className="text-[11px] font-bold" style={{ color: '#92400e' }}>
+                                    {language === 'th'
+                                        ? `Best Of ${campaign?.name || ''} กี่อันดับ:`
+                                        : `Best Of ${campaign?.name || ''} — top ranks:`}
+                                </span>
+                                <input
+                                    type="number"
+                                    min={1}
+                                    value={bestOfDisplayCount}
+                                    onChange={(e) => updateBestOfDisplayCount(e.target.value === '' ? 1 : Number(e.target.value))}
+                                    className="h-9 w-20 rounded-lg border-2 border-amber-400 bg-white text-center font-semibold outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-100"
+                                    style={{ color: '#92400e', fontSize: '15px' }}
+                                />
+                                <span className="text-[11px] font-bold" style={{ color: '#92400e' }}>
+                                    {language === 'th' ? 'อันดับแรก / เพศ' : 'top per gender'}
+                                </span>
+                            </div>
                         </div>
 
                         <div className="mt-4 rounded-2xl border border-gray-200 bg-[#f8fafc] p-3">
