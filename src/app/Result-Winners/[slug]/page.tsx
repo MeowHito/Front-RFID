@@ -519,7 +519,7 @@ export default function ResultWinnersBySlugPage() {
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <Link href="/" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                         <Image src="/logo-white.png" alt="ACTION" width={120} height={40} style={{ height: isMobile ? 28 : '3.5vh', width: 'auto' }} />
-                        <span style={{ color: '#22c55e', fontWeight: 900, fontSize: isMobile ? 14 : '2vh', letterSpacing: 2, textTransform: 'uppercase' }}>Winners</span>
+                        <span style={{ color: '#22c55e', fontWeight: 900, fontSize: isMobile ? 14 : '2vh', letterSpacing: 2, textTransform: 'uppercase' }}>Age Group Rankings</span>
                     </Link>
 
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>

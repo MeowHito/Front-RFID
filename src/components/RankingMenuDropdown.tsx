@@ -64,10 +64,10 @@ export default function RankingMenuDropdown({
     const catQuery = `?category=${encodeURIComponent(categoryName)}`;
 
     const items: { key: RankingMenuItemKey; label: string; href: string }[] = [
-        { key: 'general', label: language === 'th' ? `ทั่วไป ${overallN}` : `General ${overallN}`, href: `/Overall-Winners/${encodeURIComponent(campaignSlugOrId)}${catQuery}` },
-        { key: 'bestOf', label: language === 'th' ? `Best of ${campaignName}` : `Best of ${campaignName}`, href: `/Best-Of-Winners/${encodeURIComponent(campaignSlugOrId)}${catQuery}` },
-        { key: 'nationality', label: language === 'th' ? `อันดับต่างชาติ ${overallN}` : `Nationality ${overallN}`, href: `/Nationality-Winners/${encodeURIComponent(campaignSlugOrId)}${catQuery}` },
-        { key: 'ageGroup', label: language === 'th' ? `กลุ่มอายุ Top ${ageGroupN}` : `Age Group Top ${ageGroupN}`, href: `/Result-Winners/${encodeURIComponent(campaignSlugOrId)}${catQuery}` },
+        { key: 'general', label: `Overall ${overallN}`, href: `/Overall-Winners/${encodeURIComponent(campaignSlugOrId)}${catQuery}` },
+        { key: 'bestOf', label: `Best of ${campaignName}`, href: `/Best-Of-Winners/${encodeURIComponent(campaignSlugOrId)}${catQuery}` },
+        { key: 'nationality', label: `Foreigner Overall ${overallN}`, href: `/Nationality-Winners/${encodeURIComponent(campaignSlugOrId)}${catQuery}` },
+        { key: 'ageGroup', label: `Age group ${ageGroupN}`, href: `/Result-Winners/${encodeURIComponent(campaignSlugOrId)}${catQuery}` },
     ];
 
     const visibleItems = items.filter(item => isAdmin || draft[item.key]);

@@ -322,7 +322,7 @@ export default function OverallWinnersBySlugPage() {
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <Link href="/" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                         <Image src="/logo-white.png" alt="ACTION" width={120} height={40} style={{ height: isMobile ? 28 : '3.5vh', width: 'auto' }} />
-                        <span style={{ color: '#38bdf8', fontWeight: 900, fontSize: isMobile ? 14 : '2vh', letterSpacing: 2, textTransform: 'uppercase' }}>Overall Winners</span>
+                        <span style={{ color: '#38bdf8', fontWeight: 900, fontSize: isMobile ? 14 : '2vh', letterSpacing: 2, textTransform: 'uppercase' }}>Overall Winners {topN}</span>
                     </Link>
 
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
