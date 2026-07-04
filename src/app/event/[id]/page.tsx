@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
@@ -353,8 +353,6 @@ export default function EventLivePage() {
     const [totalDistance, setTotalDistance] = useState<number>(0);
     const [cpDistanceLookup, setCpDistanceLookup] = useState<CheckpointDistanceLookup>({});
     const [followedRunners, setFollowedRunners] = useState<FollowedRunner[]>([]);
-    const [rankDeltas, setRankDeltas] = useState<Map<string, number>>(new Map());
-    const prevRanksRef = useRef<Map<string, number>>(new Map());
 
     // Admin status edit modal
     const [editingRunner, setEditingRunner] = useState<Runner | null>(null);
@@ -392,48 +390,6 @@ export default function EventLivePage() {
     const [manualTimeEdits, setManualTimeEdits] = useState<Record<string, { gun?: string; net?: string }>>({});
 
     const toApiData = (payload: any) => payload?.data ?? payload;
-
-    // Compute rank deltas: compare current overall rank vs previous refresh
-    // Deltas are truly persistent — they stay until rank changes again
-    function updateRankDeltas(newRunners: Runner[]) {
-        // Compute live overall rank from runners (same sort logic as filteredRunners but unfiltered)
-        const ranked = [...newRunners]
-            .filter(r => {
-                // Only rank active runners (finished, in_progress, or DNF with progress)
-                if (r.status === 'not_started' || r.status === 'dns' || r.status === 'dq') return false;
-                if (r.status === 'dnf' && !((r.passedCount ?? 0) > 0)) return false;
-                return true;
-            })
-            .sort(compareRunnerRankOrder);
-
-        // Build current rank map (bib → position)
-        const currentRanks = new Map<string, number>();
-        ranked.forEach((r, idx) => {
-            if (r.bib) currentRanks.set(r.bib, idx + 1);
-        });
-
-        const prev = prevRanksRef.current;
-        if (prev.size > 0) {
-            // Compare with previous ranks — update deltas
-            setRankDeltas(existing => {
-                const updated = new Map<string, number>(existing);
-                currentRanks.forEach((currentRank, bib) => {
-                    const prevRank = prev.get(bib);
-                    if (prevRank !== undefined && prevRank > 0) {
-                        const delta = prevRank - currentRank;
-                        if (delta !== 0) {
-                            // Rank changed → update delta
-                            updated.set(bib, delta);
-                        }
-                        // If delta === 0 (rank same as prev), keep the EXISTING delta
-                        // This makes the arrow persist until rank changes again
-                    }
-                });
-                return updated;
-            });
-        }
-        prevRanksRef.current = currentRanks;
-    }
 
     function compareStableBibOrder(a: Runner, b: Runner) {
         const bibCompare = (a.bib || '').localeCompare(b.bib || '', undefined, { numeric: true });
@@ -627,7 +583,6 @@ export default function EventLivePage() {
                     const list = (runnersData?.data?.data as Runner[]) || (runnersData?.data as Runner[]) || (Array.isArray(runnersData) ? runnersData : []);
                     if (Array.isArray(list) && list.length > 0) {
                         const mapped = list.map(deriveEffectiveStatus);
-                        updateRankDeltas(mapped);
                         setRunners(mapped);
                         setLastUpdated(new Date());
                     }
@@ -658,7 +613,6 @@ export default function EventLivePage() {
                 const runnersData = await runnersRes.json().catch(() => ({}));
                 const list = (runnersData?.data?.data as Runner[]) || (runnersData?.data as Runner[]) || (Array.isArray(runnersData) ? runnersData : []);
                 const runnerList = (Array.isArray(list) ? list : []).map(deriveEffectiveStatus);
-                updateRankDeltas(runnerList);
                 setRunners(runnerList);
 
                 // Fetch checkpoint mappings per event for distance-based progress
@@ -1999,7 +1953,6 @@ export default function EventLivePage() {
                                                                 <span className={`rounded bg-[#dc2626] px-1.5 py-px font-extrabold tracking-[0.05em] text-white ${isMobile ? 'text-[9px]' : 'text-[10px]'}`}>
                                                                     BIB {runner.bib}
                                                                 </span>
-                                                                {(() => { const d = rankDeltas.get(runner.bib); if (!d) return null; return <span className={isMobile ? 'text-[8px] font-extrabold' : 'text-[9px] font-extrabold'} style={{ color: d > 0 ? '#16a34a' : '#dc2626' }}>{d > 0 ? `▲${d}` : `▼${Math.abs(d)}`}</span>; })()}
                                                                 {/* Age group moved to the CAT column; show nationality here, falling back to category when there is no age group. */}
                                                                 {runner.nationality ? runner.nationality : ''}{!runner.ageGroup && runner.category ? `${runner.nationality ? ' | ' : ''}${runner.category}` : ''}
                                                             </span>

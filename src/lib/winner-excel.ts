@@ -16,6 +16,11 @@ export interface ExcelSection {
     femaleRunners: ExcelRunner[];
 }
 
+function fmtDownloadedAt(d: Date): string {
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 function fmtMs(ms: number | undefined | null): string {
     if (!ms || ms <= 0) return '-';
     const h = Math.floor(ms / 3600000);
@@ -291,7 +296,13 @@ export async function buildWinnersExcel(
     ws.getRow(row).height = ROW_H.FOOTER_SIG;
     row++;
 
-    // "ผู้จัดงาน" label row
+    // "ผู้จัดงาน" label row — left side carries the download timestamp
+    ws.mergeCells(row, 1, row, isBoth ? 4 : 2);
+    const downloadedAt = ws.getCell(row, 1);
+    downloadedAt.value = `ดาวน์โหลดเมื่อ ${fmtDownloadedAt(new Date())}`;
+    downloadedAt.font = { size: FONT_SZ.FOOTER, color: { argb: argb(CLR.TXT_LIGHT) }, name: 'Calibri' };
+    downloadedAt.alignment = { horizontal: 'left', vertical: 'top' };
+
     ws.mergeCells(row, sigStartCol, row, sigEndCol);
     const sigLabel = ws.getCell(row, sigStartCol);
     sigLabel.value = 'ผู้จัดงาน';
