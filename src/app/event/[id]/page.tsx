@@ -1946,7 +1946,9 @@ export default function EventLivePage() {
                                                         <div className={isMobile ? 'grid min-h-7 overflow-hidden [grid-template-rows:auto_auto] gap-y-[3px]' : 'grid min-h-8 overflow-hidden [grid-template-rows:auto_auto] gap-y-[3px]'}>
                                                             <span className={`flex min-w-0 items-center ${isMobile ? 'gap-1' : 'gap-1.5'}`}>
                                                                 <span className={`block min-w-0 flex-1 truncate font-bold uppercase ${isMobile ? 'text-[11px]' : 'text-[13px]'}`} style={{ color: themeStyles.text, lineHeight: 1.15 }}>
-                                                                    {runner.firstName} {runner.lastName}
+                                                                    {language === 'th' && runner.firstNameTh
+                                                                        ? `${runner.firstNameTh} ${runner.lastNameTh || ''}`.trim()
+                                                                        : `${runner.firstName} ${runner.lastName}`}
                                                                 </span>
                                                             </span>
                                                             <span className={`flex items-center whitespace-nowrap font-semibold ${isMobile ? 'gap-1 text-[9px]' : 'gap-1.5 text-[10px]'}`} style={{ color: themeStyles.text, lineHeight: 1.15 }}>
@@ -3085,8 +3087,14 @@ export default function EventLivePage() {
                                                 {/* Name */}
                                                 <div className="min-w-0 flex-1 overflow-hidden">
                                                     <div className="truncate text-[12px] font-semibold" style={{ color: themeStyles.text }}>
-                                                        {runner.firstName} {runner.lastName}
-                                                        {(runner.firstNameTh || runner.lastNameTh) && (
+                                                        {language === 'th' && runner.firstNameTh
+                                                            ? `${runner.firstNameTh} ${runner.lastNameTh || ''}`.trim()
+                                                            : `${runner.firstName} ${runner.lastName}`}
+                                                        {language === 'th' && runner.firstNameTh ? (
+                                                            <span className="ml-1 text-[10px] font-normal" style={{ color: themeStyles.textSecondary }}>
+                                                                {runner.firstName} {runner.lastName}
+                                                            </span>
+                                                        ) : (runner.firstNameTh || runner.lastNameTh) && (
                                                             <span className="ml-1 text-[10px] font-normal" style={{ color: themeStyles.textSecondary }}>
                                                                 {runner.firstNameTh} {runner.lastNameTh}
                                                             </span>

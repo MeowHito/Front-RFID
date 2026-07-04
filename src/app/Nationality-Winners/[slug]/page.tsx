@@ -3,7 +3,8 @@
 import Image from 'next/image';
 import Link from 'next/link';
 import { useEffect, useState, useMemo, useRef, useCallback } from 'react';
-import { buildWinnersExcel, triggerExcelDownload } from '@/lib/winner-excel';
+import { buildWinnersExcel, triggerExcelDownload, type NameLang } from '@/lib/winner-excel';
+import NameLangToggle from '@/components/NameLangToggle';
 import { isThaiNationality } from '@/lib/nationality';
 import { useParams, useSearchParams } from 'next/navigation';
 
@@ -12,6 +13,9 @@ interface Runner {
     bib: string;
     firstName: string;
     lastName: string;
+    firstNameTh?: string;
+    lastNameTh?: string;
+    phone?: string;
     gender: string;
     category: string;
     status: string;
@@ -78,6 +82,7 @@ export default function NationalityWinnersBySlugPage() {
     const campaignCategoriesRef = useRef<CampaignCategory[]>([]);
     const displayedCategoryRef = useRef<string>('');
     const [downloading, setDownloading] = useState<string | null>(null);
+    const [nameLang, setNameLang] = useState<NameLang>('en');
     const maleColRef = useRef<HTMLDivElement | null>(null);
     const femaleColRef = useRef<HTMLDivElement | null>(null);
 
@@ -214,6 +219,7 @@ export default function NationalityWinnersBySlugPage() {
                 selectedCategory,
                 [{ maleRunners: maleWinners, femaleRunners: femaleWinners }],
                 gender,
+                { nameLang },
             );
             const suffix = gender === 'male' ? '-Male' : gender === 'female' ? '-Female' : '';
             const distance = campaign?.categories?.find(c => c.name === selectedCategory)?.distance || selectedCategory || '';
@@ -222,7 +228,7 @@ export default function NationalityWinnersBySlugPage() {
         } catch (e) { console.error(e); } finally {
             setDownloading(null);
         }
-    }, [campaign, selectedCategory, maleWinners, femaleWinners]);
+    }, [campaign, selectedCategory, maleWinners, femaleWinners, nameLang]);
 
     const rankBg = ['#f59e0b', '#9ca3af', '#92400e', '#e2e8f0', '#e2e8f0'];
     const rankFg = ['#000', '#fff', '#fff', '#475569', '#475569'];
@@ -321,6 +327,7 @@ export default function NationalityWinnersBySlugPage() {
 
                     {campaign && !initialLoading && (
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                            <NameLangToggle value={nameLang} onChange={setNameLang} isMobile={isMobile} />
                             <button
                                 onClick={() => downloadLandscape('both')}
                                 disabled={!!downloading}

@@ -4,11 +4,15 @@ import { useState, useEffect, useRef } from 'react';
 
 // ─── Shared E-Slip types ──────────────────────────────────────────────────────
 
+export type ESlipLang = 'th' | 'en';
+
 export interface RunnerData {
     _id: string;
     bib: string;
     firstName: string;
     lastName: string;
+    firstNameTh?: string;
+    lastNameTh?: string;
     gender: string;
     category: string;
     ageGroup?: string;
@@ -175,6 +179,17 @@ export interface TemplateProps {
     textColorMode?: 'light' | 'dark';
     awardLabel?: string | null;
     targetBandLabel?: string | null;
+    /** Name language: 'th' uses the Thai name when present, else falls back to English. Default 'en'. */
+    language?: ESlipLang;
+}
+
+/** Resolve the runner's display name: Thai when language='th' and a Thai name
+ * exists, otherwise the English name. */
+export function resolveRunnerName(runner: RunnerData, language: ESlipLang = 'en'): string {
+    if (language === 'th' && runner.firstNameTh) {
+        return `${runner.firstNameTh} ${runner.lastNameTh || ''}`.trim();
+    }
+    return `${runner.firstName} ${runner.lastName}`.trim();
 }
 
 /** Auto-shrink text to always fit one line within its container */
@@ -194,8 +209,8 @@ export function FitName({ children, className, style, maxSize = 28 }: { children
 }
 
 // ==================== TEMPLATE 1: Dark Photo Background ====================
-export function Template1({ runner, timings, campaign, bgImage, slipRef, showField, awardLabel, targetBandLabel }: TemplateProps) {
-    const displayName = `${runner.firstName} ${runner.lastName}`.trim();
+export function Template1({ runner, timings, campaign, bgImage, slipRef, showField, awardLabel, targetBandLabel, language = 'en' }: TemplateProps) {
+    const displayName = resolveRunnerName(runner, language);
     const genderLabel = runner.gender === 'M' ? 'Male' : 'Female';
     const dist = parseDistanceValue(runner.category);
     const pace = effectivePace(runner);
@@ -346,8 +361,8 @@ export function Template1({ runner, timings, campaign, bgImage, slipRef, showFie
 }
 
 // ==================== TEMPLATE 2: Semi-transparent Photo Background ====================
-export function Template2({ runner, timings, campaign, bgImage, slipRef, showField, textColorMode = 'dark', awardLabel, targetBandLabel }: TemplateProps) {
-    const displayName = `${runner.firstName} ${runner.lastName}`.trim();
+export function Template2({ runner, timings, campaign, bgImage, slipRef, showField, textColorMode = 'dark', awardLabel, targetBandLabel, language = 'en' }: TemplateProps) {
+    const displayName = resolveRunnerName(runner, language);
     const genderLabel = runner.gender === 'M' ? 'Male' : 'Female';
     const dist = parseDistanceValue(runner.category);
     const pace = effectivePace(runner);
@@ -513,8 +528,8 @@ export function Template2({ runner, timings, campaign, bgImage, slipRef, showFie
 }
 
 // ==================== TEMPLATE 3: Clean White Card ====================
-export function Template3({ runner, timings, campaign, slipRef, showField, awardLabel, targetBandLabel }: TemplateProps) {
-    const displayName = `${runner.firstName} ${runner.lastName}`.trim();
+export function Template3({ runner, timings, campaign, slipRef, showField, awardLabel, targetBandLabel, language = 'en' }: TemplateProps) {
+    const displayName = resolveRunnerName(runner, language);
     const genderLabel = runner.gender === 'M' ? 'Male' : 'Female';
     const dist = parseDistanceValue(runner.category);
     const pace = effectivePace(runner);
@@ -643,14 +658,15 @@ export function Template3({ runner, timings, campaign, slipRef, showField, award
 
 // ─── E-Slip V2 Renderer ────────────────────────────────────────────────────────
 
-export function resolveFieldValue(field: FieldKey, staticText: string, runner: RunnerData, campaign: CampaignData | null, awardLabel?: string | null, targetBandLabel?: string | null): string {
+export function resolveFieldValue(field: FieldKey, staticText: string, runner: RunnerData, campaign: CampaignData | null, awardLabel?: string | null, targetBandLabel?: string | null, language: ESlipLang = 'en'): string {
     const fmt = formatTime;
+    const useThai = language === 'th' && !!runner.firstNameTh;
     switch (field) {
         case 'eventName':   return campaign?.name ?? '';
         case 'bib':         return runner.bib ?? '';
-        case 'runnerName':  return `${runner.firstName} ${runner.lastName}`.trim();
-        case 'firstName':   return runner.firstName ?? '';
-        case 'lastName':    return runner.lastName ?? '';
+        case 'runnerName':  return resolveRunnerName(runner, language);
+        case 'firstName':   return (useThai ? runner.firstNameTh : runner.firstName) ?? '';
+        case 'lastName':    return (useThai ? runner.lastNameTh : runner.lastName) ?? '';
         case 'category':    return runner.category ?? '';
         case 'distance':    return runner.category ?? '';
         case 'gender':      return runner.gender === 'M' ? 'Male' : 'Female';
@@ -746,7 +762,7 @@ export function ESlipV2SplitsTable({ el, timings }: { el: ESlipV2Element; timing
     );
 }
 
-export function ESlipV2Renderer({ layout, runner, campaign, slipRef, timings, awardLabel, targetBandLabel }: {
+export function ESlipV2Renderer({ layout, runner, campaign, slipRef, timings, awardLabel, targetBandLabel, language = 'en' }: {
     layout: ESlipV2Layout;
     runner: RunnerData;
     campaign: CampaignData | null;
@@ -754,6 +770,7 @@ export function ESlipV2Renderer({ layout, runner, campaign, slipRef, timings, aw
     timings: TimingRecord[];
     awardLabel?: string | null;
     targetBandLabel?: string | null;
+    language?: ESlipLang;
 }) {
     const wrapperRef = useRef<HTMLDivElement>(null);
     const [scale, setScale] = useState(1);
@@ -819,7 +836,7 @@ export function ESlipV2Renderer({ layout, runner, campaign, slipRef, timings, aw
             {layout.elements.map(el => {
                 const isImage = el.type === 'image';
                 const isSplits = el.type === 'splits';
-                const text = (isImage || isSplits) ? '' : el.prefix + resolveFieldValue(el.field, el.staticText, runner, campaign, awardLabel, targetBandLabel) + el.suffix;
+                const text = (isImage || isSplits) ? '' : el.prefix + resolveFieldValue(el.field, el.staticText, runner, campaign, awardLabel, targetBandLabel, language) + el.suffix;
                 return (
                     <div
                         key={el.id}

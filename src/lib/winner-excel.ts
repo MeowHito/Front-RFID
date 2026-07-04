@@ -4,11 +4,16 @@ export interface ExcelRunner {
     bib: string;
     firstName: string;
     lastName: string;
+    firstNameTh?: string;
+    lastNameTh?: string;
+    phone?: string;
     gunTimeStr?: string;
     netTimeStr?: string;
     gunTime?: number;
     netTime?: number;
 }
+
+export type NameLang = 'th' | 'en';
 
 export interface ExcelSection {
     label?: string;
@@ -56,28 +61,37 @@ const CLR = {
 };
 
 // ── Sizing constants ────────────────────────────────────────────────────────
-// Column widths for "both" layout (A–E Male | F spacer | G–K Female)
+// Each gender block is 7 columns: POS · BIB · NAME · GUN · NET · PHONE · SIGN.
+const GENDER_COLS = 7;
+
+// Column widths for "both" layout (A–G Male | H spacer | I–O Female)
 const COLS_BOTH = [
-    { width: 7 },   // A  POS male
-    { width: 11 },  // B  BIB male
-    { width: 32 },  // C  NAME male
-    { width: 14 },  // D  GUN male
-    { width: 14 },  // E  NET male
-    { width: 2 },   // F  spacer
-    { width: 7 },   // G  POS female
-    { width: 11 },  // H  BIB female
-    { width: 32 },  // I  NAME female
-    { width: 14 },  // J  GUN female
-    { width: 14 },  // K  NET female
+    { width: 6 },   // A  POS male
+    { width: 10 },  // B  BIB male
+    { width: 26 },  // C  NAME male
+    { width: 11 },  // D  GUN male
+    { width: 11 },  // E  NET male
+    { width: 13 },  // F  PHONE male
+    { width: 16 },  // G  SIGN male
+    { width: 2 },   // H  spacer
+    { width: 6 },   // I  POS female
+    { width: 10 },  // J  BIB female
+    { width: 26 },  // K  NAME female
+    { width: 11 },  // L  GUN female
+    { width: 11 },  // M  NET female
+    { width: 13 },  // N  PHONE female
+    { width: 16 },  // O  SIGN female
 ];
 
-// Column widths for single-gender layout (A–E only)
+// Column widths for single-gender layout (A–G only)
 const COLS_SINGLE = [
-    { width: 8 },
-    { width: 13 },
-    { width: 44 },
-    { width: 16 },
-    { width: 16 },
+    { width: 8 },   // POS
+    { width: 12 },  // BIB
+    { width: 40 },  // NAME
+    { width: 14 },  // GUN
+    { width: 14 },  // NET
+    { width: 16 },  // PHONE
+    { width: 22 },  // SIGN
 ];
 
 // Compact sizing — age group + gender share a single header row and rows are
@@ -108,9 +122,20 @@ export async function buildWinnersExcel(
     subtitle: string,
     sections: ExcelSection[],
     showGender: 'male' | 'female' | 'both' = 'both',
-    opts?: { combinedLabel?: string; barColor?: string },
+    opts?: { combinedLabel?: string; barColor?: string; nameLang?: NameLang },
 ): Promise<Blob | null> {
     const ExcelJS = (await import('exceljs')).default;
+
+    // Name column language: 'th' → use the Thai name when the runner has one,
+    // otherwise fall back to the English name. 'en' (default) → always English.
+    const nameLang: NameLang = opts?.nameLang ?? 'en';
+    const pickName = (r: ExcelRunner): string => {
+        if (nameLang === 'th') {
+            const th = `${r.firstNameTh || ''} ${r.lastNameTh || ''}`.trim();
+            if (th) return th.toUpperCase();
+        }
+        return `${r.firstName} ${r.lastName}`.trim().toUpperCase();
+    };
 
     const wb = new ExcelJS.Workbook();
     wb.creator = 'RFID Timing';
@@ -133,7 +158,9 @@ export async function buildWinnersExcel(
     };
 
     const isBoth = showGender === 'both';
-    const totalCols = isBoth ? 11 : 5;
+    // Female block starts after the male block (7 cols) + 1 spacer.
+    const femaleStart = GENDER_COLS + 2; // col 9
+    const totalCols = isBoth ? GENDER_COLS * 2 + 1 : GENDER_COLS; // 15 or 7
 
     ws.columns = isBoth ? COLS_BOTH : COLS_SINGLE;
 
@@ -172,15 +199,16 @@ export async function buildWinnersExcel(
     };
 
     // ── Helper: column header row ─────────────────────────────────────────────
+    const HDR_LABELS = ['POS', 'BIB', 'NAME', 'GUN TIME', 'NET TIME', 'เบอร์โทร', 'เซ็นชื่อ'];
+    const COL_ALIGNS: ('center' | 'left' | 'right')[] = ['center', 'center', 'left', 'right', 'right', 'center', 'left'];
+
     const addColHdr = (startCol: number, bgColor: string) => {
-        const labels = ['POS', 'BIB', 'NAME', 'GUN TIME', 'NET TIME'];
-        const aligns: ('center' | 'left' | 'right')[] = ['center', 'center', 'left', 'right', 'right'];
-        for (let i = 0; i < 5; i++) {
+        for (let i = 0; i < GENDER_COLS; i++) {
             const c = ws.getCell(row, startCol + i);
-            c.value = labels[i];
+            c.value = HDR_LABELS[i];
             c.fill = fill(bgColor);
             c.font = { bold: true, size: FONT_SZ.COL_HDR, color: { argb: argb(CLR.TXT_MID) }, name: 'Calibri' };
-            c.alignment = { horizontal: aligns[i], vertical: 'middle' };
+            c.alignment = { horizontal: COL_ALIGNS[i], vertical: 'middle' };
             c.border = { bottom: thinBorder() };
         }
         ws.getRow(row).height = ROW_H.COL_HDR;
@@ -189,30 +217,32 @@ export async function buildWinnersExcel(
     // ── Helper: data row ──────────────────────────────────────────────────────
     const addDataRow = (runner: ExcelRunner | null, idx: number, startCol: number) => {
         const bg = idx === 0 ? CLR.ROW_GOLD : idx % 2 === 0 ? CLR.ROW_EVEN : CLR.WHITE;
-        const aligns: ('center' | 'left' | 'right')[] = ['center', 'center', 'left', 'right', 'right'];
 
+        // Columns: POS · BIB · NAME · GUN · NET · เบอร์โทร (from data) · เซ็นชื่อ (blank to sign)
         const vals = runner
             ? [
                 idx + 1,
                 runner.bib,
-                `${runner.firstName} ${runner.lastName}`.toUpperCase(),
+                pickName(runner),
                 runner.gunTimeStr || fmtMs(runner.gunTime),
                 runner.netTimeStr || fmtMs(runner.netTime),
+                runner.phone || '',
+                '',
             ]
-            : [idx + 1, '', '—', '', ''];
+            : [idx + 1, '', '—', '', '', '', ''];
 
-        for (let i = 0; i < 5; i++) {
+        for (let i = 0; i < GENDER_COLS; i++) {
             const c = ws.getCell(row, startCol + i);
             c.value = vals[i];
             c.fill = fill(bg);
             c.font = {
-                bold: runner ? (i === 0 || i >= 3) : false,
+                bold: runner ? (i === 0 || i === 3 || i === 4) : false,
                 size: FONT_SZ.DATA,
                 color: { argb: argb(runner ? CLR.TXT_DARK : CLR.TXT_EMPTY) },
                 italic: !runner && i === 2,
-                name: i >= 3 ? 'Courier New' : 'Calibri',
+                name: (i === 3 || i === 4 || i === 5) ? 'Courier New' : 'Calibri',
             };
-            c.alignment = { horizontal: aligns[i], vertical: 'middle' };
+            c.alignment = { horizontal: COL_ALIGNS[i], vertical: 'middle' };
             c.border = { bottom: thinBorder('F1F5F9') };
         }
         ws.getRow(row).height = ROW_H.DATA;
@@ -220,7 +250,7 @@ export async function buildWinnersExcel(
 
     // ── Helper: fill spacer column cells ─────────────────────────────────────
     const clearSpacer = () => {
-        const c = ws.getCell(row, 6);
+        const c = ws.getCell(row, GENDER_COLS + 1); // col 8
         c.fill = fill(CLR.WHITE);
         c.border = {};
     };
@@ -232,26 +262,26 @@ export async function buildWinnersExcel(
         const agePrefix = sec.label ? `กลุ่มอายุ ${sec.label}   ` : '';
 
         if (isBoth) {
-            addGenderBar(`${agePrefix}♂  MALE WINNERS`, CLR.MALE, 1, 5);
-            addGenderBar(`${agePrefix}♀  FEMALE WINNERS`, CLR.FEMALE, 7, 11);
+            addGenderBar(`${agePrefix}♂  MALE WINNERS`, CLR.MALE, 1, GENDER_COLS);
+            addGenderBar(`${agePrefix}♀  FEMALE WINNERS`, CLR.FEMALE, femaleStart, totalCols);
             clearSpacer();
             row++;
 
             addColHdr(1, CLR.M_COL_HDR);
-            addColHdr(7, CLR.F_COL_HDR);
+            addColHdr(femaleStart, CLR.F_COL_HDR);
             clearSpacer();
             row++;
 
             const maxR = Math.max(sec.maleRunners.length, sec.femaleRunners.length, 1);
             for (let i = 0; i < maxR; i++) {
                 addDataRow(sec.maleRunners[i] ?? null, i, 1);
-                addDataRow(sec.femaleRunners[i] ?? null, i, 7);
+                addDataRow(sec.femaleRunners[i] ?? null, i, femaleStart);
                 clearSpacer();
                 row++;
             }
         } else if (showGender === 'male') {
             const barLabel = opts?.combinedLabel ? `${agePrefix}${opts.combinedLabel}` : `${agePrefix}♂  MALE WINNERS`;
-            addGenderBar(barLabel, opts?.barColor || CLR.MALE, 1, 5);
+            addGenderBar(barLabel, opts?.barColor || CLR.MALE, 1, GENDER_COLS);
             row++;
             addColHdr(1, CLR.M_COL_HDR);
             row++;
@@ -261,7 +291,7 @@ export async function buildWinnersExcel(
                 row++;
             }
         } else {
-            addGenderBar(`${agePrefix}♀  FEMALE WINNERS`, CLR.FEMALE, 1, 5);
+            addGenderBar(`${agePrefix}♀  FEMALE WINNERS`, CLR.FEMALE, 1, GENDER_COLS);
             row++;
             addColHdr(1, CLR.F_COL_HDR);
             row++;
@@ -278,12 +308,12 @@ export async function buildWinnersExcel(
     // ── Footer row: Action.in.th (left) | ผู้จัดงาน + sign line (right) ───────
     row++; // extra blank before footer
 
-    // Determine right-side columns for the footer
-    const sigStartCol = isBoth ? 9 : 3;   // I or C
-    const sigEndCol   = isBoth ? 11 : 5;  // K or E
+    // Determine right-side columns for the footer (organizer signature block)
+    const sigStartCol = isBoth ? totalCols - 3 : GENDER_COLS - 2; // 12 or 5
+    const sigEndCol   = totalCols;                                 // 15 or 7
 
     // Signature line row
-    ws.mergeCells(row, 1, row, isBoth ? 4 : 2);
+    ws.mergeCells(row, 1, row, isBoth ? 5 : 2);
     const leftBrand = ws.getCell(row, 1);
     leftBrand.value = 'Action.in.th';
     leftBrand.font = { bold: true, size: FONT_SZ.FOOTER + 1, color: { argb: argb(CLR.TXT_MID) }, name: 'Calibri' };
@@ -297,7 +327,7 @@ export async function buildWinnersExcel(
     row++;
 
     // "ผู้จัดงาน" label row — left side carries the download timestamp
-    ws.mergeCells(row, 1, row, isBoth ? 4 : 2);
+    ws.mergeCells(row, 1, row, isBoth ? 5 : 2);
     const downloadedAt = ws.getCell(row, 1);
     downloadedAt.value = `ดาวน์โหลดเมื่อ ${fmtDownloadedAt(new Date())}`;
     downloadedAt.font = { size: FONT_SZ.FOOTER, color: { argb: argb(CLR.TXT_LIGHT) }, name: 'Calibri' };

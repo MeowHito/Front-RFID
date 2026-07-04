@@ -3,7 +3,8 @@
 import Image from 'next/image';
 import Link from 'next/link';
 import { useEffect, useState, useMemo, useRef, useCallback } from 'react';
-import { buildWinnersExcel, triggerExcelDownload, ExcelSection } from '@/lib/winner-excel';
+import { buildWinnersExcel, triggerExcelDownload, ExcelSection, type NameLang } from '@/lib/winner-excel';
+import NameLangToggle from '@/components/NameLangToggle';
 import { isThaiNationality, isNationalitySplitCategory } from '@/lib/nationality';
 import { useParams, useSearchParams } from 'next/navigation';
 
@@ -12,6 +13,9 @@ interface Runner {
     bib: string;
     firstName: string;
     lastName: string;
+    firstNameTh?: string;
+    lastNameTh?: string;
+    phone?: string;
     gender: string;
     category: string;
     ageGroup?: string;
@@ -133,6 +137,7 @@ export default function ResultWinnersBySlugPage() {
     const dropdownRef = useRef<HTMLDivElement>(null);
     const [volume, setVolume] = useState(1);
     const [downloading, setDownloading] = useState<string | null>(null);
+    const [nameLang, setNameLang] = useState<NameLang>('en');
     const maleColRef = useRef<HTMLDivElement | null>(null);
     const femaleColRef = useRef<HTMLDivElement | null>(null);
     const maleAgeGroupRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -400,12 +405,12 @@ export default function ResultWinnersBySlugPage() {
             const suffix = gender === 'male' ? '-Male' : gender === 'female' ? '-Female' : '';
             const distance = campaign?.categories?.find(c => c.name === selectedCategory)?.distance || selectedCategory || '';
             const distPart = distance ? `-${distance}` : '';
-            const blob = await buildWinnersExcel(campaign?.name || '', selectedCategory, sections, gender);
+            const blob = await buildWinnersExcel(campaign?.name || '', selectedCategory, sections, gender, { nameLang });
             if (blob) triggerExcelDownload(blob, `${campaign?.name || 'winners'}${distPart}-AgeGroup-${ageGroupLabel}${suffix}`);
         } catch (e) { console.error(e); } finally {
             setDownloading(null);
         }
-    }, [campaign, selectedCategory, maleWinners, femaleWinners]);
+    }, [campaign, selectedCategory, maleWinners, femaleWinners, nameLang]);
 
     const downloadAll = useCallback(async (gender: 'male' | 'female' | 'both' = 'both') => {
         setDownloading(gender === 'both' ? 'all' : `all-${gender}`);
@@ -418,12 +423,12 @@ export default function ResultWinnersBySlugPage() {
             const suffix = gender === 'male' ? '-Male' : gender === 'female' ? '-Female' : '';
             const distance = campaign?.categories?.find(c => c.name === selectedCategory)?.distance || selectedCategory || '';
             const distPart = distance ? `-${distance}` : '';
-            const blob = await buildWinnersExcel(campaign?.name || '', selectedCategory, sections, gender);
+            const blob = await buildWinnersExcel(campaign?.name || '', selectedCategory, sections, gender, { nameLang });
             if (blob) triggerExcelDownload(blob, `${campaign?.name || 'winners'}${distPart}-AgeGroup-All${suffix}`);
         } catch (e) { console.error(e); } finally {
             setDownloading(null);
         }
-    }, [activeAgeGroups, campaign, selectedCategory, maleWinners, femaleWinners]);
+    }, [activeAgeGroups, campaign, selectedCategory, maleWinners, femaleWinners, nameLang]);
 
     const rankBg = ['#f59e0b', '#9ca3af', '#92400e', '#e2e8f0', '#e2e8f0'];
     const rankFg = ['#000', '#fff', '#fff', '#475569', '#475569'];
@@ -555,6 +560,7 @@ export default function ResultWinnersBySlugPage() {
 
                     {campaign && !initialLoading && (
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                            <NameLangToggle value={nameLang} onChange={setNameLang} isMobile={isMobile} />
                             <button
                                 onClick={() => downloadAll('both')}
                                 disabled={!!downloading}

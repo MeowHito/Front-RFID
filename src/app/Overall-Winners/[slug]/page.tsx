@@ -4,7 +4,8 @@ import Image from 'next/image';
 import Link from 'next/link';
 import type { CSSProperties } from 'react';
 import { useEffect, useState, useMemo, useRef, useCallback } from 'react';
-import { buildWinnersExcel, triggerExcelDownload } from '@/lib/winner-excel';
+import { buildWinnersExcel, triggerExcelDownload, type NameLang } from '@/lib/winner-excel';
+import NameLangToggle from '@/components/NameLangToggle';
 import { isThaiNationality, isNationalitySplitCategory } from '@/lib/nationality';
 import { useParams, useSearchParams } from 'next/navigation';
 
@@ -13,6 +14,9 @@ interface Runner {
     bib: string;
     firstName: string;
     lastName: string;
+    firstNameTh?: string;
+    lastNameTh?: string;
+    phone?: string;
     gender: string;
     category: string;
     status: string;
@@ -76,6 +80,7 @@ export default function OverallWinnersBySlugPage() {
     const campaignCategoriesRef = useRef<CampaignCategory[]>([]);
     const displayedCategoryRef = useRef<string>('');
     const [downloading, setDownloading] = useState<string | null>(null);
+    const [nameLang, setNameLang] = useState<NameLang>('en');
     const maleColRef = useRef<HTMLDivElement | null>(null);
     const femaleColRef = useRef<HTMLDivElement | null>(null);
 
@@ -231,6 +236,7 @@ export default function OverallWinnersBySlugPage() {
                 selectedCategory,
                 [{ maleRunners: males, femaleRunners: females }],
                 gender,
+                { nameLang },
             );
             const suffix = gender === 'male' ? '-Male' : gender === 'female' ? '-Female' : '';
             const distance = campaign?.categories?.find(c => c.name === selectedCategory)?.distance || selectedCategory || '';
@@ -239,7 +245,7 @@ export default function OverallWinnersBySlugPage() {
         } catch (e) { console.error(e); } finally {
             setDownloading(null);
         }
-    }, [campaign, selectedCategory]);
+    }, [campaign, selectedCategory, nameLang]);
 
     const downloadLandscape = useCallback((gender: 'male' | 'female' | 'both' = 'both') =>
         downloadGroup(maleWinners, femaleWinners, gender),
@@ -349,6 +355,7 @@ export default function OverallWinnersBySlugPage() {
 
                     {campaign && !initialLoading && (
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                            <NameLangToggle value={nameLang} onChange={setNameLang} isMobile={isMobile} />
                             <button
                                 onClick={() => downloadLandscape('both')}
                                 disabled={!!downloading}

@@ -6,6 +6,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { computeAwardsForCategory, formatAwardLabel } from '@/lib/awards';
 import { isNationalitySplitCategory } from '@/lib/nationality';
+import { useLanguage } from '@/lib/language-context';
 import {
     RunnerData,
     TimingRecord,
@@ -19,6 +20,7 @@ import {
 } from '@/components/eslip/eslip-templates';
 
 export default function ESlipPage() {
+    const { language } = useLanguage();
     const params = useParams();
     const router = useRouter();
     const runnerId = params.id as string;
@@ -351,7 +353,7 @@ export default function ESlipPage() {
                         </div>
                     )
                     : isV2
-                    ? <ESlipV2Renderer layout={campaign!.eslipV2Layout!} runner={runner} campaign={campaign} slipRef={slipRef} timings={timings} awardLabel={awardLabel} targetBandLabel={targetBandLabel} />
+                    ? <ESlipV2Renderer layout={campaign!.eslipV2Layout!} runner={runner} campaign={campaign} slipRef={slipRef} timings={timings} awardLabel={awardLabel} targetBandLabel={targetBandLabel} language={language} />
                     : (() => {
                         const vf = campaign?.eslipVisibleFields;
                         const hasAgeGroup = !!runner.ageGroup;
@@ -362,7 +364,7 @@ export default function ESlipPage() {
                             if (!hasAgeGroup && (key === 'categoryRank' || key === 'ageGroup')) return false;
                             return !vf || vf.length === 0 || vf.includes(key);
                         };
-                        const common = { runner, timings, campaign, slipRef, showField, awardLabel, targetBandLabel };
+                        const common = { runner, timings, campaign, slipRef, showField, awardLabel, targetBandLabel, language };
                         if (activeTemplate === 'template1') return <Template1 {...common} bgImage={bgImage} />;
                         if (activeTemplate === 'template2') return <Template2 {...common} bgImage={bgImage} textColorMode={photoTextColor} />;
                         return <Template3 {...common} bgImage={null} />;

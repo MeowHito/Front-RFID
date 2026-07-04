@@ -7,6 +7,7 @@ import Image from 'next/image';
 import { isRunnerFollowed, loadFollowedRunners, saveFollowedRunners, subscribeFollowedRunners, toggleFollowedRunner, type FollowedRunner } from '@/lib/followed-runners';
 import { computeAwardsForCategory, formatOverallAwardLabel, type AwardResult } from '@/lib/awards';
 import { isNationalitySplitCategory } from '@/lib/nationality';
+import { useLanguage } from '@/lib/language-context';
 
 
 interface RunnerData {
@@ -321,6 +322,7 @@ function FitName({ children, className, style, maxSize = 28 }: { children: strin
 }
 
 export default function RunnerProfilePage() {
+    const { language } = useLanguage();
     const params = useParams();
     const router = useRouter();
     const runnerId = params.id as string;
@@ -523,7 +525,9 @@ export default function RunnerProfilePage() {
     const statusInfo = getStatusLabel(runner.status);
     const genderLabel = runner.gender === 'M' ? 'Male' : runner.gender === 'F' ? 'Female' : runner.gender;
     const distanceVal = parseDistanceValue(runner.category);
-    const displayName = `${runner.firstName} ${runner.lastName}`.trim();
+    const displayName = language === 'th' && runner.firstNameTh
+        ? `${runner.firstNameTh} ${runner.lastNameTh || ''}`.trim()
+        : `${runner.firstName} ${runner.lastName}`.trim();
 
     const isFinished = runner.status === 'finished';
 
