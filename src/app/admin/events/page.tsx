@@ -71,6 +71,8 @@ export default function EventsPage() {
     const [deleteConfirmInput, setDeleteConfirmInput] = useState('');
     const [featuredConfirmOpen, setFeaturedConfirmOpen] = useState(false);
     const [featuredTargetId, setFeaturedTargetId] = useState<string | null>(null);
+    // The campaign THIS admin account is working on (per-user "starred" event).
+    const [featuredId, setFeaturedId] = useState<string | null>(null);
 
     const loadCampaigns = async () => {
         try {
@@ -149,6 +151,21 @@ export default function EventsPage() {
         }, 300);
         return () => clearTimeout(t);
     }, [searchQuery, user?.role, user?.allowedCampaigns, user?.allEventsAccess]);
+
+    // Load this account's own selected campaign (per-user star), independent of others.
+    useEffect(() => {
+        let cancelled = false;
+        (async () => {
+            try {
+                const res = await fetch('/api/campaigns/featured', { cache: 'no-store' });
+                if (res.ok && !cancelled) {
+                    const data = await res.json();
+                    setFeaturedId(data?._id ?? null);
+                }
+            } catch { /* ignore */ }
+        })();
+        return () => { cancelled = true; };
+    }, []);
 
     const formatDate = (dateString: string) => {
         const date = new Date(dateString);
@@ -281,10 +298,11 @@ export default function EventsPage() {
     const handleToggleFeatured = async (campaignId: string) => {
         const campaign = campaigns.find(c => c._id === campaignId);
         if (!campaign) return;
-        const isCurrentlyFeatured = campaign.isFeatured ?? false;
+        const isCurrentlyFeatured = featuredId === campaignId;
+        const prevFeaturedId = featuredId;
 
         if (isCurrentlyFeatured) {
-            setCampaigns(prev => prev.map(c => ({ ...c, isFeatured: false })));
+            setFeaturedId(null);
             try {
                 await fetch(`/api/campaigns/${campaignId}/featured`, {
                     method: 'PUT',
@@ -292,14 +310,12 @@ export default function EventsPage() {
                     body: JSON.stringify({ value: false }),
                 });
                 window.dispatchEvent(new CustomEvent('admin-featured-updated'));
-            } catch (e) {
-                loadCampaigns();
+            } catch {
+                setFeaturedId(prevFeaturedId);
             }
             return;
         }
-        setCampaigns(prev => prev.map(c =>
-            c._id === campaignId ? { ...c, isFeatured: true } : { ...c, isFeatured: false }
-        ));
+        setFeaturedId(campaignId);
         try {
             const res = await fetch(`/api/campaigns/${campaignId}/featured`, {
                 method: 'PUT',
@@ -308,8 +324,8 @@ export default function EventsPage() {
             });
             if (!res.ok) throw new Error('Failed to set featured');
             window.dispatchEvent(new CustomEvent('admin-featured-updated'));
-        } catch (error) {
-            loadCampaigns();
+        } catch {
+            setFeaturedId(prevFeaturedId);
         }
     };
 
@@ -435,7 +451,7 @@ export default function EventsPage() {
     const featuredTargetCampaign = featuredTargetId
         ? campaigns.find(c => c._id === featuredTargetId)
         : null;
-    const featuredIsCurrentlyOn = featuredTargetCampaign?.isFeatured ?? false;
+    const featuredIsCurrentlyOn = !!featuredTargetId && featuredId === featuredTargetId;
 
     return (
         <AdminLayout
@@ -517,7 +533,7 @@ export default function EventsPage() {
                                                 </button>
                                                 <button
                                                     type="button"
-                                                    className={`event-tool-btn event-tool-trophy ${(campaign.isFeatured ?? false) ? 'gold' : ''}`}
+                                                    className={`event-tool-btn event-tool-trophy ${featuredId === campaign._id ? 'gold' : ''}`}
                                                     onClick={() => openFeaturedConfirm(campaign._id)}
                                                     title={language === 'th' ? 'เปิดปิดสีถ้วยรางวัล (กิจกรรมที่เลือกจะแสดงบนหัวเว็บ)' : 'Toggle featured (shown in header)'}
                                                 >

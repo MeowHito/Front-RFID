@@ -6,8 +6,17 @@ export async function GET(request: NextRequest) {
     const full = request.nextUrl.searchParams.get('full');
     const qs = full === 'true' || full === '1' ? '?full=true' : '';
     try {
+        // Forward the caller's identity so the backend can return THIS user's selected
+        // campaign. Pages fetch featured without an Authorization header, so fall back to
+        // the auth_token cookie (set at login). Anonymous → backend returns global featured.
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+        const authHeader = request.headers.get('authorization');
+        const cookieToken = request.cookies.get('auth_token')?.value;
+        if (authHeader) headers['Authorization'] = authHeader;
+        else if (cookieToken) headers['Authorization'] = `Bearer ${cookieToken}`;
+
         const res = await fetch(`${BACKEND_URL}/campaigns/featured${qs}`, {
-            headers: { 'Content-Type': 'application/json' },
+            headers,
             cache: 'no-store',
         });
 

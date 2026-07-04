@@ -52,6 +52,26 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+const AUTH_COOKIE = 'auth_token';
+
+/**
+ * Mirror the auth token into a cookie (alongside localStorage) so server-side API
+ * proxies can identify the user on requests the page fires without an Authorization
+ * header — e.g. GET /api/campaigns/featured, which resolves the per-user selected
+ * campaign. SameSite=Lax keeps it same-site only; not httpOnly since the client sets it
+ * (the token already lives in JS-readable localStorage, so this adds no new exposure).
+ */
+function setAuthCookie(token: string) {
+    if (typeof document === 'undefined') return;
+    const secure = window.location.protocol === 'https:' ? '; Secure' : '';
+    document.cookie = `${AUTH_COOKIE}=${token}; path=/; max-age=${7 * 24 * 60 * 60}; SameSite=Lax${secure}`;
+}
+
+function clearAuthCookie() {
+    if (typeof document === 'undefined') return;
+    document.cookie = `${AUTH_COOKIE}=; path=/; max-age=0; SameSite=Lax`;
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
     const [user, setUser] = useState<User | null>(null);
     const [token, setToken] = useState<string | null>(null);
@@ -72,6 +92,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                         // Token expired — clear and redirect
                         localStorage.removeItem('auth_token');
                         localStorage.removeItem('auth_user');
+                        clearAuthCookie();
                         console.warn('Auth token expired, clearing session');
                         setIsLoading(false);
                         return;
@@ -81,6 +102,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 // Invalid token format — clear it
                 localStorage.removeItem('auth_token');
                 localStorage.removeItem('auth_user');
+                clearAuthCookie();
                 setIsLoading(false);
                 return;
             }
@@ -88,6 +110,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             setToken(storedToken);
             setUser(JSON.parse(storedUser));
             api.defaults.headers.common['Authorization'] = `Bearer ${storedToken}`;
+            // Re-establish the cookie for already-logged-in sessions (migration path).
+            setAuthCookie(storedToken);
         }
 
         setIsLoading(false);
@@ -111,6 +135,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // Store in localStorage
         localStorage.setItem('auth_token', access_token);
         localStorage.setItem('auth_user', JSON.stringify(userData));
+        setAuthCookie(access_token);
 
         // Set axios default header
         api.defaults.headers.common['Authorization'] = `Bearer ${access_token}`;
@@ -126,6 +151,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // Store in localStorage
         localStorage.setItem('auth_token', access_token);
         localStorage.setItem('auth_user', JSON.stringify(userData));
+        setAuthCookie(access_token);
 
         // Set axios default header
         api.defaults.headers.common['Authorization'] = `Bearer ${access_token}`;
@@ -244,6 +270,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // Clear localStorage
         localStorage.removeItem('auth_token');
         localStorage.removeItem('auth_user');
+        clearAuthCookie();
 
         // Remove axios header
         delete api.defaults.headers.common['Authorization'];
