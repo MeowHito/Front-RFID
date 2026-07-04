@@ -3,8 +3,9 @@
 import Image from 'next/image';
 import Link from 'next/link';
 import { useEffect, useState, useMemo, useRef, useCallback } from 'react';
-import { buildWinnersExcel, triggerExcelDownload, type NameLang } from '@/lib/winner-excel';
+import { buildWinnersExcel, triggerExcelDownload } from '@/lib/winner-excel';
 import NameLangToggle from '@/components/NameLangToggle';
+import { useLanguage } from '@/lib/language-context';
 import { isThaiNationality } from '@/lib/nationality';
 import { useParams, useSearchParams } from 'next/navigation';
 
@@ -60,6 +61,7 @@ function formatTime(ms: number | undefined | null): string {
 // overallDisplayCount, independent of whether that category also splits its
 // Overall board by nationality via separateOverallNationalityCategories.
 export default function NationalityWinnersBySlugPage() {
+    const { language, setLanguage } = useLanguage();
     const params = useParams();
     const slug = params.slug as string;
     const searchParams = useSearchParams();
@@ -82,7 +84,6 @@ export default function NationalityWinnersBySlugPage() {
     const campaignCategoriesRef = useRef<CampaignCategory[]>([]);
     const displayedCategoryRef = useRef<string>('');
     const [downloading, setDownloading] = useState<string | null>(null);
-    const [nameLang, setNameLang] = useState<NameLang>('en');
     const maleColRef = useRef<HTMLDivElement | null>(null);
     const femaleColRef = useRef<HTMLDivElement | null>(null);
 
@@ -219,7 +220,7 @@ export default function NationalityWinnersBySlugPage() {
                 selectedCategory,
                 [{ maleRunners: maleWinners, femaleRunners: femaleWinners }],
                 gender,
-                { nameLang },
+                { nameLang: language },
             );
             const suffix = gender === 'male' ? '-Male' : gender === 'female' ? '-Female' : '';
             const distance = campaign?.categories?.find(c => c.name === selectedCategory)?.distance || selectedCategory || '';
@@ -228,7 +229,7 @@ export default function NationalityWinnersBySlugPage() {
         } catch (e) { console.error(e); } finally {
             setDownloading(null);
         }
-    }, [campaign, selectedCategory, maleWinners, femaleWinners, nameLang]);
+    }, [campaign, selectedCategory, maleWinners, femaleWinners, language]);
 
     const rankBg = ['#f59e0b', '#9ca3af', '#92400e', '#e2e8f0', '#e2e8f0'];
     const rankFg = ['#000', '#fff', '#fff', '#475569', '#475569'];
@@ -250,7 +251,9 @@ export default function NationalityWinnersBySlugPage() {
                 {idx + 1}
             </div>
             <span style={{ fontSize: isMobile ? 12 : '1.55vh', fontWeight: 700, color: '#1e293b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1, textTransform: 'uppercase' }}>
-                {`${runner.bib}  ${runner.firstName} ${runner.lastName}`}
+                {language === 'th' && runner.firstNameTh
+                    ? `${runner.bib}  ${runner.firstNameTh} ${runner.lastNameTh || ''}`
+                    : `${runner.bib}  ${runner.firstName} ${runner.lastName}`}
             </span>
             <span style={{ fontFamily: 'monospace', fontWeight: 800, fontSize: isMobile ? 11 : '1.5vh', color: '#1e293b', flexShrink: 0, minWidth: isMobile ? 60 : '7vh', textAlign: 'right' }}>
                 {runner.gunTimeStr || formatTime(runner.gunTime)}
@@ -327,7 +330,7 @@ export default function NationalityWinnersBySlugPage() {
 
                     {campaign && !initialLoading && (
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-                            <NameLangToggle value={nameLang} onChange={setNameLang} isMobile={isMobile} />
+                            <NameLangToggle value={language} onChange={setLanguage} isMobile={isMobile} />
                             <button
                                 onClick={() => downloadLandscape('both')}
                                 disabled={!!downloading}
