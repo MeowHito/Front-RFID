@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { buildWinnersExcel, triggerExcelDownload, ExcelSection } from '@/lib/winner-excel';
 import { isThaiNationality, isNationalitySplitCategory } from '@/lib/nationality';
-import { useParams } from 'next/navigation';
+import { useParams, useSearchParams } from 'next/navigation';
 
 interface Runner {
     _id: string;
@@ -109,6 +109,8 @@ const REFRESH_INTERVAL = 10;
 export default function ResultWinnersBySlugPage() {
     const params = useParams();
     const slug = params.slug as string;
+    const searchParams = useSearchParams();
+    const categoryFromUrl = searchParams.get('category') || '';
 
     const [campaign, setCampaign] = useState<Campaign | null>(null);
     const [campaignNotFound, setCampaignNotFound] = useState(false);
@@ -156,7 +158,10 @@ export default function ResultWinnersBySlugPage() {
                     const data = await res.json();
                     if (data?._id) {
                         setCampaign(data);
-                        if (data.categories?.length > 0) setSelectedCategory(data.categories[0].name);
+                        if (data.categories?.length > 0) {
+                            const urlMatch = data.categories.find((c: { name: string }) => c.name === categoryFromUrl);
+                            setSelectedCategory(urlMatch ? urlMatch.name : data.categories[0].name);
+                        }
                     } else {
                         setCampaignNotFound(true);
                     }
@@ -169,7 +174,7 @@ export default function ResultWinnersBySlugPage() {
                 setInitialLoading(false);
             }
         })();
-    }, [slug]);
+    }, [slug]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const loadRunners = useCallback(async (isRefresh = false) => {
         if (!campaign?._id || !selectedCategory) { setDisplayedRunners([]); return; }

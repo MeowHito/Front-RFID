@@ -12,6 +12,8 @@ import CutoffDateTimePicker from '@/components/CutoffDateTimePicker';
 import { getFollowedRunnersForEvent, isRunnerFollowed, loadFollowedRunners, subscribeFollowedRunners, type FollowedRunner } from '@/lib/followed-runners';
 import { computeAwardsForCategory, type AwardResult } from '@/lib/awards';
 import { isThaiNationality, normalizeCategoryName } from '@/lib/nationality';
+import RankingMenuDropdown from '@/components/RankingMenuDropdown';
+import type { RankingMenuVisibility } from '@/lib/rankingMenu';
 
 interface Campaign {
     _id: string;
@@ -38,6 +40,7 @@ interface Campaign {
     excludeOverallForeignFromAgeGroup?: number;
     excludeAgeGroupTop?: number;
     separateOverallNationalityCategories?: string[];
+    rankingMenuVisibility?: RankingMenuVisibility[];
 }
 
 interface RaceCategory {
@@ -761,19 +764,25 @@ export default function EventLivePage() {
         let cats;
         if (!campaignCategories.length) {
             const runnerCategories = new Set(runners.map(r => r.category).filter(Boolean));
-            cats = Array.from(runnerCategories).map(v => ({ key: v, label: v, normalizedName: normalizeComparableText(v), normalizedDistance: normalizeComparableText(v), distanceValue: parseDistanceValue(v) }));
+            cats = Array.from(runnerCategories).map(v => ({ key: v, label: v, categoryName: v, normalizedName: normalizeComparableText(v), normalizedDistance: normalizeComparableText(v), distanceValue: parseDistanceValue(v) }));
         } else {
             cats = campaignCategories.map((cat, i) => {
                 const distance = String(cat?.distance || '').trim();
                 const name = String(cat?.name || '').trim();
                 const nd = normalizeComparableText(distance);
                 const nn = normalizeComparableText(name);
-                return { key: `${nd || nn || i + 1}-${i}`, label: distance || name || `Category ${i + 1}`, normalizedDistance: nd, normalizedName: nn, distanceValue: parseDistanceValue(distance || name) };
+                return { key: `${nd || nn || i + 1}-${i}`, label: distance || name || `Category ${i + 1}`, categoryName: name, normalizedDistance: nd, normalizedName: nn, distanceValue: parseDistanceValue(distance || name) };
             }).filter(c => Boolean(c.label));
         }
         // Sort by distance descending
         return cats.sort((a, b) => (b.distanceValue ?? 0) - (a.distanceValue ?? 0));
     }, [campaign, runners, language]);
+
+    // Raw campaign.categories[].name for the selected distance — the ranking menu
+    // dropdown and its winner-board links key off this, not the derived UI `key`.
+    const currentCategoryName = useMemo(() => {
+        return categories.find(c => c.key === filterCategory)?.categoryName || '';
+    }, [categories, filterCategory]);
 
     // Category keys whose Overall ranking is split by nationality (Thai vs foreign).
     // The campaign stores category NAMES; map them onto the resolved category keys.
@@ -1655,6 +1664,22 @@ export default function EventLivePage() {
                         </button>
                     )}
                 </div>
+
+                {/* Ranking menu — General / Best of / Nationality / Age Group for the selected distance */}
+                {campaign && currentCategoryName && (
+                    <RankingMenuDropdown
+                        campaignId={campaign._id}
+                        campaignSlugOrId={campaign.slug || campaign._id}
+                        campaignName={campaign.name}
+                        categoryName={currentCategoryName}
+                        overallDisplayCount={campaign.overallDisplayCount}
+                        ageGroupDisplayCount={campaign.ageGroupDisplayCount}
+                        rankingMenuVisibility={campaign.rankingMenuVisibility}
+                        isAdmin={isAdmin}
+                        language={language}
+                        onSaved={(next) => setCampaign(prev => prev ? { ...prev, rankingMenuVisibility: next } : prev)}
+                    />
+                )}
 
                 {/* Row 2 (mobile): Search input + Age group + Gender filter — full width */}
                 {isMobile && (
