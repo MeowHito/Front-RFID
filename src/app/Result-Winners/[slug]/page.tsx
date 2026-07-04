@@ -344,7 +344,8 @@ export default function ResultWinnersBySlugPage() {
         // Nationality-split categories: top Thai / foreign overall winners (per gender)
         // are excluded from age-group awards. Each bucket's exclude count is
         // independently configurable, falling back to `overallDisplayCount` if unset.
-        if (isNationalitySplitCategory(campaign?.separateOverallNationalityCategories, selectedCategory)) {
+        const natSplit = isNationalitySplitCategory(campaign?.separateOverallNationalityCategories, selectedCategory);
+        if (natSplit) {
             const overallTopN = Math.max(1, campaign?.overallDisplayCount || 5);
             const excludeNatCount: Record<'thai' | 'foreign', number> = {
                 thai: campaign?.excludeOverallThaiFromAgeGroup != null ? Math.max(0, campaign.excludeOverallThaiFromAgeGroup) : overallTopN,
@@ -375,6 +376,9 @@ export default function ResultWinnersBySlugPage() {
 
         for (const runner of sorted) {
             if (excludedBibs.has(runner.bib)) continue;
+            // Nationality-split categories: foreigners are not eligible for age-group
+            // awards at all (organizer rule) — they only compete in the OVERALL INT ranking.
+            if (natSplit && !isThaiNationality(runner.nationality)) continue;
             if (excludeAG > 0 && runner.ageGroupRank && runner.ageGroupRank > 0 && runner.ageGroupRank <= excludeAG) continue;
             const ag = disableAgeGroupRanking ? OVERALL_GROUP.label : normalizeAgeGroupLabel(runner.ageGroup);
             if (!ag) continue;

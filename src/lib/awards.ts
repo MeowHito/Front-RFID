@@ -122,6 +122,9 @@ export function computeAwardsForCategory(
         const bucketCount = new Map<string, number>();
         for (const r of byAgeRank) {
             if (excludedBibs.has(r.bib)) continue;
+            // Nationality-split categories: foreigners are not eligible for age-group
+            // awards at all (organizer rule) — they only place in the OVERALL INT ranking.
+            if (separateNat && !isThaiNationality(r.nationality)) continue;
             const ag = normalizeAgeGroupLabel(r.ageGroup);
             if (!ag) continue;
             const taken = bucketCount.get(ag) || 0;

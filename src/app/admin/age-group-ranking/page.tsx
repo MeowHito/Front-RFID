@@ -309,6 +309,9 @@ export default function AgeGroupRankingPage() {
 
         for (const runner of sortedFinishedRunners) {
             if (excludedBibs.has(runner.bib)) continue;
+            // Nationality-split categories: foreigners are not eligible for age-group
+            // awards at all (organizer rule) — they only compete in the OVERALL INT ranking.
+            if (selectedCategorySplit && !isThaiNationality(runner.nationality)) continue;
             const groupLabel = disableAgeGroupRanking ? OVERALL_GROUP.label : resolveAgeGroup(runner, activeAgeGroups);
             const bucket = runner.gender === 'F' ? female : male;
             if (bucket[groupLabel] && bucket[groupLabel].length < ageGroupDisplayCount) {
