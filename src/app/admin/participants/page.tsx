@@ -84,6 +84,40 @@ interface RunnerEditLog {
     changes: { field: string; oldValue: string; newValue: string }[];
 }
 
+interface CampaignEditLog extends RunnerEditLog {
+    bib: string;
+    runnerId?: {
+        _id: string;
+        bib: string;
+        firstName?: string;
+        lastName?: string;
+        firstNameTh?: string;
+        lastNameTh?: string;
+        category?: string;
+    } | string;
+}
+
+const EDIT_FIELD_LABELS: Record<string, { th: string; en: string }> = {
+    firstName: { th: 'ชื่อ (EN)', en: 'First Name' },
+    lastName: { th: 'นามสกุล (EN)', en: 'Last Name' },
+    firstNameTh: { th: 'ชื่อ (TH)', en: 'First Name (TH)' },
+    lastNameTh: { th: 'นามสกุล (TH)', en: 'Last Name (TH)' },
+    gender: { th: 'เพศ', en: 'Gender' },
+    category: { th: 'ระยะทาง', en: 'Category' },
+    ageGroup: { th: 'กลุ่มอายุ', en: 'Age Group' },
+    age: { th: 'อายุ', en: 'Age' },
+    nationality: { th: 'สัญชาติ', en: 'Nationality' },
+    birthDate: { th: 'วันเกิด', en: 'Birth Date' },
+    idNo: { th: 'เลขบัตรประชาชน', en: 'ID No.' },
+    team: { th: 'ทีม', en: 'Team' },
+    teamName: { th: 'ชื่อทีม', en: 'Team Name' },
+    chipCode: { th: 'Chip Code', en: 'Chip Code' },
+    rfidTag: { th: 'RFID Tag', en: 'RFID Tag' },
+    printingCode: { th: 'Printing Code', en: 'Printing Code' },
+    email: { th: 'อีเมล', en: 'Email' },
+    phone: { th: 'เบอร์โทร', en: 'Phone' },
+};
+
 const IMPORT_TEMPLATE_HEADERS = [
     'BIB',
     'FirstName',
@@ -205,6 +239,11 @@ export default function ParticipantsPage() {
     const [showEditLogs, setShowEditLogs] = useState(false);
     const [editLogs, setEditLogs] = useState<RunnerEditLog[]>([]);
     const [loadingEditLogs, setLoadingEditLogs] = useState(false);
+
+    // Campaign-wide "edited list" modal state
+    const [showEditedListModal, setShowEditedListModal] = useState(false);
+    const [allEditLogs, setAllEditLogs] = useState<CampaignEditLog[]>([]);
+    const [loadingAllEditLogs, setLoadingAllEditLogs] = useState(false);
 
     // Per-category import state
     const [categoryImports, setCategoryImports] = useState<Record<string, CategoryImportData>>({});
@@ -539,6 +578,23 @@ export default function ParticipantsPage() {
             setLoadingEditLogs(false);
         }
     }, [editingRunner]);
+
+    // Fetch all edit-log entries across the whole campaign for the "Edited List" modal
+    const loadAllEditLogs = useCallback(async () => {
+        if (!campaign?._id) return;
+        setShowEditedListModal(true);
+        setLoadingAllEditLogs(true);
+        try {
+            const res = await fetch(`/api/runners/edit-logs?campaignId=${campaign._id}`, { headers: authHeaders(), cache: 'no-store' });
+            if (!res.ok) throw new Error('Failed');
+            const data = await res.json();
+            setAllEditLogs(Array.isArray(data) ? data : []);
+        } catch {
+            setAllEditLogs([]);
+        } finally {
+            setLoadingAllEditLogs(false);
+        }
+    }, [campaign?._id]);
 
     // Save all edited fields for a runner
     const handleSaveRunner = useCallback(async () => {
@@ -1010,6 +1066,17 @@ export default function ParticipantsPage() {
                                 ? (language === 'th' ? 'กำลัง Import...' : 'Importing...')
                                 : '🐯 Import From Race Tiger'
                             }
+                        </button>
+                        {/* Edited List — shows every participant edited by an admin, with old/new values */}
+                        <button
+                            onClick={loadAllEditLogs}
+                            className="px-4 py-2 text-[13px] rounded-md border cursor-pointer transition whitespace-nowrap border-amber-400 bg-amber-50 text-amber-700 font-bold hover:bg-amber-100"
+                        >
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="inline mr-1.5 -mt-0.5">
+                                <path d="M11 4H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4" />
+                                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                            </svg>
+                            {language === 'th' ? 'รายชื่อที่แก้ไข' : 'Edited List'}
                         </button>
                     </div>
 
@@ -1726,6 +1793,85 @@ export default function ParticipantsPage() {
                                         : (language === 'th' ? 'บันทึก' : 'Save')}
                                 </button>
                             </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Edited List modal — every runner edited by an admin, with old/new values */}
+            {showEditedListModal && (
+                <div style={{
+                    position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+                    background: 'rgba(0,0,0,0.45)', zIndex: 9999,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }} onClick={() => setShowEditedListModal(false)}>
+                    <div
+                        onClick={e => e.stopPropagation()}
+                        style={{
+                            background: '#fff', borderRadius: 8, width: '95%', maxWidth: 800,
+                            maxHeight: '85vh', overflowY: 'auto', boxShadow: '0 8px 30px rgba(0,0,0,0.25)',
+                        }}
+                    >
+                        <div style={{
+                            padding: '14px 20px', borderBottom: '1px solid #e5e7eb',
+                            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                            background: '#f9fafb', borderRadius: '8px 8px 0 0', position: 'sticky', top: 0,
+                        }}>
+                            <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: '#333' }}>
+                                {language === 'th' ? 'รายชื่อที่แก้ไข' : 'Edited List'}
+                            </h3>
+                            <button onClick={() => setShowEditedListModal(false)} style={{
+                                background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: '#999',
+                                lineHeight: 1, padding: '2px 6px',
+                            }}>✕</button>
+                        </div>
+
+                        <div style={{ padding: '16px 20px' }}>
+                            {loadingAllEditLogs ? (
+                                <div style={{ fontSize: 13, color: '#999', textAlign: 'center', padding: 20 }}>
+                                    {language === 'th' ? 'กำลังโหลด...' : 'Loading...'}
+                                </div>
+                            ) : allEditLogs.length === 0 ? (
+                                <div style={{ fontSize: 13, color: '#999', textAlign: 'center', padding: 20 }}>
+                                    {language === 'th' ? 'ไม่มีรายชื่อที่ถูกแก้ไข' : 'No edited participants'}
+                                </div>
+                            ) : (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                                    {allEditLogs.map(log => {
+                                        const runner = typeof log.runnerId === 'object' ? log.runnerId : undefined;
+                                        const displayName = runner
+                                            ? (language === 'th' && (runner.firstNameTh || runner.lastNameTh)
+                                                ? `${runner.firstNameTh || ''} ${runner.lastNameTh || ''}`.trim()
+                                                : `${runner.firstName || ''} ${runner.lastName || ''}`.trim())
+                                            : '';
+                                        return (
+                                            <div key={log._id} style={{ fontSize: 13, background: '#f9fafb', border: '1px solid #eee', borderRadius: 6, padding: '10px 14px' }}>
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6, marginBottom: 6 }}>
+                                                    <div style={{ color: '#333', fontWeight: 700 }}>
+                                                        BIB {log.bib}{displayName ? ` — ${displayName}` : ''}
+                                                        {runner?.category && <span style={{ color: '#888', fontWeight: 400 }}> ({runner.category})</span>}
+                                                    </div>
+                                                    <div style={{ color: '#777', fontSize: 12 }}>
+                                                        <strong>{log.changedBy}</strong> — {new Date(log.changedAt).toLocaleString(language === 'th' ? 'th-TH' : 'en-US')}
+                                                    </div>
+                                                </div>
+                                                <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                                                    {log.changes.map((c, i) => {
+                                                        const label = EDIT_FIELD_LABELS[c.field]
+                                                            ? (language === 'th' ? EDIT_FIELD_LABELS[c.field].th : EDIT_FIELD_LABELS[c.field].en)
+                                                            : c.field;
+                                                        return (
+                                                            <div key={i} style={{ color: '#555', fontSize: 12 }}>
+                                                                {label}: <span style={{ color: '#dc2626' }}>{c.oldValue || '-'}</span> → <span style={{ color: '#16a34a' }}>{c.newValue || '-'}</span>
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            )}
                         </div>
                     </div>
                 </div>
