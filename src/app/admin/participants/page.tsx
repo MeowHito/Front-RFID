@@ -129,22 +129,29 @@ const IMPORT_TEMPLATE_HEADERS = [
     'ChipCode',
 ];
 
-function calculateAgeGroup(birthDate: string, gender: string): string {
-    if (!birthDate) return '';
-    const birth = new Date(birthDate);
-    if (isNaN(birth.getTime())) return '';
-    const today = new Date();
-    let age = today.getFullYear() - birth.getFullYear();
-    const m = today.getMonth() - birth.getMonth();
-    if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) age--;
-    const prefix = gender === 'F' ? 'F' : 'M';
-    if (age < 18) return `${prefix} U18`;
-    if (age < 30) return `${prefix} 18-29`;
-    if (age < 40) return `${prefix} 30-39`;
-    if (age < 50) return `${prefix} 40-49`;
-    if (age < 60) return `${prefix} 50-59`;
-    if (age < 70) return `${prefix} 60-69`;
-    return `${prefix} 70+`;
+/**
+ * Age group as a 5-year band to match RaceTiger's scheme (e.g. "20-24", "25-29").
+ * Prefers birthDate; falls back to the runner's stored `age` (RaceTiger BIO sync
+ * provides age, not birthDate). Returns no gender prefix and no leading zero pad,
+ * so a 24-year-old resolves to "20-24" — the value RaceTiger itself uses.
+ */
+function calculateAgeGroup(birthDate: string, ageFallback?: number): string {
+    let age: number | null = null;
+    if (birthDate) {
+        const birth = new Date(birthDate);
+        if (!isNaN(birth.getTime())) {
+            const today = new Date();
+            age = today.getFullYear() - birth.getFullYear();
+            const m = today.getMonth() - birth.getMonth();
+            if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) age--;
+        }
+    }
+    if (age == null && typeof ageFallback === 'number' && ageFallback > 0) age = ageFallback;
+    if (age == null || age <= 0) return '';
+    if (age < 20) return '0-19';
+    if (age >= 70) return '70+';
+    const lo = Math.floor(age / 5) * 5; // 24 → 20, 29 → 25
+    return `${lo}-${lo + 4}`;           // "20-24", "25-29", …
 }
 
 function parseCSV(text: string): string[][] {
@@ -222,6 +229,8 @@ export default function ParticipantsPage() {
     const listLimit = 50;
     const [categoryCounts, setCategoryCounts] = useState<Record<string, number>>({});
     const [listRunnerStatus, setListRunnerStatus] = useState<string[]>([]);
+    const [natFilter, setNatFilter] = useState<'all' | 'thai' | 'foreign'>('all');
+    const [natCounts, setNatCounts] = useState<{ thai: number; foreign: number; total: number }>({ thai: 0, foreign: 0, total: 0 });
     const [dupBibs, setDupBibs] = useState<string[]>([]);
     const [dupChips, setDupChips] = useState<string[]>([]);
     const [statusCounts, setStatusCounts] = useState<Record<string, number>>({});
@@ -346,6 +355,7 @@ export default function ParticipantsPage() {
             if (activeTab !== 'all') params.append('category', activeTab);
             if (debouncedSearch) params.append('search', debouncedSearch);
             if (listRunnerStatus.length > 0) params.append('runnerStatus', listRunnerStatus.join(','));
+            if (natFilter !== 'all') params.append('nationality', natFilter);
             if (sortBy) { params.append('sortBy', sortBy); params.append('sortOrder', sortOrder); }
             // Skip heavy status count queries when not needed (pagination, sort, search)
             const needStatusCounts = forceStatusCounts || !statusCountsLoadedRef.current || listRunnerStatus.length > 0;
@@ -367,7 +377,7 @@ export default function ParticipantsPage() {
         } finally {
             setRunnersLoading(false);
         }
-    }, [campaign, activeTab, debouncedSearch, listPage, listRunnerStatus, sortBy, sortOrder]);
+    }, [campaign, activeTab, debouncedSearch, listPage, listRunnerStatus, natFilter, sortBy, sortOrder]);
 
     // Load runners when tab changes — always fetch fresh status counts
     useEffect(() => {
@@ -387,7 +397,22 @@ export default function ParticipantsPage() {
             fetchRunners();
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [debouncedSearch, listPage, listRunnerStatus, sortBy, sortOrder]);
+    }, [debouncedSearch, listPage, listRunnerStatus, natFilter, sortBy, sortOrder]);
+
+    // Load Thai / foreign counts for the current tab (independent of the active nationality filter)
+    useEffect(() => {
+        if (!campaign?._id || activeTab === 'import') { setNatCounts({ thai: 0, foreign: 0, total: 0 }); return; }
+        let cancelled = false;
+        (async () => {
+            try {
+                const p = new URLSearchParams({ campaignId: campaign._id });
+                if (activeTab !== 'all') p.append('category', activeTab);
+                const res = await fetch(`/api/runners/nationality-counts?${p.toString()}`, { cache: 'no-store' });
+                if (res.ok && !cancelled) setNatCounts(await res.json());
+            } catch { /* ignore */ }
+        })();
+        return () => { cancelled = true; };
+    }, [campaign, activeTab]);
 
     // Toggle runner status filter (push/pop, 'ready' clears all others)
     const toggleListRunnerStatus = useCallback((status: string) => {
@@ -481,6 +506,7 @@ export default function ParticipantsPage() {
             if (activeTab !== 'all') params.append('category', activeTab);
             if (debouncedSearch) params.append('search', debouncedSearch);
             if (listRunnerStatus.length > 0) params.append('runnerStatus', listRunnerStatus.join(','));
+            if (natFilter !== 'all') params.append('nationality', natFilter);
             if (sortBy) { params.append('sortBy', sortBy); params.append('sortOrder', sortOrder); }
             const res = await fetch(`/api/runners/paged?${params.toString()}`, { cache: 'no-store' });
             if (!res.ok) throw new Error('Failed');
@@ -524,7 +550,7 @@ export default function ParticipantsPage() {
         } finally {
             setDownloadingCsv(false);
         }
-    }, [campaign, activeTab, debouncedSearch, listRunnerStatus, sortBy, sortOrder, language]);
+    }, [campaign, activeTab, debouncedSearch, listRunnerStatus, natFilter, sortBy, sortOrder, language]);
 
     // Open edit modal for a runner
     const openEditModal = useCallback((runner: Runner) => {
@@ -1374,6 +1400,27 @@ export default function ParticipantsPage() {
                                     )}
                                 </div>
 
+                                {/* Nationality filter — Thai vs foreign, with live counts */}
+                                <div className="flex gap-1 items-center border-l border-gray-200 pl-2">
+                                    {([
+                                        { key: 'all', label: 'ทุกสัญชาติ', labelEn: 'All Nat.', count: natCounts.total },
+                                        { key: 'thai', label: '🇹🇭 ไทย', labelEn: '🇹🇭 Thai', count: natCounts.thai },
+                                        { key: 'foreign', label: '🌍 ต่างชาติ', labelEn: '🌍 Foreign', count: natCounts.foreign },
+                                    ] as const).map(n => {
+                                        const active = natFilter === n.key;
+                                        return (
+                                            <button
+                                                key={n.key}
+                                                onClick={() => { setNatFilter(n.key); setListPage(1); }}
+                                                className={`px-2.5 py-1 text-[11px] rounded border cursor-pointer transition whitespace-nowrap ${active ? 'bg-sky-50 text-sky-800 border-sky-400 font-bold border-[1.5px]' : 'bg-white text-gray-500 border-gray-300'}`}
+                                            >
+                                                {language === 'th' ? n.label : n.labelEn}
+                                                <span className={`ml-1 font-bold ${n.key === 'all' ? 'text-gray-400' : 'text-sky-600'}`}>({n.count})</span>
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+
                                 <div className="ml-auto flex items-center gap-2 flex-wrap">
                                     <div className="text-[13px] text-gray-500 whitespace-nowrap">
                                         {language === 'th' ? `ทั้งหมด ${runnersTotal} คน` : `Total: ${runnersTotal}`}
@@ -1653,16 +1700,9 @@ export default function ParticipantsPage() {
                                                         value={editForm[f.key] || ''}
                                                         onChange={e => {
                                                             const value = e.target.value;
-                                                            setEditForm(prev => {
-                                                                const next = { ...prev, [f.key]: value };
-                                                                // Only auto-fill age group when it's still empty —
-                                                                // never overwrite an existing value (e.g. RaceTiger's
-                                                                // finer "20-24" band). Use the ↻ button to recalc on purpose.
-                                                                if (f.key === 'gender' && !(prev.ageGroup || '').trim()) {
-                                                                    next.ageGroup = calculateAgeGroup(prev.birthDate, value);
-                                                                }
-                                                                return next;
-                                                            });
+                                                            // Gender no longer affects the age-group band, so
+                                                            // switching it never touches ageGroup.
+                                                            setEditForm(prev => ({ ...prev, [f.key]: value }));
                                                         }}
                                                         style={{ ...inputStyle, border: '1px solid #ccc', borderRadius: 4 }}
                                                     >
@@ -1685,8 +1725,8 @@ export default function ParticipantsPage() {
                                                         />
                                                         <button
                                                             type="button"
-                                                            title={language === 'th' ? 'คำนวณจากวันเกิด/เพศ (band 10 ปี)' : 'Recalculate from birth date / gender (10-year band)'}
-                                                            onClick={() => setEditForm(prev => ({ ...prev, ageGroup: calculateAgeGroup(prev.birthDate, prev.gender) }))}
+                                                            title={language === 'th' ? 'คำนวณจากอายุ/วันเกิด (band 5 ปี เช่น 20-24)' : 'Recalculate from age / birth date (5-year band, e.g. 20-24)'}
+                                                            onClick={() => setEditForm(prev => ({ ...prev, ageGroup: calculateAgeGroup(prev.birthDate || '', editingRunner?.age) }))}
                                                             style={{ padding: '0 12px', border: '1px solid #ccc', borderRadius: 4, background: '#f9fafb', color: '#374151', cursor: 'pointer', fontSize: 15, fontWeight: 700 }}
                                                         >↻</button>
                                                     </div>
@@ -1701,7 +1741,7 @@ export default function ParticipantsPage() {
                                                                 // Only auto-fill age group when it's still empty — never
                                                                 // overwrite an existing value on a birth-date edit.
                                                                 if (f.key === 'birthDate' && !(prev.ageGroup || '').trim()) {
-                                                                    next.ageGroup = calculateAgeGroup(value, prev.gender);
+                                                                    next.ageGroup = calculateAgeGroup(value, editingRunner?.age);
                                                                 }
                                                                 return next;
                                                             });

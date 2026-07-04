@@ -21,6 +21,7 @@ export async function GET(request: NextRequest) {
         const status = searchParams.get('status');
         const chipStatus = searchParams.get('chipStatus');
         const runnerStatus = searchParams.get('runnerStatus');
+        const nationality = searchParams.get('nationality');
         const search = searchParams.get('search');
         const page = searchParams.get('page') || '1';
         const limit = searchParams.get('limit') || '50';
@@ -31,6 +32,7 @@ export async function GET(request: NextRequest) {
         if (status) params.append('status', status);
         if (chipStatus) params.append('chipStatus', chipStatus);
         if (runnerStatus) params.append('runnerStatus', runnerStatus);
+        if (nationality) params.append('nationality', nationality);
         const sortBy = searchParams.get('sortBy');
         const sortOrder = searchParams.get('sortOrder');
         if (sortBy) params.append('sortBy', sortBy);
