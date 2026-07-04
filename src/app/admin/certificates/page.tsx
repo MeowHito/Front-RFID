@@ -105,6 +105,11 @@ interface CtxMenu { x: number; y: number; elId?: string; }
 
 // ============= CONSTANTS =============
 const CANVAS_REF_W = 1200;
+
+// Scoped styles for the offscreen full-resolution stage used by PNG export.
+// Mirrors the print popup's .cert-* rules but namespaced so it can't leak into
+// the editor. The stage element itself acts as the positioned `.cert` container.
+const CERT_STAGE_CSS = `#cert-export-stage{position:fixed;left:-100000px;top:0;overflow:hidden;font-family:Sarabun,sans-serif}#cert-export-stage *{box-sizing:border-box;margin:0;padding:0}#cert-export-stage .cert-bg-image{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:0}#cert-export-stage .cert-el,#cert-export-stage .cert-image-el,#cert-export-stage .cert-shape-el,#cert-export-stage .cert-table-el{position:absolute;transform:translate(-50%,-50%);z-index:1}#cert-export-stage .cert-el{white-space:pre-wrap;word-break:break-word;line-height:1.3}#cert-export-stage .cert-image-el{object-fit:contain}#cert-export-stage .cert-table-el table th,#cert-export-stage .cert-table-el table td{vertical-align:middle}`;
 const SNAP_THRESHOLD = 1.2;
 const MAX_UNDO = 50;
 
@@ -1088,19 +1093,18 @@ export default function CertificatesPage() {
         }
     }, [activeTool, templates.length, templatesLoading, fetchTemplates]);
 
-    const handlePrint = useCallback(async () => {
-        if (!selectedRunner) { showToast('เลือกนักวิ่งก่อนพิมพ์', 'error'); return; }
-        setGenerating(true);
-        await new Promise(r => setTimeout(r, 100));
-        try {
-            const win = window.open('', '_blank');
-            if (!win) { showToast('Browser blocked popup', 'error'); return; }
-            // For 96dpi-based pt scaling: A4-landscape = 1122px@96dpi. For HD, use exact px.
-            const pageWpx = paperSize === 'hd-landscape' ? 1920
-                          : paperSize === 'hd-portrait' ? 1080
-                          : paperSize === 'a4-portrait' ? Math.round(210 / 25.4 * 96)
-                          : Math.round(297 / 25.4 * 96);
-            const ps = pageWpx / CANVAS_REF_W;
+    // Build the certificate inner markup (bg layer + all elements) for a given
+    // runner. Passing `null` renders sample data via FIELD_PREVIEWS so preview /
+    // image export works even before a real runner is selected. Shared by the
+    // print popup and the PNG export so both stay pixel-identical.
+    const buildCertInner = useCallback((runner: Runner | null) => {
+        // For 96dpi-based pt scaling: A4-landscape = 1122px@96dpi. For HD, use exact px.
+        const pageWpx = paperSize === 'hd-landscape' ? 1920
+                      : paperSize === 'hd-portrait' ? 1080
+                      : paperSize === 'a4-portrait' ? Math.round(210 / 25.4 * 96)
+                      : Math.round(297 / 25.4 * 96);
+        const pageHpx = Math.round(pageWpx * paperAspect);
+        const ps = pageWpx / CANVAS_REF_W;
             const transformFor = (el: CertElement): string => `translate(-50%,-50%) rotate(${el.rotation || 0}deg)`;
             const shadowFor = (el: CertElement): string => el.shadowEnabled
                 ? `${el.shadowX || 0}px ${el.shadowY ?? 2}px ${el.shadowBlur ?? 4}px ${el.shadowColor || 'rgba(0,0,0,0.5)'}`
@@ -1136,7 +1140,7 @@ export default function CertificatesPage() {
                     return `<div class="cert-shape-el" style="left:${el.x}%;top:${el.y}%;width:${el.width}%;height:${h}%;opacity:${el.opacity};transform:${transformFor(el)};${br > 0 && el.shape === 'rect' ? `border-radius:${br}px;overflow:hidden;` : ''}${sh ? `box-shadow:${sh};` : ''}">${inner}</div>`;
                 }
                 if (el.type === 'flag') {
-                    const nat = resolveNationality(selectedRunner.nationality);
+                    const nat = resolveNationality(runner?.nationality);
                     const mode = el.flagMode || 'flag';
                     const emoji = nat.code ? countryFlagEmoji(nat.code) : '🏳️';
                     const txt = mode === 'name' ? escapeHtml(nat.name) : mode === 'flag' ? emoji : `${emoji} ${escapeHtml(nat.name)}`;
@@ -1164,21 +1168,91 @@ export default function CertificatesPage() {
                         : rows.map((r, i) => `<tr style="background:${i % 2 === 0 ? rowBg : rowAltBg}">${cols.map(c => `<td style="padding:3px 6px;text-align:${c.align};font-size:${fs}px;font-variant-numeric:tabular-nums;border:${bw}px solid ${borderColor}">${escapeHtml(splitsCellValue(c.field, r, i))}</td>`).join('')}</tr>`).join('');
                     return `<div class="cert-table-el" style="left:${el.x}%;top:${el.y}%;width:${el.width}%;height:${h}%;opacity:${el.opacity};color:${el.color};font-family:${el.fontFamily};transform:${transformFor(el)};"><table style="width:100%;height:100%;border-collapse:collapse;table-layout:fixed">${th}<tbody>${body}</tbody></table></div>`;
                 }
-                const text = escapeHtml(substituteFields(el.content, selectedRunner, campaign)).replace(/\n/g, '<br>');
+                const text = escapeHtml(substituteFields(el.content, runner, campaign)).replace(/\n/g, '<br>');
                 const sh = shadowFor(el);
                 return `<div class="cert-el" style="left:${el.x}%;top:${el.y}%;width:${el.width}%;font-size:${(el.fontSize * ps).toFixed(1)}px;font-family:${el.fontFamily};color:${el.color};font-weight:${el.fontWeight};font-style:${el.fontStyle};text-align:${el.textAlign};opacity:${el.opacity};letter-spacing:${(el.letterSpacing * ps).toFixed(1)}px;transform:${transformFor(el)};${sh ? `text-shadow:${sh};` : ''}">${text}</div>`;
             };
-            const elHtml = elements.map(renderEl).join('');
-            const bgLayer = bgImage ? `<img class="cert-bg-image" src=${JSON.stringify(bgImage)} alt="" style="opacity:${bgOpacity};" />` : '';
-            const isHD = paperSize === 'hd-landscape' || paperSize === 'hd-portrait';
-            const pageRule = isHD
-                ? `@page{size:${paperInfo.printW} ${paperInfo.printH};margin:0}`
-                : `@page{size:A4 ${paperInfo.orient};margin:0}`;
-            win.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Certificate</title><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;700&family=Prompt:wght@400;700&family=Kanit:wght@400;700&family=Playfair+Display:wght@400;700&display=swap"><style>${pageRule}*{box-sizing:border-box;margin:0;padding:0}html,body{width:${paperInfo.printW};height:${paperInfo.printH};overflow:hidden;-webkit-print-color-adjust:exact;print-color-adjust:exact;background:${bgColor}}body{font-family:Sarabun,sans-serif}.cert{width:${paperInfo.printW};height:${paperInfo.printH};position:relative;overflow:hidden;background:${bgColor}}.cert-bg-image{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:0}.cert-el,.cert-image-el,.cert-shape-el,.cert-table-el{position:absolute;transform:translate(-50%,-50%);z-index:1}.cert-el{white-space:pre-wrap;word-break:break-word;line-height:1.3}.cert-image-el{object-fit:contain}.cert-table-el table th,.cert-table-el table td{vertical-align:middle}</style></head><body><div class="cert">${bgLayer}${elHtml}</div><script>const done=()=>setTimeout(()=>window.print(),120);const fontReady=document.fonts&&document.fonts.ready?document.fonts.ready:Promise.resolve();const imgs=[...document.images].filter(img=>!img.complete);Promise.all([fontReady,...imgs.map(img=>new Promise(resolve=>{img.addEventListener('load',resolve,{once:true});img.addEventListener('error',resolve,{once:true});}))]).then(done);if(imgs.length===0){fontReady.then(done);}</script></body></html>`);
+        const elHtml = elements.map(renderEl).join('');
+        const bgLayer = bgImage ? `<img class="cert-bg-image" src=${JSON.stringify(bgImage)} alt="" style="opacity:${bgOpacity};" />` : '';
+        const isHD = paperSize === 'hd-landscape' || paperSize === 'hd-portrait';
+        const pageRule = isHD
+            ? `@page{size:${paperInfo.printW} ${paperInfo.printH};margin:0}`
+            : `@page{size:A4 ${paperInfo.orient};margin:0}`;
+        return { inner: `${bgLayer}${elHtml}`, wpx: pageWpx, hpx: pageHpx, pageRule };
+    }, [elements, bgImage, bgOpacity, campaign, paperSize, paperInfo, paperAspect, splits]);
+
+    const handlePrint = useCallback(async () => {
+        setGenerating(true);
+        await new Promise(r => setTimeout(r, 100));
+        try {
+            const win = window.open('', '_blank');
+            if (!win) { showToast('เบราว์เซอร์บล็อกป๊อปอัป — อนุญาต popup ของเว็บนี้แล้วลองใหม่', 'error'); return; }
+            const { inner, pageRule } = buildCertInner(selectedRunner);
+            win.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Certificate</title><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;700&family=Prompt:wght@400;700&family=Kanit:wght@400;700&family=Playfair+Display:wght@400;700&display=swap"><style>${pageRule}*{box-sizing:border-box;margin:0;padding:0}html,body{width:${paperInfo.printW};height:${paperInfo.printH};overflow:hidden;-webkit-print-color-adjust:exact;print-color-adjust:exact;background:${bgColor}}body{font-family:Sarabun,sans-serif}.cert{width:${paperInfo.printW};height:${paperInfo.printH};position:relative;overflow:hidden;background:${bgColor}}.cert-bg-image{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:0}.cert-el,.cert-image-el,.cert-shape-el,.cert-table-el{position:absolute;transform:translate(-50%,-50%);z-index:1}.cert-el{white-space:pre-wrap;word-break:break-word;line-height:1.3}.cert-image-el{object-fit:contain}.cert-table-el table th,.cert-table-el table td{vertical-align:middle}</style></head><body><div class="cert">${inner}</div><script>const done=()=>setTimeout(()=>window.print(),120);const fontReady=document.fonts&&document.fonts.ready?document.fonts.ready:Promise.resolve();const imgs=[...document.images].filter(img=>!img.complete);Promise.all([fontReady,...imgs.map(img=>new Promise(resolve=>{img.addEventListener('load',resolve,{once:true});img.addEventListener('error',resolve,{once:true});}))]).then(done);if(imgs.length===0){fontReady.then(done);}</script></body></html>`);
             win.document.close();
         } catch { showToast('Error', 'error'); }
         finally { setGenerating(false); }
-    }, [selectedRunner, elements, bgImage, bgOpacity, bgColor, campaign, paperSize, paperInfo, paperAspect, splits]);
+    }, [selectedRunner, buildCertInner, bgColor, paperInfo]);
+
+    // Export the certificate to a downloadable PNG. Renders an offscreen,
+    // full-resolution mirror in the main document (fonts already loaded there),
+    // then rasterizes with html-to-image — same proven path as the public
+    // runner certificate page. Works with sample data when no runner is picked.
+    const handleDownloadImage = useCallback(async () => {
+        setGenerating(true);
+        try {
+            const runner = selectedRunner; // null → ตัวอย่าง (sample) ผ่าน FIELD_PREVIEWS
+            const { inner, wpx, hpx } = buildCertInner(runner);
+            const styleEl = document.createElement('style');
+            styleEl.textContent = CERT_STAGE_CSS;
+            const stage = document.createElement('div');
+            stage.id = 'cert-export-stage';
+            stage.style.width = `${wpx}px`;
+            stage.style.height = `${hpx}px`;
+            stage.style.background = bgColor;
+            stage.innerHTML = inner;
+            document.body.appendChild(styleEl);
+            document.body.appendChild(stage);
+            try {
+                await document.fonts.ready;
+                const imgs = Array.from(stage.querySelectorAll('img'));
+                await Promise.all(imgs.map(async img => {
+                    if (!(img.complete && img.naturalWidth > 0)) {
+                        await new Promise<void>(res => {
+                            const done = () => res();
+                            img.addEventListener('load', done, { once: true });
+                            img.addEventListener('error', done, { once: true });
+                            setTimeout(done, 5000);
+                        });
+                    }
+                    if (typeof img.decode === 'function') { try { await img.decode(); } catch { /* ignore */ } }
+                }));
+                const { toBlob } = await import('html-to-image');
+                const opts = { pixelRatio: 2, cacheBust: true, backgroundColor: bgColor, skipFonts: true, type: 'image/png' as const };
+                // First call often drops the bg image on Safari; the second after a
+                // tick reliably renders the full composition.
+                await toBlob(stage, opts).catch(() => null);
+                await new Promise(r => setTimeout(r, 120));
+                const blob = await toBlob(stage, opts);
+                if (!blob) { showToast('สร้างรูปไม่สำเร็จ', 'error'); return; }
+                const base = (campaign?.nameTh || campaign?.name || 'certificate').replace(/[^\w฀-๿.-]+/g, '_').slice(0, 60) || 'certificate';
+                const who = runner ? (runner.bib || runner.firstName || 'runner') : 'sample';
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `${base}-${who}.png`;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                setTimeout(() => URL.revokeObjectURL(url), 1000);
+                showToast('ดาวน์โหลดรูปแล้ว', 'success');
+            } finally {
+                stage.remove();
+                styleEl.remove();
+            }
+        } catch { showToast('สร้างรูปไม่สำเร็จ', 'error'); }
+        finally { setGenerating(false); }
+    }, [selectedRunner, buildCertInner, bgColor, campaign]);
 
     const alignElement = (id: string, hAlign?: 'left' | 'center' | 'right', vAlign?: 'top' | 'middle' | 'bottom') => {
         pushUndo(elements);
@@ -1443,9 +1517,10 @@ export default function CertificatesPage() {
                             <button onClick={() => { if (undoStack.length === 0) return; const last = undoStack[undoStack.length - 1]; setRedoStack(r => [...r, elements]); setElements(last); setUndoStack(s => s.slice(0, -1)); }} disabled={undoStack.length === 0} title="Undo (Ctrl+Z)" style={{ padding: '3px 6px', borderRadius: 4, border: 'none', background: undoStack.length > 0 ? '#334155' : 'transparent', color: undoStack.length > 0 ? '#e2e8f0' : '#475569', cursor: undoStack.length > 0 ? 'pointer' : 'default', fontSize: 14 }}>↩</button>
                             <button onClick={() => { if (redoStack.length === 0) return; const last = redoStack[redoStack.length - 1]; setUndoStack(u => [...u, elements]); setElements(last); setRedoStack(s => s.slice(0, -1)); }} disabled={redoStack.length === 0} title="Redo (Ctrl+Shift+Z)" style={{ padding: '3px 6px', borderRadius: 4, border: 'none', background: redoStack.length > 0 ? '#334155' : 'transparent', color: redoStack.length > 0 ? '#e2e8f0' : '#475569', cursor: redoStack.length > 0 ? 'pointer' : 'default', fontSize: 14 }}>↪</button>
                             <div style={{ flex: 1 }} />
-                            {selectedRunner && <span style={{ fontSize: 10, color: '#94a3b8' }}>Preview: {selectedRunner.bib} - {selectedRunner.firstName}</span>}
-                            <button onClick={handlePrint} disabled={generating || !selectedRunner} title="Print" style={{ padding: '4px 10px', borderRadius: 5, border: 'none', background: !selectedRunner ? '#334155' : '#2563eb', color: !selectedRunner ? '#64748b' : '#fff', fontSize: 11, fontWeight: 700, cursor: !selectedRunner ? 'default' : 'pointer' }}>🖨 Preview</button>
-                            <button onClick={handleDownloadTemplate} title="ดาวน์โหลด layout/bg/paper เป็นไฟล์ template" style={{ padding: '4px 10px', borderRadius: 5, border: '1px solid #475569', background: '#0f172a', color: '#e2e8f0', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>⬇ Download Template</button>
+                            <span style={{ fontSize: 10, color: '#94a3b8' }}>{selectedRunner ? `Preview: ${selectedRunner.bib} - ${selectedRunner.firstName}` : 'ตัวอย่าง (sample)'}</span>
+                            <button onClick={handlePrint} disabled={generating} title="เปิดพรีวิว/พิมพ์ (ใช้ข้อมูลตัวอย่างถ้ายังไม่เลือกนักวิ่ง)" style={{ padding: '4px 10px', borderRadius: 5, border: 'none', background: generating ? '#334155' : '#2563eb', color: generating ? '#64748b' : '#fff', fontSize: 11, fontWeight: 700, cursor: generating ? 'default' : 'pointer' }}>🖨 Preview</button>
+                            <button onClick={handleDownloadImage} disabled={generating} title="ดาวน์โหลดใบประกาศเป็นไฟล์รูป PNG (ใช้ข้อมูลตัวอย่างถ้ายังไม่เลือกนักวิ่ง)" style={{ padding: '4px 10px', borderRadius: 5, border: 'none', background: generating ? '#334155' : '#7c3aed', color: generating ? '#64748b' : '#fff', fontSize: 11, fontWeight: 700, cursor: generating ? 'default' : 'pointer' }}>{generating ? '⏳ กำลังสร้าง...' : '🖼 ดาวน์โหลดรูป'}</button>
+                            <button onClick={handleDownloadTemplate} title="ดาวน์โหลด layout/bg/paper เป็นไฟล์ template (.json)" style={{ padding: '4px 10px', borderRadius: 5, border: '1px solid #475569', background: '#0f172a', color: '#e2e8f0', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>⬇ Template</button>
                             <button onClick={handleSave} disabled={saving} style={{ padding: '4px 14px', borderRadius: 5, border: 'none', background: saving ? '#334155' : '#22c55e', color: '#fff', fontSize: 11, fontWeight: 700, cursor: saving ? 'not-allowed' : 'pointer' }}>{saving ? '...' : 'Save Changes'}</button>
                         </div>
 
