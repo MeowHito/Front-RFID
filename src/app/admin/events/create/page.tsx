@@ -191,7 +191,7 @@ function CreateEventForm() {
     useEffect(() => {
         if (!editId) return;
         setLoadingEdit(true);
-        fetch(`/api/campaigns/${editId}`)
+        fetch(`/api/campaigns/${editId}?full=true`)
             .then(res => res.json())
             .then(data => {
                 const campaign = data;
