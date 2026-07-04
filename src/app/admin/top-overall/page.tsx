@@ -5,7 +5,7 @@ import AdminLayout from '@/app/admin/AdminLayout';
 import { useLanguage } from '@/lib/language-context';
 import { authHeaders } from '@/lib/authHeaders';
 import { isThaiNationality, isNationalitySplitCategory } from '@/lib/nationality';
-import { LinkIcon } from '@heroicons/react/24/outline';
+import { LinkIcon, ArrowTopRightOnSquareIcon } from '@heroicons/react/24/outline';
 
 interface Runner {
     _id: string;
@@ -150,7 +150,9 @@ export default function TopOverallPage() {
     }, [sortedFinishedRunners, overallDisplayCount]);
 
     const campaignPath = campaign?.slug || campaign?._id || '';
-    const overallShareUrl = campaignPath ? `${origin}/Overall-Winners/${campaignPath}` : '';
+    const topOverallShareUrl = campaignPath
+        ? `${origin}/Top-Overall-Winners/${campaignPath}${selectedCategory ? `?category=${encodeURIComponent(selectedCategory)}` : ''}`
+        : '';
 
     const renderOverallPreviewColumn = (title: string, headerClass: string, runners: Runner[]) => (
         <div className="space-y-0">
@@ -290,12 +292,22 @@ export default function TopOverallPage() {
                             </span>
                             <button
                                 type="button"
-                                onClick={() => handleCopyLink(overallShareUrl)}
+                                onClick={() => handleCopyLink(topOverallShareUrl)}
                                 title={language === 'th' ? 'คัดลอกลิงก์' : 'Copy link'}
                                 className="flex items-center justify-center rounded-md bg-sky-500 px-2.5 py-1.5 text-white hover:bg-sky-600 transition-colors"
                             >
                                 <LinkIcon className="h-4 w-4" />
                             </button>
+                            <a
+                                href={topOverallShareUrl || undefined}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                title={language === 'th' ? 'เปิดในแท็บใหม่' : 'Open in new tab'}
+                                aria-disabled={!topOverallShareUrl}
+                                className={`flex items-center justify-center rounded-md px-2.5 py-1.5 text-white transition-colors ${topOverallShareUrl ? 'bg-indigo-500 hover:bg-indigo-600' : 'bg-gray-300 pointer-events-none'}`}
+                            >
+                                <ArrowTopRightOnSquareIcon className="h-4 w-4" />
+                            </a>
 
                             <button
                                 onClick={handleSave}

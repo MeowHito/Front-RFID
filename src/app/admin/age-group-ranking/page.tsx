@@ -322,6 +322,22 @@ export default function AgeGroupRankingPage() {
         return { maleWinners: male, femaleWinners: female };
     }, [sortedFinishedRunners, activeAgeGroups, disableAgeGroupRanking, excludeTop, ageGroupDisplayCount, selectedCategorySplit, excludeThaiTop, excludeForeignTop]);
 
+    // Nationality-split overall winners — Thai count follows excludeThaiTop,
+    // foreign count follows excludeForeignTop, so display always matches the
+    // number of ranks entered for each group.
+    const overallByNationality = useMemo(() => {
+        const pick = (isFemale: boolean, thai: boolean) =>
+            sortedFinishedRunners
+                .filter(r => (r.gender === 'F') === isFemale && isThaiNationality(r.nationality) === thai)
+                .slice(0, thai ? excludeThaiTop : excludeForeignTop);
+        return {
+            thaiMale: pick(false, true),
+            thaiFemale: pick(true, true),
+            foreignMale: pick(false, false),
+            foreignFemale: pick(true, false),
+        };
+    }, [sortedFinishedRunners, excludeThaiTop, excludeForeignTop]);
+
     const previewCategory = campaign?.categories?.find(item => item.name === selectedCategory);
     const campaignPath = campaign?.slug || campaign?._id || '';
     const ageGroupShareUrl = campaignPath ? `${origin}/Result-Winners/${campaignPath}` : '';
@@ -370,6 +386,40 @@ export default function AgeGroupRankingPage() {
                         </div>
                     );
                 })}
+            </div>
+        </div>
+    );
+
+    const renderOverallPreviewColumn = (title: string, headerClass: string, runners: Runner[]) => (
+        <div className="space-y-0">
+            <div className={`rounded-t-lg px-3 py-2 text-center text-xs font-bold ${headerClass}`} style={{ color: '#ffffff' }}>
+                {title}
+            </div>
+            <div className="rounded-b-lg border border-gray-200 bg-white overflow-hidden">
+                <div className="divide-y divide-gray-100">
+                    {runners.length > 0 ? runners.map((runner, index) => (
+                        <div key={`overall-${title}-${index}`} className="flex items-center gap-2 px-3 py-1.5">
+                            <div className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white ${
+                                index === 0 ? 'bg-yellow-500' : index === 1 ? 'bg-gray-400' : index === 2 ? 'bg-amber-700' : 'bg-gray-300 text-gray-600'
+                            }`} style={index > 2 ? { color: '#4b5563' } : undefined}>
+                                {index + 1}
+                            </div>
+                            <div className="min-w-0 flex-1 leading-tight">
+                                <p className="truncate text-xs font-semibold text-gray-800">
+                                    {runner.firstName} {runner.lastName}
+                                </p>
+                                <p className="text-[10px] text-gray-500">BIB {runner.bib}</p>
+                            </div>
+                            <div className="shrink-0 text-[11px] font-bold text-gray-800">
+                                {runner.netTimeStr || formatTime(runner.netTime || runner.gunTime || runner.elapsedTime)}
+                            </div>
+                        </div>
+                    )) : (
+                        <div className="px-3 py-3 text-center text-[11px] text-gray-400">
+                            {language === 'th' ? 'ไม่มีข้อมูล' : 'No data'}
+                        </div>
+                    )}
+                </div>
             </div>
         </div>
     );
@@ -679,9 +729,29 @@ export default function AgeGroupRankingPage() {
                                             {language === 'th' ? 'ไม่มีประเภทการแข่งขันสำหรับแสดงพรีวิว' : 'No category available for preview'}
                                         </div>
                                     ) : (
-                                        <div className="grid gap-3 xl:grid-cols-2">
-                                            {renderPreviewColumn(language === 'th' ? '♂ ผู้ชนะชาย' : '♂ Male winners', 'bg-blue-600', 'bg-blue-900', maleWinners)}
-                                            {renderPreviewColumn(language === 'th' ? '♀ ผู้ชนะหญิง' : '♀ Female winners', 'bg-pink-600', 'bg-pink-900', femaleWinners)}
+                                        <div className="space-y-4">
+                                            {selectedCategorySplit && (
+                                                <div>
+                                                    <p className="mb-1.5 text-[11px] font-bold uppercase tracking-wide" style={{ color: '#6b7280' }}>
+                                                        {language === 'th' ? 'อันดับ Overall (แยกไทย/ต่างชาติ)' : 'Overall ranking (Thai/foreign split)'}
+                                                    </p>
+                                                    <div className="grid gap-3 xl:grid-cols-2">
+                                                        {renderOverallPreviewColumn(language === 'th' ? '♂ OVERALL THA · ชาย' : '♂ OVERALL THA · Male', 'bg-blue-600', overallByNationality.thaiMale)}
+                                                        {renderOverallPreviewColumn(language === 'th' ? '♀ OVERALL THA · หญิง' : '♀ OVERALL THA · Female', 'bg-pink-600', overallByNationality.thaiFemale)}
+                                                        {renderOverallPreviewColumn(language === 'th' ? '♂ OVERALL INT · ชาย' : '♂ OVERALL INT · Male', 'bg-indigo-600', overallByNationality.foreignMale)}
+                                                        {renderOverallPreviewColumn(language === 'th' ? '♀ OVERALL INT · หญิง' : '♀ OVERALL INT · Female', 'bg-fuchsia-600', overallByNationality.foreignFemale)}
+                                                    </div>
+                                                </div>
+                                            )}
+                                            <div>
+                                                <p className="mb-1.5 text-[11px] font-bold uppercase tracking-wide" style={{ color: '#6b7280' }}>
+                                                    {language === 'th' ? 'อันดับกลุ่มอายุ' : 'Age group ranking'}
+                                                </p>
+                                                <div className="grid gap-3 xl:grid-cols-2">
+                                                    {renderPreviewColumn(language === 'th' ? '♂ ผู้ชนะชาย' : '♂ Male winners', 'bg-blue-600', 'bg-blue-900', maleWinners)}
+                                                    {renderPreviewColumn(language === 'th' ? '♀ ผู้ชนะหญิง' : '♀ Female winners', 'bg-pink-600', 'bg-pink-900', femaleWinners)}
+                                                </div>
+                                            </div>
                                         </div>
                                     )}
                                 </div>

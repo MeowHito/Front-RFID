@@ -72,8 +72,9 @@ export default function TopOverallWinnersBySlugPage() {
     const autoCountdownRef = useRef<NodeJS.Timeout | null>(null);
     const campaignCategoriesRef = useRef<CampaignCategory[]>([]);
     const displayedCategoryRef = useRef<string>('');
-    const [downloading, setDownloading] = useState(false);
-    const colRef = useRef<HTMLDivElement | null>(null);
+    const [downloading, setDownloading] = useState<string | null>(null);
+    const maleColRef = useRef<HTMLDivElement | null>(null);
+    const femaleColRef = useRef<HTMLDivElement | null>(null);
 
     useEffect(() => {
         const check = () => setIsMobile(window.innerWidth < 768);
@@ -187,34 +188,42 @@ export default function TopOverallWinnersBySlugPage() {
 
     const topN = Math.max(1, campaign?.overallDisplayCount || 5);
 
-    // Combined ranking — fastest finishers overall, regardless of gender.
-    const topOverallWinners = useMemo(() => {
+    // Top N finishers per gender — same admin-configured count as the combined board used to show.
+    const { maleWinners, femaleWinners } = useMemo(() => {
         const finished = displayedRunners.filter(r => r.status === 'finished' && (r.netTime || r.gunTime || r.elapsedTime));
         const sorted = [...finished].sort((a, b) => {
             const at = a.netTime || a.gunTime || a.elapsedTime || Infinity;
             const bt = b.netTime || b.gunTime || b.elapsedTime || Infinity;
             return at - bt;
         });
-        return sorted.slice(0, topN);
+        return {
+            maleWinners: sorted.filter(r => r.gender !== 'F').slice(0, topN),
+            femaleWinners: sorted.filter(r => r.gender === 'F').slice(0, topN),
+        };
     }, [displayedRunners, topN]);
 
-    const downloadExcel = useCallback(async () => {
-        setDownloading(true);
+    const downloadGroup = useCallback(async (
+        males: Runner[],
+        females: Runner[],
+        gender: 'male' | 'female' | 'both',
+        namePart = '',
+    ) => {
+        setDownloading(gender);
         try {
             const blob = await buildWinnersExcel(
                 campaign?.name || '',
                 selectedCategory,
-                [{ maleRunners: topOverallWinners, femaleRunners: [] }],
-                'male',
-                { combinedLabel: 'TOP OVERALL WINNERS', barColor: '4f46e5' },
+                [{ maleRunners: males, femaleRunners: females }],
+                gender,
             );
+            const suffix = gender === 'male' ? '-Male' : gender === 'female' ? '-Female' : '';
             const distance = campaign?.categories?.find(c => c.name === selectedCategory)?.distance || selectedCategory || '';
             const distPart = distance ? `-${distance}` : '';
-            if (blob) triggerExcelDownload(blob, `${campaign?.name || 'winners'}${distPart}-TopOverall`);
+            if (blob) triggerExcelDownload(blob, `${campaign?.name || 'winners'}${distPart}-TopOverall${namePart}${suffix}`);
         } catch (e) { console.error(e); } finally {
-            setDownloading(false);
+            setDownloading(null);
         }
-    }, [campaign, selectedCategory, topOverallWinners]);
+    }, [campaign, selectedCategory]);
 
     if (campaignNotFound) {
         return (
@@ -268,6 +277,38 @@ export default function TopOverallWinnersBySlugPage() {
         </svg>
     );
 
+    const renderColumn = (title: string, bgHeader: string, list: Runner[], colRef: { current: HTMLDivElement | null }, onDownload: () => void) => (
+        <div ref={el => { colRef.current = el; }} style={{ display: 'flex', flexDirection: 'column', gap: isMobile ? 8 : '0.8vh', minHeight: 0, flex: 1, overflowY: isMobile ? 'visible' : 'auto', paddingRight: isMobile ? 0 : 4 }}>
+            <div style={{ padding: isMobile ? '8px 10px' : '0.9vh 10px', fontWeight: 900, fontSize: isMobile ? 16 : '2vh', textTransform: 'uppercase', borderRadius: 8, color: 'white', letterSpacing: 2, background: bgHeader, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ visibility: 'hidden', padding: isMobile ? '3px 6px' : '3px 8px', fontSize: isMobile ? 11 : 12 }} aria-hidden="true">
+                    {dlIcon(11)}{!isMobile && <span>Download</span>}
+                </span>
+                <span style={{ flex: 1, textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{title}</span>
+                <button
+                    data-no-capture
+                    onClick={onDownload}
+                    disabled={!!downloading}
+                    title="Download"
+                    style={{ background: 'rgba(255,255,255,0.18)', border: 'none', borderRadius: 5, cursor: downloading ? 'default' : 'pointer', padding: isMobile ? '3px 6px' : '3px 8px', color: 'white', fontSize: isMobile ? 11 : 12, display: 'flex', alignItems: 'center', gap: 4, fontWeight: 700, flexShrink: 0, opacity: downloading ? 0.5 : 1, transition: 'opacity 0.15s' }}
+                >
+                    {dlIcon(11)}{!isMobile && <span>Download</span>}
+                </button>
+            </div>
+            <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: 8, overflow: 'hidden', display: 'flex', flexDirection: 'column', flexShrink: 0, minHeight: isMobile ? 180 : '28vh' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'flex-start', flex: 1, padding: isMobile ? '4px' : '0.35vh 4px', minHeight: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: isMobile ? '2px 10px 3px' : '0.1vh 10px 0.2vh', borderBottom: '1px solid #f1f5f9' }}>
+                        <div style={{ width: isMobile ? 22 : '2.4vh', minWidth: 18, flexShrink: 0 }} />
+                        <div style={{ width: isMobile ? 16 : '1.8vh', flexShrink: 0 }} />
+                        <span style={{ fontSize: isMobile ? 9 : '1.1vh', fontWeight: 700, color: '#94a3b8', flex: 1, textTransform: 'uppercase', letterSpacing: 0.5 }}>Name</span>
+                        <span style={{ fontSize: isMobile ? 9 : '1.1vh', fontWeight: 700, color: '#94a3b8', flexShrink: 0, minWidth: isMobile ? 60 : '7vh', textAlign: 'right', letterSpacing: 0.5 }}>GunTime</span>
+                        <span style={{ fontSize: isMobile ? 9 : '1.1vh', fontWeight: 700, color: '#94a3b8', flexShrink: 0, minWidth: isMobile ? 60 : '7vh', textAlign: 'right', letterSpacing: 0.5, marginLeft: isMobile ? 10 : 14 }}>NetTime</span>
+                    </div>
+                    {Array.from({ length: topN }, (_, i) => i).map(i => list[i] ? renderRunnerRow(list[i], i) : renderEmptyRow(i))}
+                </div>
+            </div>
+        </div>
+    );
+
     return (
         <div style={{ fontFamily: "'Prompt', 'Inter', sans-serif", background: '#0f172a', height: isMobile ? 'auto' : '100vh', minHeight: '100vh', overflow: isMobile ? 'auto' : 'hidden', display: 'flex', flexDirection: 'column', padding: isMobile ? '8px' : '0.8vh 1vw' }}>
             <style>{`@keyframes pulse { 0%,100% { opacity:1 } 50% { opacity:0.3 } }`}</style>
@@ -296,8 +337,8 @@ export default function TopOverallWinnersBySlugPage() {
                     {campaign && !initialLoading && (
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
                             <button
-                                onClick={downloadExcel}
-                                disabled={downloading}
+                                onClick={() => downloadGroup(maleWinners, femaleWinners, 'both')}
+                                disabled={!!downloading}
                                 title="Download Top Overall Winners (Excel)"
                                 style={{ display: 'flex', alignItems: 'center', gap: 5, padding: isMobile ? '5px 10px' : '0.35vh 0.7vw', background: '#4f46e5', border: '1px solid #4338ca', borderRadius: 7, color: 'white', fontSize: isMobile ? 11 : '1.15vh', fontWeight: 800, cursor: 'pointer', whiteSpace: 'nowrap', opacity: downloading ? 0.6 : 1, transition: 'opacity 0.15s', fontFamily: "'Prompt','Inter',sans-serif" }}
                             >
@@ -354,26 +395,9 @@ export default function TopOverallWinnersBySlugPage() {
                     Loading...
                 </div>
             ) : (
-                <div style={{ display: 'flex', flex: isMobile ? undefined : 1, minHeight: 0, paddingBottom: isMobile ? 16 : 0, justifyContent: 'center' }}>
-                    <div style={{ width: isMobile ? '100%' : '46vw', maxWidth: 720, display: 'flex' }}>
-                        <div ref={el => { colRef.current = el; }} style={{ display: 'flex', flexDirection: 'column', gap: isMobile ? 8 : '0.8vh', minHeight: 0, flex: 1, overflowY: isMobile ? 'visible' : 'auto', paddingRight: isMobile ? 0 : 4 }}>
-                            <div style={{ padding: isMobile ? '8px 0' : '0.9vh 0', fontWeight: 900, fontSize: isMobile ? 16 : '2vh', textTransform: 'uppercase', borderRadius: 8, color: 'white', letterSpacing: 2, background: '#4f46e5', flexShrink: 0, textAlign: 'center' }}>
-                                TOP OVERALL
-                            </div>
-                            <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: 8, overflow: 'hidden', display: 'flex', flexDirection: 'column', flexShrink: 0, minHeight: isMobile ? 180 : '28vh' }}>
-                                <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'flex-start', flex: 1, padding: isMobile ? '4px' : '0.35vh 4px', minHeight: 0 }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: isMobile ? '2px 10px 3px' : '0.1vh 10px 0.2vh', borderBottom: '1px solid #f1f5f9' }}>
-                                        <div style={{ width: isMobile ? 22 : '2.4vh', minWidth: 18, flexShrink: 0 }} />
-                                        <div style={{ width: isMobile ? 16 : '1.8vh', flexShrink: 0 }} />
-                                        <span style={{ fontSize: isMobile ? 9 : '1.1vh', fontWeight: 700, color: '#94a3b8', flex: 1, textTransform: 'uppercase', letterSpacing: 0.5 }}>Name</span>
-                                        <span style={{ fontSize: isMobile ? 9 : '1.1vh', fontWeight: 700, color: '#94a3b8', flexShrink: 0, minWidth: isMobile ? 60 : '7vh', textAlign: 'right', letterSpacing: 0.5 }}>GunTime</span>
-                                        <span style={{ fontSize: isMobile ? 9 : '1.1vh', fontWeight: 700, color: '#94a3b8', flexShrink: 0, minWidth: isMobile ? 60 : '7vh', textAlign: 'right', letterSpacing: 0.5, marginLeft: isMobile ? 10 : 14 }}>NetTime</span>
-                                    </div>
-                                    {Array.from({ length: topN }, (_, i) => i).map(i => topOverallWinners[i] ? renderRunnerRow(topOverallWinners[i], i) : renderEmptyRow(i))}
-                                </div>
-                            </div>
-                        </div>
-                    </div>
+                <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: isMobile ? 12 : '1vw', flex: isMobile ? undefined : 1, minHeight: 0, paddingBottom: isMobile ? 16 : 0 }}>
+                    {renderColumn('♂ MALE TOP OVERALL', '#2563eb', maleWinners, maleColRef, () => downloadGroup(maleWinners, femaleWinners, 'male'))}
+                    {renderColumn('♀ FEMALE TOP OVERALL', '#db2777', femaleWinners, femaleColRef, () => downloadGroup(maleWinners, femaleWinners, 'female'))}
                 </div>
             )}
         </div>
