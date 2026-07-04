@@ -47,6 +47,8 @@ interface FeaturedCampaignSettings {
     disableAgeGroupRanking?: boolean;
     ageGroupDisplayCount?: number;
     overallDisplayCount?: number;
+    excludeOverallThaiFromAgeGroup?: number;
+    excludeOverallForeignFromAgeGroup?: number;
     separateOverallNationalityCategories?: string[];
     categories?: { name: string; distance?: string; ageGroups?: AgeGroupConfig[] }[];
 }
@@ -178,6 +180,10 @@ export default function AgeGroupRankingPage() {
     const [excludeTop, setExcludeTop] = useState<number>(0);
     const [ageGroupDisplayCount, setAgeGroupDisplayCount] = useState<number>(DEFAULT_TOP_N);
     const [overallDisplayCount, setOverallDisplayCount] = useState<number>(DEFAULT_TOP_N);
+    // Nationality-split categories: how many top Thai / foreign overall winners
+    // (per gender) are excluded from age-group awards — independent of overallDisplayCount.
+    const [excludeThaiTop, setExcludeThaiTop] = useState<number>(DEFAULT_TOP_N);
+    const [excludeForeignTop, setExcludeForeignTop] = useState<number>(DEFAULT_TOP_N);
     // Category names whose Overall ranking is split into Thai / foreign buckets
     const [natSplitCategories, setNatSplitCategories] = useState<string[]>([]);
     const [selectedCategory, setSelectedCategory] = useState('');
@@ -199,7 +205,10 @@ export default function AgeGroupRankingPage() {
                 setCampaign(data);
                 setExcludeTop(Math.max(0, Number(data?.excludeOverallFromAgeGroup) || 0));
                 setAgeGroupDisplayCount(Math.max(1, Number(data?.ageGroupDisplayCount) || DEFAULT_TOP_N));
-                setOverallDisplayCount(Math.max(1, Number(data?.overallDisplayCount) || DEFAULT_TOP_N));
+                const overallTopN = Math.max(1, Number(data?.overallDisplayCount) || DEFAULT_TOP_N);
+                setOverallDisplayCount(overallTopN);
+                setExcludeThaiTop(data?.excludeOverallThaiFromAgeGroup != null ? Math.max(0, Number(data.excludeOverallThaiFromAgeGroup)) : overallTopN);
+                setExcludeForeignTop(data?.excludeOverallForeignFromAgeGroup != null ? Math.max(0, Number(data.excludeOverallForeignFromAgeGroup)) : overallTopN);
                 setNatSplitCategories(Array.isArray(data?.separateOverallNationalityCategories) ? data.separateOverallNationalityCategories : []);
                 setSelectedCategory(data?.categories?.[0]?.name || '');
             }
@@ -278,14 +287,15 @@ export default function AgeGroupRankingPage() {
             sortedFinishedRunners.filter(r => r.gender !== 'F').slice(0, excludeTop).forEach(r => excludedBibs.add(r.bib));
             sortedFinishedRunners.filter(r => r.gender === 'F').slice(0, excludeTop).forEach(r => excludedBibs.add(r.bib));
         }
-        // Nationality-split categories: every Overall winner (Thai or foreign, per
-        // gender, top `overallDisplayCount`) is excluded from age-group awards.
+        // Nationality-split categories: top Thai / foreign overall winners (per
+        // gender) are excluded from age-group awards, each with its own count
+        // (e.g. exclude top 5 Thai but only top 3 foreign).
         if (selectedCategorySplit) {
             for (const female of [false, true]) {
                 for (const thai of [true, false]) {
                     sortedFinishedRunners
                         .filter(r => (r.gender === 'F') === female && isThaiNationality(r.nationality) === thai)
-                        .slice(0, overallDisplayCount)
+                        .slice(0, thai ? excludeThaiTop : excludeForeignTop)
                         .forEach(r => excludedBibs.add(r.bib));
                 }
             }
@@ -308,7 +318,7 @@ export default function AgeGroupRankingPage() {
         }
 
         return { maleWinners: male, femaleWinners: female };
-    }, [sortedFinishedRunners, activeAgeGroups, disableAgeGroupRanking, excludeTop, ageGroupDisplayCount, selectedCategorySplit, overallDisplayCount]);
+    }, [sortedFinishedRunners, activeAgeGroups, disableAgeGroupRanking, excludeTop, ageGroupDisplayCount, selectedCategorySplit, excludeThaiTop, excludeForeignTop]);
 
     const overallMaleWinners = useMemo(() => {
         return sortedFinishedRunners.filter(r => r.gender !== 'F').slice(0, overallDisplayCount);
@@ -480,6 +490,16 @@ export default function AgeGroupRankingPage() {
         setOverallDisplayCount(normalized);
     };
 
+    const updateExcludeThaiTop = (value: number) => {
+        const normalized = Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0;
+        setExcludeThaiTop(normalized);
+    };
+
+    const updateExcludeForeignTop = (value: number) => {
+        const normalized = Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0;
+        setExcludeForeignTop(normalized);
+    };
+
     const handleSave = async () => {
         if (!campaign?._id) return;
         setSaving(true);
@@ -492,6 +512,8 @@ export default function AgeGroupRankingPage() {
                     disableAgeGroupRanking: false,
                     ageGroupDisplayCount: ageGroupDisplayCount,
                     overallDisplayCount: overallDisplayCount,
+                    excludeOverallThaiFromAgeGroup: excludeThaiTop,
+                    excludeOverallForeignFromAgeGroup: excludeForeignTop,
                     separateOverallNationalityCategories: natSplitCategories,
                 }),
             });
@@ -698,6 +720,46 @@ export default function AgeGroupRankingPage() {
                                         </button>
                                     </div>
                                 </div>
+
+                                {selectedCategorySplit && (
+                                    <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
+                                        <span className="text-[11px] font-bold" style={{ color: '#5b21b6' }}>
+                                            {language === 'th' ? 'ตัดออกจากกลุ่มอายุ:' : 'Exclude from age group:'}
+                                        </span>
+                                        <div className="flex items-center gap-1.5 rounded-lg border border-violet-200 bg-violet-50 px-2 py-1.5">
+                                            <span className="text-[11px] font-bold" style={{ color: '#5b21b6' }}>
+                                                {language === 'th' ? 'คนไทย' : 'Thai'}
+                                            </span>
+                                            <input
+                                                type="number"
+                                                min={0}
+                                                value={excludeThaiTop}
+                                                onChange={(e) => updateExcludeThaiTop(e.target.value === '' ? 0 : Number(e.target.value))}
+                                                className="h-9 w-16 rounded-lg border-2 border-violet-400 bg-white text-center font-semibold outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-100"
+                                                style={{ color: '#5b21b6', fontSize: '15px' }}
+                                            />
+                                            <span className="text-[11px] font-bold" style={{ color: '#5b21b6' }}>
+                                                {language === 'th' ? 'อันดับ' : 'rank(s)'}
+                                            </span>
+                                        </div>
+                                        <div className="flex items-center gap-1.5 rounded-lg border border-indigo-200 bg-indigo-50 px-2 py-1.5">
+                                            <span className="text-[11px] font-bold" style={{ color: '#3730a3' }}>
+                                                {language === 'th' ? 'ต่างชาติ' : 'Foreign'}
+                                            </span>
+                                            <input
+                                                type="number"
+                                                min={0}
+                                                value={excludeForeignTop}
+                                                onChange={(e) => updateExcludeForeignTop(e.target.value === '' ? 0 : Number(e.target.value))}
+                                                className="h-9 w-16 rounded-lg border-2 border-indigo-400 bg-white text-center font-semibold outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+                                                style={{ color: '#3730a3', fontSize: '15px' }}
+                                            />
+                                            <span className="text-[11px] font-bold" style={{ color: '#3730a3' }}>
+                                                {language === 'th' ? 'อันดับ' : 'rank(s)'}
+                                            </span>
+                                        </div>
+                                    </div>
+                                )}
 
                                 <div className="mt-3" style={{ maxHeight: '600px', overflowY: 'auto' }}>
                                     {previewLoading ? (

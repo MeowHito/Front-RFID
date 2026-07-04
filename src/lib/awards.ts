@@ -19,9 +19,14 @@ export interface AwardConfig {
     ageGroupDisplayCount?: number;
     excludeOverallFromAgeGroup?: number;
     /** When true, the Overall placing is scoped to the runner's nationality group
-     *  (Thai vs foreign) and every Overall winner is excluded from age-group awards.
+     *  (Thai vs foreign) and Overall winners are excluded from age-group awards.
      *  The caller decides this per race category (campaign stores the category list). */
     separateOverallByNationality?: boolean;
+    /** In nationality-split categories, how many top Thai / foreign overall winners
+     *  (per gender) to exclude from age-group awards. Falls back to
+     *  `overallDisplayCount` when unset, matching the previous coupled behavior. */
+    excludeOverallThaiFromAgeGroup?: number;
+    excludeOverallForeignFromAgeGroup?: number;
 }
 
 export interface AwardRunnerLike {
@@ -62,6 +67,10 @@ export function computeAwardsForCategory(
     const ageGroupDisplayCount = Math.max(1, Number(cfg.ageGroupDisplayCount) || 5);
     const excludeOv = Math.max(0, Number(cfg.excludeOverallFromAgeGroup) || 0);
     const separateNat = !!cfg.separateOverallByNationality;
+    const excludeNatCount: Record<'thai' | 'foreign', number> = {
+        thai: cfg.excludeOverallThaiFromAgeGroup != null ? Math.max(0, Number(cfg.excludeOverallThaiFromAgeGroup)) : overallDisplayCount,
+        foreign: cfg.excludeOverallForeignFromAgeGroup != null ? Math.max(0, Number(cfg.excludeOverallForeignFromAgeGroup)) : overallDisplayCount,
+    };
 
     const finished = runners.filter(r => r.status === 'finished' && (r.netTime || r.gunTime || r.elapsedTime));
     const ensure = (id: string): AwardResult => {
@@ -82,14 +91,15 @@ export function computeAwardsForCategory(
             const natCount: Record<'thai' | 'foreign', number> = { thai: 0, foreign: 0 };
             for (const r of byTime) {
                 const key = isThaiNationality(r.nationality) ? 'thai' : 'foreign';
-                if (natCount[key] >= overallDisplayCount) continue;
                 natCount[key] += 1;
-                const a = ensure(r._id);
-                a.overall = natCount[key];
-                a.overallNat = key;
-                // Rule for split categories: an Overall winner (Thai or foreign)
-                // never also receives an age-group award.
-                excludedBibs.add(r.bib);
+                if (natCount[key] <= overallDisplayCount) {
+                    const a = ensure(r._id);
+                    a.overall = natCount[key];
+                    a.overallNat = key;
+                }
+                // Exclusion count is independently configurable per Thai/foreign bucket
+                // (e.g. exclude top 5 Thai but only top 3 foreign from age-group awards).
+                if (natCount[key] <= excludeNatCount[key]) excludedBibs.add(r.bib);
             }
         } else {
             byTime.slice(0, overallDisplayCount).forEach((r, i) => {

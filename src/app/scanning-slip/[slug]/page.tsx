@@ -132,6 +132,8 @@ export default function ScanningSlipPage() {
                     overallDisplayCount: campaign.overallDisplayCount,
                     ageGroupDisplayCount: campaign.ageGroupDisplayCount,
                     excludeOverallFromAgeGroup: campaign.excludeOverallFromAgeGroup,
+                    excludeOverallThaiFromAgeGroup: campaign.excludeOverallThaiFromAgeGroup,
+                    excludeOverallForeignFromAgeGroup: campaign.excludeOverallForeignFromAgeGroup,
                     separateOverallByNationality: isNationalitySplitCategory(campaign.separateOverallNationalityCategories, runner.category),
                 });
                 const mine = awards.get(runner._id);

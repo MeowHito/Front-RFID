@@ -34,6 +34,8 @@ interface Campaign {
     overallDisplayCount?: number;
     ageGroupDisplayCount?: number;
     excludeOverallFromAgeGroup?: number;
+    excludeOverallThaiFromAgeGroup?: number;
+    excludeOverallForeignFromAgeGroup?: number;
     excludeAgeGroupTop?: number;
     separateOverallNationalityCategories?: string[];
 }
@@ -920,13 +922,15 @@ export default function EventLivePage() {
                 overallDisplayCount: campaign?.overallDisplayCount,
                 ageGroupDisplayCount: campaign?.ageGroupDisplayCount,
                 excludeOverallFromAgeGroup: campaign?.excludeOverallFromAgeGroup,
+                excludeOverallThaiFromAgeGroup: campaign?.excludeOverallThaiFromAgeGroup,
+                excludeOverallForeignFromAgeGroup: campaign?.excludeOverallForeignFromAgeGroup,
                 // Nationality split is decided per race category
                 separateOverallByNationality: natSplitCategoryKeys.has(key),
             };
             for (const [id, award] of computeAwardsForCategory(pool, cfg)) map.set(id, award);
         }
         return map;
-    }, [runners, resolveRunnerCategoryKey, campaign?.overallDisplayCount, campaign?.ageGroupDisplayCount, campaign?.excludeOverallFromAgeGroup, campaign?.excludeAgeGroupTop, natSplitCategoryKeys]);
+    }, [runners, resolveRunnerCategoryKey, campaign?.overallDisplayCount, campaign?.ageGroupDisplayCount, campaign?.excludeOverallFromAgeGroup, campaign?.excludeOverallThaiFromAgeGroup, campaign?.excludeOverallForeignFromAgeGroup, campaign?.excludeAgeGroupTop, natSplitCategoryKeys]);
 
     // Build ordered list of visible columns based on admin displayColumns + mobile
     const visibleColumns = useMemo(() => {

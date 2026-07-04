@@ -41,6 +41,8 @@ interface Campaign {
     ageGroupDisplayCount?: number;
     overallDisplayCount?: number;
     excludeOverallFromAgeGroup?: number;
+    excludeOverallThaiFromAgeGroup?: number;
+    excludeOverallForeignFromAgeGroup?: number;
     excludeAgeGroupTop?: number;
     separateOverallNationalityCategories?: string[];
 }
@@ -334,16 +336,21 @@ export default function ResultWinnersBySlugPage() {
             finished.filter(r => r.gender !== 'F').sort(byTime).slice(0, excludeOv).forEach(r => excludedBibs.add(r.bib));
             finished.filter(r => r.gender === 'F').sort(byTime).slice(0, excludeOv).forEach(r => excludedBibs.add(r.bib));
         }
-        // Nationality-split categories: every Overall winner (Thai or foreign, per
-        // gender, top `overallDisplayCount`) is excluded from age-group awards.
+        // Nationality-split categories: top Thai / foreign overall winners (per gender)
+        // are excluded from age-group awards. Each bucket's exclude count is
+        // independently configurable, falling back to `overallDisplayCount` if unset.
         if (isNationalitySplitCategory(campaign?.separateOverallNationalityCategories, selectedCategory)) {
             const overallTopN = Math.max(1, campaign?.overallDisplayCount || 5);
+            const excludeNatCount: Record<'thai' | 'foreign', number> = {
+                thai: campaign?.excludeOverallThaiFromAgeGroup != null ? Math.max(0, campaign.excludeOverallThaiFromAgeGroup) : overallTopN,
+                foreign: campaign?.excludeOverallForeignFromAgeGroup != null ? Math.max(0, campaign.excludeOverallForeignFromAgeGroup) : overallTopN,
+            };
             for (const female of [false, true]) {
                 for (const thai of [true, false]) {
                     finished
                         .filter(r => (r.gender === 'F') === female && isThaiNationality(r.nationality) === thai)
                         .sort(byTime)
-                        .slice(0, overallTopN)
+                        .slice(0, excludeNatCount[thai ? 'thai' : 'foreign'])
                         .forEach(r => excludedBibs.add(r.bib));
                 }
             }

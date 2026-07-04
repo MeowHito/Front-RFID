@@ -74,6 +74,8 @@ interface CampaignData {
     overallDisplayCount?: number;
     ageGroupDisplayCount?: number;
     excludeOverallFromAgeGroup?: number;
+    excludeOverallThaiFromAgeGroup?: number;
+    excludeOverallForeignFromAgeGroup?: number;
     excludeAgeGroupTop?: number;
     separateOverallNationalityCategories?: string[];
     targetTimeBands?: TargetTimeBandGroup[];
@@ -421,13 +423,15 @@ export default function RunnerProfilePage() {
                     overallDisplayCount: campaign.overallDisplayCount,
                     ageGroupDisplayCount: campaign.ageGroupDisplayCount,
                     excludeOverallFromAgeGroup: campaign.excludeOverallFromAgeGroup,
+                    excludeOverallThaiFromAgeGroup: campaign.excludeOverallThaiFromAgeGroup,
+                    excludeOverallForeignFromAgeGroup: campaign.excludeOverallForeignFromAgeGroup,
                     separateOverallByNationality: isNationalitySplitCategory(campaign.separateOverallNationalityCategories, runner.category),
                 });
                 if (!cancelled) setAward(awards.get(runner._id) || null);
             } catch { if (!cancelled) setAward(null); }
         })();
         return () => { cancelled = true; };
-    }, [runner, campaign?._id, campaign?.overallDisplayCount, campaign?.ageGroupDisplayCount, campaign?.excludeOverallFromAgeGroup, campaign?.separateOverallNationalityCategories]);
+    }, [runner, campaign?._id, campaign?.overallDisplayCount, campaign?.ageGroupDisplayCount, campaign?.excludeOverallFromAgeGroup, campaign?.excludeOverallThaiFromAgeGroup, campaign?.excludeOverallForeignFromAgeGroup, campaign?.separateOverallNationalityCategories]);
 
     useEffect(() => {
         setFollowedRunners(loadFollowedRunners());

@@ -62,6 +62,8 @@ export interface CampaignData {
     overallDisplayCount?: number;
     ageGroupDisplayCount?: number;
     excludeOverallFromAgeGroup?: number;
+    excludeOverallThaiFromAgeGroup?: number;
+    excludeOverallForeignFromAgeGroup?: number;
     excludeAgeGroupTop?: number;
     separateOverallNationalityCategories?: string[];
     targetTimeBands?: TargetTimeBandGroup[];
