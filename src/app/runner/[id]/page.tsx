@@ -5,7 +5,8 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
 import { isRunnerFollowed, loadFollowedRunners, saveFollowedRunners, subscribeFollowedRunners, toggleFollowedRunner, type FollowedRunner } from '@/lib/followed-runners';
-import { computeAwardsForCategory, type AwardResult } from '@/lib/awards';
+import { computeAwardsForCategory, formatOverallAwardLabel, type AwardResult } from '@/lib/awards';
+import { isNationalitySplitCategory } from '@/lib/nationality';
 
 
 interface RunnerData {
@@ -74,6 +75,7 @@ interface CampaignData {
     ageGroupDisplayCount?: number;
     excludeOverallFromAgeGroup?: number;
     excludeAgeGroupTop?: number;
+    separateOverallNationalityCategories?: string[];
     targetTimeBands?: TargetTimeBandGroup[];
 }
 
@@ -419,12 +421,13 @@ export default function RunnerProfilePage() {
                     overallDisplayCount: campaign.overallDisplayCount,
                     ageGroupDisplayCount: campaign.ageGroupDisplayCount,
                     excludeOverallFromAgeGroup: campaign.excludeOverallFromAgeGroup,
+                    separateOverallByNationality: isNationalitySplitCategory(campaign.separateOverallNationalityCategories, runner.category),
                 });
                 if (!cancelled) setAward(awards.get(runner._id) || null);
             } catch { if (!cancelled) setAward(null); }
         })();
         return () => { cancelled = true; };
-    }, [runner, campaign?._id, campaign?.overallDisplayCount, campaign?.ageGroupDisplayCount, campaign?.excludeOverallFromAgeGroup]);
+    }, [runner, campaign?._id, campaign?.overallDisplayCount, campaign?.ageGroupDisplayCount, campaign?.excludeOverallFromAgeGroup, campaign?.separateOverallNationalityCategories]);
 
     useEffect(() => {
         setFollowedRunners(loadFollowedRunners());
@@ -925,7 +928,7 @@ export default function RunnerProfilePage() {
                     the runner's age group in parentheses. */}
                 {award && (award.overall || award.ageGroup) && (() => {
                     const parts: string[] = [];
-                    if (award.overall) parts.push(`Overall ${award.overall}`);
+                    if (award.overall) parts.push(formatOverallAwardLabel(award));
                     if (award.ageGroup) parts.push(`Age Group ${award.ageGroup}${runner.ageGroup ? ` (${runner.ageGroup})` : ''}`);
                     return (
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, marginBottom: 16, padding: '14px 16px', borderRadius: 12, background: 'linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%)', border: '1px solid #fcd34d' }}>

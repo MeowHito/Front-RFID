@@ -11,6 +11,7 @@ import { authHeaders } from '@/lib/authHeaders';
 import CutoffDateTimePicker from '@/components/CutoffDateTimePicker';
 import { getFollowedRunnersForEvent, isRunnerFollowed, loadFollowedRunners, subscribeFollowedRunners, type FollowedRunner } from '@/lib/followed-runners';
 import { computeAwardsForCategory, type AwardResult } from '@/lib/awards';
+import { isThaiNationality, normalizeCategoryName } from '@/lib/nationality';
 
 interface Campaign {
     _id: string;
@@ -34,6 +35,7 @@ interface Campaign {
     ageGroupDisplayCount?: number;
     excludeOverallFromAgeGroup?: number;
     excludeAgeGroupTop?: number;
+    separateOverallNationalityCategories?: string[];
 }
 
 interface RaceCategory {
@@ -458,6 +460,10 @@ export default function EventLivePage() {
     }
 
     function compareRunnerRankOrder(a: Runner, b: Runner) {
+        // When any category splits Overall by nationality, stored overallRank may be
+        // per-nationality and is no longer a valid global sort key — keep the combined
+        // table ordered by time and let the rank number come from liveRanks.
+        const useStoredRank = !(campaign?.separateOverallNationalityCategories?.length);
         const statusOrder: Record<string, number> = { 'finished': 0, 'in_progress': 1, 'dnf': 2, 'dns': 3, 'dq': 4, 'not_started': 5 };
         const statusDiff = (statusOrder[a.status] ?? 6) - (statusOrder[b.status] ?? 6);
         if (statusDiff !== 0) return statusDiff;
@@ -468,7 +474,7 @@ export default function EventLivePage() {
             // an admin edit will recompute the rank back to its rightful position.
             const aRank = a.overallRank ?? 0;
             const bRank = b.overallRank ?? 0;
-            if (aRank > 0 && bRank > 0 && aRank !== bRank) return aRank - bRank;
+            if (useStoredRank && aRank > 0 && bRank > 0 && aRank !== bRank) return aRank - bRank;
             const aTime = getRunnerPrimaryTimeMs(a);
             const bTime = getRunnerPrimaryTimeMs(b);
             if (aTime > 0 && bTime > 0 && aTime !== bTime) return aTime - bTime;
@@ -482,7 +488,7 @@ export default function EventLivePage() {
 
         const aRank = a.overallRank ?? 0;
         const bRank = b.overallRank ?? 0;
-        if (aRank > 0 && bRank > 0 && aRank !== bRank) return aRank - bRank;
+        if (useStoredRank && aRank > 0 && bRank > 0 && aRank !== bRank) return aRank - bRank;
 
         if (a.status === 'in_progress' && b.status === 'in_progress') {
             const aPassed = a.passedCount ?? 0;
@@ -767,6 +773,22 @@ export default function EventLivePage() {
         return cats.sort((a, b) => (b.distanceValue ?? 0) - (a.distanceValue ?? 0));
     }, [campaign, runners, language]);
 
+    // Category keys whose Overall ranking is split by nationality (Thai vs foreign).
+    // The campaign stores category NAMES; map them onto the resolved category keys.
+    const natSplitCategoryKeys = useMemo(() => {
+        const list = campaign?.separateOverallNationalityCategories;
+        if (!Array.isArray(list) || list.length === 0) return new Set<string>();
+        const normalized = new Set(list.map(normalizeCategoryName).filter(Boolean));
+        const keys = new Set<string>();
+        for (const cat of categories) {
+            if ((cat.normalizedName && normalized.has(cat.normalizedName)) ||
+                (cat.normalizedDistance && normalized.has(cat.normalizedDistance))) {
+                keys.add(cat.key);
+            }
+        }
+        return keys;
+    }, [campaign?.separateOverallNationalityCategories, categories]);
+
     // Sync URL → state on back navigation (catFromUrl changes when browser restores URL)
     useEffect(() => {
         if (catFromUrl && catFromUrl !== filterCategory) {
@@ -885,11 +907,6 @@ export default function EventLivePage() {
     //     runner whose RaceTiger ageGroupRank <= `excludeAgeGroupTop`.
     // A runner who earns an Overall award never also receives an Age-group award.
     const awardByRunnerId = useMemo(() => {
-        const cfg = {
-            overallDisplayCount: campaign?.overallDisplayCount,
-            ageGroupDisplayCount: campaign?.ageGroupDisplayCount,
-            excludeOverallFromAgeGroup: campaign?.excludeOverallFromAgeGroup,
-        };
         // One award pool per distance (resolved category)
         const byCategory = new Map<string, Runner[]>();
         for (const r of runners) {
@@ -898,11 +915,18 @@ export default function EventLivePage() {
             byCategory.get(key)!.push(r);
         }
         const map = new Map<string, AwardResult>();
-        for (const pool of byCategory.values()) {
+        for (const [key, pool] of byCategory) {
+            const cfg = {
+                overallDisplayCount: campaign?.overallDisplayCount,
+                ageGroupDisplayCount: campaign?.ageGroupDisplayCount,
+                excludeOverallFromAgeGroup: campaign?.excludeOverallFromAgeGroup,
+                // Nationality split is decided per race category
+                separateOverallByNationality: natSplitCategoryKeys.has(key),
+            };
             for (const [id, award] of computeAwardsForCategory(pool, cfg)) map.set(id, award);
         }
         return map;
-    }, [runners, resolveRunnerCategoryKey, campaign?.overallDisplayCount, campaign?.ageGroupDisplayCount, campaign?.excludeOverallFromAgeGroup, campaign?.excludeAgeGroupTop]);
+    }, [runners, resolveRunnerCategoryKey, campaign?.overallDisplayCount, campaign?.ageGroupDisplayCount, campaign?.excludeOverallFromAgeGroup, campaign?.excludeAgeGroupTop, natSplitCategoryKeys]);
 
     // Build ordered list of visible columns based on admin displayColumns + mobile
     const visibleColumns = useMemo(() => {
@@ -1041,7 +1065,7 @@ export default function EventLivePage() {
 
     const allRankedRunners = useMemo(() => {
         return [...runners].sort(compareRunnerRankOrder);
-    }, [runners]);
+    }, [runners, campaign?.separateOverallNationalityCategories]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const filteredRunners = useMemo(() => {
         return allRankedRunners
@@ -1069,20 +1093,27 @@ export default function EventLivePage() {
             // Skip DNS/DQ/not_started runners with no checkpoint progress
             if (runner.status === 'not_started' || runner.status === 'dns' || runner.status === 'dq') continue;
             if (runner.status === 'dnf' && !((runner.passedCount ?? 0) > 0)) continue;
+            // In nationality-split categories the Overall counter is scoped to the
+            // runner's Thai/foreign bucket; gender + category counters stay combined.
+            // Both combined and nationality counters advance for every runner so
+            // non-split categories in the same event keep their full combined rank.
+            const isSplit = natSplitCategoryKeys.size > 0 && natSplitCategoryKeys.has(resolveRunnerCategoryKey(runner));
             const eventKey = runner.eventId || '_';
+            const natEventKey = `${eventKey}${isThaiNationality(runner.nationality) ? '::th' : '::intl'}`;
             const genderKey = `${eventKey}::${runner.gender || '_'}`;
             const catKey = `${eventKey}::${runner.gender || '_'}::${runner.ageGroup || '_'}`;
             eventCounters[eventKey] = (eventCounters[eventKey] || 0) + 1;
+            eventCounters[natEventKey] = (eventCounters[natEventKey] || 0) + 1;
             genderCounters[genderKey] = (genderCounters[genderKey] || 0) + 1;
             categoryCounters[catKey] = (categoryCounters[catKey] || 0) + 1;
             ranks.set(runner._id, {
-                overallRank: eventCounters[eventKey],
+                overallRank: eventCounters[isSplit ? natEventKey : eventKey],
                 genRank: genderCounters[genderKey],
                 catRank: categoryCounters[catKey],
             });
         }
         return ranks;
-    }, [allRankedRunners]);
+    }, [allRankedRunners, natSplitCategoryKeys, resolveRunnerCategoryKey]);
 
 
 
@@ -1913,7 +1944,7 @@ export default function EventLivePage() {
                                                     <td key={key} className={isMobile ? 'px-0.5 py-1 text-center' : 'px-1.5 py-1.5 text-center'}>
                                                         {award && (award.overall || award.ageGroup) ? (
                                                             <span className="inline-flex flex-col items-center leading-tight whitespace-nowrap">
-                                                                {award.overall ? <span className={textCls} style={{ color: textColor }}>Overall {award.overall}</span> : null}
+                                                                {award.overall ? <span className={textCls} style={{ color: textColor }}>{award.overallNat ? `OVERALL ${award.overallNat === 'thai' ? 'THA' : 'INT'}` : 'Overall'} {award.overall}</span> : null}
                                                                 {award.ageGroup ? <span className={textCls} style={{ color: textColor }}>Age Group {award.ageGroup}</span> : null}
                                                             </span>
                                                         ) : (

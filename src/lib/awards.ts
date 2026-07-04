@@ -12,10 +12,16 @@
 //   • If it is > 0, the top N overall per gender are removed from age-group
 //     contention → they keep only their Overall award.
 
+import { isThaiNationality } from './nationality';
+
 export interface AwardConfig {
     overallDisplayCount?: number;
     ageGroupDisplayCount?: number;
     excludeOverallFromAgeGroup?: number;
+    /** When true, the Overall placing is scoped to the runner's nationality group
+     *  (Thai vs foreign) and every Overall winner is excluded from age-group awards.
+     *  The caller decides this per race category (campaign stores the category list). */
+    separateOverallByNationality?: boolean;
 }
 
 export interface AwardRunnerLike {
@@ -28,10 +34,13 @@ export interface AwardRunnerLike {
     gunTime?: number;
     elapsedTime?: number;
     ageGroupRank?: number;
+    nationality?: string;
 }
 
 // A runner may earn an overall placing, an age-group placing, or both.
-export type AwardResult = { overall?: number; ageGroup?: number; ageGroupLabel?: string };
+// `overallNat` is set only in nationality-split categories: which bucket the
+// Overall placing belongs to (renders as "OVERALL THA n" / "OVERALL INT n").
+export type AwardResult = { overall?: number; overallNat?: 'thai' | 'foreign'; ageGroup?: number; ageGroupLabel?: string };
 
 /** Strip gender prefix ("M30-39") and Thai "ปี" suffix so labels group consistently. */
 export function normalizeAgeGroupLabel(value?: string | null): string {
@@ -52,6 +61,7 @@ export function computeAwardsForCategory(
     const overallDisplayCount = Math.max(1, Number(cfg.overallDisplayCount) || 5);
     const ageGroupDisplayCount = Math.max(1, Number(cfg.ageGroupDisplayCount) || 5);
     const excludeOv = Math.max(0, Number(cfg.excludeOverallFromAgeGroup) || 0);
+    const separateNat = !!cfg.separateOverallByNationality;
 
     const finished = runners.filter(r => r.status === 'finished' && (r.netTime || r.gunTime || r.elapsedTime));
     const ensure = (id: string): AwardResult => {
@@ -64,14 +74,32 @@ export function computeAwardsForCategory(
         const group = finished.filter(r => (r.gender === 'F') === female);
         const byTime = [...group].sort((a, b) => timeOf(a) - timeOf(b));
 
-        // Overall winners (per gender)
-        byTime.slice(0, overallDisplayCount).forEach((r, i) => {
-            ensure(r._id).overall = i + 1;
-        });
+        // Overall winners (per gender). When nationality-split is on, the overall
+        // placing is scoped further to the Thai / foreign bucket, so each bucket has
+        // its own "OVERALL THA 1..N" / "OVERALL INT 1..N".
+        const excludedBibs = new Set<string>();
+        if (separateNat) {
+            const natCount: Record<'thai' | 'foreign', number> = { thai: 0, foreign: 0 };
+            for (const r of byTime) {
+                const key = isThaiNationality(r.nationality) ? 'thai' : 'foreign';
+                if (natCount[key] >= overallDisplayCount) continue;
+                natCount[key] += 1;
+                const a = ensure(r._id);
+                a.overall = natCount[key];
+                a.overallNat = key;
+                // Rule for split categories: an Overall winner (Thai or foreign)
+                // never also receives an age-group award.
+                excludedBibs.add(r.bib);
+            }
+        } else {
+            byTime.slice(0, overallDisplayCount).forEach((r, i) => {
+                ensure(r._id).overall = i + 1;
+            });
+        }
 
         // Age-group winners (per gender) — overall winners stay eligible unless the
-        // admin chose to exclude the top `excludeOv` overall from age-group prizes.
-        const excludedBibs = new Set<string>();
+        // admin chose to exclude the top `excludeOv` overall from age-group prizes
+        // (or the category is nationality-split, which always excludes them).
         if (excludeOv > 0) byTime.slice(0, excludeOv).forEach(r => excludedBibs.add(r.bib));
 
         const byAgeRank = [...group].sort((a, b) => {
@@ -97,11 +125,19 @@ export function computeAwardsForCategory(
     return map;
 }
 
+/** Label for the Overall part of an award: "Overall 1", or in nationality-split
+ *  categories "OVERALL THA 1" / "OVERALL INT 1". */
+export function formatOverallAwardLabel(a: AwardResult): string {
+    if (!a.overall) return '';
+    if (a.overallNat) return `OVERALL ${a.overallNat === 'thai' ? 'THA' : 'INT'} ${a.overall}`;
+    return `Overall ${a.overall}`;
+}
+
 /** Human label shown in the AWARD column / e-slip, e.g. "Overall 1, Age Group 2". */
 export function formatAwardLabel(a: AwardResult | undefined | null): string {
     if (!a) return '';
     const parts: string[] = [];
-    if (a.overall) parts.push(`Overall ${a.overall}`);
+    if (a.overall) parts.push(formatOverallAwardLabel(a));
     if (a.ageGroup) parts.push(`Age Group ${a.ageGroup}`);
     return parts.join(', ');
 }

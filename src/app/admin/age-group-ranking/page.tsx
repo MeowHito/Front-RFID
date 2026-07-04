@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo } from 'react';
 import AdminLayout from '@/app/admin/AdminLayout';
 import { useLanguage } from '@/lib/language-context';
 import { authHeaders } from '@/lib/authHeaders';
+import { isThaiNationality, isNationalitySplitCategory } from '@/lib/nationality';
 import { LinkIcon } from '@heroicons/react/24/outline';
 
 interface Runner {
@@ -15,6 +16,7 @@ interface Runner {
     ageGroup?: string;
     age?: number;
     status: string;
+    nationality?: string;
     netTime?: number;
     gunTime?: number;
     elapsedTime?: number;
@@ -45,6 +47,7 @@ interface FeaturedCampaignSettings {
     disableAgeGroupRanking?: boolean;
     ageGroupDisplayCount?: number;
     overallDisplayCount?: number;
+    separateOverallNationalityCategories?: string[];
     categories?: { name: string; distance?: string; ageGroups?: AgeGroupConfig[] }[];
 }
 
@@ -175,6 +178,8 @@ export default function AgeGroupRankingPage() {
     const [excludeTop, setExcludeTop] = useState<number>(0);
     const [ageGroupDisplayCount, setAgeGroupDisplayCount] = useState<number>(DEFAULT_TOP_N);
     const [overallDisplayCount, setOverallDisplayCount] = useState<number>(DEFAULT_TOP_N);
+    // Category names whose Overall ranking is split into Thai / foreign buckets
+    const [natSplitCategories, setNatSplitCategories] = useState<string[]>([]);
     const [selectedCategory, setSelectedCategory] = useState('');
     const [previewRunners, setPreviewRunners] = useState<Runner[]>([]);
     const [previewLoading, setPreviewLoading] = useState(false);
@@ -195,6 +200,7 @@ export default function AgeGroupRankingPage() {
                 setExcludeTop(Math.max(0, Number(data?.excludeOverallFromAgeGroup) || 0));
                 setAgeGroupDisplayCount(Math.max(1, Number(data?.ageGroupDisplayCount) || DEFAULT_TOP_N));
                 setOverallDisplayCount(Math.max(1, Number(data?.overallDisplayCount) || DEFAULT_TOP_N));
+                setNatSplitCategories(Array.isArray(data?.separateOverallNationalityCategories) ? data.separateOverallNationalityCategories : []);
                 setSelectedCategory(data?.categories?.[0]?.name || '');
             }
         } catch { /* */ } finally {
@@ -255,12 +261,34 @@ export default function AgeGroupRankingPage() {
         return buildAgeGroupsFromConfig(category.ageGroups);
     }, [campaign, selectedCategory, previewRunners, disableAgeGroupRanking]);
 
+    // Whether the currently selected category splits Overall by nationality
+    const selectedCategorySplit = isNationalitySplitCategory(natSplitCategories, selectedCategory);
+
+    const toggleNatSplitForSelected = () => {
+        if (!selectedCategory) return;
+        setNatSplitCategories(prev => prev.some(c => c === selectedCategory)
+            ? prev.filter(c => c !== selectedCategory)
+            : [...prev, selectedCategory]);
+    };
+
     const { maleWinners, femaleWinners } = useMemo(() => {
         // Exclude top N male + top N female by overall time
         const excludedBibs = new Set<string>();
         if (excludeTop > 0) {
             sortedFinishedRunners.filter(r => r.gender !== 'F').slice(0, excludeTop).forEach(r => excludedBibs.add(r.bib));
             sortedFinishedRunners.filter(r => r.gender === 'F').slice(0, excludeTop).forEach(r => excludedBibs.add(r.bib));
+        }
+        // Nationality-split categories: every Overall winner (Thai or foreign, per
+        // gender, top `overallDisplayCount`) is excluded from age-group awards.
+        if (selectedCategorySplit) {
+            for (const female of [false, true]) {
+                for (const thai of [true, false]) {
+                    sortedFinishedRunners
+                        .filter(r => (r.gender === 'F') === female && isThaiNationality(r.nationality) === thai)
+                        .slice(0, overallDisplayCount)
+                        .forEach(r => excludedBibs.add(r.bib));
+                }
+            }
         }
 
         const male: Record<string, Runner[]> = {};
@@ -280,7 +308,7 @@ export default function AgeGroupRankingPage() {
         }
 
         return { maleWinners: male, femaleWinners: female };
-    }, [sortedFinishedRunners, activeAgeGroups, disableAgeGroupRanking, excludeTop, ageGroupDisplayCount]);
+    }, [sortedFinishedRunners, activeAgeGroups, disableAgeGroupRanking, excludeTop, ageGroupDisplayCount, selectedCategorySplit, overallDisplayCount]);
 
     const overallMaleWinners = useMemo(() => {
         return sortedFinishedRunners.filter(r => r.gender !== 'F').slice(0, overallDisplayCount);
@@ -288,6 +316,20 @@ export default function AgeGroupRankingPage() {
 
     const overallFemaleWinners = useMemo(() => {
         return sortedFinishedRunners.filter(r => r.gender === 'F').slice(0, overallDisplayCount);
+    }, [sortedFinishedRunners, overallDisplayCount]);
+
+    // Nationality-split overall winners (top N per gender × Thai/foreign group).
+    const overallByNationality = useMemo(() => {
+        const pick = (isFemale: boolean, thai: boolean) =>
+            sortedFinishedRunners
+                .filter(r => (r.gender === 'F') === isFemale && isThaiNationality(r.nationality) === thai)
+                .slice(0, overallDisplayCount);
+        return {
+            thaiMale: pick(false, true),
+            thaiFemale: pick(true, true),
+            foreignMale: pick(false, false),
+            foreignFemale: pick(true, false),
+        };
     }, [sortedFinishedRunners, overallDisplayCount]);
 
     const previewCategory = campaign?.categories?.find(item => item.name === selectedCategory);
@@ -450,6 +492,7 @@ export default function AgeGroupRankingPage() {
                     disableAgeGroupRanking: false,
                     ageGroupDisplayCount: ageGroupDisplayCount,
                     overallDisplayCount: overallDisplayCount,
+                    separateOverallNationalityCategories: natSplitCategories,
                 }),
             });
             if (res.ok) {
@@ -629,6 +672,31 @@ export default function AgeGroupRankingPage() {
                                             {language === 'th' ? 'อันดับแรก' : 'top ranks'}
                                         </span>
                                     </div>
+                                    {/* Thai / foreign split toggle — per selected category */}
+                                    <div className="justify-self-end flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5">
+                                        <span className="text-[11px] font-bold" style={{ color: '#047857' }}>
+                                            {language === 'th'
+                                                ? `แยกไทย / ต่างชาติ${selectedCategory ? ` (${selectedCategory})` : ''}`
+                                                : `Split Thai / foreign${selectedCategory ? ` (${selectedCategory})` : ''}`}
+                                        </span>
+                                        <button
+                                            type="button"
+                                            role="switch"
+                                            aria-checked={selectedCategorySplit}
+                                            onClick={toggleNatSplitForSelected}
+                                            disabled={!selectedCategory}
+                                            className="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors"
+                                            style={{ backgroundColor: selectedCategorySplit ? '#10b981' : '#cbd5e1', cursor: selectedCategory ? 'pointer' : 'not-allowed' }}
+                                            title={language === 'th'
+                                                ? 'แยกอันดับ Overall ตามสัญชาติ เฉพาะระยะที่เลือก (ผู้ได้ Overall จะไม่ได้รางวัลกลุ่มอายุ)'
+                                                : 'Split Overall by nationality for the selected category only (Overall winners are excluded from age-group awards)'}
+                                        >
+                                            <span
+                                                className="inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform"
+                                                style={{ transform: selectedCategorySplit ? 'translateX(22px)' : 'translateX(2px)' }}
+                                            />
+                                        </button>
+                                    </div>
                                 </div>
 
                                 <div className="mt-3" style={{ maxHeight: '600px', overflowY: 'auto' }}>
@@ -639,6 +707,13 @@ export default function AgeGroupRankingPage() {
                                     ) : !selectedCategory ? (
                                         <div className="rounded-xl border border-dashed border-gray-300 bg-white px-4 py-8 text-center text-sm text-gray-500">
                                             {language === 'th' ? 'ไม่มีประเภทการแข่งขันสำหรับแสดงพรีวิว' : 'No category available for preview'}
+                                        </div>
+                                    ) : selectedCategorySplit ? (
+                                        <div className="grid gap-3 xl:grid-cols-2">
+                                            {renderOverallPreviewColumn(language === 'th' ? '♂ OVERALL THA · ชาย' : '♂ OVERALL THA · Male', 'bg-blue-600', overallByNationality.thaiMale)}
+                                            {renderOverallPreviewColumn(language === 'th' ? '♀ OVERALL THA · หญิง' : '♀ OVERALL THA · Female', 'bg-pink-600', overallByNationality.thaiFemale)}
+                                            {renderOverallPreviewColumn(language === 'th' ? '♂ OVERALL INT · ชาย' : '♂ OVERALL INT · Male', 'bg-indigo-600', overallByNationality.foreignMale)}
+                                            {renderOverallPreviewColumn(language === 'th' ? '♀ OVERALL INT · หญิง' : '♀ OVERALL INT · Female', 'bg-fuchsia-600', overallByNationality.foreignFemale)}
                                         </div>
                                     ) : (
                                         <div className="grid gap-3 xl:grid-cols-2">

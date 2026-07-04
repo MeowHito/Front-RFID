@@ -4,6 +4,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { buildWinnersExcel, triggerExcelDownload } from '@/lib/winner-excel';
+import { isThaiNationality, isNationalitySplitCategory } from '@/lib/nationality';
 import { useParams } from 'next/navigation';
 
 interface Runner {
@@ -14,6 +15,7 @@ interface Runner {
     gender: string;
     category: string;
     status: string;
+    nationality?: string;
     netTime?: number;
     gunTime?: number;
     elapsedTime?: number;
@@ -35,6 +37,7 @@ interface Campaign {
     uuid?: string;
     categories?: CampaignCategory[];
     overallDisplayCount?: number;
+    separateOverallNationalityCategories?: string[];
 }
 
 const REFRESH_INTERVAL = 10;
@@ -71,6 +74,8 @@ export default function OverallWinnersBySlugPage() {
     const [downloading, setDownloading] = useState<string | null>(null);
     const maleColRef = useRef<HTMLDivElement | null>(null);
     const femaleColRef = useRef<HTMLDivElement | null>(null);
+    const foreignMaleColRef = useRef<HTMLDivElement | null>(null);
+    const foreignFemaleColRef = useRef<HTMLDivElement | null>(null);
 
     useEffect(() => {
         const check = () => setIsMobile(window.innerWidth < 768);
@@ -180,37 +185,60 @@ export default function OverallWinnersBySlugPage() {
     }, [autoMode]);
 
     const topN = Math.max(1, campaign?.overallDisplayCount || 5);
+    // Nationality split applies per race category — only when the selected category is in the list
+    const separateNat = isNationalitySplitCategory(campaign?.separateOverallNationalityCategories, selectedCategory);
 
-    const { maleWinners, femaleWinners } = useMemo(() => {
+    const { maleWinners, femaleWinners, foreignMaleWinners, foreignFemaleWinners } = useMemo(() => {
         const finished = displayedRunners.filter(r => r.status === 'finished' && (r.netTime || r.gunTime || r.elapsedTime));
         const sorted = [...finished].sort((a, b) => {
             const at = a.netTime || a.gunTime || a.elapsedTime || Infinity;
             const bt = b.netTime || b.gunTime || b.elapsedTime || Infinity;
             return at - bt;
         });
+        if (separateNat) {
+            const pick = (isFemale: boolean, thai: boolean) =>
+                sorted.filter(r => (r.gender === 'F') === isFemale && isThaiNationality(r.nationality) === thai).slice(0, topN);
+            return {
+                maleWinners: pick(false, true),
+                femaleWinners: pick(true, true),
+                foreignMaleWinners: pick(false, false),
+                foreignFemaleWinners: pick(true, false),
+            };
+        }
         return {
             maleWinners: sorted.filter(r => r.gender !== 'F').slice(0, topN),
             femaleWinners: sorted.filter(r => r.gender === 'F').slice(0, topN),
+            foreignMaleWinners: [] as Runner[],
+            foreignFemaleWinners: [] as Runner[],
         };
-    }, [displayedRunners, topN]);
+    }, [displayedRunners, topN, separateNat]);
 
-    const downloadLandscape = useCallback(async (gender: 'male' | 'female' | 'both' = 'both') => {
+    const downloadGroup = useCallback(async (
+        males: Runner[],
+        females: Runner[],
+        gender: 'male' | 'female' | 'both' = 'both',
+        namePart = '',
+    ) => {
         setDownloading('landscape');
         try {
             const blob = await buildWinnersExcel(
                 campaign?.name || '',
                 selectedCategory,
-                [{ maleRunners: maleWinners, femaleRunners: femaleWinners }],
+                [{ maleRunners: males, femaleRunners: females }],
                 gender,
             );
             const suffix = gender === 'male' ? '-Male' : gender === 'female' ? '-Female' : '';
             const distance = campaign?.categories?.find(c => c.name === selectedCategory)?.distance || selectedCategory || '';
             const distPart = distance ? `-${distance}` : '';
-            if (blob) triggerExcelDownload(blob, `${campaign?.name || 'winners'}${distPart}-Overall${suffix}`);
+            if (blob) triggerExcelDownload(blob, `${campaign?.name || 'winners'}${distPart}-Overall${namePart}${suffix}`);
         } catch (e) { console.error(e); } finally {
             setDownloading(null);
         }
-    }, [campaign, selectedCategory, maleWinners, femaleWinners]);
+    }, [campaign, selectedCategory]);
+
+    const downloadLandscape = useCallback((gender: 'male' | 'female' | 'both' = 'both') =>
+        downloadGroup(maleWinners, femaleWinners, gender),
+        [downloadGroup, maleWinners, femaleWinners]);
 
     const rankBg = ['#f59e0b', '#9ca3af', '#92400e', '#e2e8f0', '#e2e8f0'];
     const rankFg = ['#000', '#fff', '#fff', '#475569', '#475569'];
@@ -370,8 +398,19 @@ export default function OverallWinnersBySlugPage() {
                 </div>
             ) : (
                 <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: isMobile ? 12 : '1vw', flex: isMobile ? undefined : 1, minHeight: 0, paddingBottom: isMobile ? 16 : 0 }}>
-                    {renderColumn('♂ MALE OVERALL', '#2563eb', maleWinners, maleColRef, () => downloadLandscape('male'))}
-                    {renderColumn('♀ FEMALE OVERALL', '#db2777', femaleWinners, femaleColRef, () => downloadLandscape('female'))}
+                    {separateNat ? (
+                        <>
+                            {renderColumn('♂ OVERALL THA · MALE', '#2563eb', maleWinners, maleColRef, () => downloadGroup(maleWinners, femaleWinners, 'male', '-THA'))}
+                            {renderColumn('♀ OVERALL THA · FEMALE', '#db2777', femaleWinners, femaleColRef, () => downloadGroup(maleWinners, femaleWinners, 'female', '-THA'))}
+                            {renderColumn('♂ OVERALL INT · MALE', '#4f46e5', foreignMaleWinners, foreignMaleColRef, () => downloadGroup(foreignMaleWinners, foreignFemaleWinners, 'male', '-INT'))}
+                            {renderColumn('♀ OVERALL INT · FEMALE', '#c026d3', foreignFemaleWinners, foreignFemaleColRef, () => downloadGroup(foreignMaleWinners, foreignFemaleWinners, 'female', '-INT'))}
+                        </>
+                    ) : (
+                        <>
+                            {renderColumn('♂ MALE OVERALL', '#2563eb', maleWinners, maleColRef, () => downloadLandscape('male'))}
+                            {renderColumn('♀ FEMALE OVERALL', '#db2777', femaleWinners, femaleColRef, () => downloadLandscape('female'))}
+                        </>
+                    )}
                 </div>
             )}
         </div>

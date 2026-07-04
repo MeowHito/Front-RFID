@@ -4,6 +4,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { buildWinnersExcel, triggerExcelDownload, ExcelSection } from '@/lib/winner-excel';
+import { isThaiNationality, isNationalitySplitCategory } from '@/lib/nationality';
 import { useParams } from 'next/navigation';
 
 interface Runner {
@@ -16,6 +17,7 @@ interface Runner {
     ageGroup?: string;
     age?: number;
     status: string;
+    nationality?: string;
     netTime?: number;
     gunTime?: number;
     elapsedTime?: number;
@@ -37,8 +39,10 @@ interface Campaign {
     uuid?: string;
     categories?: { name: string; distance?: string }[];
     ageGroupDisplayCount?: number;
+    overallDisplayCount?: number;
     excludeOverallFromAgeGroup?: number;
     excludeAgeGroupTop?: number;
+    separateOverallNationalityCategories?: string[];
 }
 
 interface AgeGroupBucket {
@@ -324,11 +328,25 @@ export default function ResultWinnersBySlugPage() {
         const excludeOv = Math.max(0, campaign?.excludeOverallFromAgeGroup || 0);
         const excludeAG = Math.max(0, campaign?.excludeAgeGroupTop || 0);
         const excludedBibs = new Set<string>();
+        const byTime = (a: Runner, b: Runner) =>
+            (a.netTime || a.gunTime || a.elapsedTime || Infinity) - (b.netTime || b.gunTime || b.elapsedTime || Infinity);
         if (excludeOv > 0) {
-            const byTime = (a: Runner, b: Runner) =>
-                (a.netTime || a.gunTime || a.elapsedTime || Infinity) - (b.netTime || b.gunTime || b.elapsedTime || Infinity);
             finished.filter(r => r.gender !== 'F').sort(byTime).slice(0, excludeOv).forEach(r => excludedBibs.add(r.bib));
             finished.filter(r => r.gender === 'F').sort(byTime).slice(0, excludeOv).forEach(r => excludedBibs.add(r.bib));
+        }
+        // Nationality-split categories: every Overall winner (Thai or foreign, per
+        // gender, top `overallDisplayCount`) is excluded from age-group awards.
+        if (isNationalitySplitCategory(campaign?.separateOverallNationalityCategories, selectedCategory)) {
+            const overallTopN = Math.max(1, campaign?.overallDisplayCount || 5);
+            for (const female of [false, true]) {
+                for (const thai of [true, false]) {
+                    finished
+                        .filter(r => (r.gender === 'F') === female && isThaiNationality(r.nationality) === thai)
+                        .sort(byTime)
+                        .slice(0, overallTopN)
+                        .forEach(r => excludedBibs.add(r.bib));
+                }
+            }
         }
 
         // Sort by RaceTiger's ageGroupRank; fall back to netTime for runners without a rank yet
@@ -352,7 +370,7 @@ export default function ResultWinnersBySlugPage() {
             if (ag in bucket && bucket[ag].length < topN) bucket[ag].push(runner);
         }
         return { maleWinners, femaleWinners };
-    }, [displayedRunners, activeAgeGroups, disableAgeGroupRanking, topN, campaign]);
+    }, [displayedRunners, activeAgeGroups, disableAgeGroupRanking, topN, campaign, selectedCategory]);
 
     const downloadSection = useCallback(async (ageGroupLabel: string, gender: 'male' | 'female' | 'both' = 'both') => {
         const key = gender === 'both' ? ageGroupLabel : `${gender}-${ageGroupLabel}`;
