@@ -96,6 +96,7 @@ const menuSections: MenuSection[] = [
             { href: '/admin/target-time-ranking', label: 'อันดับเวลาตามเป้าหมาย', labelEn: 'Target Time Ranking', icon: 'stopwatch' },
             { href: '/admin/certificates', label: 'ใบประกาศ', labelEn: 'Certificates', icon: 'print' },
             { href: '/admin/eslip', label: 'E-Slip', labelEn: 'E-Slip', icon: 'id-card' },
+            { href: '/admin/eslip-scan', label: 'สแกน E-Slip (จอ)', labelEn: 'E-Slip Scan Display', icon: 'qrcode', iconColor: '#16a34a' },
             { href: '/admin/eslip2', label: 'E-Slip 2 Editor', labelEn: 'E-Slip 2 Editor', icon: 'paint-brush', iconColor: '#8b5cf6' },
             { href: '/admin/links', label: 'ลิงก์แชร์', labelEn: 'Share Links', icon: 'route' },
             { href: '/admin/export', label: 'ส่งออกข้อมูล', labelEn: 'Export Data', icon: 'file-excel' },
