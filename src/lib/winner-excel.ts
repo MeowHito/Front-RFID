@@ -103,6 +103,7 @@ export async function buildWinnersExcel(
     subtitle: string,
     sections: ExcelSection[],
     showGender: 'male' | 'female' | 'both' = 'both',
+    opts?: { combinedLabel?: string; barColor?: string },
 ): Promise<Blob | null> {
     const ExcelJS = (await import('exceljs')).default;
 
@@ -244,7 +245,8 @@ export async function buildWinnersExcel(
                 row++;
             }
         } else if (showGender === 'male') {
-            addGenderBar(`${agePrefix}♂  MALE WINNERS`, CLR.MALE, 1, 5);
+            const barLabel = opts?.combinedLabel ? `${agePrefix}${opts.combinedLabel}` : `${agePrefix}♂  MALE WINNERS`;
+            addGenderBar(barLabel, opts?.barColor || CLR.MALE, 1, 5);
             row++;
             addColHdr(1, CLR.M_COL_HDR);
             row++;

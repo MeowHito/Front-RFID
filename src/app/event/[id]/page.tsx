@@ -35,6 +35,7 @@ interface Campaign {
     // Award config (shared with /admin/age-group-ranking + winner pages)
     overallDisplayCount?: number;
     ageGroupDisplayCount?: number;
+    bestOfDisplayCount?: number;
     excludeOverallFromAgeGroup?: number;
     excludeOverallThaiFromAgeGroup?: number;
     excludeOverallForeignFromAgeGroup?: number;
@@ -1670,10 +1671,10 @@ export default function EventLivePage() {
                     <RankingMenuDropdown
                         campaignId={campaign._id}
                         campaignSlugOrId={campaign.slug || campaign._id}
-                        campaignName={campaign.name}
                         categoryName={currentCategoryName}
                         overallDisplayCount={campaign.overallDisplayCount}
                         ageGroupDisplayCount={campaign.ageGroupDisplayCount}
+                        bestOfDisplayCount={campaign.bestOfDisplayCount}
                         rankingMenuVisibility={campaign.rankingMenuVisibility}
                         isAdmin={isAdmin}
                         language={language}

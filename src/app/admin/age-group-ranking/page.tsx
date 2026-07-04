@@ -1,11 +1,12 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
+import Link from 'next/link';
 import AdminLayout from '@/app/admin/AdminLayout';
 import { useLanguage } from '@/lib/language-context';
 import { authHeaders } from '@/lib/authHeaders';
 import { isThaiNationality, isNationalitySplitCategory } from '@/lib/nationality';
-import { LinkIcon } from '@heroicons/react/24/outline';
+import { LinkIcon, TrophyIcon } from '@heroicons/react/24/outline';
 
 interface Runner {
     _id: string;
@@ -47,6 +48,7 @@ interface FeaturedCampaignSettings {
     disableAgeGroupRanking?: boolean;
     ageGroupDisplayCount?: number;
     overallDisplayCount?: number;
+    bestOfDisplayCount?: number;
     excludeOverallThaiFromAgeGroup?: number;
     excludeOverallForeignFromAgeGroup?: number;
     separateOverallNationalityCategories?: string[];
@@ -179,9 +181,9 @@ export default function AgeGroupRankingPage() {
     const [saving, setSaving] = useState(false);
     const [excludeTop, setExcludeTop] = useState<number>(0);
     const [ageGroupDisplayCount, setAgeGroupDisplayCount] = useState<number>(DEFAULT_TOP_N);
-    const [overallDisplayCount, setOverallDisplayCount] = useState<number>(DEFAULT_TOP_N);
+    const [bestOfDisplayCount, setBestOfDisplayCount] = useState<number>(1);
     // Nationality-split categories: how many top Thai / foreign overall winners
-    // (per gender) are excluded from age-group awards — independent of overallDisplayCount.
+    // (per gender) are excluded from age-group awards — independent of the public Overall page's display count.
     const [excludeThaiTop, setExcludeThaiTop] = useState<number>(DEFAULT_TOP_N);
     const [excludeForeignTop, setExcludeForeignTop] = useState<number>(DEFAULT_TOP_N);
     // Category names whose Overall ranking is split into Thai / foreign buckets
@@ -205,8 +207,8 @@ export default function AgeGroupRankingPage() {
                 setCampaign(data);
                 setExcludeTop(Math.max(0, Number(data?.excludeOverallFromAgeGroup) || 0));
                 setAgeGroupDisplayCount(Math.max(1, Number(data?.ageGroupDisplayCount) || DEFAULT_TOP_N));
+                setBestOfDisplayCount(Math.max(1, Number(data?.bestOfDisplayCount) || 1));
                 const overallTopN = Math.max(1, Number(data?.overallDisplayCount) || DEFAULT_TOP_N);
-                setOverallDisplayCount(overallTopN);
                 setExcludeThaiTop(data?.excludeOverallThaiFromAgeGroup != null ? Math.max(0, Number(data.excludeOverallThaiFromAgeGroup)) : overallTopN);
                 setExcludeForeignTop(data?.excludeOverallForeignFromAgeGroup != null ? Math.max(0, Number(data.excludeOverallForeignFromAgeGroup)) : overallTopN);
                 setNatSplitCategories(Array.isArray(data?.separateOverallNationalityCategories) ? data.separateOverallNationalityCategories : []);
@@ -320,32 +322,9 @@ export default function AgeGroupRankingPage() {
         return { maleWinners: male, femaleWinners: female };
     }, [sortedFinishedRunners, activeAgeGroups, disableAgeGroupRanking, excludeTop, ageGroupDisplayCount, selectedCategorySplit, excludeThaiTop, excludeForeignTop]);
 
-    const overallMaleWinners = useMemo(() => {
-        return sortedFinishedRunners.filter(r => r.gender !== 'F').slice(0, overallDisplayCount);
-    }, [sortedFinishedRunners, overallDisplayCount]);
-
-    const overallFemaleWinners = useMemo(() => {
-        return sortedFinishedRunners.filter(r => r.gender === 'F').slice(0, overallDisplayCount);
-    }, [sortedFinishedRunners, overallDisplayCount]);
-
-    // Nationality-split overall winners (top N per gender × Thai/foreign group).
-    const overallByNationality = useMemo(() => {
-        const pick = (isFemale: boolean, thai: boolean) =>
-            sortedFinishedRunners
-                .filter(r => (r.gender === 'F') === isFemale && isThaiNationality(r.nationality) === thai)
-                .slice(0, overallDisplayCount);
-        return {
-            thaiMale: pick(false, true),
-            thaiFemale: pick(true, true),
-            foreignMale: pick(false, false),
-            foreignFemale: pick(true, false),
-        };
-    }, [sortedFinishedRunners, overallDisplayCount]);
-
     const previewCategory = campaign?.categories?.find(item => item.name === selectedCategory);
     const campaignPath = campaign?.slug || campaign?._id || '';
     const ageGroupShareUrl = campaignPath ? `${origin}/Result-Winners/${campaignPath}` : '';
-    const overallShareUrl = campaignPath ? `${origin}/Overall-Winners/${campaignPath}` : '';
 
     /* ── Preview column: vertical layout like Result-Winners page ── */
     const renderPreviewColumn = (title: string, headerClass: string, groupClass: string, winners: Record<string, Runner[]>) => (
@@ -391,45 +370,6 @@ export default function AgeGroupRankingPage() {
                         </div>
                     );
                 })}
-            </div>
-        </div>
-    );
-
-    const renderOverallPreviewColumn = (title: string, headerClass: string, runners: Runner[]) => (
-        <div className="space-y-0">
-            <div className={`overflow-hidden rounded-t-lg ${headerClass}`} style={{ color: '#ffffff' }}>
-                <div className="px-3 py-2 text-center text-xs font-bold">
-                    {title}
-                </div>
-                <div className="px-4 py-1.5 text-center text-[11px] font-bold">
-                    {language === 'th' ? 'อันดับ Overall' : 'Overall ranking'}
-                </div>
-            </div>
-            <div className="rounded-b-lg border border-t-0 border-gray-200 bg-white overflow-hidden">
-                <div className="divide-y divide-gray-100">
-                    {runners.length > 0 ? runners.map((runner, index) => (
-                        <div key={`overall-${title}-${index}`} className="flex items-center gap-2 px-3 py-1.5">
-                            <div className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white ${
-                                index === 0 ? 'bg-yellow-500' : index === 1 ? 'bg-gray-400' : index === 2 ? 'bg-amber-700' : 'bg-gray-300 text-gray-600'
-                            }`} style={index > 2 ? { color: '#4b5563' } : undefined}>
-                                {index + 1}
-                            </div>
-                            <div className="min-w-0 flex-1 leading-tight">
-                                <p className="truncate text-xs font-semibold text-gray-800">
-                                    {runner.firstName} {runner.lastName}
-                                </p>
-                                <p className="text-[10px] text-gray-500">BIB {runner.bib}</p>
-                            </div>
-                            <div className="shrink-0 text-[11px] font-bold text-gray-800">
-                                {runner.netTimeStr || formatTime(runner.netTime || runner.gunTime || runner.elapsedTime)}
-                            </div>
-                        </div>
-                    )) : (
-                        <div className="px-3 py-3 text-center text-[11px] text-gray-400">
-                            {language === 'th' ? 'ไม่มีข้อมูล' : 'No data'}
-                        </div>
-                    )}
-                </div>
             </div>
         </div>
     );
@@ -485,9 +425,9 @@ export default function AgeGroupRankingPage() {
         setAgeGroupDisplayCount(normalized);
     };
 
-    const updateOverallDisplayCount = (value: number) => {
-        const normalized = Number.isFinite(value) ? Math.max(1, Math.floor(value)) : DEFAULT_TOP_N;
-        setOverallDisplayCount(normalized);
+    const updateBestOfDisplayCount = (value: number) => {
+        const normalized = Number.isFinite(value) ? Math.max(1, Math.floor(value)) : 1;
+        setBestOfDisplayCount(normalized);
     };
 
     const updateExcludeThaiTop = (value: number) => {
@@ -511,7 +451,7 @@ export default function AgeGroupRankingPage() {
                     excludeOverallFromAgeGroup: excludeTop,
                     disableAgeGroupRanking: false,
                     ageGroupDisplayCount: ageGroupDisplayCount,
-                    overallDisplayCount: overallDisplayCount,
+                    bestOfDisplayCount: bestOfDisplayCount,
                     excludeOverallThaiFromAgeGroup: excludeThaiTop,
                     excludeOverallForeignFromAgeGroup: excludeForeignTop,
                     separateOverallNationalityCategories: natSplitCategories,
@@ -566,6 +506,14 @@ export default function AgeGroupRankingPage() {
                                 >
                                     <LinkIcon className="h-4 w-4" />
                                 </button>
+                                <Link
+                                    href="/admin/top-overall"
+                                    className="ml-auto flex items-center gap-1.5 rounded-md bg-amber-500 px-3 py-1.5 text-[11px] font-bold hover:bg-amber-600 transition-colors"
+                                    style={{ color: '#ffffff' }}
+                                >
+                                    <TrophyIcon className="h-4 w-4" />
+                                    Top Overall
+                                </Link>
                             </div>
 
                             <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
@@ -631,71 +579,33 @@ export default function AgeGroupRankingPage() {
                                 </button>
                             </div>
 
-                            <div className="mt-4 rounded-2xl border border-gray-200 bg-[#f8fafc] p-3">
-                                
-
-                                <div className="mt-3">{renderCategoryTabs()}</div>
-
-                                <div className="mt-3" style={{ maxHeight: '600px', overflowY: 'auto' }}>
-                                    {previewLoading ? (
-                                        <div className="rounded-xl border border-dashed border-gray-300 bg-white px-4 py-8 text-center text-sm text-gray-500">
-                                            {language === 'th' ? 'กำลังโหลดข้อมูลอันดับ...' : 'Loading ranking data...'}
-                                        </div>
-                                    ) : !selectedCategory ? (
-                                        <div className="rounded-xl border border-dashed border-gray-300 bg-white px-4 py-8 text-center text-sm text-gray-500">
-                                            {language === 'th' ? 'ไม่มีประเภทการแข่งขันสำหรับแสดงพรีวิว' : 'No category available for preview'}
-                                        </div>
-                                    ) : (
-                                        <div className="grid gap-3 xl:grid-cols-2">
-                                            {renderPreviewColumn(language === 'th' ? '♂ ผู้ชนะชาย' : '♂ Male winners', 'bg-blue-600', 'bg-blue-900', maleWinners)}
-                                            {renderPreviewColumn(language === 'th' ? '♀ ผู้ชนะหญิง' : '♀ Female winners', 'bg-pink-600', 'bg-pink-900', femaleWinners)}
-                                        </div>
-                                    )}
+                            <div className="mt-3 flex flex-wrap items-center gap-2">
+                                <div className="flex items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-2 py-1.5">
+                                    <span className="text-[11px] font-bold" style={{ color: '#92400e' }}>
+                                        {language === 'th'
+                                            ? `Best Of ${campaign?.name || ''} กี่อันดับ:`
+                                            : `Best Of ${campaign?.name || ''} — top ranks:`}
+                                    </span>
+                                    <input
+                                        type="number"
+                                        min={1}
+                                        value={bestOfDisplayCount}
+                                        onChange={(e) => updateBestOfDisplayCount(e.target.value === '' ? 1 : Number(e.target.value))}
+                                        className="h-9 w-20 rounded-lg border-2 border-amber-400 bg-white text-center font-semibold outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-100"
+                                        style={{ color: '#92400e', fontSize: '15px' }}
+                                    />
+                                    <span className="text-[11px] font-bold" style={{ color: '#92400e' }}>
+                                        {language === 'th' ? 'อันดับแรก / เพศ' : 'top per gender'}
+                                    </span>
                                 </div>
-                            </div>
-                        </div>
-
-                        <div className="border-t-2 border-sky-300" />
-
-                        <div className="rounded-2xl border border-sky-200 bg-white p-3 shadow-sm">
-                            <div className="flex flex-wrap items-center gap-2">
-                                <span className=" px-3 py-1.5 text-[19px] font-bold text-gray-900">
-                                    {language === 'th' ? 'อันดับ Overall' : 'Overall winners'}
-                                </span>
-                                <button
-                                    type="button"
-                                    onClick={() => handleCopyLink(overallShareUrl)}
-                                    title={language === 'th' ? 'คัดลอกลิงก์' : 'Copy link'}
-                                    className="flex items-center justify-center rounded-md bg-sky-500 px-2.5 py-1.5 text-white hover:bg-sky-600 transition-colors"
-                                >
-                                    <LinkIcon className="h-4 w-4" />
-                                </button>
                             </div>
 
                             <div className="mt-4 rounded-2xl border border-gray-200 bg-[#f8fafc] p-3">
-                                <div className="flex flex-wrap items-start justify-between gap-3">
-                                </div>
-
-                                <div className="mt-3 grid items-center gap-2 md:grid-cols-[1fr_auto_1fr]">
-                                    <div className="justify-self-start">{renderCategoryTabs()}</div>
-                                    <div className="justify-self-center flex items-center gap-1.5 rounded-lg border border-sky-200 bg-sky-50 px-2 py-1.5">
-                                        <span className="text-[11px] font-bold" style={{ color: '#0369a1' }}>
-                                            {language === 'th' ? 'แสดงผลอันดับ:' : 'Display ranks:'}
-                                        </span>
-                                        <input
-                                            type="number"
-                                            min={1}
-                                            value={overallDisplayCount}
-                                            onChange={(e) => updateOverallDisplayCount(e.target.value === '' ? DEFAULT_TOP_N : Number(e.target.value))}
-                                            className="h-9 w-20 rounded-lg border-2 border-sky-400 bg-white text-center font-semibold outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
-                                            style={{ color: '#0369a1', fontSize: '15px' }}
-                                        />
-                                        <span className="text-[11px] font-bold" style={{ color: '#0369a1' }}>
-                                            {language === 'th' ? 'อันดับแรก' : 'top ranks'}
-                                        </span>
-                                    </div>
-                                    {/* Thai / foreign split toggle — per selected category */}
-                                    <div className="justify-self-end flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5">
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <span className="rounded-md px-3 py-1.5 text-[11px] font-bold" style={{ color: '#374151' }}>
+                                        {language === 'th' ? 'ตัดผู้ชนะ Overall ไทย/ต่างชาติออกจากกลุ่มอายุ' : 'Exclude Overall Thai/foreign winners from age group'}
+                                    </span>
+                                    <div className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5">
                                         <span className="text-[11px] font-bold" style={{ color: '#047857' }}>
                                             {language === 'th'
                                                 ? `แยกไทย / ต่างชาติ${selectedCategory ? ` (${selectedCategory})` : ''}`
@@ -719,47 +629,45 @@ export default function AgeGroupRankingPage() {
                                             />
                                         </button>
                                     </div>
+                                    {selectedCategorySplit && (
+                                        <>
+                                            <div className="flex items-center gap-1.5 rounded-lg border border-violet-200 bg-violet-50 px-2 py-1.5">
+                                                <span className="text-[11px] font-bold" style={{ color: '#5b21b6' }}>
+                                                    {language === 'th' ? 'คนไทย' : 'Thai'}
+                                                </span>
+                                                <input
+                                                    type="number"
+                                                    min={0}
+                                                    value={excludeThaiTop}
+                                                    onChange={(e) => updateExcludeThaiTop(e.target.value === '' ? 0 : Number(e.target.value))}
+                                                    className="h-9 w-16 rounded-lg border-2 border-violet-400 bg-white text-center font-semibold outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-100"
+                                                    style={{ color: '#5b21b6', fontSize: '15px' }}
+                                                />
+                                                <span className="text-[11px] font-bold" style={{ color: '#5b21b6' }}>
+                                                    {language === 'th' ? 'อันดับ' : 'rank(s)'}
+                                                </span>
+                                            </div>
+                                            <div className="flex items-center gap-1.5 rounded-lg border border-indigo-200 bg-indigo-50 px-2 py-1.5">
+                                                <span className="text-[11px] font-bold" style={{ color: '#3730a3' }}>
+                                                    {language === 'th' ? 'ต่างชาติ' : 'Foreign'}
+                                                </span>
+                                                <input
+                                                    type="number"
+                                                    min={0}
+                                                    value={excludeForeignTop}
+                                                    onChange={(e) => updateExcludeForeignTop(e.target.value === '' ? 0 : Number(e.target.value))}
+                                                    className="h-9 w-16 rounded-lg border-2 border-indigo-400 bg-white text-center font-semibold outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+                                                    style={{ color: '#3730a3', fontSize: '15px' }}
+                                                />
+                                                <span className="text-[11px] font-bold" style={{ color: '#3730a3' }}>
+                                                    {language === 'th' ? 'อันดับ' : 'rank(s)'}
+                                                </span>
+                                            </div>
+                                        </>
+                                    )}
                                 </div>
 
-                                {selectedCategorySplit && (
-                                    <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
-                                        <span className="text-[11px] font-bold" style={{ color: '#5b21b6' }}>
-                                            {language === 'th' ? 'ตัดออกจากกลุ่มอายุ:' : 'Exclude from age group:'}
-                                        </span>
-                                        <div className="flex items-center gap-1.5 rounded-lg border border-violet-200 bg-violet-50 px-2 py-1.5">
-                                            <span className="text-[11px] font-bold" style={{ color: '#5b21b6' }}>
-                                                {language === 'th' ? 'คนไทย' : 'Thai'}
-                                            </span>
-                                            <input
-                                                type="number"
-                                                min={0}
-                                                value={excludeThaiTop}
-                                                onChange={(e) => updateExcludeThaiTop(e.target.value === '' ? 0 : Number(e.target.value))}
-                                                className="h-9 w-16 rounded-lg border-2 border-violet-400 bg-white text-center font-semibold outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-100"
-                                                style={{ color: '#5b21b6', fontSize: '15px' }}
-                                            />
-                                            <span className="text-[11px] font-bold" style={{ color: '#5b21b6' }}>
-                                                {language === 'th' ? 'อันดับ' : 'rank(s)'}
-                                            </span>
-                                        </div>
-                                        <div className="flex items-center gap-1.5 rounded-lg border border-indigo-200 bg-indigo-50 px-2 py-1.5">
-                                            <span className="text-[11px] font-bold" style={{ color: '#3730a3' }}>
-                                                {language === 'th' ? 'ต่างชาติ' : 'Foreign'}
-                                            </span>
-                                            <input
-                                                type="number"
-                                                min={0}
-                                                value={excludeForeignTop}
-                                                onChange={(e) => updateExcludeForeignTop(e.target.value === '' ? 0 : Number(e.target.value))}
-                                                className="h-9 w-16 rounded-lg border-2 border-indigo-400 bg-white text-center font-semibold outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-                                                style={{ color: '#3730a3', fontSize: '15px' }}
-                                            />
-                                            <span className="text-[11px] font-bold" style={{ color: '#3730a3' }}>
-                                                {language === 'th' ? 'อันดับ' : 'rank(s)'}
-                                            </span>
-                                        </div>
-                                    </div>
-                                )}
+                                <div className="mt-3">{renderCategoryTabs()}</div>
 
                                 <div className="mt-3" style={{ maxHeight: '600px', overflowY: 'auto' }}>
                                     {previewLoading ? (
@@ -770,17 +678,10 @@ export default function AgeGroupRankingPage() {
                                         <div className="rounded-xl border border-dashed border-gray-300 bg-white px-4 py-8 text-center text-sm text-gray-500">
                                             {language === 'th' ? 'ไม่มีประเภทการแข่งขันสำหรับแสดงพรีวิว' : 'No category available for preview'}
                                         </div>
-                                    ) : selectedCategorySplit ? (
-                                        <div className="grid gap-3 xl:grid-cols-2">
-                                            {renderOverallPreviewColumn(language === 'th' ? '♂ OVERALL THA · ชาย' : '♂ OVERALL THA · Male', 'bg-blue-600', overallByNationality.thaiMale)}
-                                            {renderOverallPreviewColumn(language === 'th' ? '♀ OVERALL THA · หญิง' : '♀ OVERALL THA · Female', 'bg-pink-600', overallByNationality.thaiFemale)}
-                                            {renderOverallPreviewColumn(language === 'th' ? '♂ OVERALL INT · ชาย' : '♂ OVERALL INT · Male', 'bg-indigo-600', overallByNationality.foreignMale)}
-                                            {renderOverallPreviewColumn(language === 'th' ? '♀ OVERALL INT · หญิง' : '♀ OVERALL INT · Female', 'bg-fuchsia-600', overallByNationality.foreignFemale)}
-                                        </div>
                                     ) : (
                                         <div className="grid gap-3 xl:grid-cols-2">
-                                            {renderOverallPreviewColumn(language === 'th' ? '♂ อันดับชาย' : '♂ Male overall', 'bg-blue-600', overallMaleWinners)}
-                                            {renderOverallPreviewColumn(language === 'th' ? '♀ อันดับหญิง' : '♀ Female overall', 'bg-pink-600', overallFemaleWinners)}
+                                            {renderPreviewColumn(language === 'th' ? '♂ ผู้ชนะชาย' : '♂ Male winners', 'bg-blue-600', 'bg-blue-900', maleWinners)}
+                                            {renderPreviewColumn(language === 'th' ? '♀ ผู้ชนะหญิง' : '♀ Female winners', 'bg-pink-600', 'bg-pink-900', femaleWinners)}
                                         </div>
                                     )}
                                 </div>

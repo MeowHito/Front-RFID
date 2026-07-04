@@ -7,22 +7,24 @@ import { normalizeCategoryName } from './nationality';
 
 export interface RankingMenuVisibility {
     category: string;
+    topOverall?: boolean;
     general?: boolean;
     bestOf?: boolean;
     nationality?: boolean;
     ageGroup?: boolean;
 }
 
-export type RankingMenuItemKey = 'general' | 'bestOf' | 'nationality' | 'ageGroup';
+export type RankingMenuItemKey = 'topOverall' | 'general' | 'bestOf' | 'nationality' | 'ageGroup';
 
 export interface RankingMenuFlags {
+    topOverall: boolean;
     general: boolean;
     bestOf: boolean;
     nationality: boolean;
     ageGroup: boolean;
 }
 
-const ALL_VISIBLE: RankingMenuFlags = { general: true, bestOf: true, nationality: true, ageGroup: true };
+const ALL_VISIBLE: RankingMenuFlags = { topOverall: true, general: true, bestOf: true, nationality: true, ageGroup: true };
 
 /** Resolved visibility flags for one category — missing entry/fields default to true. */
 export function getRankingMenuVisibility(
@@ -34,6 +36,7 @@ export function getRankingMenuVisibility(
     const entry = list.find(e => normalizeCategoryName(e.category) === target);
     if (!entry) return { ...ALL_VISIBLE };
     return {
+        topOverall: entry.topOverall !== false,
         general: entry.general !== false,
         bestOf: entry.bestOf !== false,
         nationality: entry.nationality !== false,

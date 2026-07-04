@@ -2,10 +2,8 @@
 
 import Image from 'next/image';
 import Link from 'next/link';
-import type { CSSProperties } from 'react';
 import { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { buildWinnersExcel, triggerExcelDownload } from '@/lib/winner-excel';
-import { isThaiNationality, isNationalitySplitCategory } from '@/lib/nationality';
 import { useParams, useSearchParams } from 'next/navigation';
 
 interface Runner {
@@ -16,7 +14,6 @@ interface Runner {
     gender: string;
     category: string;
     status: string;
-    nationality?: string;
     netTime?: number;
     gunTime?: number;
     elapsedTime?: number;
@@ -38,7 +35,6 @@ interface Campaign {
     uuid?: string;
     categories?: CampaignCategory[];
     overallDisplayCount?: number;
-    separateOverallNationalityCategories?: string[];
 }
 
 const REFRESH_INTERVAL = 10;
@@ -51,7 +47,10 @@ function formatTime(ms: number | undefined | null): string {
     return `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 }
 
-export default function OverallWinnersBySlugPage() {
+// "Top Overall" board — a single combined ranking of the fastest N finishers for
+// the selected distance, regardless of gender. Distinct from the gender-separated
+// Overall-Winners board, though both share the same admin-configured `overallDisplayCount`.
+export default function TopOverallWinnersBySlugPage() {
     const params = useParams();
     const slug = params.slug as string;
     const searchParams = useSearchParams();
@@ -60,7 +59,6 @@ export default function OverallWinnersBySlugPage() {
     const [campaign, setCampaign] = useState<Campaign | null>(null);
     const [campaignNotFound, setCampaignNotFound] = useState(false);
     const [selectedCategory, setSelectedCategory] = useState<string>('');
-    // displayedRunners always holds the last successfully loaded data — never cleared between refreshes
     const [displayedRunners, setDisplayedRunners] = useState<Runner[]>([]);
     const [initialLoading, setInitialLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
@@ -74,11 +72,8 @@ export default function OverallWinnersBySlugPage() {
     const autoCountdownRef = useRef<NodeJS.Timeout | null>(null);
     const campaignCategoriesRef = useRef<CampaignCategory[]>([]);
     const displayedCategoryRef = useRef<string>('');
-    const [downloading, setDownloading] = useState<string | null>(null);
-    const maleColRef = useRef<HTMLDivElement | null>(null);
-    const femaleColRef = useRef<HTMLDivElement | null>(null);
-    const foreignMaleColRef = useRef<HTMLDivElement | null>(null);
-    const foreignFemaleColRef = useRef<HTMLDivElement | null>(null);
+    const [downloading, setDownloading] = useState(false);
+    const colRef = useRef<HTMLDivElement | null>(null);
 
     useEffect(() => {
         const check = () => setIsMobile(window.innerWidth < 768);
@@ -191,63 +186,35 @@ export default function OverallWinnersBySlugPage() {
     }, [autoMode]);
 
     const topN = Math.max(1, campaign?.overallDisplayCount || 5);
-    // Nationality split applies per race category — only when the selected category is in the list
-    const separateNat = isNationalitySplitCategory(campaign?.separateOverallNationalityCategories, selectedCategory);
 
-    const { maleWinners, femaleWinners, foreignMaleWinners, foreignFemaleWinners } = useMemo(() => {
+    // Combined ranking — fastest finishers overall, regardless of gender.
+    const topOverallWinners = useMemo(() => {
         const finished = displayedRunners.filter(r => r.status === 'finished' && (r.netTime || r.gunTime || r.elapsedTime));
         const sorted = [...finished].sort((a, b) => {
             const at = a.netTime || a.gunTime || a.elapsedTime || Infinity;
             const bt = b.netTime || b.gunTime || b.elapsedTime || Infinity;
             return at - bt;
         });
-        if (separateNat) {
-            const pick = (isFemale: boolean, thai: boolean) =>
-                sorted.filter(r => (r.gender === 'F') === isFemale && isThaiNationality(r.nationality) === thai).slice(0, topN);
-            return {
-                maleWinners: pick(false, true),
-                femaleWinners: pick(true, true),
-                foreignMaleWinners: pick(false, false),
-                foreignFemaleWinners: pick(true, false),
-            };
-        }
-        return {
-            maleWinners: sorted.filter(r => r.gender !== 'F').slice(0, topN),
-            femaleWinners: sorted.filter(r => r.gender === 'F').slice(0, topN),
-            foreignMaleWinners: [] as Runner[],
-            foreignFemaleWinners: [] as Runner[],
-        };
-    }, [displayedRunners, topN, separateNat]);
+        return sorted.slice(0, topN);
+    }, [displayedRunners, topN]);
 
-    const downloadGroup = useCallback(async (
-        males: Runner[],
-        females: Runner[],
-        gender: 'male' | 'female' | 'both' = 'both',
-        namePart = '',
-    ) => {
-        setDownloading('landscape');
+    const downloadExcel = useCallback(async () => {
+        setDownloading(true);
         try {
             const blob = await buildWinnersExcel(
                 campaign?.name || '',
                 selectedCategory,
-                [{ maleRunners: males, femaleRunners: females }],
-                gender,
+                [{ maleRunners: topOverallWinners, femaleRunners: [] }],
+                'male',
+                { combinedLabel: 'TOP OVERALL WINNERS', barColor: '4f46e5' },
             );
-            const suffix = gender === 'male' ? '-Male' : gender === 'female' ? '-Female' : '';
             const distance = campaign?.categories?.find(c => c.name === selectedCategory)?.distance || selectedCategory || '';
             const distPart = distance ? `-${distance}` : '';
-            if (blob) triggerExcelDownload(blob, `${campaign?.name || 'winners'}${distPart}-Overall${namePart}${suffix}`);
+            if (blob) triggerExcelDownload(blob, `${campaign?.name || 'winners'}${distPart}-TopOverall`);
         } catch (e) { console.error(e); } finally {
-            setDownloading(null);
+            setDownloading(false);
         }
-    }, [campaign, selectedCategory]);
-
-    const downloadLandscape = useCallback((gender: 'male' | 'female' | 'both' = 'both') =>
-        downloadGroup(maleWinners, femaleWinners, gender),
-        [downloadGroup, maleWinners, femaleWinners]);
-
-    const rankBg = ['#f59e0b', '#9ca3af', '#92400e', '#e2e8f0', '#e2e8f0'];
-    const rankFg = ['#000', '#fff', '#fff', '#475569', '#475569'];
+    }, [campaign, selectedCategory, topOverallWinners]);
 
     if (campaignNotFound) {
         return (
@@ -260,13 +227,19 @@ export default function OverallWinnersBySlugPage() {
         );
     }
 
+    const rankBg = ['#f59e0b', '#9ca3af', '#92400e', '#e2e8f0', '#e2e8f0'];
+    const rankFg = ['#000', '#fff', '#fff', '#475569', '#475569'];
+
     const renderRunnerRow = (runner: Runner, idx: number) => (
         <div key={runner._id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: isMobile ? '4px 8px' : '0.4vh 10px', borderRadius: 6, background: idx === 0 ? '#fffbeb' : 'transparent', height: isMobile ? 'auto' : '4vh', minHeight: isMobile ? 30 : 30 }}>
             <div style={{ width: isMobile ? 22 : '2.4vh', height: isMobile ? 22 : '2.4vh', minWidth: 18, minHeight: 18, borderRadius: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: isMobile ? 12 : '1.4vh', fontWeight: 900, flexShrink: 0, background: rankBg[idx] || '#e2e8f0', color: rankFg[idx] || '#475569' }}>
                 {idx + 1}
             </div>
+            <span style={{ width: isMobile ? 16 : '1.8vh', flexShrink: 0, textAlign: 'center', fontSize: isMobile ? 12 : '1.4vh' }}>
+                {runner.gender === 'F' ? '♀' : '♂'}
+            </span>
             <span style={{ fontSize: isMobile ? 12 : '1.55vh', fontWeight: 700, color: '#1e293b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1, textTransform: 'uppercase' }}>
-                {`${runner.bib}  ${runner.firstName} ${runner.lastName}`}
+                {`${runner.bib}  ${runner.firstName} ${runner.lastName}`}
             </span>
             <span style={{ fontFamily: 'monospace', fontWeight: 800, fontSize: isMobile ? 11 : '1.5vh', color: '#1e293b', flexShrink: 0, minWidth: isMobile ? 60 : '7vh', textAlign: 'right' }}>
                 {runner.gunTimeStr || formatTime(runner.gunTime)}
@@ -282,6 +255,7 @@ export default function OverallWinnersBySlugPage() {
             <div style={{ width: isMobile ? 22 : '2.4vh', height: isMobile ? 22 : '2.4vh', minWidth: 18, minHeight: 18, borderRadius: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: isMobile ? 12 : '1.4vh', fontWeight: 900, flexShrink: 0, background: '#f1f5f9', color: '#cbd5e1' }}>
                 {idx + 1}
             </div>
+            <span style={{ width: isMobile ? 16 : '1.8vh', flexShrink: 0 }} />
             <span style={{ fontSize: isMobile ? 11 : '1.2vh', color: '#cbd5e1', fontStyle: 'italic', flex: 1 }}>—</span>
             <span style={{ minWidth: isMobile ? 60 : '7vh' }} />
             <span style={{ minWidth: isMobile ? 60 : '7vh', marginLeft: isMobile ? 10 : 14 }} />
@@ -294,35 +268,6 @@ export default function OverallWinnersBySlugPage() {
         </svg>
     );
 
-    const renderColumn = (title: string, bgHeader: string, list: Runner[], colRef: { current: HTMLDivElement | null }, onDownload: () => void) => {
-        const headerFontSize = isMobile ? (separateNat ? 13 : 16) : (separateNat ? '1.5vh' : '2vh');
-        const dlButtonStyle: CSSProperties = { background: 'rgba(255,255,255,0.18)', border: 'none', borderRadius: 5, cursor: downloading ? 'default' : 'pointer', padding: isMobile ? '3px 6px' : '3px 8px', color: 'white', fontSize: isMobile ? 11 : 12, display: 'flex', alignItems: 'center', gap: 4, fontWeight: 700, flexShrink: 0 };
-        return (
-        <div ref={el => { colRef.current = el; }} style={{ display: 'flex', flexDirection: 'column', gap: isMobile ? 8 : '0.8vh', minHeight: 0, flex: 1, overflowY: isMobile ? 'visible' : 'auto', paddingRight: isMobile ? 0 : 4 }}>
-            <div style={{ padding: isMobile ? '8px 10px' : '0.9vh 10px', fontWeight: 900, fontSize: headerFontSize, textTransform: 'uppercase', borderRadius: 8, color: 'white', letterSpacing: separateNat ? 1 : 2, background: bgHeader, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
-                <span style={{ ...dlButtonStyle, visibility: 'hidden' }} aria-hidden="true">
-                    {dlIcon(11)}{!isMobile && <span>Download</span>}
-                </span>
-                <span style={{ flex: 1, textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{title}</span>
-                <button data-no-capture onClick={onDownload} disabled={!!downloading} title="Download" style={{ ...dlButtonStyle, opacity: downloading ? 0.5 : 1, transition: 'opacity 0.15s' }}>
-                    {dlIcon(11)}{!isMobile && <span>Download</span>}
-                </button>
-            </div>
-            <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: 8, overflow: 'hidden', display: 'flex', flexDirection: 'column', flexShrink: 0, minHeight: isMobile ? 180 : '28vh' }}>
-                <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'flex-start', flex: 1, padding: isMobile ? '4px' : '0.35vh 4px', minHeight: 0 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: isMobile ? '2px 10px 3px' : '0.1vh 10px 0.2vh', borderBottom: '1px solid #f1f5f9' }}>
-                        <div style={{ width: isMobile ? 22 : '2.4vh', minWidth: 18, flexShrink: 0 }} />
-                        <span style={{ fontSize: isMobile ? 9 : '1.1vh', fontWeight: 700, color: '#94a3b8', flex: 1, textTransform: 'uppercase', letterSpacing: 0.5 }}>Name</span>
-                        <span style={{ fontSize: isMobile ? 9 : '1.1vh', fontWeight: 700, color: '#94a3b8', flexShrink: 0, minWidth: isMobile ? 60 : '7vh', textAlign: 'right', letterSpacing: 0.5 }}>GunTime</span>
-                        <span style={{ fontSize: isMobile ? 9 : '1.1vh', fontWeight: 700, color: '#94a3b8', flexShrink: 0, minWidth: isMobile ? 60 : '7vh', textAlign: 'right', letterSpacing: 0.5, marginLeft: isMobile ? 10 : 14 }}>NetTime</span>
-                    </div>
-                    {Array.from({ length: topN }, (_, i) => i).map(i => list[i] ? renderRunnerRow(list[i], i) : renderEmptyRow(i))}
-                </div>
-            </div>
-        </div>
-        );
-    };
-
     return (
         <div style={{ fontFamily: "'Prompt', 'Inter', sans-serif", background: '#0f172a', height: isMobile ? 'auto' : '100vh', minHeight: '100vh', overflow: isMobile ? 'auto' : 'hidden', display: 'flex', flexDirection: 'column', padding: isMobile ? '8px' : '0.8vh 1vw' }}>
             <style>{`@keyframes pulse { 0%,100% { opacity:1 } 50% { opacity:0.3 } }`}</style>
@@ -330,7 +275,7 @@ export default function OverallWinnersBySlugPage() {
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <Link href="/" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                         <Image src="/logo-white.png" alt="ACTION" width={120} height={40} style={{ height: isMobile ? 28 : '3.5vh', width: 'auto' }} />
-                        <span style={{ color: '#38bdf8', fontWeight: 900, fontSize: isMobile ? 14 : '2vh', letterSpacing: 2, textTransform: 'uppercase' }}>Overall Winners {topN}</span>
+                        <span style={{ color: '#818cf8', fontWeight: 900, fontSize: isMobile ? 14 : '2vh', letterSpacing: 2, textTransform: 'uppercase' }}>Top Overall {topN}</span>
                     </Link>
 
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -351,12 +296,12 @@ export default function OverallWinnersBySlugPage() {
                     {campaign && !initialLoading && (
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
                             <button
-                                onClick={() => downloadLandscape('both')}
-                                disabled={!!downloading}
-                                title="Download Overall Winners (Excel)"
-                                style={{ display: 'flex', alignItems: 'center', gap: 5, padding: isMobile ? '5px 10px' : '0.35vh 0.7vw', background: '#1d4ed8', border: '1px solid #2563eb', borderRadius: 7, color: 'white', fontSize: isMobile ? 11 : '1.15vh', fontWeight: 800, cursor: 'pointer', whiteSpace: 'nowrap', opacity: downloading ? 0.6 : 1, transition: 'opacity 0.15s', fontFamily: "'Prompt','Inter',sans-serif" }}
+                                onClick={downloadExcel}
+                                disabled={downloading}
+                                title="Download Top Overall Winners (Excel)"
+                                style={{ display: 'flex', alignItems: 'center', gap: 5, padding: isMobile ? '5px 10px' : '0.35vh 0.7vw', background: '#4f46e5', border: '1px solid #4338ca', borderRadius: 7, color: 'white', fontSize: isMobile ? 11 : '1.15vh', fontWeight: 800, cursor: 'pointer', whiteSpace: 'nowrap', opacity: downloading ? 0.6 : 1, transition: 'opacity 0.15s', fontFamily: "'Prompt','Inter',sans-serif" }}
                             >
-                                <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="1" x2="8" y2="11"/><polyline points="4 7 8 11 12 7"/><line x1="2" y1="14" x2="14" y2="14"/></svg>
+                                {dlIcon(11)}
                                 Download
                             </button>
                         </div>
@@ -369,7 +314,7 @@ export default function OverallWinnersBySlugPage() {
                                     <button
                                         key={cat.name}
                                         onClick={() => { setSelectedCategory(cat.name); setAutoMode(false); }}
-                                        style={{ padding: isMobile ? '6px 12px' : '0.4vh 1vw', borderRadius: 6, fontSize: isMobile ? 12 : '1.3vh', fontWeight: 700, border: selectedCategory === cat.name ? '2px solid #38bdf8' : '1px solid #475569', background: selectedCategory === cat.name ? '#38bdf8' : 'transparent', color: selectedCategory === cat.name ? '#082f49' : '#cbd5e1', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }}
+                                        style={{ padding: isMobile ? '6px 12px' : '0.4vh 1vw', borderRadius: 6, fontSize: isMobile ? 12 : '1.3vh', fontWeight: 700, border: selectedCategory === cat.name ? '2px solid #818cf8' : '1px solid #475569', background: selectedCategory === cat.name ? '#818cf8' : 'transparent', color: selectedCategory === cat.name ? '#1e1b4b' : '#cbd5e1', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }}
                                     >
                                         {cat.name}{cat.distance ? ` (${cat.distance})` : ''}
                                     </button>
@@ -378,7 +323,7 @@ export default function OverallWinnersBySlugPage() {
                             {campaign.categories.length > 1 && (
                                 <button
                                     onClick={() => setAutoMode(m => !m)}
-                                    style={{ display: 'flex', alignItems: 'center', gap: 6, padding: isMobile ? '6px 12px' : '0.4vh 0.8vw', background: autoMode ? '#38bdf8' : 'transparent', border: `1px solid ${autoMode ? '#38bdf8' : '#475569'}`, borderRadius: 6, color: autoMode ? '#082f49' : '#94a3b8', fontSize: isMobile ? 12 : '1.3vh', fontWeight: 800, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0, minWidth: isMobile ? 80 : 72, justifyContent: 'center', transition: 'background 0.2s, color 0.2s, border-color 0.2s' }}
+                                    style={{ display: 'flex', alignItems: 'center', gap: 6, padding: isMobile ? '6px 12px' : '0.4vh 0.8vw', background: autoMode ? '#818cf8' : 'transparent', border: `1px solid ${autoMode ? '#818cf8' : '#475569'}`, borderRadius: 6, color: autoMode ? '#1e1b4b' : '#94a3b8', fontSize: isMobile ? 12 : '1.3vh', fontWeight: 800, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0, minWidth: isMobile ? 80 : 72, justifyContent: 'center', transition: 'background 0.2s, color 0.2s, border-color 0.2s' }}
                                 >
                                     {autoMode ? `⏸ ${autoCountdown}s` : '▶ AUTO'}
                                 </button>
@@ -394,7 +339,7 @@ export default function OverallWinnersBySlugPage() {
                         {campaign.name}
                     </span>
                     {selectedCategory && (
-                        <span style={{ display: 'inline-flex', alignItems: 'center', padding: isMobile ? '3px 14px' : '0.2vh 1.2vw', background: '#38bdf8', color: '#082f49', borderRadius: 999, fontWeight: 900, fontSize: isMobile ? 13 : '1.8vh', letterSpacing: 1, whiteSpace: 'nowrap', flexShrink: 0 }}>
+                        <span style={{ display: 'inline-flex', alignItems: 'center', padding: isMobile ? '3px 14px' : '0.2vh 1.2vw', background: '#818cf8', color: '#1e1b4b', borderRadius: 999, fontWeight: 900, fontSize: isMobile ? 13 : '1.8vh', letterSpacing: 1, whiteSpace: 'nowrap', flexShrink: 0 }}>
                             {selectedCategory}
                             {campaign.categories?.find(c => c.name === selectedCategory)?.distance
                                 ? ` · ${campaign.categories!.find(c => c.name === selectedCategory)!.distance}`
@@ -404,26 +349,31 @@ export default function OverallWinnersBySlugPage() {
                 </div>
             )}
 
-            {/* Show loading only on very first load — never blank the screen on refresh */}
             {initialLoading && displayedRunners.length === 0 ? (
                 <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', fontSize: isMobile ? 16 : '2vh' }}>
                     Loading...
                 </div>
             ) : (
-                <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: isMobile ? 12 : '1vw', flex: isMobile ? undefined : 1, minHeight: 0, paddingBottom: isMobile ? 16 : 0 }}>
-                    {separateNat ? (
-                        <>
-                            {renderColumn('♂ OVERALL THA · MALE', '#2563eb', maleWinners, maleColRef, () => downloadGroup(maleWinners, femaleWinners, 'male', '-THA'))}
-                            {renderColumn('♀ OVERALL THA · FEMALE', '#db2777', femaleWinners, femaleColRef, () => downloadGroup(maleWinners, femaleWinners, 'female', '-THA'))}
-                            {renderColumn('♂ OVERALL INT · MALE', '#4f46e5', foreignMaleWinners, foreignMaleColRef, () => downloadGroup(foreignMaleWinners, foreignFemaleWinners, 'male', '-INT'))}
-                            {renderColumn('♀ OVERALL INT · FEMALE', '#c026d3', foreignFemaleWinners, foreignFemaleColRef, () => downloadGroup(foreignMaleWinners, foreignFemaleWinners, 'female', '-INT'))}
-                        </>
-                    ) : (
-                        <>
-                            {renderColumn('♂ MALE OVERALL', '#2563eb', maleWinners, maleColRef, () => downloadLandscape('male'))}
-                            {renderColumn('♀ FEMALE OVERALL', '#db2777', femaleWinners, femaleColRef, () => downloadLandscape('female'))}
-                        </>
-                    )}
+                <div style={{ display: 'flex', flex: isMobile ? undefined : 1, minHeight: 0, paddingBottom: isMobile ? 16 : 0, justifyContent: 'center' }}>
+                    <div style={{ width: isMobile ? '100%' : '46vw', maxWidth: 720, display: 'flex' }}>
+                        <div ref={el => { colRef.current = el; }} style={{ display: 'flex', flexDirection: 'column', gap: isMobile ? 8 : '0.8vh', minHeight: 0, flex: 1, overflowY: isMobile ? 'visible' : 'auto', paddingRight: isMobile ? 0 : 4 }}>
+                            <div style={{ padding: isMobile ? '8px 0' : '0.9vh 0', fontWeight: 900, fontSize: isMobile ? 16 : '2vh', textTransform: 'uppercase', borderRadius: 8, color: 'white', letterSpacing: 2, background: '#4f46e5', flexShrink: 0, textAlign: 'center' }}>
+                                TOP OVERALL
+                            </div>
+                            <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: 8, overflow: 'hidden', display: 'flex', flexDirection: 'column', flexShrink: 0, minHeight: isMobile ? 180 : '28vh' }}>
+                                <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'flex-start', flex: 1, padding: isMobile ? '4px' : '0.35vh 4px', minHeight: 0 }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: isMobile ? '2px 10px 3px' : '0.1vh 10px 0.2vh', borderBottom: '1px solid #f1f5f9' }}>
+                                        <div style={{ width: isMobile ? 22 : '2.4vh', minWidth: 18, flexShrink: 0 }} />
+                                        <div style={{ width: isMobile ? 16 : '1.8vh', flexShrink: 0 }} />
+                                        <span style={{ fontSize: isMobile ? 9 : '1.1vh', fontWeight: 700, color: '#94a3b8', flex: 1, textTransform: 'uppercase', letterSpacing: 0.5 }}>Name</span>
+                                        <span style={{ fontSize: isMobile ? 9 : '1.1vh', fontWeight: 700, color: '#94a3b8', flexShrink: 0, minWidth: isMobile ? 60 : '7vh', textAlign: 'right', letterSpacing: 0.5 }}>GunTime</span>
+                                        <span style={{ fontSize: isMobile ? 9 : '1.1vh', fontWeight: 700, color: '#94a3b8', flexShrink: 0, minWidth: isMobile ? 60 : '7vh', textAlign: 'right', letterSpacing: 0.5, marginLeft: isMobile ? 10 : 14 }}>NetTime</span>
+                                    </div>
+                                    {Array.from({ length: topN }, (_, i) => i).map(i => topOverallWinners[i] ? renderRunnerRow(topOverallWinners[i], i) : renderEmptyRow(i))}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             )}
         </div>

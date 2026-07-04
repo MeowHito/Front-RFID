@@ -2,8 +2,10 @@
 
 import Image from 'next/image';
 import Link from 'next/link';
+import type { CSSProperties } from 'react';
 import { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { buildWinnersExcel, triggerExcelDownload } from '@/lib/winner-excel';
+import { isBuriramAddress } from '@/lib/province';
 import { useParams, useSearchParams } from 'next/navigation';
 
 interface Runner {
@@ -15,6 +17,7 @@ interface Runner {
     category: string;
     status: string;
     nationality?: string;
+    address?: string;
     netTime?: number;
     gunTime?: number;
     elapsedTime?: number;
@@ -35,6 +38,7 @@ interface Campaign {
     slug?: string;
     uuid?: string;
     categories?: CampaignCategory[];
+    bestOfDisplayCount?: number;
 }
 
 const REFRESH_INTERVAL = 10;
@@ -186,18 +190,22 @@ export default function BestOfWinnersBySlugPage() {
         };
     }, [autoMode]);
 
+    const topN = Math.max(1, campaign?.bestOfDisplayCount || 1);
+
+    // Best Of Buriram — local-province award: only runners whose address
+    // indicates Buriram residence are eligible.
     const { maleWinners, femaleWinners } = useMemo(() => {
-        const finished = displayedRunners.filter(r => r.status === 'finished' && (r.netTime || r.gunTime || r.elapsedTime));
+        const finished = displayedRunners.filter(r => r.status === 'finished' && (r.netTime || r.gunTime || r.elapsedTime) && isBuriramAddress(r.address));
         const sorted = [...finished].sort((a, b) => {
             const at = a.netTime || a.gunTime || a.elapsedTime || Infinity;
             const bt = b.netTime || b.gunTime || b.elapsedTime || Infinity;
             return at - bt;
         });
         return {
-            maleWinners: sorted.filter(r => r.gender !== 'F').slice(0, 1),
-            femaleWinners: sorted.filter(r => r.gender === 'F').slice(0, 1),
+            maleWinners: sorted.filter(r => r.gender !== 'F').slice(0, topN),
+            femaleWinners: sorted.filter(r => r.gender === 'F').slice(0, topN),
         };
-    }, [displayedRunners]);
+    }, [displayedRunners, topN]);
 
     const downloadLandscape = useCallback(async (gender: 'male' | 'female' | 'both' = 'both') => {
         setDownloading('landscape');
@@ -228,10 +236,13 @@ export default function BestOfWinnersBySlugPage() {
         );
     }
 
-    const renderRunnerRow = (runner: Runner) => (
-        <div key={runner._id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: isMobile ? '4px 8px' : '0.4vh 10px', borderRadius: 6, background: '#fffbeb', height: isMobile ? 'auto' : '4vh', minHeight: isMobile ? 30 : 30 }}>
-            <div style={{ width: isMobile ? 22 : '2.4vh', height: isMobile ? 22 : '2.4vh', minWidth: 18, minHeight: 18, borderRadius: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: isMobile ? 12 : '1.4vh', fontWeight: 900, flexShrink: 0, background: '#f59e0b', color: '#000' }}>
-                1
+    const rankBg = ['#f59e0b', '#9ca3af', '#92400e', '#e2e8f0', '#e2e8f0'];
+    const rankFg = ['#000', '#fff', '#fff', '#475569', '#475569'];
+
+    const renderRunnerRow = (runner: Runner, idx: number) => (
+        <div key={runner._id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: isMobile ? '4px 8px' : '0.4vh 10px', borderRadius: 6, background: idx === 0 ? '#fffbeb' : 'transparent', height: isMobile ? 'auto' : '4vh', minHeight: isMobile ? 30 : 30 }}>
+            <div style={{ width: isMobile ? 22 : '2.4vh', height: isMobile ? 22 : '2.4vh', minWidth: 18, minHeight: 18, borderRadius: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: isMobile ? 12 : '1.4vh', fontWeight: 900, flexShrink: 0, background: rankBg[idx] || '#e2e8f0', color: rankFg[idx] || '#475569' }}>
+                {idx + 1}
             </div>
             <span style={{ fontSize: isMobile ? 12 : '1.55vh', fontWeight: 700, color: '#1e293b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1, textTransform: 'uppercase' }}>
                 {`${runner.bib}  ${runner.firstName} ${runner.lastName}`}
@@ -245,10 +256,10 @@ export default function BestOfWinnersBySlugPage() {
         </div>
     );
 
-    const renderEmptyRow = () => (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: isMobile ? '4px 8px' : '0.4vh 10px', height: isMobile ? 'auto' : '4vh', minHeight: isMobile ? 30 : 30 }}>
+    const renderEmptyRow = (idx: number) => (
+        <div key={`empty-${idx}`} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: isMobile ? '4px 8px' : '0.4vh 10px', height: isMobile ? 'auto' : '4vh', minHeight: isMobile ? 30 : 30 }}>
             <div style={{ width: isMobile ? 22 : '2.4vh', height: isMobile ? 22 : '2.4vh', minWidth: 18, minHeight: 18, borderRadius: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: isMobile ? 12 : '1.4vh', fontWeight: 900, flexShrink: 0, background: '#f1f5f9', color: '#cbd5e1' }}>
-                1
+                {idx + 1}
             </div>
             <span style={{ fontSize: isMobile ? 11 : '1.2vh', color: '#cbd5e1', fontStyle: 'italic', flex: 1 }}>—</span>
             <span style={{ minWidth: isMobile ? 60 : '7vh' }} />
@@ -262,11 +273,16 @@ export default function BestOfWinnersBySlugPage() {
         </svg>
     );
 
-    const renderColumn = (title: string, bgHeader: string, runner: Runner | undefined, colRef: { current: HTMLDivElement | null }, onDownload: () => void) => (
+    const renderColumn = (title: string, bgHeader: string, list: Runner[], colRef: { current: HTMLDivElement | null }, onDownload: () => void) => {
+        const dlButtonStyle: CSSProperties = { background: 'rgba(255,255,255,0.18)', border: 'none', borderRadius: 5, cursor: downloading ? 'default' : 'pointer', padding: isMobile ? '3px 6px' : '3px 8px', color: 'white', fontSize: isMobile ? 11 : 12, display: 'flex', alignItems: 'center', gap: 4, fontWeight: 700, flexShrink: 0 };
+        return (
         <div ref={el => { colRef.current = el; }} style={{ display: 'flex', flexDirection: 'column', gap: isMobile ? 8 : '0.8vh', minHeight: 0, flex: 1, overflowY: isMobile ? 'visible' : 'auto', paddingRight: isMobile ? 0 : 4 }}>
-            <div style={{ padding: isMobile ? '8px 0' : '0.9vh 0', fontWeight: 900, fontSize: isMobile ? 16 : '2vh', textTransform: 'uppercase', borderRadius: 8, color: 'white', letterSpacing: 2, background: bgHeader, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
-                <span>{title}</span>
-                <button data-no-capture onClick={onDownload} disabled={!!downloading} title="Download" style={{ position: 'absolute', right: 8, background: 'rgba(255,255,255,0.18)', border: 'none', borderRadius: 5, cursor: 'pointer', padding: '3px 8px', color: 'white', fontSize: isMobile ? 11 : 12, display: 'flex', alignItems: 'center', gap: 4, fontWeight: 700, opacity: downloading ? 0.5 : 1, transition: 'opacity 0.15s' }}>
+            <div style={{ padding: isMobile ? '8px 10px' : '0.9vh 10px', fontWeight: 900, fontSize: isMobile ? 16 : '2vh', textTransform: 'uppercase', borderRadius: 8, color: 'white', letterSpacing: 2, background: bgHeader, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ ...dlButtonStyle, visibility: 'hidden' }} aria-hidden="true">
+                    {dlIcon(11)}{!isMobile && <span>Download</span>}
+                </span>
+                <span style={{ flex: 1, textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{title}</span>
+                <button data-no-capture onClick={onDownload} disabled={!!downloading} title="Download" style={{ ...dlButtonStyle, opacity: downloading ? 0.5 : 1, transition: 'opacity 0.15s' }}>
                     {dlIcon(11)}{!isMobile && <span>Download</span>}
                 </button>
             </div>
@@ -278,11 +294,12 @@ export default function BestOfWinnersBySlugPage() {
                         <span style={{ fontSize: isMobile ? 9 : '1.1vh', fontWeight: 700, color: '#94a3b8', flexShrink: 0, minWidth: isMobile ? 60 : '7vh', textAlign: 'right', letterSpacing: 0.5 }}>GunTime</span>
                         <span style={{ fontSize: isMobile ? 9 : '1.1vh', fontWeight: 700, color: '#94a3b8', flexShrink: 0, minWidth: isMobile ? 60 : '7vh', textAlign: 'right', letterSpacing: 0.5, marginLeft: isMobile ? 10 : 14 }}>NetTime</span>
                     </div>
-                    {runner ? renderRunnerRow(runner) : renderEmptyRow()}
+                    {Array.from({ length: topN }, (_, i) => i).map(i => list[i] ? renderRunnerRow(list[i], i) : renderEmptyRow(i))}
                 </div>
             </div>
         </div>
-    );
+        );
+    };
 
     return (
         <div style={{ fontFamily: "'Prompt', 'Inter', sans-serif", background: '#0f172a', height: isMobile ? 'auto' : '100vh', minHeight: '100vh', overflow: isMobile ? 'auto' : 'hidden', display: 'flex', flexDirection: 'column', padding: isMobile ? '8px' : '0.8vh 1vw' }}>
@@ -291,7 +308,7 @@ export default function BestOfWinnersBySlugPage() {
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <Link href="/" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                         <Image src="/logo-white.png" alt="ACTION" width={120} height={40} style={{ height: isMobile ? 28 : '3.5vh', width: 'auto' }} />
-                        <span style={{ color: '#f59e0b', fontWeight: 900, fontSize: isMobile ? 14 : '2vh', letterSpacing: 2, textTransform: 'uppercase' }}>Best Of</span>
+                        <span style={{ color: '#f59e0b', fontWeight: 900, fontSize: isMobile ? 14 : '2vh', letterSpacing: 2, textTransform: 'uppercase' }}>Best Of Buriram {topN}</span>
                     </Link>
 
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -352,7 +369,7 @@ export default function BestOfWinnersBySlugPage() {
             {campaign && (
                 <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', alignItems: 'center', justifyContent: 'center', gap: isMobile ? 4 : '0.8vw', padding: isMobile ? '8px 12px' : '0.5vh 1.5vw', background: '#1e293b', borderRadius: 10, marginBottom: isMobile ? 8 : '0.8vh', border: '1px solid #334155', flexShrink: 0, textAlign: 'center' }}>
                     <span style={{ fontSize: isMobile ? 15 : '2.2vh', fontWeight: 900, color: '#f1f5f9', letterSpacing: 0.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: isMobile ? '100%' : '55vw' }}>
-                        Best of {campaign.name}
+                        Best Of Buriram
                     </span>
                     {selectedCategory && (
                         <span style={{ display: 'inline-flex', alignItems: 'center', padding: isMobile ? '3px 14px' : '0.2vh 1.2vw', background: '#f59e0b', color: '#1c1917', borderRadius: 999, fontWeight: 900, fontSize: isMobile ? 13 : '1.8vh', letterSpacing: 1, whiteSpace: 'nowrap', flexShrink: 0 }}>
@@ -372,8 +389,8 @@ export default function BestOfWinnersBySlugPage() {
                 </div>
             ) : (
                 <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: isMobile ? 12 : '1vw', flex: isMobile ? undefined : 1, minHeight: 0, paddingBottom: isMobile ? 16 : 0 }}>
-                    {renderColumn('♂ BEST MALE', '#2563eb', maleWinners[0], maleColRef, () => downloadLandscape('male'))}
-                    {renderColumn('♀ BEST FEMALE', '#db2777', femaleWinners[0], femaleColRef, () => downloadLandscape('female'))}
+                    {renderColumn('♂ BEST MALE', '#2563eb', maleWinners, maleColRef, () => downloadLandscape('male'))}
+                    {renderColumn('♀ BEST FEMALE', '#db2777', femaleWinners, femaleColRef, () => downloadLandscape('female'))}
                 </div>
             )}
         </div>
