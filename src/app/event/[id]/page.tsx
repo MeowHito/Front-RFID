@@ -1671,6 +1671,7 @@ export default function EventLivePage() {
                     <RankingMenuDropdown
                         campaignId={campaign._id}
                         campaignSlugOrId={campaign.slug || campaign._id}
+                        campaignName={campaign.name}
                         categoryName={currentCategoryName}
                         overallDisplayCount={campaign.overallDisplayCount}
                         excludeOverallThaiFromAgeGroup={campaign.excludeOverallThaiFromAgeGroup}

@@ -15,6 +15,8 @@ interface RankingMenuDropdownProps {
     campaignId: string;
     /** slug (preferred) or _id — used to build the winner-board links */
     campaignSlugOrId: string;
+    /** Campaign display name — used for the "Best of [event name]" menu label */
+    campaignName?: string;
     /** Raw category name (matches campaign.categories[].name), NOT the derived UI key */
     categoryName: string;
     overallDisplayCount?: number;
@@ -34,6 +36,7 @@ interface RankingMenuDropdownProps {
 export default function RankingMenuDropdown({
     campaignId,
     campaignSlugOrId,
+    campaignName,
     categoryName,
     overallDisplayCount,
     excludeOverallThaiFromAgeGroup,
@@ -71,11 +74,12 @@ export default function RankingMenuDropdown({
     const ageGroupN = Math.max(1, Number(ageGroupDisplayCount) || 5);
     const bestOfN = Math.max(1, Number(bestOfDisplayCount) || 1);
     const catQuery = `?category=${encodeURIComponent(categoryName)}`;
+    const bestOfEventName = (campaignName || '').length > 15 ? `${(campaignName || '').slice(0, 15)}...` : (campaignName || '');
 
     const items: { key: RankingMenuItemKey; label: string; href: string }[] = [
         { key: 'topOverall', label: `TopOverall ${overallN}`, href: `/Top-Overall-Winners/${encodeURIComponent(campaignSlugOrId)}${catQuery}` },
         { key: 'general', label: `Overall ${overallThaiN}`, href: `/Overall-Winners/${encodeURIComponent(campaignSlugOrId)}${catQuery}` },
-        { key: 'bestOf', label: `Best of Buriram ${bestOfN}`, href: `/Best-Of-Winners/${encodeURIComponent(campaignSlugOrId)}${catQuery}` },
+        { key: 'bestOf', label: `Best of ${bestOfEventName} ${bestOfN}`, href: `/Best-Of-Winners/${encodeURIComponent(campaignSlugOrId)}${catQuery}` },
         { key: 'nationality', label: `Foreigner Overall ${overallForeignN}`, href: `/Nationality-Winners/${encodeURIComponent(campaignSlugOrId)}${catQuery}` },
         { key: 'ageGroup', label: `Age group ${ageGroupN}`, href: `/Result-Winners/${encodeURIComponent(campaignSlugOrId)}${catQuery}` },
     ];
