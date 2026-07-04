@@ -1655,7 +1655,10 @@ export default function ParticipantsPage() {
                                                             const value = e.target.value;
                                                             setEditForm(prev => {
                                                                 const next = { ...prev, [f.key]: value };
-                                                                if (f.key === 'gender') {
+                                                                // Only auto-fill age group when it's still empty —
+                                                                // never overwrite an existing value (e.g. RaceTiger's
+                                                                // finer "20-24" band). Use the ↻ button to recalc on purpose.
+                                                                if (f.key === 'gender' && !(prev.ageGroup || '').trim()) {
                                                                     next.ageGroup = calculateAgeGroup(prev.birthDate, value);
                                                                 }
                                                                 return next;
@@ -1668,13 +1671,25 @@ export default function ParticipantsPage() {
                                                         ))}
                                                     </select>
                                                 ) : f.key === 'ageGroup' ? (
-                                                    <input
-                                                        type="text"
-                                                        value={editForm.ageGroup || ''}
-                                                        readOnly
-                                                        title={language === 'th' ? 'คำนวณอัตโนมัติจากวันเกิด' : 'Auto-calculated from birth date'}
-                                                        style={{ ...inputStyle, background: '#f3f4f6', color: '#555', cursor: 'not-allowed' }}
-                                                    />
+                                                    <div style={{ display: 'flex', gap: 6, alignItems: 'stretch' }}>
+                                                        <input
+                                                            type="text"
+                                                            value={editForm.ageGroup || ''}
+                                                            onChange={e => {
+                                                                const value = e.target.value;
+                                                                setEditForm(prev => ({ ...prev, ageGroup: value }));
+                                                            }}
+                                                            placeholder={language === 'th' ? 'เช่น 20-24 (ตาม RaceTiger)' : 'e.g. 20-24'}
+                                                            title={language === 'th' ? 'พิมพ์กลุ่มอายุได้เอง — กด ↻ เพื่อคำนวณจากวันเกิด' : 'Editable — click ↻ to recalculate from birth date'}
+                                                            style={{ ...inputStyle, border: '1px solid #ccc', borderRadius: 4, flex: 1 }}
+                                                        />
+                                                        <button
+                                                            type="button"
+                                                            title={language === 'th' ? 'คำนวณจากวันเกิด/เพศ (band 10 ปี)' : 'Recalculate from birth date / gender (10-year band)'}
+                                                            onClick={() => setEditForm(prev => ({ ...prev, ageGroup: calculateAgeGroup(prev.birthDate, prev.gender) }))}
+                                                            style={{ padding: '0 12px', border: '1px solid #ccc', borderRadius: 4, background: '#f9fafb', color: '#374151', cursor: 'pointer', fontSize: 15, fontWeight: 700 }}
+                                                        >↻</button>
+                                                    </div>
                                                 ) : (
                                                     <input
                                                         type={f.type || 'text'}
@@ -1683,7 +1698,9 @@ export default function ParticipantsPage() {
                                                             const value = e.target.value;
                                                             setEditForm(prev => {
                                                                 const next = { ...prev, [f.key]: value };
-                                                                if (f.key === 'birthDate') {
+                                                                // Only auto-fill age group when it's still empty — never
+                                                                // overwrite an existing value on a birth-date edit.
+                                                                if (f.key === 'birthDate' && !(prev.ageGroup || '').trim()) {
                                                                     next.ageGroup = calculateAgeGroup(value, prev.gender);
                                                                 }
                                                                 return next;
