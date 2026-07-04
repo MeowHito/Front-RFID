@@ -72,6 +72,16 @@ interface Runner {
     chronicDiseases?: string;
     address?: string;
     sourceFile?: string;
+    manuallyEditedFields?: string[];
+    lastEditedBy?: string;
+    lastEditedAt?: string;
+}
+
+interface RunnerEditLog {
+    _id: string;
+    changedBy: string;
+    changedAt: string;
+    changes: { field: string; oldValue: string; newValue: string }[];
 }
 
 const IMPORT_TEMPLATE_HEADERS = [
@@ -186,11 +196,15 @@ export default function ParticipantsPage() {
     const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
     const [deletingIds, setDeletingIds] = useState(false);
+    const [downloadingCsv, setDownloadingCsv] = useState(false);
 
     // Edit modal state
     const [editingRunner, setEditingRunner] = useState<Runner | null>(null);
     const [editForm, setEditForm] = useState<Record<string, string>>({});
     const [savingRunner, setSavingRunner] = useState(false);
+    const [showEditLogs, setShowEditLogs] = useState(false);
+    const [editLogs, setEditLogs] = useState<RunnerEditLog[]>([]);
+    const [loadingEditLogs, setLoadingEditLogs] = useState(false);
 
     // Per-category import state
     const [categoryImports, setCategoryImports] = useState<Record<string, CategoryImportData>>({});
@@ -415,6 +429,64 @@ export default function ParticipantsPage() {
         }
     }, [selectedIds, language, campaign, activeTab, fetchRunners]);
 
+    // Download current tab's participants as CSV (respects search/filter/sort, all matching rows)
+    const handleDownloadCsv = useCallback(async () => {
+        if (!campaign?._id || activeTab === 'import') return;
+        setDownloadingCsv(true);
+        try {
+            const params = new URLSearchParams({
+                campaignId: campaign._id,
+                page: '1',
+                limit: '100000',
+            });
+            if (activeTab !== 'all') params.append('category', activeTab);
+            if (debouncedSearch) params.append('search', debouncedSearch);
+            if (listRunnerStatus.length > 0) params.append('runnerStatus', listRunnerStatus.join(','));
+            if (sortBy) { params.append('sortBy', sortBy); params.append('sortOrder', sortOrder); }
+            const res = await fetch(`/api/runners/paged?${params.toString()}`, { cache: 'no-store' });
+            if (!res.ok) throw new Error('Failed');
+            const data = await res.json();
+            const rows: Runner[] = data.data || [];
+            if (rows.length === 0) {
+                showToast(language === 'th' ? 'ไม่มีข้อมูลให้ดาวน์โหลด' : 'No data to download', 'error');
+                return;
+            }
+
+            const headers = [
+                'BIB', 'FirstName', 'LastName', 'FirstNameTH', 'LastNameTH', 'Gender', 'Category',
+                'AgeGroup', 'BirthDate', 'Nationality', 'ChipCode', 'PrintingCode', 'RfidTag', 'Status',
+                'Team', 'TeamName', 'Box', 'ShirtSize', 'Email', 'Phone', 'IDNo',
+            ];
+            const escapeCsv = (value: unknown) => `"${String(value ?? '').replace(/"/g, '""')}"`;
+            const csvRows = [
+                headers.join(','),
+                ...rows.map(r => [
+                    r.bib, r.firstName, r.lastName, r.firstNameTh, r.lastNameTh, r.gender, r.category,
+                    r.ageGroup, r.birthDate ? r.birthDate.substring(0, 10) : '', r.nationality, r.chipCode,
+                    r.printingCode, r.rfidTag, r.status, r.team, r.teamName, r.box, r.shirtSize,
+                    r.email, r.phone, r.idNo,
+                ].map(escapeCsv).join(',')),
+            ];
+
+            const csvContent = `\uFEFF${csvRows.join('\n')}`;
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const safeCat = (activeTab === 'all' ? 'all' : activeTab).trim().replace(/\s+/g, '_').toLowerCase();
+            const dateStr = new Date().toISOString().slice(0, 10);
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = `participants-${safeCat}-${dateStr}.csv`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(link.href);
+            showToast(language === 'th' ? `ดาวน์โหลดสำเร็จ ${rows.length} รายการ` : `Downloaded ${rows.length} records`, 'success');
+        } catch {
+            showToast(language === 'th' ? 'ดาวน์โหลดไม่สำเร็จ' : 'Download failed', 'error');
+        } finally {
+            setDownloadingCsv(false);
+        }
+    }, [campaign, activeTab, debouncedSearch, listRunnerStatus, sortBy, sortOrder, language]);
+
     // Open edit modal for a runner
     const openEditModal = useCallback((runner: Runner) => {
         setEditingRunner(runner);
@@ -447,7 +519,26 @@ export default function ParticipantsPage() {
             address: runner.address || '',
             status: runner.status || 'not_started',
         });
+        setShowEditLogs(false);
+        setEditLogs([]);
     }, []);
+
+    // Fetch edit history for the runner currently open in the modal
+    const loadEditLogs = useCallback(async () => {
+        if (!editingRunner) return;
+        setShowEditLogs(true);
+        setLoadingEditLogs(true);
+        try {
+            const res = await fetch(`/api/runners/${editingRunner._id}/edit-logs`, { headers: authHeaders(), cache: 'no-store' });
+            if (!res.ok) throw new Error('Failed');
+            const data = await res.json();
+            setEditLogs(Array.isArray(data) ? data : []);
+        } catch {
+            setEditLogs([]);
+        } finally {
+            setLoadingEditLogs(false);
+        }
+    }, [editingRunner]);
 
     // Save all edited fields for a runner
     const handleSaveRunner = useCallback(async () => {
@@ -1225,6 +1316,20 @@ export default function ParticipantsPage() {
                                             </span>
                                         )}
                                     </div>
+                                    <button
+                                        onClick={handleDownloadCsv}
+                                        disabled={downloadingCsv || runnersTotal === 0}
+                                        className="px-3 py-1.5 text-[12px] rounded-md border cursor-pointer transition whitespace-nowrap border-green-400 bg-green-50 text-green-700 font-semibold hover:bg-green-100 disabled:opacity-50"
+                                    >
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="inline mr-1 -mt-0.5">
+                                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                                            <polyline points="7 10 12 15 17 10" />
+                                            <line x1="12" y1="15" x2="12" y2="3" />
+                                        </svg>
+                                        {downloadingCsv
+                                            ? (language === 'th' ? 'กำลังดาวน์โหลด...' : 'Downloading...')
+                                            : (language === 'th' ? 'ดาวน์โหลด CSV' : 'Download CSV')}
+                                    </button>
                                     {!readOnly && selectedIds.size > 0 && (
                                         <>
                                             <button
@@ -1463,24 +1568,60 @@ export default function ParticipantsPage() {
 
                                 return (
                                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
-                                        {fields.map(f => (
+                                        {fields.map(f => {
+                                            const isProtected = (editingRunner?.manuallyEditedFields || []).includes(f.key);
+                                            return (
                                             <div key={f.key} style={{ ...cellStyle, gridColumn: f.colSpan === 2 ? '1 / -1' : undefined }}>
-                                                <label style={labelStyle}>{language === 'th' ? f.label : f.labelEn}</label>
+                                                <label style={labelStyle}>
+                                                    {language === 'th' ? f.label : f.labelEn}
+                                                    {isProtected && (
+                                                        <span
+                                                            title={language === 'th' ? 'แก้ไขเองแล้ว — จะไม่ถูก Sync จาก RaceTiger ทับ' : 'Manually edited — protected from RaceTiger sync overwrite'}
+                                                            style={{ marginLeft: 5, color: '#d97706', fontSize: 11, cursor: 'help' }}
+                                                        >🔒</span>
+                                                    )}
+                                                </label>
                                                 {f.type === 'select' ? (
                                                     <select
                                                         value={editForm[f.key] || ''}
-                                                        onChange={e => setEditForm(prev => ({ ...prev, [f.key]: e.target.value }))}
+                                                        onChange={e => {
+                                                            const value = e.target.value;
+                                                            setEditForm(prev => {
+                                                                const next = { ...prev, [f.key]: value };
+                                                                if (f.key === 'gender') {
+                                                                    next.ageGroup = calculateAgeGroup(prev.birthDate, value);
+                                                                }
+                                                                return next;
+                                                            });
+                                                        }}
                                                         style={{ ...inputStyle, border: '1px solid #ccc', borderRadius: 4 }}
                                                     >
                                                         {f.options?.map(o => (
                                                             <option key={o.v} value={o.v}>{o.l}</option>
                                                         ))}
                                                     </select>
+                                                ) : f.key === 'ageGroup' ? (
+                                                    <input
+                                                        type="text"
+                                                        value={editForm.ageGroup || ''}
+                                                        readOnly
+                                                        title={language === 'th' ? 'คำนวณอัตโนมัติจากวันเกิด' : 'Auto-calculated from birth date'}
+                                                        style={{ ...inputStyle, background: '#f3f4f6', color: '#555', cursor: 'not-allowed' }}
+                                                    />
                                                 ) : (
                                                     <input
                                                         type={f.type || 'text'}
                                                         value={editForm[f.key] || ''}
-                                                        onChange={e => setEditForm(prev => ({ ...prev, [f.key]: e.target.value }))}
+                                                        onChange={e => {
+                                                            const value = e.target.value;
+                                                            setEditForm(prev => {
+                                                                const next = { ...prev, [f.key]: value };
+                                                                if (f.key === 'birthDate') {
+                                                                    next.ageGroup = calculateAgeGroup(value, prev.gender);
+                                                                }
+                                                                return next;
+                                                            });
+                                                        }}
                                                         style={{
                                                             ...inputStyle,
                                                             fontFamily: (f.key === 'chipCode' || f.key === 'rfidTag') ? 'monospace' : 'inherit',
@@ -1488,10 +1629,40 @@ export default function ParticipantsPage() {
                                                     />
                                                 )}
                                             </div>
-                                        ))}
+                                            );
+                                        })}
                                     </div>
                                 );
                             })()}
+
+                            {/* Edit history panel */}
+                            {showEditLogs && (
+                                <div style={{ marginTop: 16, borderTop: '1px solid #e5e7eb', paddingTop: 12 }}>
+                                    <div style={{ fontSize: 13, fontWeight: 700, color: '#333', marginBottom: 8 }}>
+                                        {language === 'th' ? 'ประวัติการแก้ไข' : 'Edit History'}
+                                    </div>
+                                    {loadingEditLogs ? (
+                                        <div style={{ fontSize: 12, color: '#999' }}>{language === 'th' ? 'กำลังโหลด...' : 'Loading...'}</div>
+                                    ) : editLogs.length === 0 ? (
+                                        <div style={{ fontSize: 12, color: '#999' }}>{language === 'th' ? 'ไม่มีประวัติการแก้ไข' : 'No edit history'}</div>
+                                    ) : (
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 220, overflowY: 'auto' }}>
+                                            {editLogs.map(log => (
+                                                <div key={log._id} style={{ fontSize: 12, background: '#f9fafb', border: '1px solid #eee', borderRadius: 4, padding: '6px 10px' }}>
+                                                    <div style={{ color: '#555', marginBottom: 4 }}>
+                                                        <strong>{log.changedBy}</strong> — {new Date(log.changedAt).toLocaleString(language === 'th' ? 'th-TH' : 'en-US')}
+                                                    </div>
+                                                    {log.changes.map((c, i) => (
+                                                        <div key={i} style={{ color: '#777' }}>
+                                                            {c.field}: <span style={{ color: '#dc2626' }}>{c.oldValue || '-'}</span> → <span style={{ color: '#16a34a' }}>{c.newValue || '-'}</span>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
                         </div>
 
                         {/* Modal footer */}
@@ -1500,21 +1671,35 @@ export default function ParticipantsPage() {
                             display: 'flex', justifyContent: 'space-between', alignItems: 'center',
                             background: '#f9fafb', borderRadius: '0 0 8px 8px',
                         }}>
-                            <button
-                                onClick={handleDeleteRunner}
-                                disabled={savingRunner}
-                                style={{
-                                    padding: '8px 18px', fontSize: 13, border: '1px solid #ef4444',
-                                    borderRadius: 4, background: '#fff', color: '#dc2626',
-                                    cursor: 'pointer', fontWeight: 600,
-                                    opacity: savingRunner ? 0.5 : 1,
-                                }}
-                            >
-                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: 5, verticalAlign: -2 }}>
-                                    <polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                                </svg>
-                                {language === 'th' ? 'ลบนักกีฬา' : 'Delete'}
-                            </button>
+                            <div style={{ display: 'flex', gap: 10 }}>
+                                <button
+                                    onClick={handleDeleteRunner}
+                                    disabled={savingRunner}
+                                    style={{
+                                        padding: '8px 18px', fontSize: 13, border: '1px solid #ef4444',
+                                        borderRadius: 4, background: '#fff', color: '#dc2626',
+                                        cursor: 'pointer', fontWeight: 600,
+                                        opacity: savingRunner ? 0.5 : 1,
+                                    }}
+                                >
+                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: 5, verticalAlign: -2 }}>
+                                        <polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                                    </svg>
+                                    {language === 'th' ? 'ลบนักกีฬา' : 'Delete'}
+                                </button>
+                                <button
+                                    onClick={() => showEditLogs ? setShowEditLogs(false) : loadEditLogs()}
+                                    style={{
+                                        padding: '8px 14px', fontSize: 12, border: '1px solid #ccc',
+                                        borderRadius: 4, background: '#fff', color: '#555',
+                                        cursor: 'pointer', fontWeight: 600,
+                                    }}
+                                >
+                                    {showEditLogs
+                                        ? (language === 'th' ? 'ซ่อนประวัติ' : 'Hide History')
+                                        : (language === 'th' ? 'ประวัติการแก้ไข' : 'Edit History')}
+                                </button>
+                            </div>
                             <div style={{ display: 'flex', gap: 10 }}>
                                 <button
                                     onClick={() => setEditingRunner(null)}
