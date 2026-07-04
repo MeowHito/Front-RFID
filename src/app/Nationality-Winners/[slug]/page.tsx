@@ -382,8 +382,8 @@ export default function NationalityWinnersBySlugPage() {
                 </div>
             ) : (
                 <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: isMobile ? 12 : '1vw', flex: isMobile ? undefined : 1, minHeight: 0, paddingBottom: isMobile ? 16 : 0 }}>
-                    {renderColumn('♂ MALE · INTERNATIONAL', '#4f46e5', maleWinners, maleColRef, () => downloadLandscape('male'))}
-                    {renderColumn('♀ FEMALE · INTERNATIONAL', '#c026d3', femaleWinners, femaleColRef, () => downloadLandscape('female'))}
+                    {renderColumn('♂ MALE · FOREIGNER', '#4f46e5', maleWinners, maleColRef, () => downloadLandscape('male'))}
+                    {renderColumn('♀ FEMALE · FOREIGNER', '#c026d3', femaleWinners, femaleColRef, () => downloadLandscape('female'))}
                 </div>
             )}
         </div>

@@ -39,7 +39,6 @@ interface Campaign {
     categories?: CampaignCategory[];
     overallDisplayCount?: number;
     excludeOverallThaiFromAgeGroup?: number;
-    excludeOverallForeignFromAgeGroup?: number;
     separateOverallNationalityCategories?: string[];
 }
 
@@ -79,8 +78,6 @@ export default function OverallWinnersBySlugPage() {
     const [downloading, setDownloading] = useState<string | null>(null);
     const maleColRef = useRef<HTMLDivElement | null>(null);
     const femaleColRef = useRef<HTMLDivElement | null>(null);
-    const foreignMaleColRef = useRef<HTMLDivElement | null>(null);
-    const foreignFemaleColRef = useRef<HTMLDivElement | null>(null);
 
     useEffect(() => {
         const check = () => setIsMobile(window.innerWidth < 768);
@@ -193,14 +190,14 @@ export default function OverallWinnersBySlugPage() {
     }, [autoMode]);
 
     const topN = Math.max(1, campaign?.overallDisplayCount || 5);
-    // Nationality-split categories use their own Thai / foreign counts (set via
-    // admin/age-group-ranking's "คนไทย" / "ต่างชาติ" inputs), falling back to overallDisplayCount.
+    // Nationality-split categories use the Thai count (set via admin/age-group-ranking's
+    // "คนไทย" input), falling back to overallDisplayCount. Foreign/international runners
+    // are excluded from this page entirely — see /Nationality-Winners for those.
     const thaiTopN = Math.max(1, Number(campaign?.excludeOverallThaiFromAgeGroup ?? campaign?.overallDisplayCount) || 5);
-    const foreignTopN = Math.max(1, Number(campaign?.excludeOverallForeignFromAgeGroup ?? campaign?.overallDisplayCount) || 5);
     // Nationality split applies per race category — only when the selected category is in the list
     const separateNat = isNationalitySplitCategory(campaign?.separateOverallNationalityCategories, selectedCategory);
 
-    const { maleWinners, femaleWinners, foreignMaleWinners, foreignFemaleWinners } = useMemo(() => {
+    const { maleWinners, femaleWinners } = useMemo(() => {
         const finished = displayedRunners.filter(r => r.status === 'finished' && (r.netTime || r.gunTime || r.elapsedTime));
         const sorted = [...finished].sort((a, b) => {
             const at = a.netTime || a.gunTime || a.elapsedTime || Infinity;
@@ -208,22 +205,18 @@ export default function OverallWinnersBySlugPage() {
             return at - bt;
         });
         if (separateNat) {
-            const pick = (isFemale: boolean, thai: boolean) =>
-                sorted.filter(r => (r.gender === 'F') === isFemale && isThaiNationality(r.nationality) === thai).slice(0, thai ? thaiTopN : foreignTopN);
+            const pick = (isFemale: boolean) =>
+                sorted.filter(r => (r.gender === 'F') === isFemale && isThaiNationality(r.nationality)).slice(0, thaiTopN);
             return {
-                maleWinners: pick(false, true),
-                femaleWinners: pick(true, true),
-                foreignMaleWinners: pick(false, false),
-                foreignFemaleWinners: pick(true, false),
+                maleWinners: pick(false),
+                femaleWinners: pick(true),
             };
         }
         return {
             maleWinners: sorted.filter(r => r.gender !== 'F').slice(0, topN),
             femaleWinners: sorted.filter(r => r.gender === 'F').slice(0, topN),
-            foreignMaleWinners: [] as Runner[],
-            foreignFemaleWinners: [] as Runner[],
         };
-    }, [displayedRunners, topN, thaiTopN, foreignTopN, separateNat]);
+    }, [displayedRunners, topN, thaiTopN, separateNat]);
 
     const downloadGroup = useCallback(async (
         males: Runner[],
@@ -421,8 +414,6 @@ export default function OverallWinnersBySlugPage() {
                         <>
                             {renderColumn('♂ OVERALL THA · MALE', '#2563eb', maleWinners, maleColRef, () => downloadGroup(maleWinners, femaleWinners, 'male', '-THA'), thaiTopN)}
                             {renderColumn('♀ OVERALL THA · FEMALE', '#db2777', femaleWinners, femaleColRef, () => downloadGroup(maleWinners, femaleWinners, 'female', '-THA'), thaiTopN)}
-                            {renderColumn('♂ OVERALL INT · MALE', '#4f46e5', foreignMaleWinners, foreignMaleColRef, () => downloadGroup(foreignMaleWinners, foreignFemaleWinners, 'male', '-INT'), foreignTopN)}
-                            {renderColumn('♀ OVERALL INT · FEMALE', '#c026d3', foreignFemaleWinners, foreignFemaleColRef, () => downloadGroup(foreignMaleWinners, foreignFemaleWinners, 'female', '-INT'), foreignTopN)}
                         </>
                     ) : (
                         <>
