@@ -8,8 +8,9 @@
 import { useEffect, useState, useRef, useCallback, useMemo, type CSSProperties } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import { computeAwardsForCategory, formatAwardLabel } from '@/lib/awards';
+import { computeAwardsForCategory, formatAwardLabel, formatOverallAwardLabel } from '@/lib/awards';
 import { isNationalitySplitCategory } from '@/lib/nationality';
+import { computeBuriramWinnerIds } from '@/lib/province';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -103,7 +104,19 @@ interface CampaignData {
     excludeOverallThaiFromAgeGroup?: number | null;
     excludeOverallForeignFromAgeGroup?: number | null;
     separateOverallNationalityCategories?: string[];
+    bestOfDisplayCount?: number;
 }
+
+interface AwardLabels {
+    combined: string | null;
+    overall: string | null;
+    gender: string | null;
+    ageGroup: string | null;
+    overallThai: string | null;
+    overallForeign: string | null;
+    bestOfBrr: string | null;
+}
+const EMPTY_AWARDS: AwardLabels = { combined: null, overall: null, gender: null, ageGroup: null, overallThai: null, overallForeign: null, bestOfBrr: null };
 
 interface SplitRecord {
     checkpoint: string;
@@ -142,6 +155,8 @@ const FIELD_PREVIEWS: Record<string, string> = {
     '{{rank}}': '-', '{{gender_rank}}': '-', '{{age_rank}}': '-',
     '{{rank_total}}': '-', '{{gender_rank_total}}': '-',
     '{{award}}': '-',
+    '{{award_overall}}': '-', '{{award_gender}}': '-', '{{award_age_group}}': '-',
+    '{{award_overall_thai}}': '-', '{{award_overall_foreign}}': '-', '{{award_best_of_brr}}': '-',
     '{{event_name}}': '-', '{{event_date}}': '-',
 };
 
@@ -217,7 +232,7 @@ function resolveNationality(raw: string | undefined): { code: string; name: stri
     return { code: '', name: raw };
 }
 
-function substituteFields(content: string, runner: RunnerData | null, campaign: CampaignData | null, awardLabel?: string | null): string {
+function substituteFields(content: string, runner: RunnerData | null, campaign: CampaignData | null, awards?: AwardLabels | null): string {
     if (!runner) return content.replace(/\{\{[^}]+\}\}/g, m => FIELD_PREVIEWS[m] ?? m);
     const netTime = typeof runner.netTime === 'number' && runner.netTime > 0
         ? formatTime(runner.netTime)
@@ -260,7 +275,13 @@ function substituteFields(content: string, runner: RunnerData | null, campaign: 
         '{{gender_rank_total}}': runner.genderRank && runner.genderRank > 0 && genFinish
             ? `${runner.genderRank} / ${genFinish}`
             : (runner.genderRank ? String(runner.genderRank) : '-'),
-        '{{award}}': awardLabel || '',
+        '{{award}}': awards?.combined || '',
+        '{{award_overall}}': awards?.overall || '',
+        '{{award_gender}}': awards?.gender || '',
+        '{{award_age_group}}': awards?.ageGroup || '',
+        '{{award_overall_thai}}': awards?.overallThai || '',
+        '{{award_overall_foreign}}': awards?.overallForeign || '',
+        '{{award_best_of_brr}}': awards?.bestOfBrr || '',
         '{{event_name}}': campaign?.nameTh ?? campaign?.name ?? '-',
         '{{event_date}}': campaign?.eventDate
             ? new Date(campaign.eventDate).toLocaleDateString('th-TH', { day: 'numeric', month: 'long', year: 'numeric' })
@@ -374,7 +395,7 @@ export default function CertificatePage() {
     const { id: runnerId } = useParams<{ id: string }>();
     const [runner, setRunner] = useState<RunnerData | null>(null);
     const [campaign, setCampaign] = useState<CampaignData | null>(null);
-    const [awardLabel, setAwardLabel] = useState<string | null>(null);
+    const [awards, setAwards] = useState<AwardLabels>(EMPTY_AWARDS);
     const [timingRecords, setTimingRecords] = useState<Record<string, unknown>[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
@@ -425,22 +446,24 @@ export default function CertificatePage() {
         return () => { cancelled = true; };
     }, [runnerId]);
 
-    // Compute this runner's AWARD (Overall / Age Group placing) — same algorithm
-    // and admin-configured rules as the public event table and e-slip — by
-    // pulling the whole category pool.
+    // Compute this runner's AWARDs — Overall / Age Group placing (same algorithm
+    // and admin-configured rules as the public event table and e-slip) plus the
+    // "Best of Buriram" local award — by pulling the whole category pool.
+    // Exposed as separate fields so the certificate layout can place each award
+    // type independently.
     useEffect(() => {
         const campaignId = campaign?._id;
         const category = runner?.category;
-        if (!runner || !campaignId || !category) { setAwardLabel(null); return; }
+        if (!runner || !campaignId || !category) { setAwards(EMPTY_AWARDS); return; }
         let cancelled = false;
         (async () => {
             try {
                 const p = new URLSearchParams({ campaignId, category, limit: '10000', skipStatusCounts: 'true' });
                 const res = await fetch(`/api/runners/paged?${p.toString()}`, { cache: 'no-store' });
-                if (!res.ok) { if (!cancelled) setAwardLabel(null); return; }
+                if (!res.ok) { if (!cancelled) setAwards(EMPTY_AWARDS); return; }
                 const data = await res.json();
                 const pool = Array.isArray(data?.data) ? data.data : [];
-                const awards = computeAwardsForCategory(pool, {
+                const awardMap = computeAwardsForCategory(pool, {
                     overallDisplayCount: campaign.overallDisplayCount,
                     ageGroupDisplayCount: campaign.ageGroupDisplayCount,
                     excludeOverallFromAgeGroup: campaign.excludeOverallFromAgeGroup,
@@ -448,12 +471,24 @@ export default function CertificatePage() {
                     excludeOverallForeignFromAgeGroup: campaign.excludeOverallForeignFromAgeGroup ?? undefined,
                     separateOverallByNationality: isNationalitySplitCategory(campaign.separateOverallNationalityCategories, category),
                 });
-                const mine = awards.get(runner._id);
-                if (!cancelled) setAwardLabel(mine ? formatAwardLabel(mine) : null);
-            } catch { if (!cancelled) setAwardLabel(null); }
+                const mine = awardMap.get(runner._id);
+                const buriramIds = computeBuriramWinnerIds(pool, Math.max(1, campaign.bestOfDisplayCount || 1));
+                const isBestOfBrr = buriramIds.has(runner._id);
+                const overallLabel = mine?.overall ? formatOverallAwardLabel(mine) : null;
+                const ageGroupLabel = mine?.ageGroup ? `Age Group ${mine.ageGroup}` : null;
+                if (!cancelled) setAwards({
+                    combined: [isBestOfBrr ? 'Best of Buriram' : null, formatAwardLabel(mine) || null].filter(Boolean).join(' | ') || null,
+                    overall: overallLabel,
+                    gender: overallLabel,
+                    ageGroup: ageGroupLabel,
+                    overallThai: mine?.overallNat === 'thai' ? overallLabel : null,
+                    overallForeign: mine?.overallNat === 'foreign' ? overallLabel : null,
+                    bestOfBrr: isBestOfBrr ? 'Best of Buriram' : null,
+                });
+            } catch { if (!cancelled) setAwards(EMPTY_AWARDS); }
         })();
         return () => { cancelled = true; };
-    }, [runner, campaign?._id, campaign?.overallDisplayCount, campaign?.ageGroupDisplayCount, campaign?.excludeOverallFromAgeGroup, campaign?.excludeOverallThaiFromAgeGroup, campaign?.excludeOverallForeignFromAgeGroup, campaign?.separateOverallNationalityCategories]);
+    }, [runner, campaign?._id, campaign?.overallDisplayCount, campaign?.ageGroupDisplayCount, campaign?.excludeOverallFromAgeGroup, campaign?.excludeOverallThaiFromAgeGroup, campaign?.excludeOverallForeignFromAgeGroup, campaign?.separateOverallNationalityCategories, campaign?.bestOfDisplayCount]);
 
     // Track rendered canvas width so we can scale font sizes consistently with the editor.
     useEffect(() => {
@@ -747,7 +782,7 @@ export default function CertificatePage() {
                         ) : isShape ? <ShapeRender el={el} />
                         : isFlag ? <FlagRender el={el} runner={runner} fontScale={renderScale} />
                         : isTable ? <TableRender el={el} splits={splits} fontScale={renderScale} />
-                        : substituteFields(el.content, runner, campaign, awardLabel)}
+                        : substituteFields(el.content, runner, campaign, awards)}
                     </div>
                 );
             })}

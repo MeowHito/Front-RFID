@@ -3,8 +3,9 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useLanguage } from '@/lib/language-context';
 import { authHeaders } from '@/lib/authHeaders';
-import { computeAwardsForCategory, formatAwardLabel } from '@/lib/awards';
+import { computeAwardsForCategory, formatAwardLabel, formatOverallAwardLabel } from '@/lib/awards';
 import { isNationalitySplitCategory } from '@/lib/nationality';
+import { computeBuriramWinnerIds } from '@/lib/province';
 import AdminLayout from '../AdminLayout';
 
 // ============= TYPES =============
@@ -107,7 +108,19 @@ interface Campaign {
     excludeOverallThaiFromAgeGroup?: number | null;
     excludeOverallForeignFromAgeGroup?: number | null;
     separateOverallNationalityCategories?: string[];
+    bestOfDisplayCount?: number;
 }
+
+interface AwardLabels {
+    combined: string | null;
+    overall: string | null;
+    gender: string | null;
+    ageGroup: string | null;
+    overallThai: string | null;
+    overallForeign: string | null;
+    bestOfBrr: string | null;
+}
+const EMPTY_AWARDS: AwardLabels = { combined: null, overall: null, gender: null, ageGroup: null, overallThai: null, overallForeign: null, bestOfBrr: null };
 interface SnapLine { axis: 'x' | 'y'; pos: number; }
 interface CtxMenu { x: number; y: number; elId?: string; }
 
@@ -158,7 +171,13 @@ const DYNAMIC_FIELDS: { label: string; value: string }[] = [
     { label: 'Age Group Rank', value: '{{age_rank}}' },
     { label: 'Overall / Total', value: '{{rank_total}}' },
     { label: 'Gender / Total', value: '{{gender_rank_total}}' },
-    { label: 'Award', value: '{{award}}' },
+    { label: 'Award (All)', value: '{{award}}' },
+    { label: 'Award Overall', value: '{{award_overall}}' },
+    { label: 'Award Gender', value: '{{award_gender}}' },
+    { label: 'Award Age Group', value: '{{award_age_group}}' },
+    { label: 'Award Overall (Thai)', value: '{{award_overall_thai}}' },
+    { label: 'Award Overall (Foreign)', value: '{{award_overall_foreign}}' },
+    { label: 'Award Best of BRR', value: '{{award_best_of_brr}}' },
     { label: 'Event Name', value: '{{event_name}}' },
     { label: 'Event Date', value: '{{event_date}}' },
 ];
@@ -173,7 +192,13 @@ const FIELD_PREVIEWS: Record<string, string> = {
     '{{pace}}': '6:18', '{{gun_pace}}': '6:20',
     '{{rank}}': '42', '{{gender_rank}}': '15', '{{age_rank}}': '5',
     '{{rank_total}}': '42 / 472', '{{gender_rank_total}}': '15 / 118',
-    '{{award}}': 'Overall 1, Age Group 2',
+    '{{award}}': 'Best of Buriram | Overall 1, Age Group 2',
+    '{{award_overall}}': 'Overall 1',
+    '{{award_gender}}': 'Overall 1',
+    '{{award_age_group}}': 'Age Group 2',
+    '{{award_overall_thai}}': 'OVERALL THA 1',
+    '{{award_overall_foreign}}': 'OVERALL INT 1',
+    '{{award_best_of_brr}}': 'Best of Buriram',
     '{{event_name}}': 'CNX 100K Ultra Marathon 2025', '{{event_date}}': '4 ตุลาคม 2568',
 };
 
@@ -293,7 +318,7 @@ function categoryToDistance(cat?: string): string {
     return m ? `${m[1]}K` : cat;
 }
 
-function substituteFields(content: string, runner: Runner | null, campaign: Campaign | null, awardLabel?: string | null): string {
+function substituteFields(content: string, runner: Runner | null, campaign: Campaign | null, awards?: AwardLabels | null): string {
     if (!runner) return content.replace(/\{\{[^}]+\}\}/g, m => FIELD_PREVIEWS[m] ?? m);
     const netTime = typeof runner.netTime === 'number' && runner.netTime > 0 ? formatTime(runner.netTime) : (runner.finishTime || '-');
     const gunTime = typeof runner.gunTime === 'number' && runner.gunTime > 0 ? formatTime(runner.gunTime) : '-';
@@ -324,7 +349,13 @@ function substituteFields(content: string, runner: Runner | null, campaign: Camp
         '{{age_rank}}': runner.ageGroupRank && runner.ageGroupRank > 0 ? String(runner.ageGroupRank) : '-',
         '{{rank_total}}': runner.overallRank && runner.overallRank > 0 && totFinish ? `${runner.overallRank} / ${totFinish}` : (runner.overallRank ? String(runner.overallRank) : '-'),
         '{{gender_rank_total}}': runner.genderRank && runner.genderRank > 0 && genFinish ? `${runner.genderRank} / ${genFinish}` : (runner.genderRank ? String(runner.genderRank) : '-'),
-        '{{award}}': awardLabel || '',
+        '{{award}}': awards?.combined || '',
+        '{{award_overall}}': awards?.overall || '',
+        '{{award_gender}}': awards?.gender || '',
+        '{{award_age_group}}': awards?.ageGroup || '',
+        '{{award_overall_thai}}': awards?.overallThai || '',
+        '{{award_overall_foreign}}': awards?.overallForeign || '',
+        '{{award_best_of_brr}}': awards?.bestOfBrr || '',
         '{{event_name}}': campaign?.nameTh ?? campaign?.name ?? '-',
         '{{event_date}}': campaign?.eventDate ? new Date(campaign.eventDate).toLocaleDateString('th-TH', { day: 'numeric', month: 'long', year: 'numeric' }) : '-',
     };
@@ -477,7 +508,7 @@ export default function CertificatesPage() {
     const [page, setPage] = useState(1);
     const [runnersLoading, setRunnersLoading] = useState(false);
     const [selectedRunner, setSelectedRunner] = useState<Runner | null>(null);
-    const [awardLabel, setAwardLabel] = useState<string | null>(null);
+    const [awards, setAwards] = useState<AwardLabels>(EMPTY_AWARDS);
     const [splits, setSplits] = useState<SplitRecord[]>([]);
     const [generating, setGenerating] = useState(false);
     const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
@@ -753,20 +784,22 @@ export default function CertificatesPage() {
         }
     }, [resolveRunnerRanks]);
 
-    // Compute the selected runner's AWARD (Overall / Age Group placing) — same
-    // algorithm and admin-configured rules (top-N, exclusions, nationality split)
-    // as the public event table and e-slip, by pulling the whole category pool.
+    // Compute the selected runner's AWARDs — Overall / Age Group placing (same
+    // algorithm and admin-configured rules as the public event table and
+    // e-slip) plus the "Best of Buriram" local award — by pulling the whole
+    // category pool. Exposed as separate fields so the admin can lay out each
+    // award type independently on the certificate.
     useEffect(() => {
-        if (!selectedRunner || !campaign?._id || !selectedRunner.category) { setAwardLabel(null); return; }
+        if (!selectedRunner || !campaign?._id || !selectedRunner.category) { setAwards(EMPTY_AWARDS); return; }
         let cancelled = false;
         (async () => {
             try {
                 const p = new URLSearchParams({ campaignId: campaign._id, category: selectedRunner.category, limit: '10000', skipStatusCounts: 'true' });
                 const res = await fetch(`/api/runners/paged?${p.toString()}`, { cache: 'no-store' });
-                if (!res.ok) { if (!cancelled) setAwardLabel(null); return; }
+                if (!res.ok) { if (!cancelled) setAwards(EMPTY_AWARDS); return; }
                 const data = await res.json();
                 const pool = Array.isArray(data?.data) ? data.data : [];
-                const awards = computeAwardsForCategory(pool, {
+                const awardMap = computeAwardsForCategory(pool, {
                     overallDisplayCount: campaign.overallDisplayCount,
                     ageGroupDisplayCount: campaign.ageGroupDisplayCount,
                     excludeOverallFromAgeGroup: campaign.excludeOverallFromAgeGroup,
@@ -774,12 +807,24 @@ export default function CertificatesPage() {
                     excludeOverallForeignFromAgeGroup: campaign.excludeOverallForeignFromAgeGroup ?? undefined,
                     separateOverallByNationality: isNationalitySplitCategory(campaign.separateOverallNationalityCategories, selectedRunner.category),
                 });
-                const mine = awards.get(selectedRunner._id);
-                if (!cancelled) setAwardLabel(mine ? formatAwardLabel(mine) : null);
-            } catch { if (!cancelled) setAwardLabel(null); }
+                const mine = awardMap.get(selectedRunner._id);
+                const buriramIds = computeBuriramWinnerIds(pool, Math.max(1, campaign.bestOfDisplayCount || 1));
+                const isBestOfBrr = buriramIds.has(selectedRunner._id);
+                const overallLabel = mine?.overall ? formatOverallAwardLabel(mine) : null;
+                const ageGroupLabel = mine?.ageGroup ? `Age Group ${mine.ageGroup}` : null;
+                if (!cancelled) setAwards({
+                    combined: [isBestOfBrr ? 'Best of Buriram' : null, formatAwardLabel(mine) || null].filter(Boolean).join(' | ') || null,
+                    overall: overallLabel,
+                    gender: overallLabel,
+                    ageGroup: ageGroupLabel,
+                    overallThai: mine?.overallNat === 'thai' ? overallLabel : null,
+                    overallForeign: mine?.overallNat === 'foreign' ? overallLabel : null,
+                    bestOfBrr: isBestOfBrr ? 'Best of Buriram' : null,
+                });
+            } catch { if (!cancelled) setAwards(EMPTY_AWARDS); }
         })();
         return () => { cancelled = true; };
-    }, [selectedRunner, campaign?._id, campaign?.overallDisplayCount, campaign?.ageGroupDisplayCount, campaign?.excludeOverallFromAgeGroup, campaign?.excludeOverallThaiFromAgeGroup, campaign?.excludeOverallForeignFromAgeGroup, campaign?.separateOverallNationalityCategories]);
+    }, [selectedRunner, campaign?._id, campaign?.overallDisplayCount, campaign?.ageGroupDisplayCount, campaign?.excludeOverallFromAgeGroup, campaign?.excludeOverallThaiFromAgeGroup, campaign?.excludeOverallForeignFromAgeGroup, campaign?.separateOverallNationalityCategories, campaign?.bestOfDisplayCount]);
 
     useEffect(() => {
         const handler = (e: KeyboardEvent) => {
@@ -1208,7 +1253,7 @@ export default function CertificatesPage() {
                         : rows.map((r, i) => `<tr style="background:${i % 2 === 0 ? rowBg : rowAltBg}">${cols.map(c => `<td style="padding:3px 6px;text-align:${c.align};font-size:${fs}px;font-variant-numeric:tabular-nums;border:${bw}px solid ${borderColor}">${escapeHtml(splitsCellValue(c.field, r, i))}</td>`).join('')}</tr>`).join('');
                     return `<div class="cert-table-el" style="left:${el.x}%;top:${el.y}%;width:${el.width}%;height:${h}%;opacity:${el.opacity};color:${el.color};font-family:${el.fontFamily};transform:${transformFor(el)};"><table style="width:100%;height:100%;border-collapse:collapse;table-layout:fixed">${th}<tbody>${body}</tbody></table></div>`;
                 }
-                const text = escapeHtml(substituteFields(el.content, runner, campaign, awardLabel)).replace(/\n/g, '<br>');
+                const text = escapeHtml(substituteFields(el.content, runner, campaign, awards)).replace(/\n/g, '<br>');
                 const sh = shadowFor(el);
                 return `<div class="cert-el" style="left:${el.x}%;top:${el.y}%;width:${el.width}%;font-size:${(el.fontSize * ps).toFixed(1)}px;font-family:${el.fontFamily};color:${el.color};font-weight:${el.fontWeight};font-style:${el.fontStyle};text-align:${el.textAlign};opacity:${el.opacity};letter-spacing:${(el.letterSpacing * ps).toFixed(1)}px;transform:${transformFor(el)};${sh ? `text-shadow:${sh};` : ''}">${text}</div>`;
             };
@@ -1219,7 +1264,7 @@ export default function CertificatesPage() {
             ? `@page{size:${paperInfo.printW} ${paperInfo.printH};margin:0}`
             : `@page{size:A4 ${paperInfo.orient};margin:0}`;
         return { inner: `${bgLayer}${elHtml}`, wpx: pageWpx, hpx: pageHpx, pageRule };
-    }, [elements, bgImage, bgOpacity, campaign, paperSize, paperInfo, paperAspect, splits, awardLabel]);
+    }, [elements, bgImage, bgOpacity, campaign, paperSize, paperInfo, paperAspect, splits, awards]);
 
     const handlePrint = useCallback(async () => {
         setGenerating(true);
@@ -1633,7 +1678,7 @@ export default function CertificatesPage() {
                                                     : isShape ? <ShapeRender el={el} />
                                                     : isFlag ? <FlagRender el={el} runner={selectedRunner} fontScale={scale} />
                                                     : isTable ? <TableRender el={el} splits={splits} fontScale={scale} />
-                                                    : substituteFields(el.content, selectedRunner, campaign, awardLabel)}
+                                                    : substituteFields(el.content, selectedRunner, campaign, awards)}
                                                 {isSelected && <>
                                                     <div onMouseDown={e => startDrag(e, el.id, 'resize')} style={{ position: 'absolute', bottom: -5, right: -5, width: 10, height: 10, background: '#3b82f6', border: '2px solid #fff', borderRadius: 2, cursor: 'se-resize', zIndex: 10 }} />
                                                     <div onMouseDown={e => startDrag(e, el.id, 'resize')} style={{ position: 'absolute', bottom: -5, left: -5, width: 10, height: 10, background: '#3b82f6', border: '2px solid #fff', borderRadius: 2, cursor: 'sw-resize', zIndex: 10 }} />
