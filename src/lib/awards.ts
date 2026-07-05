@@ -13,6 +13,7 @@
 //     contention → they keep only their Overall award.
 
 import { isThaiNationality } from './nationality';
+import { buildCanonicalAgeGroups, canonicalizeAgeGroup } from './age-groups';
 
 export interface AwardConfig {
     overallDisplayCount?: number;
@@ -73,6 +74,11 @@ export function computeAwardsForCategory(
     };
 
     const finished = runners.filter(r => r.status === 'finished' && (r.netTime || r.gunTime || r.elapsedTime));
+    // RaceTiger occasionally tags a handful of runners with a differently-shaped
+    // age-group label than the rest of the field for the same real bracket (e.g.
+    // "0-19" for 2 runners vs "U 19" for 44 others) — fold those into the
+    // majority bucket so they don't fragment award slots into one-off buckets.
+    const { canonicalLabelOf } = buildCanonicalAgeGroups(finished.map(r => r.ageGroup));
     const ensure = (id: string): AwardResult => {
         let a = map.get(id);
         if (!a) { a = {}; map.set(id, a); }
@@ -112,11 +118,16 @@ export function computeAwardsForCategory(
         // (or the category is nationality-split, which always excludes them).
         if (excludeOv > 0) byTime.slice(0, excludeOv).forEach(r => excludedBibs.add(r.bib));
 
+        // Sort by actual finish time first — RaceTiger's ageGroupRank can be stale
+        // or wrong for individual runners (e.g. after a time correction), so it's
+        // only used to break ties, never as the primary order.
         const byAgeRank = [...group].sort((a, b) => {
+            const at = timeOf(a);
+            const bt = timeOf(b);
+            if (at !== bt) return at - bt;
             const ar = (a.ageGroupRank && a.ageGroupRank > 0) ? a.ageGroupRank : Infinity;
             const br = (b.ageGroupRank && b.ageGroupRank > 0) ? b.ageGroupRank : Infinity;
-            if (ar !== br) return ar - br;
-            return timeOf(a) - timeOf(b);
+            return ar - br;
         });
 
         const bucketCount = new Map<string, number>();
@@ -125,7 +136,7 @@ export function computeAwardsForCategory(
             // Nationality-split categories: foreigners are not eligible for age-group
             // awards at all (organizer rule) — they only place in the OVERALL INT ranking.
             if (separateNat && !isThaiNationality(r.nationality)) continue;
-            const ag = normalizeAgeGroupLabel(r.ageGroup);
+            const ag = canonicalizeAgeGroup(r.ageGroup, canonicalLabelOf);
             if (!ag) continue;
             const taken = bucketCount.get(ag) || 0;
             if (taken >= ageGroupDisplayCount) continue;

@@ -8,6 +8,7 @@ import NameLangToggle from '@/components/NameLangToggle';
 import { useLanguage } from '@/lib/language-context';
 import { isThaiNationality, isNationalitySplitCategory } from '@/lib/nationality';
 import { useParams, useSearchParams } from 'next/navigation';
+import { type AgeGroupBucket, buildCanonicalAgeGroups, canonicalizeAgeGroup } from '@/lib/age-groups';
 
 interface Runner {
     _id: string;
@@ -52,12 +53,6 @@ interface Campaign {
     separateOverallNationalityCategories?: string[];
 }
 
-interface AgeGroupBucket {
-    label: string;
-    min: number;
-    max: number;
-}
-
 const DEFAULT_AGE_GROUPS: AgeGroupBucket[] = [
     { label: '1-18', min: 0, max: 18 },
     { label: '19-29', min: 19, max: 29 },
@@ -68,36 +63,6 @@ const DEFAULT_AGE_GROUPS: AgeGroupBucket[] = [
 ];
 
 const OVERALL_GROUP: AgeGroupBucket = { label: 'OVERALL', min: 0, max: 999 };
-
-function normalizeAgeGroupLabel(value?: string | null): string {
-    return String(value || '')
-        .replace(/^[MF]\s*/i, '')
-        .replace(/\s*ปี$/i, '')
-        .trim();
-}
-
-function parseAgeGroupBucket(value?: string | null): AgeGroupBucket | null {
-    const label = normalizeAgeGroupLabel(value);
-    if (!label) return null;
-
-    const rangeMatch = label.match(/(\d+)\s*-\s*(\d+)/);
-    if (rangeMatch) {
-        return { label, min: parseInt(rangeMatch[1]), max: parseInt(rangeMatch[2]) };
-    }
-
-    const underMatch = label.match(/(?:u|under)\s*(\d+)/i);
-    if (underMatch) {
-        const max = parseInt(underMatch[1]) - 1;
-        return { label, min: 0, max: max >= 0 ? max : 0 };
-    }
-
-    const plusMatch = label.match(/(\d+)\s*\+/);
-    if (plusMatch) {
-        return { label, min: parseInt(plusMatch[1]), max: 999 };
-    }
-
-    return null;
-}
 
 
 function formatTime(ms: number | undefined | null): string {
@@ -319,20 +284,15 @@ export default function ResultWinnersBySlugPage() {
     const disableAgeGroupRanking = false;
     const topN = Math.max(1, campaign?.ageGroupDisplayCount || 5);
 
+    const canonicalAgeGroups = useMemo(() => {
+        const finishedAgeGroups = displayedRunners.filter(r => r.status === 'finished').map(r => r.ageGroup);
+        return buildCanonicalAgeGroups(finishedAgeGroups);
+    }, [displayedRunners]);
+
     const activeAgeGroups = useMemo(() => {
         if (disableAgeGroupRanking) return [OVERALL_GROUP];
-        const seen = new Map<string, AgeGroupBucket>();
-        for (const r of displayedRunners) {
-            if (r.status !== 'finished') continue;
-            const label = normalizeAgeGroupLabel(r.ageGroup);
-            if (!label || seen.has(label)) continue;
-            const bucket = parseAgeGroupBucket(label);
-            seen.set(label, bucket ?? { label, min: 999, max: 999 });
-        }
-        const buckets = Array.from(seen.values());
-        buckets.sort((a, b) => a.min !== b.min ? a.min - b.min : a.max - b.max);
-        return buckets.length > 0 ? buckets : DEFAULT_AGE_GROUPS;
-    }, [displayedRunners, disableAgeGroupRanking]);
+        return canonicalAgeGroups.buckets.length > 0 ? canonicalAgeGroups.buckets : DEFAULT_AGE_GROUPS;
+    }, [canonicalAgeGroups, disableAgeGroupRanking]);
 
     const { maleWinners, femaleWinners } = useMemo(() => {
         const finished = displayedRunners.filter(r => r.status === 'finished' && (r.netTime || r.gunTime));
@@ -368,12 +328,16 @@ export default function ResultWinnersBySlugPage() {
             }
         }
 
-        // Sort by RaceTiger's ageGroupRank; fall back to netTime for runners without a rank yet
+        // Sort by actual finish time first — RaceTiger's ageGroupRank can be stale
+        // or wrong for individual runners (e.g. after a time correction), so it's
+        // only used to break ties, never as the primary order.
         const sorted = [...finished].sort((a, b) => {
+            const at = a.netTime || a.gunTime || a.elapsedTime || Infinity;
+            const bt = b.netTime || b.gunTime || b.elapsedTime || Infinity;
+            if (at !== bt) return at - bt;
             const ar = (a.ageGroupRank && a.ageGroupRank > 0) ? a.ageGroupRank : Infinity;
             const br = (b.ageGroupRank && b.ageGroupRank > 0) ? b.ageGroupRank : Infinity;
-            if (ar !== br) return ar - br;
-            return (a.netTime || a.gunTime || a.elapsedTime || Infinity) - (b.netTime || b.gunTime || b.elapsedTime || Infinity);
+            return ar - br;
         });
 
         const maleWinners: Record<string, Runner[]> = {};
@@ -386,13 +350,13 @@ export default function ResultWinnersBySlugPage() {
             // awards at all (organizer rule) — they only compete in the OVERALL INT ranking.
             if (natSplit && !isThaiNationality(runner.nationality)) continue;
             if (excludeAG > 0 && runner.ageGroupRank && runner.ageGroupRank > 0 && runner.ageGroupRank <= excludeAG) continue;
-            const ag = disableAgeGroupRanking ? OVERALL_GROUP.label : normalizeAgeGroupLabel(runner.ageGroup);
+            const ag = disableAgeGroupRanking ? OVERALL_GROUP.label : canonicalizeAgeGroup(runner.ageGroup, canonicalAgeGroups.canonicalLabelOf);
             if (!ag) continue;
             const bucket = runner.gender === 'F' ? femaleWinners : maleWinners;
             if (ag in bucket && bucket[ag].length < topN) bucket[ag].push(runner);
         }
         return { maleWinners, femaleWinners };
-    }, [displayedRunners, activeAgeGroups, disableAgeGroupRanking, topN, campaign, selectedCategory]);
+    }, [displayedRunners, activeAgeGroups, canonicalAgeGroups, disableAgeGroupRanking, topN, campaign, selectedCategory]);
 
     const downloadSection = useCallback(async (ageGroupLabel: string, gender: 'male' | 'female' | 'both' = 'both') => {
         const key = gender === 'both' ? ageGroupLabel : `${gender}-${ageGroupLabel}`;

@@ -6,6 +6,7 @@ import AdminLayout from '@/app/admin/AdminLayout';
 import { useLanguage } from '@/lib/language-context';
 import { authHeaders } from '@/lib/authHeaders';
 import { isThaiNationality, isNationalitySplitCategory } from '@/lib/nationality';
+import { type AgeGroupBucket, buildCanonicalAgeGroups, canonicalizeAgeGroup } from '@/lib/age-groups';
 import { LinkIcon, TrophyIcon } from '@heroicons/react/24/outline';
 
 interface Runner {
@@ -31,12 +32,6 @@ interface AgeGroupConfig {
     maxAge: number;
     gender: 'male' | 'female';
     active: boolean;
-}
-
-interface AgeGroupBucket {
-    label: string;
-    min: number;
-    max: number;
 }
 
 interface FeaturedCampaignSettings {
@@ -66,48 +61,6 @@ const DEFAULT_AGE_GROUPS: AgeGroupBucket[] = [
 const OVERALL_GROUP: AgeGroupBucket = { label: 'OVERALL', min: 0, max: 999 };
 const DEFAULT_TOP_N = 5;
 
-function normalizeAgeGroupLabel(value?: string | null): string {
-    return String(value || '')
-        .replace(/^[MF]\s*/i, '')
-        .replace(/\s*ปี$/i, '')
-        .trim();
-}
-
-function parseAgeGroupBucket(value?: string | null): AgeGroupBucket | null {
-    const label = normalizeAgeGroupLabel(value);
-    if (!label) return null;
-
-    const rangeMatch = label.match(/(\d+)\s*-\s*(\d+)/);
-    if (rangeMatch) {
-        return {
-            label,
-            min: parseInt(rangeMatch[1]),
-            max: parseInt(rangeMatch[2]),
-        };
-    }
-
-    const underMatch = label.match(/(?:u|under)\s*(\d+)/i);
-    if (underMatch) {
-        const max = parseInt(underMatch[1]) - 1;
-        return {
-            label,
-            min: 0,
-            max: max >= 0 ? max : 0,
-        };
-    }
-
-    const plusMatch = label.match(/(\d+)\s*\+/);
-    if (plusMatch) {
-        return {
-            label,
-            min: parseInt(plusMatch[1]),
-            max: 999,
-        };
-    }
-
-    return null;
-}
-
 function buildAgeGroupsFromConfig(ageGroups: AgeGroupConfig[]): AgeGroupBucket[] {
     const seen = new Map<string, AgeGroupBucket>();
     for (const g of ageGroups) {
@@ -122,47 +75,6 @@ function buildAgeGroupsFromConfig(ageGroups: AgeGroupConfig[]): AgeGroupBucket[]
     const buckets = Array.from(seen.values());
     buckets.sort((a, b) => a.min - b.min);
     return buckets.length > 0 ? buckets : DEFAULT_AGE_GROUPS;
-}
-
-function buildAgeGroupsFromRunners(runners: Runner[]): AgeGroupBucket[] {
-    const seen = new Map<string, AgeGroupBucket>();
-    for (const runner of runners) {
-        const bucket = parseAgeGroupBucket(runner.ageGroup);
-        if (!bucket) continue;
-        const key = bucket.label.toLowerCase();
-        if (!seen.has(key)) {
-            seen.set(key, bucket);
-        }
-    }
-    return Array.from(seen.values()).sort((a, b) => {
-        if (a.min !== b.min) return a.min - b.min;
-        if (a.max !== b.max) return a.max - b.max;
-        return a.label.localeCompare(b.label, undefined, { numeric: true, sensitivity: 'base' });
-    });
-}
-
-function resolveAgeGroup(runner: Runner, ageGroups: AgeGroupBucket[]): string {
-    const ag = normalizeAgeGroupLabel(runner.ageGroup);
-    const exactMatch = ageGroups.find(g => normalizeAgeGroupLabel(g.label).toLowerCase() === ag.toLowerCase());
-    if (exactMatch) return exactMatch.label;
-
-    const rangeMatch = ag.match(/(\d+)\s*-\s*(\d+)/);
-    if (rangeMatch) {
-        const lo = parseInt(rangeMatch[1]);
-        for (const g of ageGroups) {
-            if (lo >= g.min && lo <= g.max) return g.label;
-        }
-    }
-
-    if (runner.age) {
-        for (const g of ageGroups) {
-            if (runner.age >= g.min && runner.age <= g.max) return g.label;
-        }
-    }
-
-    if (ag.toLowerCase().includes('u18') || ag.toLowerCase().includes('under')) return ageGroups[0]?.label || 'Unknown';
-    if (ag.includes('+') || ag.includes('60') || ag.includes('70')) return ageGroups[ageGroups.length - 1]?.label || 'Unknown';
-    return 'Unknown';
 }
 
 function formatTime(ms: number | undefined | null): string {
@@ -259,15 +171,16 @@ export default function AgeGroupRankingPage() {
             });
     }, [previewRunners]);
 
+    const canonicalAgeGroups = useMemo(() => buildCanonicalAgeGroups(previewRunners.map(r => r.ageGroup)), [previewRunners]);
+
     const activeAgeGroups = useMemo(() => {
         if (disableAgeGroupRanking) return [OVERALL_GROUP];
-        const syncedAgeGroups = buildAgeGroupsFromRunners(previewRunners);
-        if (syncedAgeGroups.length > 0) return syncedAgeGroups;
+        if (canonicalAgeGroups.buckets.length > 0) return canonicalAgeGroups.buckets;
         if (!campaign?.categories || !selectedCategory) return DEFAULT_AGE_GROUPS;
         const category = campaign.categories.find(item => item.name === selectedCategory);
         if (!category?.ageGroups || category.ageGroups.length === 0) return DEFAULT_AGE_GROUPS;
         return buildAgeGroupsFromConfig(category.ageGroups);
-    }, [campaign, selectedCategory, previewRunners, disableAgeGroupRanking]);
+    }, [campaign, selectedCategory, canonicalAgeGroups, disableAgeGroupRanking]);
 
     // Whether the currently selected category splits Overall by nationality
     const selectedCategorySplit = isNationalitySplitCategory(natSplitCategories, selectedCategory);
@@ -312,7 +225,7 @@ export default function AgeGroupRankingPage() {
             // Nationality-split categories: foreigners are not eligible for age-group
             // awards at all (organizer rule) — they only compete in the OVERALL INT ranking.
             if (selectedCategorySplit && !isThaiNationality(runner.nationality)) continue;
-            const groupLabel = disableAgeGroupRanking ? OVERALL_GROUP.label : resolveAgeGroup(runner, activeAgeGroups);
+            const groupLabel = disableAgeGroupRanking ? OVERALL_GROUP.label : canonicalizeAgeGroup(runner.ageGroup, canonicalAgeGroups.canonicalLabelOf);
             const bucket = runner.gender === 'F' ? female : male;
             if (bucket[groupLabel] && bucket[groupLabel].length < ageGroupDisplayCount) {
                 bucket[groupLabel].push(runner);
@@ -320,7 +233,7 @@ export default function AgeGroupRankingPage() {
         }
 
         return { maleWinners: male, femaleWinners: female };
-    }, [sortedFinishedRunners, activeAgeGroups, disableAgeGroupRanking, excludeTop, ageGroupDisplayCount, selectedCategorySplit, excludeThaiTop, excludeForeignTop]);
+    }, [sortedFinishedRunners, activeAgeGroups, canonicalAgeGroups, disableAgeGroupRanking, excludeTop, ageGroupDisplayCount, selectedCategorySplit, excludeThaiTop, excludeForeignTop]);
 
     // Nationality-split overall winners — Thai count follows excludeThaiTop,
     // foreign count follows excludeForeignTop, so display always matches the

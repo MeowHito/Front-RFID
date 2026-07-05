@@ -12,6 +12,7 @@ import CutoffDateTimePicker from '@/components/CutoffDateTimePicker';
 import { getFollowedRunnersForEvent, isRunnerFollowed, loadFollowedRunners, subscribeFollowedRunners, type FollowedRunner } from '@/lib/followed-runners';
 import { computeAwardsForCategory, type AwardResult } from '@/lib/awards';
 import { isThaiNationality, normalizeCategoryName } from '@/lib/nationality';
+import { type AgeGroupBucket, buildCanonicalAgeGroups, canonicalizeAgeGroup, normalizeAgeGroupLabel } from '@/lib/age-groups';
 import RankingMenuDropdown from '@/components/RankingMenuDropdown';
 import type { RankingMenuVisibility } from '@/lib/rankingMenu';
 
@@ -808,17 +809,44 @@ export default function EventLivePage() {
         return runner.category;
     }, [categories]);
 
-    // Distinct age groups present in the currently-selected distance, sorted by the
-    // leading age number ("<=17" → 17, "18-29" → 18, ">=60" → 60).
-    const ageGroupOptions = useMemo(() => {
-        const set = new Set<string>();
+    // Canonical age-group buckets per resolved category. RaceTiger sometimes tags
+    // a handful of individual runners with a differently-shaped age-group label
+    // than the rest of the field for the same real bracket (e.g. "0-19" for 2
+    // runners vs "U 19" for 44 others, or "50-54" for 2 runners vs "50-59" for
+    // 68 others) — computed per category so distances with different bucket
+    // granularities (e.g. 5-year vs 10-year bands) never get merged together.
+    const ageGroupCanonicalByCategory = useMemo(() => {
+        const rawByCategory = new Map<string, Array<string | undefined>>();
         for (const r of runners) {
-            if (filterCategory && resolveRunnerCategoryKey(r) !== filterCategory) continue;
-            if (r.ageGroup) set.add(r.ageGroup);
+            const key = resolveRunnerCategoryKey(r);
+            const list = rawByCategory.get(key) ?? [];
+            list.push(r.ageGroup);
+            rawByCategory.set(key, list);
         }
-        const sortKey = (s: string) => { const m = s.match(/\d+/); return m ? parseInt(m[0], 10) : 9999; };
-        return Array.from(set).sort((a, b) => sortKey(a) - sortKey(b) || a.localeCompare(b));
-    }, [runners, filterCategory, resolveRunnerCategoryKey]);
+        const result = new Map<string, ReturnType<typeof buildCanonicalAgeGroups>>();
+        for (const [key, labels] of rawByCategory) {
+            result.set(key, buildCanonicalAgeGroups(labels));
+        }
+        return result;
+    }, [runners, resolveRunnerCategoryKey]);
+
+    const canonicalAgeGroupOf = useCallback((r: Runner): string => {
+        const canonical = ageGroupCanonicalByCategory.get(resolveRunnerCategoryKey(r));
+        return canonical ? canonicalizeAgeGroup(r.ageGroup, canonical.canonicalLabelOf) : normalizeAgeGroupLabel(r.ageGroup);
+    }, [ageGroupCanonicalByCategory, resolveRunnerCategoryKey]);
+
+    // Distinct age groups present in the currently-selected distance, sorted by min age.
+    const ageGroupOptions = useMemo(() => {
+        if (filterCategory) {
+            const canonical = ageGroupCanonicalByCategory.get(filterCategory);
+            return canonical ? canonical.buckets.map(b => b.label) : [];
+        }
+        const seen = new Map<string, AgeGroupBucket>();
+        for (const canonical of ageGroupCanonicalByCategory.values()) {
+            for (const bucket of canonical.buckets) seen.set(bucket.label.toLowerCase(), bucket);
+        }
+        return Array.from(seen.values()).sort((a, b) => a.min - b.min || a.max - b.max).map(b => b.label);
+    }, [ageGroupCanonicalByCategory, filterCategory]);
 
     // Reset the age-group filter whenever it no longer applies to the selected distance.
     useEffect(() => {
@@ -1043,10 +1071,10 @@ export default function EventLivePage() {
                 const matchesFollowed = filterGender !== 'FOLLOWED' || followedRunnerIds.has(runner._id);
                 const matchesCategory = !filterCategory || resolveRunnerCategoryKey(runner) === filterCategory;
                 const matchesStatus = filterStatus === 'ALL' || runner.status === filterStatus;
-                const matchesAgeGroup = !filterAgeGroup || runner.ageGroup === filterAgeGroup;
+                const matchesAgeGroup = !filterAgeGroup || canonicalAgeGroupOf(runner) === filterAgeGroup;
                 return matchesSearch && matchesGender && matchesFollowed && matchesCategory && matchesStatus && matchesAgeGroup;
             });
-    }, [allRankedRunners, searchQuery, filterGender, followedRunnerIds, filterCategory, filterStatus, filterAgeGroup, resolveRunnerCategoryKey]);
+    }, [allRankedRunners, searchQuery, filterGender, followedRunnerIds, filterCategory, filterStatus, filterAgeGroup, resolveRunnerCategoryKey, canonicalAgeGroupOf]);
 
     // Compute live overall + gender + category ranks from sorted runners.
     // Rank=position within allRankedRunners so values are unique and sequential.
@@ -1069,7 +1097,7 @@ export default function EventLivePage() {
             const eventKey = runner.eventId || '_';
             const natEventKey = `${eventKey}${isThaiNationality(runner.nationality) ? '::th' : '::intl'}`;
             const genderKey = `${eventKey}::${runner.gender || '_'}`;
-            const catKey = `${eventKey}::${runner.gender || '_'}::${runner.ageGroup || '_'}`;
+            const catKey = `${eventKey}::${runner.gender || '_'}::${canonicalAgeGroupOf(runner) || '_'}`;
             eventCounters[eventKey] = (eventCounters[eventKey] || 0) + 1;
             eventCounters[natEventKey] = (eventCounters[natEventKey] || 0) + 1;
             genderCounters[genderKey] = (genderCounters[genderKey] || 0) + 1;
@@ -1081,7 +1109,7 @@ export default function EventLivePage() {
             });
         }
         return ranks;
-    }, [allRankedRunners, natSplitCategoryKeys, resolveRunnerCategoryKey]);
+    }, [allRankedRunners, natSplitCategoryKeys, resolveRunnerCategoryKey, canonicalAgeGroupOf]);
 
 
 
@@ -1908,7 +1936,10 @@ export default function EventLivePage() {
                                             case 'catRank': {
                                                 const hideCatRank = ['dnf', 'dns', 'dq', 'not_started'].includes(runner.status);
                                                 const liveCat = liveRanks.get(runner._id)?.catRank;
-                                                const displayCatRank = hideCatRank ? '-' : (runner.ageGroupRank || runner.ageGroupNetRank || liveCat || '-');
+                                                // Prefer our own live rank (time-ordered, canonical-bucket-scoped) over
+                                                // RaceTiger's ageGroupRank/ageGroupNetRank, which can be stale or wrong
+                                                // for individual runners after a time correction.
+                                                const displayCatRank = hideCatRank ? '-' : (liveCat || runner.ageGroupRank || runner.ageGroupNetRank || '-');
                                                 // Age group label sits right after the CAT rank number (same number size,
                                                 // age group as a smaller muted suffix), moved here from the runner column.
                                                 const catAgeGroup = runner.ageGroup || '';
