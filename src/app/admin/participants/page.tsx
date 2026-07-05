@@ -148,8 +148,8 @@ function calculateAgeGroup(birthDate: string, ageFallback?: number): string {
     }
     if (age == null && typeof ageFallback === 'number' && ageFallback > 0) age = ageFallback;
     if (age == null || age <= 0) return '';
-    if (age < 20) return '0-19';
-    if (age >= 70) return '70+';
+    if (age < 20) return 'U 19';
+    if (age >= 70) return '70 +';
     const lo = Math.floor(age / 5) * 5; // 24 → 20, 29 → 25
     return `${lo}-${lo + 4}`;           // "20-24", "25-29", …
 }
