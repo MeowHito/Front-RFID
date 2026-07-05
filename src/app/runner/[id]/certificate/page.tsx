@@ -8,6 +8,8 @@
 import { useEffect, useState, useRef, useCallback, useMemo, type CSSProperties } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
+import { computeAwardsForCategory, formatAwardLabel } from '@/lib/awards';
+import { isNationalitySplitCategory } from '@/lib/nationality';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -95,6 +97,12 @@ interface CampaignData {
     certPaperSize?: string | null;
     certBgOpacity?: number | null;
     certBgColor?: string | null;
+    overallDisplayCount?: number;
+    ageGroupDisplayCount?: number;
+    excludeOverallFromAgeGroup?: number;
+    excludeOverallThaiFromAgeGroup?: number | null;
+    excludeOverallForeignFromAgeGroup?: number | null;
+    separateOverallNationalityCategories?: string[];
 }
 
 interface SplitRecord {
@@ -133,6 +141,7 @@ const FIELD_PREVIEWS: Record<string, string> = {
     '{{pace}}': '-', '{{gun_pace}}': '-',
     '{{rank}}': '-', '{{gender_rank}}': '-', '{{age_rank}}': '-',
     '{{rank_total}}': '-', '{{gender_rank_total}}': '-',
+    '{{award}}': '-',
     '{{event_name}}': '-', '{{event_date}}': '-',
 };
 
@@ -208,7 +217,7 @@ function resolveNationality(raw: string | undefined): { code: string; name: stri
     return { code: '', name: raw };
 }
 
-function substituteFields(content: string, runner: RunnerData | null, campaign: CampaignData | null): string {
+function substituteFields(content: string, runner: RunnerData | null, campaign: CampaignData | null, awardLabel?: string | null): string {
     if (!runner) return content.replace(/\{\{[^}]+\}\}/g, m => FIELD_PREVIEWS[m] ?? m);
     const netTime = typeof runner.netTime === 'number' && runner.netTime > 0
         ? formatTime(runner.netTime)
@@ -251,6 +260,7 @@ function substituteFields(content: string, runner: RunnerData | null, campaign: 
         '{{gender_rank_total}}': runner.genderRank && runner.genderRank > 0 && genFinish
             ? `${runner.genderRank} / ${genFinish}`
             : (runner.genderRank ? String(runner.genderRank) : '-'),
+        '{{award}}': awardLabel || '',
         '{{event_name}}': campaign?.nameTh ?? campaign?.name ?? '-',
         '{{event_date}}': campaign?.eventDate
             ? new Date(campaign.eventDate).toLocaleDateString('th-TH', { day: 'numeric', month: 'long', year: 'numeric' })
@@ -364,6 +374,7 @@ export default function CertificatePage() {
     const { id: runnerId } = useParams<{ id: string }>();
     const [runner, setRunner] = useState<RunnerData | null>(null);
     const [campaign, setCampaign] = useState<CampaignData | null>(null);
+    const [awardLabel, setAwardLabel] = useState<string | null>(null);
     const [timingRecords, setTimingRecords] = useState<Record<string, unknown>[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
@@ -413,6 +424,36 @@ export default function CertificatePage() {
         })();
         return () => { cancelled = true; };
     }, [runnerId]);
+
+    // Compute this runner's AWARD (Overall / Age Group placing) — same algorithm
+    // and admin-configured rules as the public event table and e-slip — by
+    // pulling the whole category pool.
+    useEffect(() => {
+        const campaignId = campaign?._id;
+        const category = runner?.category;
+        if (!runner || !campaignId || !category) { setAwardLabel(null); return; }
+        let cancelled = false;
+        (async () => {
+            try {
+                const p = new URLSearchParams({ campaignId, category, limit: '10000', skipStatusCounts: 'true' });
+                const res = await fetch(`/api/runners/paged?${p.toString()}`, { cache: 'no-store' });
+                if (!res.ok) { if (!cancelled) setAwardLabel(null); return; }
+                const data = await res.json();
+                const pool = Array.isArray(data?.data) ? data.data : [];
+                const awards = computeAwardsForCategory(pool, {
+                    overallDisplayCount: campaign.overallDisplayCount,
+                    ageGroupDisplayCount: campaign.ageGroupDisplayCount,
+                    excludeOverallFromAgeGroup: campaign.excludeOverallFromAgeGroup,
+                    excludeOverallThaiFromAgeGroup: campaign.excludeOverallThaiFromAgeGroup ?? undefined,
+                    excludeOverallForeignFromAgeGroup: campaign.excludeOverallForeignFromAgeGroup ?? undefined,
+                    separateOverallByNationality: isNationalitySplitCategory(campaign.separateOverallNationalityCategories, category),
+                });
+                const mine = awards.get(runner._id);
+                if (!cancelled) setAwardLabel(mine ? formatAwardLabel(mine) : null);
+            } catch { if (!cancelled) setAwardLabel(null); }
+        })();
+        return () => { cancelled = true; };
+    }, [runner, campaign?._id, campaign?.overallDisplayCount, campaign?.ageGroupDisplayCount, campaign?.excludeOverallFromAgeGroup, campaign?.excludeOverallThaiFromAgeGroup, campaign?.excludeOverallForeignFromAgeGroup, campaign?.separateOverallNationalityCategories]);
 
     // Track rendered canvas width so we can scale font sizes consistently with the editor.
     useEffect(() => {
@@ -706,7 +747,7 @@ export default function CertificatePage() {
                         ) : isShape ? <ShapeRender el={el} />
                         : isFlag ? <FlagRender el={el} runner={runner} fontScale={renderScale} />
                         : isTable ? <TableRender el={el} splits={splits} fontScale={renderScale} />
-                        : substituteFields(el.content, runner, campaign)}
+                        : substituteFields(el.content, runner, campaign, awardLabel)}
                     </div>
                 );
             })}
