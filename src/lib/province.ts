@@ -10,3 +10,9 @@ export function isBuriramAddress(address?: string | null): boolean {
     if (!value) return false;
     return BURIRAM_TOKENS.some(token => value.includes(token.toLowerCase()));
 }
+
+/** True when any of the given location fields (e.g. province, address) indicates
+ * Buriram residence. Used by the "Best of Buriram" local award. */
+export function isBuriramLocation(...values: (string | null | undefined)[]): boolean {
+    return values.some(v => isBuriramAddress(v));
+}

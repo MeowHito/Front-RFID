@@ -7,7 +7,7 @@ import { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { buildWinnersExcel, triggerExcelDownload } from '@/lib/winner-excel';
 import NameLangToggle from '@/components/NameLangToggle';
 import { useLanguage } from '@/lib/language-context';
-import { isBuriramAddress } from '@/lib/province';
+import { isBuriramLocation } from '@/lib/province';
 import { useParams, useSearchParams } from 'next/navigation';
 
 interface Runner {
@@ -23,6 +23,7 @@ interface Runner {
     status: string;
     nationality?: string;
     address?: string;
+    province?: string;
     netTime?: number;
     gunTime?: number;
     elapsedTime?: number;
@@ -201,7 +202,7 @@ export default function BestOfWinnersBySlugPage() {
     // Best Of Buriram — local-province award: only runners whose address
     // indicates Buriram residence are eligible.
     const { maleWinners, femaleWinners } = useMemo(() => {
-        const finished = displayedRunners.filter(r => r.status === 'finished' && (r.netTime || r.gunTime || r.elapsedTime) && isBuriramAddress(r.address));
+        const finished = displayedRunners.filter(r => r.status === 'finished' && (r.netTime || r.gunTime || r.elapsedTime) && isBuriramLocation(r.province, r.address));
         const sorted = [...finished].sort((a, b) => {
             const at = a.netTime || a.gunTime || a.elapsedTime || Infinity;
             const bt = b.netTime || b.gunTime || b.elapsedTime || Infinity;
