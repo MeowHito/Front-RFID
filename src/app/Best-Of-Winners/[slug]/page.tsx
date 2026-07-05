@@ -4,7 +4,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import type { CSSProperties } from 'react';
 import { useEffect, useState, useMemo, useRef, useCallback } from 'react';
-import { buildWinnersExcel, triggerExcelDownload } from '@/lib/winner-excel';
+import { downloadAllDistances, triggerCombinedDownload } from '@/lib/combined-winners-download';
 import NameLangToggle from '@/components/NameLangToggle';
 import { useLanguage } from '@/lib/language-context';
 import { isBuriramLocation } from '@/lib/province';
@@ -214,24 +214,39 @@ export default function BestOfWinnersBySlugPage() {
         };
     }, [displayedRunners, topN]);
 
+    // Combines every distance into one Excel file — each distance prints on its own page.
     const downloadLandscape = useCallback(async (gender: 'male' | 'female' | 'both' = 'both') => {
+        if (!campaign?._id) return;
         setDownloading('landscape');
         try {
-            const blob = await buildWinnersExcel(
-                campaign?.name || '',
+            const blob = await downloadAllDistances<Runner>({
+                campaignId: campaign._id,
+                campaignName: campaign.name || '',
+                categories: campaign.categories || [],
                 selectedCategory,
-                [{ maleRunners: maleWinners, femaleRunners: femaleWinners }],
+                currentRunners: displayedRunners,
                 gender,
-                { nameLang: language },
-            );
-            const suffix = gender === 'male' ? '-Male' : gender === 'female' ? '-Female' : '';
-            const distance = campaign?.categories?.find(c => c.name === selectedCategory)?.distance || selectedCategory || '';
-            const distPart = distance ? `-${distance}` : '';
-            if (blob) triggerExcelDownload(blob, `${campaign?.name || 'winners'}${distPart}-BestOf${suffix}`);
+                nameLang: language,
+                filePartLabel: 'BestOf',
+                computeWinners: (runners) => {
+                    const topNForCat = Math.max(1, campaign.bestOfDisplayCount || 1);
+                    const finished = runners.filter(r => r.status === 'finished' && (r.netTime || r.gunTime || r.elapsedTime) && isBuriramLocation(r.province, r.address));
+                    const sorted = [...finished].sort((a, b) => {
+                        const at = a.netTime || a.gunTime || a.elapsedTime || Infinity;
+                        const bt = b.netTime || b.gunTime || b.elapsedTime || Infinity;
+                        return at - bt;
+                    });
+                    return {
+                        maleRunners: sorted.filter(r => r.gender !== 'F').slice(0, topNForCat),
+                        femaleRunners: sorted.filter(r => r.gender === 'F').slice(0, topNForCat),
+                    };
+                },
+            });
+            triggerCombinedDownload(blob, campaign.name || '', 'BestOf', gender);
         } catch (e) { console.error(e); } finally {
             setDownloading(null);
         }
-    }, [campaign, selectedCategory, maleWinners, femaleWinners, language]);
+    }, [campaign, selectedCategory, displayedRunners, language]);
 
     if (campaignNotFound) {
         return (

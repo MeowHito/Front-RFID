@@ -17,6 +17,10 @@ export type NameLang = 'th' | 'en';
 
 export interface ExcelSection {
     label?: string;
+    /** Distance/category heading shown above this section (e.g. "5K (5 KM)") —
+     *  set on the first section of each category when combining multiple
+     *  distances into one file. */
+    categoryLabel?: string;
     maleRunners: ExcelRunner[];
     femaleRunners: ExcelRunner[];
 }
@@ -258,7 +262,18 @@ export async function buildWinnersExcel(
     // ── Render sections ───────────────────────────────────────────────────────
     // Age group label is folded into the gender bar so each group costs one fewer
     // row — e.g. "กลุ่มอายุ 18-29   ♂ MALE WINNERS".
-    for (const sec of sections) {
+    for (let sectionIndex = 0; sectionIndex < sections.length; sectionIndex++) {
+        const sec = sections[sectionIndex];
+        // Each section (age group) prints on its own page — the previous row is
+        // always the blank gap row left by the prior section (or the header gap
+        // before the first one), so break right after it.
+        if (sectionIndex > 0) ws.getRow(row - 1).addPageBreak();
+
+        if (sec.categoryLabel) {
+            addBanner(sec.categoryLabel, true);
+            row++;
+        }
+
         const agePrefix = sec.label ? `กลุ่มอายุ ${sec.label}   ` : '';
 
         if (isBoth) {

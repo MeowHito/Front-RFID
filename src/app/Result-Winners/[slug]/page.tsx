@@ -6,9 +6,9 @@ import { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { buildWinnersExcel, triggerExcelDownload, ExcelSection } from '@/lib/winner-excel';
 import NameLangToggle from '@/components/NameLangToggle';
 import { useLanguage } from '@/lib/language-context';
-import { isThaiNationality, isNationalitySplitCategory } from '@/lib/nationality';
 import { useParams, useSearchParams } from 'next/navigation';
-import { type AgeGroupBucket, buildCanonicalAgeGroups, canonicalizeAgeGroup } from '@/lib/age-groups';
+import { type AgeGroupBucket, buildCanonicalAgeGroups } from '@/lib/age-groups';
+import { computeAgeGroupWinners } from '@/lib/age-group-winners';
 
 interface Runner {
     _id: string;
@@ -295,68 +295,20 @@ export default function ResultWinnersBySlugPage() {
     }, [canonicalAgeGroups, disableAgeGroupRanking]);
 
     const { maleWinners, femaleWinners } = useMemo(() => {
-        const finished = displayedRunners.filter(r => r.status === 'finished' && (r.netTime || r.gunTime));
-
-        // Build excluded bibs — top N male + top N female by overall time
-        const excludeOv = Math.max(0, campaign?.excludeOverallFromAgeGroup || 0);
-        const excludeAG = Math.max(0, campaign?.excludeAgeGroupTop || 0);
-        const excludedBibs = new Set<string>();
-        const byTime = (a: Runner, b: Runner) =>
-            (a.netTime || a.gunTime || a.elapsedTime || Infinity) - (b.netTime || b.gunTime || b.elapsedTime || Infinity);
-        if (excludeOv > 0) {
-            finished.filter(r => r.gender !== 'F').sort(byTime).slice(0, excludeOv).forEach(r => excludedBibs.add(r.bib));
-            finished.filter(r => r.gender === 'F').sort(byTime).slice(0, excludeOv).forEach(r => excludedBibs.add(r.bib));
-        }
-        // Nationality-split categories: top Thai / foreign overall winners (per gender)
-        // are excluded from age-group awards. Each bucket's exclude count is
-        // independently configurable, falling back to `overallDisplayCount` if unset.
-        const natSplit = isNationalitySplitCategory(campaign?.separateOverallNationalityCategories, selectedCategory);
-        if (natSplit) {
-            const overallTopN = Math.max(1, campaign?.overallDisplayCount || 5);
-            const excludeNatCount: Record<'thai' | 'foreign', number> = {
-                thai: campaign?.excludeOverallThaiFromAgeGroup != null ? Math.max(0, campaign.excludeOverallThaiFromAgeGroup) : overallTopN,
-                foreign: campaign?.excludeOverallForeignFromAgeGroup != null ? Math.max(0, campaign.excludeOverallForeignFromAgeGroup) : overallTopN,
-            };
-            for (const female of [false, true]) {
-                for (const thai of [true, false]) {
-                    finished
-                        .filter(r => (r.gender === 'F') === female && isThaiNationality(r.nationality) === thai)
-                        .sort(byTime)
-                        .slice(0, excludeNatCount[thai ? 'thai' : 'foreign'])
-                        .forEach(r => excludedBibs.add(r.bib));
-                }
+        if (disableAgeGroupRanking) {
+            const finished = displayedRunners.filter(r => r.status === 'finished' && (r.netTime || r.gunTime || r.elapsedTime));
+            const sorted = [...finished].sort((a, b) => (a.netTime || a.gunTime || a.elapsedTime || Infinity) - (b.netTime || b.gunTime || b.elapsedTime || Infinity));
+            const maleWinners: Record<string, Runner[]> = { [OVERALL_GROUP.label]: [] };
+            const femaleWinners: Record<string, Runner[]> = { [OVERALL_GROUP.label]: [] };
+            for (const runner of sorted) {
+                const bucket = runner.gender === 'F' ? femaleWinners : maleWinners;
+                if (bucket[OVERALL_GROUP.label].length < topN) bucket[OVERALL_GROUP.label].push(runner);
             }
+            return { maleWinners, femaleWinners };
         }
-
-        // Sort by actual finish time first — RaceTiger's ageGroupRank can be stale
-        // or wrong for individual runners (e.g. after a time correction), so it's
-        // only used to break ties, never as the primary order.
-        const sorted = [...finished].sort((a, b) => {
-            const at = a.netTime || a.gunTime || a.elapsedTime || Infinity;
-            const bt = b.netTime || b.gunTime || b.elapsedTime || Infinity;
-            if (at !== bt) return at - bt;
-            const ar = (a.ageGroupRank && a.ageGroupRank > 0) ? a.ageGroupRank : Infinity;
-            const br = (b.ageGroupRank && b.ageGroupRank > 0) ? b.ageGroupRank : Infinity;
-            return ar - br;
-        });
-
-        const maleWinners: Record<string, Runner[]> = {};
-        const femaleWinners: Record<string, Runner[]> = {};
-        for (const g of activeAgeGroups) { maleWinners[g.label] = []; femaleWinners[g.label] = []; }
-
-        for (const runner of sorted) {
-            if (excludedBibs.has(runner.bib)) continue;
-            // Nationality-split categories: foreigners are not eligible for age-group
-            // awards at all (organizer rule) — they only compete in the OVERALL INT ranking.
-            if (natSplit && !isThaiNationality(runner.nationality)) continue;
-            if (excludeAG > 0 && runner.ageGroupRank && runner.ageGroupRank > 0 && runner.ageGroupRank <= excludeAG) continue;
-            const ag = disableAgeGroupRanking ? OVERALL_GROUP.label : canonicalizeAgeGroup(runner.ageGroup, canonicalAgeGroups.canonicalLabelOf);
-            if (!ag) continue;
-            const bucket = runner.gender === 'F' ? femaleWinners : maleWinners;
-            if (ag in bucket && bucket[ag].length < topN) bucket[ag].push(runner);
-        }
+        const { maleWinners, femaleWinners } = computeAgeGroupWinners(displayedRunners, campaign || {}, selectedCategory);
         return { maleWinners, femaleWinners };
-    }, [displayedRunners, activeAgeGroups, canonicalAgeGroups, disableAgeGroupRanking, topN, campaign, selectedCategory]);
+    }, [displayedRunners, disableAgeGroupRanking, topN, campaign, selectedCategory]);
 
     const downloadSection = useCallback(async (ageGroupLabel: string, gender: 'male' | 'female' | 'both' = 'both') => {
         const key = gender === 'both' ? ageGroupLabel : `${gender}-${ageGroupLabel}`;
@@ -377,23 +329,47 @@ export default function ResultWinnersBySlugPage() {
         }
     }, [campaign, selectedCategory, maleWinners, femaleWinners, language]);
 
+    // "Download All" combines every distance in the campaign into one Excel
+    // file — each age group prints on its own page, with a distance banner
+    // above the first age group of each new category.
     const downloadAll = useCallback(async (gender: 'male' | 'female' | 'both' = 'both') => {
+        if (!campaign?._id) return;
         setDownloading(gender === 'both' ? 'all' : `all-${gender}`);
         try {
-            const sections: ExcelSection[] = activeAgeGroups.map(g => ({
-                label: g.label === 'OVERALL' ? undefined : g.label,
-                maleRunners: maleWinners[g.label] || [],
-                femaleRunners: femaleWinners[g.label] || [],
+            const categoriesToUse = campaign.categories?.length ? campaign.categories : [{ name: selectedCategory, distance: undefined }];
+            const perCategory = await Promise.all(categoriesToUse.map(async (cat) => {
+                let runnersForCat: Runner[];
+                if (cat.name === selectedCategory) {
+                    runnersForCat = displayedRunners;
+                } else {
+                    const p = new URLSearchParams({ campaignId: campaign._id, category: cat.name, limit: '10000', skipStatusCounts: 'true' });
+                    const res = await fetch(`/api/runners/paged?${p.toString()}`, { cache: 'no-store' });
+                    runnersForCat = res.ok ? (await res.json()).data || [] : [];
+                }
+                const { activeAgeGroups, maleWinners, femaleWinners } = computeAgeGroupWinners(runnersForCat, campaign, cat.name);
+                return { cat, activeAgeGroups, maleWinners, femaleWinners };
             }));
+
+            const sections: ExcelSection[] = [];
+            for (const { cat, activeAgeGroups, maleWinners, femaleWinners } of perCategory) {
+                const distanceSuffix = cat.distance ? ` (${cat.distance})` : '';
+                activeAgeGroups.forEach((g, i) => {
+                    sections.push({
+                        label: g.label,
+                        categoryLabel: i === 0 ? `${cat.name}${distanceSuffix}` : undefined,
+                        maleRunners: maleWinners[g.label] || [],
+                        femaleRunners: femaleWinners[g.label] || [],
+                    });
+                });
+            }
+
             const suffix = gender === 'male' ? '-Male' : gender === 'female' ? '-Female' : '';
-            const distance = campaign?.categories?.find(c => c.name === selectedCategory)?.distance || selectedCategory || '';
-            const distPart = distance ? `-${distance}` : '';
-            const blob = await buildWinnersExcel(campaign?.name || '', selectedCategory, sections, gender, { nameLang: language });
-            if (blob) triggerExcelDownload(blob, `${campaign?.name || 'winners'}${distPart}-AgeGroup-All${suffix}`);
+            const blob = await buildWinnersExcel(campaign?.name || '', '', sections, gender, { nameLang: language });
+            if (blob) triggerExcelDownload(blob, `${campaign?.name || 'winners'}-AgeGroup-AllDistances${suffix}`);
         } catch (e) { console.error(e); } finally {
             setDownloading(null);
         }
-    }, [activeAgeGroups, campaign, selectedCategory, maleWinners, femaleWinners, language]);
+    }, [campaign, selectedCategory, displayedRunners, language]);
 
     const rankBg = ['#f59e0b', '#9ca3af', '#92400e', '#e2e8f0', '#e2e8f0'];
     const rankFg = ['#000', '#fff', '#fff', '#475569', '#475569'];

@@ -4,7 +4,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import type { CSSProperties } from 'react';
 import { useEffect, useState, useMemo, useRef, useCallback } from 'react';
-import { buildWinnersExcel, triggerExcelDownload } from '@/lib/winner-excel';
+import { downloadAllDistances, triggerCombinedDownload } from '@/lib/combined-winners-download';
 import NameLangToggle from '@/components/NameLangToggle';
 import { useLanguage } from '@/lib/language-context';
 import { isThaiNationality, isNationalitySplitCategory } from '@/lib/nationality';
@@ -224,29 +224,52 @@ export default function OverallWinnersBySlugPage() {
         };
     }, [displayedRunners, topN, thaiTopN, separateNat]);
 
+    // Combines every distance into one Excel file — each distance prints on its own page.
+    // Nationality-split status is re-evaluated per distance since it's configured per category.
     const downloadGroup = useCallback(async (
-        males: Runner[],
-        females: Runner[],
+        _males: Runner[],
+        _females: Runner[],
         gender: 'male' | 'female' | 'both' = 'both',
         namePart = '',
     ) => {
+        if (!campaign?._id) return;
         setDownloading('landscape');
         try {
-            const blob = await buildWinnersExcel(
-                campaign?.name || '',
+            const blob = await downloadAllDistances<Runner>({
+                campaignId: campaign._id,
+                campaignName: campaign.name || '',
+                categories: campaign.categories || [],
                 selectedCategory,
-                [{ maleRunners: males, femaleRunners: females }],
+                currentRunners: displayedRunners,
                 gender,
-                { nameLang: language },
-            );
-            const suffix = gender === 'male' ? '-Male' : gender === 'female' ? '-Female' : '';
-            const distance = campaign?.categories?.find(c => c.name === selectedCategory)?.distance || selectedCategory || '';
-            const distPart = distance ? `-${distance}` : '';
-            if (blob) triggerExcelDownload(blob, `${campaign?.name || 'winners'}${distPart}-Overall${namePart}${suffix}`);
+                nameLang: language,
+                filePartLabel: `Overall${namePart}`,
+                computeWinners: (runners, categoryName) => {
+                    const topNForCat = Math.max(1, campaign.overallDisplayCount || 5);
+                    const thaiTopNForCat = Math.max(1, Number(campaign.excludeOverallThaiFromAgeGroup ?? campaign.overallDisplayCount) || 5);
+                    const separateNatForCat = isNationalitySplitCategory(campaign.separateOverallNationalityCategories, categoryName);
+                    const finished = runners.filter(r => r.status === 'finished' && (r.netTime || r.gunTime || r.elapsedTime));
+                    const sorted = [...finished].sort((a, b) => {
+                        const at = a.netTime || a.gunTime || a.elapsedTime || Infinity;
+                        const bt = b.netTime || b.gunTime || b.elapsedTime || Infinity;
+                        return at - bt;
+                    });
+                    if (separateNatForCat) {
+                        const pick = (isFemale: boolean) =>
+                            sorted.filter(r => (r.gender === 'F') === isFemale && isThaiNationality(r.nationality)).slice(0, thaiTopNForCat);
+                        return { maleRunners: pick(false), femaleRunners: pick(true) };
+                    }
+                    return {
+                        maleRunners: sorted.filter(r => r.gender !== 'F').slice(0, topNForCat),
+                        femaleRunners: sorted.filter(r => r.gender === 'F').slice(0, topNForCat),
+                    };
+                },
+            });
+            triggerCombinedDownload(blob, campaign.name || '', `Overall${namePart}`, gender);
         } catch (e) { console.error(e); } finally {
             setDownloading(null);
         }
-    }, [campaign, selectedCategory, language]);
+    }, [campaign, selectedCategory, displayedRunners, language]);
 
     const downloadLandscape = useCallback((gender: 'male' | 'female' | 'both' = 'both') =>
         downloadGroup(maleWinners, femaleWinners, gender),

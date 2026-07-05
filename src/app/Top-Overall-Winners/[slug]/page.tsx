@@ -3,7 +3,7 @@
 import Image from 'next/image';
 import Link from 'next/link';
 import { useEffect, useState, useMemo, useRef, useCallback } from 'react';
-import { buildWinnersExcel, triggerExcelDownload } from '@/lib/winner-excel';
+import { downloadAllDistances, triggerCombinedDownload } from '@/lib/combined-winners-download';
 import NameLangToggle from '@/components/NameLangToggle';
 import { useLanguage } from '@/lib/language-context';
 import { useParams, useSearchParams } from 'next/navigation';
@@ -208,29 +208,43 @@ export default function TopOverallWinnersBySlugPage() {
         };
     }, [displayedRunners, topN]);
 
+    // Combines every distance into one Excel file — each distance prints on its own page.
     const downloadGroup = useCallback(async (
-        males: Runner[],
-        females: Runner[],
+        _males: Runner[],
+        _females: Runner[],
         gender: 'male' | 'female' | 'both',
-        namePart = '',
     ) => {
+        if (!campaign?._id) return;
         setDownloading(gender);
         try {
-            const blob = await buildWinnersExcel(
-                campaign?.name || '',
+            const blob = await downloadAllDistances<Runner>({
+                campaignId: campaign._id,
+                campaignName: campaign.name || '',
+                categories: campaign.categories || [],
                 selectedCategory,
-                [{ maleRunners: males, femaleRunners: females }],
+                currentRunners: displayedRunners,
                 gender,
-                { nameLang: language },
-            );
-            const suffix = gender === 'male' ? '-Male' : gender === 'female' ? '-Female' : '';
-            const distance = campaign?.categories?.find(c => c.name === selectedCategory)?.distance || selectedCategory || '';
-            const distPart = distance ? `-${distance}` : '';
-            if (blob) triggerExcelDownload(blob, `${campaign?.name || 'winners'}${distPart}-TopOverall${namePart}${suffix}`);
+                nameLang: language,
+                filePartLabel: 'TopOverall',
+                computeWinners: (runners) => {
+                    const topNForCat = Math.max(1, campaign.overallDisplayCount || 5);
+                    const finished = runners.filter(r => r.status === 'finished' && (r.netTime || r.gunTime || r.elapsedTime));
+                    const sorted = [...finished].sort((a, b) => {
+                        const at = a.netTime || a.gunTime || a.elapsedTime || Infinity;
+                        const bt = b.netTime || b.gunTime || b.elapsedTime || Infinity;
+                        return at - bt;
+                    });
+                    return {
+                        maleRunners: sorted.filter(r => r.gender !== 'F').slice(0, topNForCat),
+                        femaleRunners: sorted.filter(r => r.gender === 'F').slice(0, topNForCat),
+                    };
+                },
+            });
+            triggerCombinedDownload(blob, campaign.name || '', 'TopOverall', gender);
         } catch (e) { console.error(e); } finally {
             setDownloading(null);
         }
-    }, [campaign, selectedCategory, language]);
+    }, [campaign, selectedCategory, displayedRunners, language]);
 
     if (campaignNotFound) {
         return (
