@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
 import { computeAwardsForCategory, formatAwardLabel } from '@/lib/awards';
+import { computeBuriramWinnerIds } from '@/lib/province';
 import { isNationalitySplitCategory } from '@/lib/nationality';
 import { useLanguage } from '@/lib/language-context';
 import {
@@ -31,6 +32,13 @@ export default function ESlipPage() {
     const [timings, setTimings] = useState<TimingRecord[]>([]);
     const [campaign, setCampaign] = useState<CampaignData | null>(null);
     const [awardLabel, setAwardLabel] = useState<string | null>(null);
+    const [bestOfBuriram, setBestOfBuriram] = useState(false);
+    // Award line shown on the slip: "Best of Buriram" leads (when earned), then the
+    // Overall / Age-group award, separated by " | ".
+    const displayAwardLabel = useMemo(() => {
+        const parts = [bestOfBuriram ? 'Best of Buriram' : null, awardLabel || null].filter(Boolean);
+        return parts.length ? parts.join(' | ') : null;
+    }, [bestOfBuriram, awardLabel]);
     const targetBandLabel = useMemo(() => (runner ? computeTargetBandLabel(runner, campaign) : null), [runner, campaign]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -97,15 +105,19 @@ export default function ESlipPage() {
     // Compute this runner's AWARD (Overall / Age Group) — same algorithm as the
     // public event table + winner boards — by pulling the whole category pool.
     useEffect(() => {
-        if (!runner || !campaign?._id || !runner.category) { setAwardLabel(null); return; }
+        if (!runner || !campaign?._id || !runner.category) { setAwardLabel(null); setBestOfBuriram(false); return; }
         let cancelled = false;
         (async () => {
             try {
                 const p = new URLSearchParams({ campaignId: campaign._id, category: runner.category, limit: '10000', skipStatusCounts: 'true' });
                 const res = await fetch(`/api/runners/paged?${p.toString()}`, { cache: 'no-store' });
-                if (!res.ok) { if (!cancelled) setAwardLabel(null); return; }
+                if (!res.ok) { if (!cancelled) { setAwardLabel(null); setBestOfBuriram(false); } return; }
                 const data = await res.json();
                 const pool = Array.isArray(data?.data) ? data.data : [];
+                // "Best of Buriram" — same top-N-per-gender local award as the board.
+                const buriramTopN = Math.max(1, campaign.bestOfDisplayCount || 1);
+                const buriramIds = computeBuriramWinnerIds(pool, buriramTopN);
+                if (!cancelled) setBestOfBuriram(buriramIds.has(runner._id));
                 const awards = computeAwardsForCategory(pool, {
                     overallDisplayCount: campaign.overallDisplayCount,
                     ageGroupDisplayCount: campaign.ageGroupDisplayCount,
@@ -116,10 +128,10 @@ export default function ESlipPage() {
                 });
                 const mine = awards.get(runner._id);
                 if (!cancelled) setAwardLabel(mine ? formatAwardLabel(mine) : null);
-            } catch { if (!cancelled) setAwardLabel(null); }
+            } catch { if (!cancelled) { setAwardLabel(null); setBestOfBuriram(false); } }
         })();
         return () => { cancelled = true; };
-    }, [runner, campaign?._id, campaign?.overallDisplayCount, campaign?.ageGroupDisplayCount, campaign?.excludeOverallFromAgeGroup, campaign?.excludeOverallThaiFromAgeGroup, campaign?.excludeOverallForeignFromAgeGroup, campaign?.excludeAgeGroupTop, campaign?.separateOverallNationalityCategories]);
+    }, [runner, campaign?._id, campaign?.overallDisplayCount, campaign?.ageGroupDisplayCount, campaign?.bestOfDisplayCount, campaign?.excludeOverallFromAgeGroup, campaign?.excludeOverallThaiFromAgeGroup, campaign?.excludeOverallForeignFromAgeGroup, campaign?.excludeAgeGroupTop, campaign?.separateOverallNationalityCategories]);
 
     const handleBgUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const input = e.currentTarget;
@@ -353,7 +365,7 @@ export default function ESlipPage() {
                         </div>
                     )
                     : isV2
-                    ? <ESlipV2Renderer layout={campaign!.eslipV2Layout!} runner={runner} campaign={campaign} slipRef={slipRef} timings={timings} awardLabel={awardLabel} targetBandLabel={targetBandLabel} language={language} />
+                    ? <ESlipV2Renderer layout={campaign!.eslipV2Layout!} runner={runner} campaign={campaign} slipRef={slipRef} timings={timings} awardLabel={displayAwardLabel} targetBandLabel={targetBandLabel} language={language} />
                     : (() => {
                         const vf = campaign?.eslipVisibleFields;
                         const hasAgeGroup = !!runner.ageGroup;
@@ -364,7 +376,7 @@ export default function ESlipPage() {
                             if (!hasAgeGroup && (key === 'categoryRank' || key === 'ageGroup')) return false;
                             return !vf || vf.length === 0 || vf.includes(key);
                         };
-                        const common = { runner, timings, campaign, slipRef, showField, awardLabel, targetBandLabel, language };
+                        const common = { runner, timings, campaign, slipRef, showField, awardLabel: displayAwardLabel, targetBandLabel, language };
                         if (activeTemplate === 'template1') return <Template1 {...common} bgImage={bgImage} />;
                         if (activeTemplate === 'template2') return <Template2 {...common} bgImage={bgImage} textColorMode={photoTextColor} />;
                         return <Template3 {...common} bgImage={null} />;

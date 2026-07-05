@@ -6,6 +6,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { isRunnerFollowed, loadFollowedRunners, saveFollowedRunners, subscribeFollowedRunners, toggleFollowedRunner, type FollowedRunner } from '@/lib/followed-runners';
 import { computeAwardsForCategory, formatOverallAwardLabel, type AwardResult } from '@/lib/awards';
+import { computeBuriramWinnerIds } from '@/lib/province';
 import { isNationalitySplitCategory } from '@/lib/nationality';
 import { useLanguage } from '@/lib/language-context';
 
@@ -74,6 +75,7 @@ interface CampaignData {
     certLayout?: any;
     overallDisplayCount?: number;
     ageGroupDisplayCount?: number;
+    bestOfDisplayCount?: number;
     excludeOverallFromAgeGroup?: number;
     excludeOverallThaiFromAgeGroup?: number;
     excludeOverallForeignFromAgeGroup?: number;
@@ -331,6 +333,7 @@ export default function RunnerProfilePage() {
     const [timings, setTimings] = useState<TimingRecord[]>([]);
     const [campaign, setCampaign] = useState<CampaignData | null>(null);
     const [award, setAward] = useState<AwardResult | null>(null);
+    const [bestOfBuriram, setBestOfBuriram] = useState(false);
     const [cpMappings, setCpMappings] = useState<CheckpointMappingData[]>([]);
     const [checkpointRanks, setCheckpointRanks] = useState<Record<string, number>>({});
     const [loading, setLoading] = useState(true);
@@ -407,7 +410,7 @@ export default function RunnerProfilePage() {
     // event table and winner boards do — fetch the whole category pool, then run
     // the shared award algorithm and keep only this runner's result.
     useEffect(() => {
-        if (!runner || !campaign?._id || !runner.category) { setAward(null); return; }
+        if (!runner || !campaign?._id || !runner.category) { setAward(null); setBestOfBuriram(false); return; }
         let cancelled = false;
         (async () => {
             try {
@@ -418,9 +421,13 @@ export default function RunnerProfilePage() {
                     skipStatusCounts: 'true',
                 });
                 const res = await fetch(`/api/runners/paged?${params.toString()}`, { cache: 'no-store' });
-                if (!res.ok) { if (!cancelled) setAward(null); return; }
+                if (!res.ok) { if (!cancelled) { setAward(null); setBestOfBuriram(false); } return; }
                 const data = await res.json();
                 const pool = Array.isArray(data?.data) ? data.data : [];
+                // "Best of Buriram" — same top-N-per-gender local award as the board.
+                const buriramTopN = Math.max(1, campaign.bestOfDisplayCount || 1);
+                const buriramIds = computeBuriramWinnerIds(pool, buriramTopN);
+                if (!cancelled) setBestOfBuriram(buriramIds.has(runner._id));
                 const awards = computeAwardsForCategory(pool, {
                     overallDisplayCount: campaign.overallDisplayCount,
                     ageGroupDisplayCount: campaign.ageGroupDisplayCount,
@@ -430,10 +437,10 @@ export default function RunnerProfilePage() {
                     separateOverallByNationality: isNationalitySplitCategory(campaign.separateOverallNationalityCategories, runner.category),
                 });
                 if (!cancelled) setAward(awards.get(runner._id) || null);
-            } catch { if (!cancelled) setAward(null); }
+            } catch { if (!cancelled) { setAward(null); setBestOfBuriram(false); } }
         })();
         return () => { cancelled = true; };
-    }, [runner, campaign?._id, campaign?.overallDisplayCount, campaign?.ageGroupDisplayCount, campaign?.excludeOverallFromAgeGroup, campaign?.excludeOverallThaiFromAgeGroup, campaign?.excludeOverallForeignFromAgeGroup, campaign?.separateOverallNationalityCategories]);
+    }, [runner, campaign?._id, campaign?.overallDisplayCount, campaign?.ageGroupDisplayCount, campaign?.bestOfDisplayCount, campaign?.excludeOverallFromAgeGroup, campaign?.excludeOverallThaiFromAgeGroup, campaign?.excludeOverallForeignFromAgeGroup, campaign?.separateOverallNationalityCategories]);
 
     useEffect(() => {
         setFollowedRunners(loadFollowedRunners());
@@ -934,10 +941,15 @@ export default function RunnerProfilePage() {
                     same way as the public event table + winner boards. Only shown when the
                     runner actually places into an award slot. Age Group placings also show
                     the runner's age group in parentheses. */}
-                {award && (award.overall || award.ageGroup) && (() => {
-                    const parts: string[] = [];
-                    if (award.overall) parts.push(formatOverallAwardLabel(award));
-                    if (award.ageGroup) parts.push(`Age Group ${award.ageGroup}${runner.ageGroup ? ` (${runner.ageGroup})` : ''}`);
+                {((award && (award.overall || award.ageGroup)) || bestOfBuriram) && (() => {
+                    // "Best of Buriram" leads (when earned), then the Overall / Age-group
+                    // award — the two are separated by " | ".
+                    const awardParts: string[] = [];
+                    if (award?.overall) awardParts.push(formatOverallAwardLabel(award));
+                    if (award?.ageGroup) awardParts.push(`Age Group ${award.ageGroup}${runner.ageGroup ? ` (${runner.ageGroup})` : ''}`);
+                    const segments: string[] = [];
+                    if (bestOfBuriram) segments.push('Best of Buriram');
+                    if (awardParts.length) segments.push(awardParts.join(', '));
                     return (
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, marginBottom: 16, padding: '14px 16px', borderRadius: 12, background: 'linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%)', border: '1px solid #fcd34d' }}>
                             <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#b45309" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }} aria-hidden="true">
@@ -950,7 +962,7 @@ export default function RunnerProfilePage() {
                             </svg>
                             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
                                 <span style={{ fontSize: 9, fontWeight: 700, color: '#b45309', textTransform: 'uppercase', letterSpacing: 1, lineHeight: 1.4 }}>Award</span>
-                                <span style={{ fontSize: 18, fontWeight: 900, color: '#92400e', lineHeight: 1.2 }}>{parts.join(', ')}</span>
+                                <span style={{ fontSize: 18, fontWeight: 900, color: '#92400e', lineHeight: 1.2 }}>{segments.join(' | ')}</span>
                             </div>
                         </div>
                     );

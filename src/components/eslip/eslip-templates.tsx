@@ -24,6 +24,8 @@ export interface RunnerData {
     elapsedTime?: number;
     netTimeStr?: string;
     gunTimeStr?: string;
+    province?: string;
+    address?: string;
     overallRank?: number;
     genderRank?: number;
     categoryRank?: number;
@@ -65,6 +67,7 @@ export interface CampaignData {
     slipScanTemplate?: string;
     overallDisplayCount?: number;
     ageGroupDisplayCount?: number;
+    bestOfDisplayCount?: number;
     excludeOverallFromAgeGroup?: number;
     excludeOverallThaiFromAgeGroup?: number;
     excludeOverallForeignFromAgeGroup?: number;

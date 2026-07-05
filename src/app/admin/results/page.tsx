@@ -1601,6 +1601,4 @@ export default function ResultsPage() {
             )}
         </AdminLayout>
     );
-    //ตอนนี้รุ่นอายุ มันผิดอะ https://live.action.in.th/Result-Winners/buriram-10-thunder-speed-2026?category=10K หน้านี้ ระยะ 5K
-    //บางคนเวลามันผิดมันโดดไง  
 }
