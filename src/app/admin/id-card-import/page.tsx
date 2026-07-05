@@ -83,17 +83,15 @@ function calculateAge(birthDate: string): number {
     return age;
 }
 
-function calculateAgeGroup(birthDate: string, gender: string): string {
+// 5-year band to match RaceTiger's scheme (e.g. "20-24", "25-29") — see
+// admin/participants calculateAgeGroup for the canonical version of this logic.
+function calculateAgeGroup(birthDate: string): string {
     const age = calculateAge(birthDate);
     if (age <= 0) return '';
-    const prefix = gender === 'F' ? 'F' : 'M';
-    if (age < 18) return `${prefix} U18`;
-    if (age < 30) return `${prefix} 18-29`;
-    if (age < 40) return `${prefix} 30-39`;
-    if (age < 50) return `${prefix} 40-49`;
-    if (age < 60) return `${prefix} 50-59`;
-    if (age < 70) return `${prefix} 60-69`;
-    return `${prefix} 70+`;
+    if (age < 20) return 'U 19';
+    if (age >= 70) return '70 +';
+    const lo = Math.floor(age / 5) * 5;
+    return `${lo}-${lo + 4}`;
 }
 
 export default function IdCardImportPage() {
@@ -279,7 +277,7 @@ export default function IdCardImportPage() {
                 nationality: 'THA',
                 address: manualForm.address.trim() || undefined,
                 age: manualForm.birthDate ? calculateAge(manualForm.birthDate) : undefined,
-                ageGroup: manualForm.birthDate ? calculateAgeGroup(manualForm.birthDate, genderVal) : undefined,
+                ageGroup: manualForm.birthDate ? calculateAgeGroup(manualForm.birthDate) : undefined,
                 status: 'not_started',
                 sourceFile: 'manual-entry',
             };
@@ -380,7 +378,7 @@ export default function IdCardImportPage() {
                 nationality: 'THA',
                 address: cardData.address || undefined,
                 age: calculateAge(cardData.birthDate),
-                ageGroup: calculateAgeGroup(cardData.birthDate, cardData.gender),
+                ageGroup: calculateAgeGroup(cardData.birthDate),
                 status: 'not_started',
                 sourceFile: 'id-card-reader',
             };
@@ -869,7 +867,7 @@ export default function IdCardImportPage() {
                                                 {language === 'th' ? 'กลุ่มอายุ' : 'Age Group'}
                                             </label>
                                             <div style={{ fontSize: 14, color: '#475569', marginTop: 2, fontWeight: 600 }}>
-                                                {calculateAgeGroup(cardData.birthDate, cardData.gender) || '-'}
+                                                {calculateAgeGroup(cardData.birthDate) || '-'}
                                             </div>
                                         </div>
 
@@ -1181,7 +1179,7 @@ export default function IdCardImportPage() {
                                                         padding: '2px 8px', borderRadius: 10, fontWeight: 600,
                                                     }}>
                                                         {language === 'th' ? 'อายุ' : 'Age'} {calculateAge(manualForm.birthDate)} {language === 'th' ? 'ปี' : 'yrs'}
-                                                        {' • '}{calculateAgeGroup(manualForm.birthDate, manualForm.gender)}
+                                                        {' • '}{calculateAgeGroup(manualForm.birthDate)}
                                                     </span>
                                                 </div>
                                             )}

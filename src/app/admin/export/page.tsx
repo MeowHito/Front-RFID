@@ -40,7 +40,9 @@ interface Runner {
     ageGroupRank?: number;
 }
 
-function calculateAgeGroup(birthDate?: string, gender?: string): string {
+// 5-year band to match RaceTiger's scheme (e.g. "20-24", "25-29") — see
+// admin/participants calculateAgeGroup for the canonical version of this logic.
+function calculateAgeGroup(birthDate?: string): string {
     if (!birthDate) return '';
     const birth = new Date(birthDate);
     if (isNaN(birth.getTime())) return '';
@@ -48,19 +50,16 @@ function calculateAgeGroup(birthDate?: string, gender?: string): string {
     let age = today.getFullYear() - birth.getFullYear();
     const m = today.getMonth() - birth.getMonth();
     if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) age--;
-    const prefix = gender === 'F' ? 'F' : 'M';
-    if (age < 18) return `${prefix} U18`;
-    if (age < 30) return `${prefix} 18-29`;
-    if (age < 40) return `${prefix} 30-39`;
-    if (age < 50) return `${prefix} 40-49`;
-    if (age < 60) return `${prefix} 50-59`;
-    if (age < 70) return `${prefix} 60-69`;
-    return `${prefix} 70+`;
+    if (age <= 0) return '';
+    if (age < 20) return 'U 19';
+    if (age >= 70) return '70 +';
+    const lo = Math.floor(age / 5) * 5;
+    return `${lo}-${lo + 4}`;
 }
 
 function resolveAgeGroup(r: Runner): string {
     if (r.ageGroup && r.ageGroup.trim()) return r.ageGroup;
-    return calculateAgeGroup(r.birthDate, r.gender);
+    return calculateAgeGroup(r.birthDate);
 }
 
 function formatBirthDateCE(iso?: string): string {
