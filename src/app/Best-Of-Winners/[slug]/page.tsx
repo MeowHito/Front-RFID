@@ -7,7 +7,7 @@ import { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { downloadAllDistances, triggerCombinedDownload } from '@/lib/combined-winners-download';
 import NameLangToggle from '@/components/NameLangToggle';
 import { useLanguage } from '@/lib/language-context';
-import { isBuriramLocation } from '@/lib/province';
+import { matchesProvince, provinceEnName } from '@/lib/thai-provinces';
 import { useParams, useSearchParams } from 'next/navigation';
 
 interface Runner {
@@ -36,6 +36,11 @@ interface CampaignCategory {
     distance?: string;
 }
 
+interface BestOfProvince {
+    province: string;
+    count: number;
+}
+
 interface Campaign {
     _id: string;
     name: string;
@@ -45,6 +50,15 @@ interface Campaign {
     uuid?: string;
     categories?: CampaignCategory[];
     bestOfDisplayCount?: number;
+    bestOfProvinceEnabled?: boolean;
+    bestOfProvinces?: BestOfProvince[];
+}
+
+interface ProvinceBoard {
+    province: string;
+    count: number;
+    maleWinners: Runner[];
+    femaleWinners: Runner[];
 }
 
 const REFRESH_INTERVAL = 10;
@@ -57,9 +71,11 @@ function formatTime(ms: number | undefined | null): string {
     return `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 }
 
-// "Best of [event name]" board — the single fastest male and female finisher
-// for the selected distance, always top-1 regardless of the campaign's
-// overallDisplayCount (which governs the separate Overall-Winners board).
+const runnerTimeMs = (r: Runner) => r.netTime || r.gunTime || r.elapsedTime || Infinity;
+
+// "Best of Province" board — for each province configured on the campaign, the top-N
+// fastest male and female finishers who reside in that province. When the award is
+// disabled, no board is shown.
 export default function BestOfWinnersBySlugPage() {
     const { language, setLanguage } = useLanguage();
     const params = useParams();
@@ -84,8 +100,6 @@ export default function BestOfWinnersBySlugPage() {
     const campaignCategoriesRef = useRef<CampaignCategory[]>([]);
     const displayedCategoryRef = useRef<string>('');
     const [downloading, setDownloading] = useState<string | null>(null);
-    const maleColRef = useRef<HTMLDivElement | null>(null);
-    const femaleColRef = useRef<HTMLDivElement | null>(null);
 
     useEffect(() => {
         const check = () => setIsMobile(window.innerWidth < 768);
@@ -197,52 +211,59 @@ export default function BestOfWinnersBySlugPage() {
         };
     }, [autoMode]);
 
-    const topN = Math.max(1, campaign?.bestOfDisplayCount || 1);
+    const provinceEnabled = !!campaign?.bestOfProvinceEnabled;
 
-    // Best Of Buriram — local-province award: only runners whose address
-    // indicates Buriram residence are eligible.
-    const { maleWinners, femaleWinners } = useMemo(() => {
-        const finished = displayedRunners.filter(r => r.status === 'finished' && (r.netTime || r.gunTime || r.elapsedTime) && isBuriramLocation(r.province, r.address));
-        const sorted = [...finished].sort((a, b) => {
-            const at = a.netTime || a.gunTime || a.elapsedTime || Infinity;
-            const bt = b.netTime || b.gunTime || b.elapsedTime || Infinity;
-            return at - bt;
+    const provincesConfig = useMemo<BestOfProvince[]>(() => (
+        Array.isArray(campaign?.bestOfProvinces)
+            ? campaign!.bestOfProvinces!
+                .filter(p => p && p.province)
+                .map(p => ({ province: p.province, count: Math.max(1, Number(p.count) || 1) }))
+            : []
+    ), [campaign]);
+
+    // One board per configured province: top-N male + female finishers residing there.
+    const provinceBoards = useMemo<ProvinceBoard[]>(() => {
+        if (!provinceEnabled || provincesConfig.length === 0) return [];
+        const finishedByTime = [...displayedRunners]
+            .filter(r => r.status === 'finished' && (r.netTime || r.gunTime || r.elapsedTime))
+            .sort((a, b) => runnerTimeMs(a) - runnerTimeMs(b));
+        return provincesConfig.map(cfg => {
+            const inProvince = finishedByTime.filter(r => matchesProvince(cfg.province, r.province, r.address));
+            return {
+                province: cfg.province,
+                count: cfg.count,
+                maleWinners: inProvince.filter(r => r.gender !== 'F').slice(0, cfg.count),
+                femaleWinners: inProvince.filter(r => r.gender === 'F').slice(0, cfg.count),
+            };
         });
-        return {
-            maleWinners: sorted.filter(r => r.gender !== 'F').slice(0, topN),
-            femaleWinners: sorted.filter(r => r.gender === 'F').slice(0, topN),
-        };
-    }, [displayedRunners, topN]);
+    }, [provinceEnabled, provincesConfig, displayedRunners]);
 
-    // Combines every distance into one Excel file — each distance prints on its own page.
-    const downloadLandscape = useCallback(async (gender: 'male' | 'female' | 'both' = 'both') => {
+    // Combines every distance into one Excel file for a single province — each distance
+    // prints on its own page. Scoped to the given province + gender.
+    const downloadProvince = useCallback(async (cfg: BestOfProvince, gender: 'male' | 'female' | 'both') => {
         if (!campaign?._id) return;
-        setDownloading('landscape');
+        setDownloading(`${cfg.province}-${gender}`);
         try {
             const blob = await downloadAllDistances<Runner>({
                 campaignId: campaign._id,
-                campaignName: campaign.name || '',
+                campaignName: `${campaign.name || ''} - ${cfg.province}`,
                 categories: campaign.categories || [],
                 selectedCategory,
                 currentRunners: displayedRunners,
                 gender,
                 nameLang: language,
-                filePartLabel: 'BestOf',
+                filePartLabel: `BestOf-${provinceEnName(cfg.province)}`,
                 computeWinners: (runners) => {
-                    const topNForCat = Math.max(1, campaign.bestOfDisplayCount || 1);
-                    const finished = runners.filter(r => r.status === 'finished' && (r.netTime || r.gunTime || r.elapsedTime) && isBuriramLocation(r.province, r.address));
-                    const sorted = [...finished].sort((a, b) => {
-                        const at = a.netTime || a.gunTime || a.elapsedTime || Infinity;
-                        const bt = b.netTime || b.gunTime || b.elapsedTime || Infinity;
-                        return at - bt;
-                    });
+                    const finished = runners
+                        .filter(r => r.status === 'finished' && (r.netTime || r.gunTime || r.elapsedTime) && matchesProvince(cfg.province, r.province, r.address))
+                        .sort((a, b) => runnerTimeMs(a) - runnerTimeMs(b));
                     return {
-                        maleRunners: sorted.filter(r => r.gender !== 'F').slice(0, topNForCat),
-                        femaleRunners: sorted.filter(r => r.gender === 'F').slice(0, topNForCat),
+                        maleRunners: finished.filter(r => r.gender !== 'F').slice(0, cfg.count),
+                        femaleRunners: finished.filter(r => r.gender === 'F').slice(0, cfg.count),
                     };
                 },
             });
-            triggerCombinedDownload(blob, campaign.name || '', 'BestOf', gender);
+            triggerCombinedDownload(blob, `${campaign.name || ''} - ${cfg.province}`, 'BestOf', gender);
         } catch (e) { console.error(e); } finally {
             setDownloading(null);
         }
@@ -263,90 +284,108 @@ export default function BestOfWinnersBySlugPage() {
     const rankFg = ['#000', '#fff', '#fff', '#475569', '#475569'];
 
     const renderRunnerRow = (runner: Runner, idx: number) => (
-        <div key={runner._id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: isMobile ? '4px 8px' : '0.4vh 10px', borderRadius: 6, background: idx === 0 ? '#fffbeb' : 'transparent', height: isMobile ? 'auto' : '4vh', minHeight: isMobile ? 30 : 30 }}>
-            <div style={{ width: isMobile ? 22 : '2.4vh', height: isMobile ? 22 : '2.4vh', minWidth: 18, minHeight: 18, borderRadius: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: isMobile ? 12 : '1.4vh', fontWeight: 900, flexShrink: 0, background: rankBg[idx] || '#e2e8f0', color: rankFg[idx] || '#475569' }}>
+        <div key={runner._id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 10px', borderRadius: 6, background: idx === 0 ? '#fffbeb' : 'transparent', minHeight: 30 }}>
+            <div style={{ width: 22, height: 22, minWidth: 18, minHeight: 18, borderRadius: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 900, flexShrink: 0, background: rankBg[idx] || '#e2e8f0', color: rankFg[idx] || '#475569' }}>
                 {idx + 1}
             </div>
-            <span style={{ fontSize: isMobile ? 12 : '1.55vh', fontWeight: 700, color: '#1e293b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1, textTransform: 'uppercase' }}>
+            <span style={{ fontSize: isMobile ? 12 : 14, fontWeight: 700, color: '#1e293b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1, textTransform: 'uppercase' }}>
                 {language === 'th' && runner.firstNameTh
                     ? `${runner.bib}  ${runner.firstNameTh} ${runner.lastNameTh || ''}`
                     : `${runner.bib}  ${runner.firstName} ${runner.lastName}`}
             </span>
-            <span style={{ fontFamily: 'monospace', fontWeight: 800, fontSize: isMobile ? 11 : '1.5vh', color: '#1e293b', flexShrink: 0, minWidth: isMobile ? 60 : '7vh', textAlign: 'right' }}>
+            <span style={{ fontFamily: 'monospace', fontWeight: 800, fontSize: isMobile ? 11 : 13, color: '#1e293b', flexShrink: 0, minWidth: 60, textAlign: 'right' }}>
                 {runner.gunTimeStr || formatTime(runner.gunTime)}
             </span>
-            <span style={{ fontFamily: 'monospace', fontWeight: 800, fontSize: isMobile ? 11 : '1.5vh', color: '#1e293b', flexShrink: 0, minWidth: isMobile ? 60 : '7vh', textAlign: 'right', marginLeft: isMobile ? 10 : 14 }}>
+            <span style={{ fontFamily: 'monospace', fontWeight: 800, fontSize: isMobile ? 11 : 13, color: '#1e293b', flexShrink: 0, minWidth: 60, textAlign: 'right', marginLeft: isMobile ? 10 : 14 }}>
                 {runner.netTimeStr || formatTime(runner.netTime)}
             </span>
         </div>
     );
 
     const renderEmptyRow = (idx: number) => (
-        <div key={`empty-${idx}`} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: isMobile ? '4px 8px' : '0.4vh 10px', height: isMobile ? 'auto' : '4vh', minHeight: isMobile ? 30 : 30 }}>
-            <div style={{ width: isMobile ? 22 : '2.4vh', height: isMobile ? 22 : '2.4vh', minWidth: 18, minHeight: 18, borderRadius: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: isMobile ? 12 : '1.4vh', fontWeight: 900, flexShrink: 0, background: '#f1f5f9', color: '#cbd5e1' }}>
+        <div key={`empty-${idx}`} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 10px', minHeight: 30 }}>
+            <div style={{ width: 22, height: 22, minWidth: 18, minHeight: 18, borderRadius: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 900, flexShrink: 0, background: '#f1f5f9', color: '#cbd5e1' }}>
                 {idx + 1}
             </div>
-            <span style={{ fontSize: isMobile ? 11 : '1.2vh', color: '#cbd5e1', fontStyle: 'italic', flex: 1 }}>—</span>
-            <span style={{ minWidth: isMobile ? 60 : '7vh' }} />
-            <span style={{ minWidth: isMobile ? 60 : '7vh', marginLeft: isMobile ? 10 : 14 }} />
+            <span style={{ fontSize: isMobile ? 11 : 12, color: '#cbd5e1', fontStyle: 'italic', flex: 1 }}>—</span>
+            <span style={{ minWidth: 60 }} />
+            <span style={{ minWidth: 60, marginLeft: isMobile ? 10 : 14 }} />
         </div>
     );
 
     const dlIcon = (size = 12) => (
         <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-            <line x1="8" y1="1" x2="8" y2="11"/><polyline points="4 7 8 11 12 7"/><line x1="2" y1="14" x2="14" y2="14"/>
+            <line x1="8" y1="1" x2="8" y2="11" /><polyline points="4 7 8 11 12 7" /><line x1="2" y1="14" x2="14" y2="14" />
         </svg>
     );
 
-    const renderColumn = (title: string, bgHeader: string, list: Runner[], colRef: { current: HTMLDivElement | null }, onDownload: () => void) => {
-        const dlButtonStyle: CSSProperties = { background: 'rgba(255,255,255,0.18)', border: 'none', borderRadius: 5, cursor: downloading ? 'default' : 'pointer', padding: isMobile ? '3px 6px' : '3px 8px', color: 'white', fontSize: isMobile ? 11 : 12, display: 'flex', alignItems: 'center', gap: 4, fontWeight: 700, flexShrink: 0 };
+    const renderColumn = (title: string, bgHeader: string, list: Runner[], count: number, onDownload: () => void) => {
+        const dlButtonStyle: CSSProperties = { background: 'rgba(255,255,255,0.18)', border: 'none', borderRadius: 5, cursor: downloading ? 'default' : 'pointer', padding: '3px 8px', color: 'white', fontSize: isMobile ? 11 : 12, display: 'flex', alignItems: 'center', gap: 4, fontWeight: 700, flexShrink: 0 };
         return (
-        <div ref={el => { colRef.current = el; }} style={{ display: 'flex', flexDirection: 'column', gap: isMobile ? 8 : '0.8vh', minHeight: 0, flex: 1, overflowY: isMobile ? 'visible' : 'auto', paddingRight: isMobile ? 0 : 4 }}>
-            <div style={{ padding: isMobile ? '8px 10px' : '0.9vh 10px', fontWeight: 900, fontSize: isMobile ? 16 : '2vh', textTransform: 'uppercase', borderRadius: 8, color: 'white', letterSpacing: 2, background: bgHeader, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
-                <span style={{ ...dlButtonStyle, visibility: 'hidden' }} aria-hidden="true">
-                    {dlIcon(11)}{!isMobile && <span>Download</span>}
-                </span>
-                <span style={{ flex: 1, textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{title}</span>
-                <button data-no-capture onClick={onDownload} disabled={!!downloading} title="Download" style={{ ...dlButtonStyle, opacity: downloading ? 0.5 : 1, transition: 'opacity 0.15s' }}>
-                    {dlIcon(11)}{!isMobile && <span>Download</span>}
-                </button>
-            </div>
-            <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: 8, overflow: 'hidden', display: 'flex', flexDirection: 'column', flexShrink: 0, minHeight: isMobile ? 90 : '10vh' }}>
-                <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'flex-start', flex: 1, padding: isMobile ? '4px' : '0.35vh 4px', minHeight: 0 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: isMobile ? '2px 10px 3px' : '0.1vh 10px 0.2vh', borderBottom: '1px solid #f1f5f9' }}>
-                        <div style={{ width: isMobile ? 22 : '2.4vh', minWidth: 18, flexShrink: 0 }} />
-                        <span style={{ fontSize: isMobile ? 9 : '1.1vh', fontWeight: 700, color: '#94a3b8', flex: 1, textTransform: 'uppercase', letterSpacing: 0.5 }}>Name</span>
-                        <span style={{ fontSize: isMobile ? 9 : '1.1vh', fontWeight: 700, color: '#94a3b8', flexShrink: 0, minWidth: isMobile ? 60 : '7vh', textAlign: 'right', letterSpacing: 0.5 }}>GunTime</span>
-                        <span style={{ fontSize: isMobile ? 9 : '1.1vh', fontWeight: 700, color: '#94a3b8', flexShrink: 0, minWidth: isMobile ? 60 : '7vh', textAlign: 'right', letterSpacing: 0.5, marginLeft: isMobile ? 10 : 14 }}>NetTime</span>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, flex: 1, minWidth: 0 }}>
+                <div style={{ padding: '8px 10px', fontWeight: 900, fontSize: isMobile ? 15 : 17, textTransform: 'uppercase', borderRadius: 8, color: 'white', letterSpacing: 2, background: bgHeader, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ ...dlButtonStyle, visibility: 'hidden' }} aria-hidden="true">
+                        {dlIcon(11)}{!isMobile && <span>Download</span>}
+                    </span>
+                    <span style={{ flex: 1, textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{title}</span>
+                    <button data-no-capture onClick={onDownload} disabled={!!downloading} title="Download" style={{ ...dlButtonStyle, opacity: downloading ? 0.5 : 1, transition: 'opacity 0.15s' }}>
+                        {dlIcon(11)}{!isMobile && <span>Download</span>}
+                    </button>
+                </div>
+                <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: 8, overflow: 'hidden', display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'flex-start', flex: 1, padding: '4px', minHeight: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '2px 10px 3px', borderBottom: '1px solid #f1f5f9' }}>
+                            <div style={{ width: 22, minWidth: 18, flexShrink: 0 }} />
+                            <span style={{ fontSize: isMobile ? 9 : 11, fontWeight: 700, color: '#94a3b8', flex: 1, textTransform: 'uppercase', letterSpacing: 0.5 }}>Name</span>
+                            <span style={{ fontSize: isMobile ? 9 : 11, fontWeight: 700, color: '#94a3b8', flexShrink: 0, minWidth: 60, textAlign: 'right', letterSpacing: 0.5 }}>GunTime</span>
+                            <span style={{ fontSize: isMobile ? 9 : 11, fontWeight: 700, color: '#94a3b8', flexShrink: 0, minWidth: 60, textAlign: 'right', letterSpacing: 0.5, marginLeft: isMobile ? 10 : 14 }}>NetTime</span>
+                        </div>
+                        {Array.from({ length: count }, (_, i) => i).map(i => list[i] ? renderRunnerRow(list[i], i) : renderEmptyRow(i))}
                     </div>
-                    {Array.from({ length: topN }, (_, i) => i).map(i => list[i] ? renderRunnerRow(list[i], i) : renderEmptyRow(i))}
                 </div>
             </div>
-        </div>
         );
     };
 
+    const renderProvinceBoard = (board: ProvinceBoard) => (
+        <div key={board.province} style={{ display: 'flex', flexDirection: 'column', gap: isMobile ? 8 : 10, background: '#1e293b', border: '1px solid #334155', borderRadius: 12, padding: isMobile ? 10 : 14, flexShrink: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, flexWrap: 'wrap' }}>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: isMobile ? '4px 16px' : '5px 20px', background: '#0d9488', color: 'white', borderRadius: 999, fontWeight: 900, fontSize: isMobile ? 15 : 19, letterSpacing: 1, whiteSpace: 'nowrap' }}>
+                    <svg width={isMobile ? 15 : 18} height={isMobile ? 15 : 18} viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><polygon points="12,6.5 12.9,9 15.5,9 13.4,10.6 14.2,13.1 12,11.6 9.8,13.1 10.6,10.6 8.5,9 11.1,9" /></svg>
+                    Best of {board.province}
+                </span>
+                <span style={{ fontSize: isMobile ? 11 : 13, fontWeight: 700, color: '#94a3b8' }}>
+                    {provinceEnName(board.province)} · Top {board.count}
+                </span>
+            </div>
+            <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: isMobile ? 10 : 14 }}>
+                {renderColumn('♂ BEST MALE', '#2563eb', board.maleWinners, board.count, () => downloadProvince({ province: board.province, count: board.count }, 'male'))}
+                {renderColumn('♀ BEST FEMALE', '#db2777', board.femaleWinners, board.count, () => downloadProvince({ province: board.province, count: board.count }, 'female'))}
+            </div>
+        </div>
+    );
+
     return (
-        <div style={{ fontFamily: "'Prompt', 'Inter', sans-serif", background: '#0f172a', height: isMobile ? 'auto' : '100vh', minHeight: '100vh', overflow: isMobile ? 'auto' : 'hidden', display: 'flex', flexDirection: 'column', padding: isMobile ? '8px' : '0.8vh 1vw' }}>
+        <div style={{ fontFamily: "'Prompt', 'Inter', sans-serif", background: '#0f172a', minHeight: '100vh', display: 'flex', flexDirection: 'column', padding: isMobile ? '8px' : '10px 16px' }}>
             <style>{`@keyframes pulse { 0%,100% { opacity:1 } 50% { opacity:0.3 } }`}</style>
-            <header style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', justifyContent: 'space-between', alignItems: isMobile ? 'stretch' : 'center', padding: isMobile ? '10px 12px' : '0.6vh 1.5vw', background: '#1e293b', borderRadius: 10, marginBottom: isMobile ? 8 : '0.8vh', flexShrink: 0, border: '1px solid #334155', gap: isMobile ? 8 : 0 }}>
+            <header style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', justifyContent: 'space-between', alignItems: isMobile ? 'stretch' : 'center', padding: isMobile ? '10px 12px' : '8px 20px', background: '#1e293b', borderRadius: 10, marginBottom: isMobile ? 8 : 10, flexShrink: 0, border: '1px solid #334155', gap: isMobile ? 8 : 0 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <Link href="/" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                        <Image src="/logo-white.png" alt="ACTION" width={120} height={40} style={{ height: isMobile ? 28 : '3.5vh', width: 'auto' }} />
-                        <span style={{ color: '#f59e0b', fontWeight: 900, fontSize: isMobile ? 14 : '2vh', letterSpacing: 2, textTransform: 'uppercase' }}>Best Of {campaign?.name} {topN}</span>
+                        <Image src="/logo-white.png" alt="ACTION" width={120} height={40} style={{ height: isMobile ? 28 : 34, width: 'auto' }} />
+                        <span style={{ color: '#0d9488', fontWeight: 900, fontSize: isMobile ? 14 : 18, letterSpacing: 2, textTransform: 'uppercase' }}>Best of Province</span>
                     </Link>
 
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                         {refreshing && <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#22c55e', animation: 'pulse 0.8s ease-in-out infinite' }} />}
-                        <span style={{ fontSize: isMobile ? 10 : '1.1vh', color: '#94a3b8', fontFamily: 'monospace' }}>
+                        <span style={{ fontSize: isMobile ? 10 : 11, color: '#94a3b8', fontFamily: 'monospace' }}>
                             {refreshing ? 'Updating...' : `Refresh ${countdown}s`}
                         </span>
                     </div>
                 </div>
 
-                <div style={{ display: 'flex', alignItems: isMobile ? 'stretch' : 'center', gap: isMobile ? 6 : '1vw', flexDirection: isMobile ? 'column' : 'row' }}>
+                <div style={{ display: 'flex', alignItems: isMobile ? 'stretch' : 'center', gap: isMobile ? 6 : 14, flexDirection: isMobile ? 'column' : 'row' }}>
                     {campaign && (
-                        <span style={{ fontSize: isMobile ? 11 : '1.3vh', fontWeight: 700, color: '#94a3b8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: isMobile ? '100%' : '20vw' }}>
+                        <span style={{ fontSize: isMobile ? 11 : 13, fontWeight: 700, color: '#94a3b8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: isMobile ? '100%' : '20vw' }}>
                             {campaign.name}
                         </span>
                     )}
@@ -354,26 +393,17 @@ export default function BestOfWinnersBySlugPage() {
                     {campaign && !initialLoading && (
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
                             <NameLangToggle value={language} onChange={setLanguage} isMobile={isMobile} />
-                            <button
-                                onClick={() => downloadLandscape('both')}
-                                disabled={!!downloading}
-                                title="Download Best Of Winners (Excel)"
-                                style={{ display: 'flex', alignItems: 'center', gap: 5, padding: isMobile ? '5px 10px' : '0.35vh 0.7vw', background: '#1d4ed8', border: '1px solid #2563eb', borderRadius: 7, color: 'white', fontSize: isMobile ? 11 : '1.15vh', fontWeight: 800, cursor: 'pointer', whiteSpace: 'nowrap', opacity: downloading ? 0.6 : 1, transition: 'opacity 0.15s', fontFamily: "'Prompt','Inter',sans-serif" }}
-                            >
-                                <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="1" x2="8" y2="11"/><polyline points="4 7 8 11 12 7"/><line x1="2" y1="14" x2="14" y2="14"/></svg>
-                                Download
-                            </button>
                         </div>
                     )}
 
                     {campaign?.categories && campaign.categories.length > 0 && (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 6 : '0.4vw', flexWrap: 'wrap' }}>
-                            <div style={{ display: 'flex', gap: isMobile ? 6 : '0.4vw', overflowX: 'auto', WebkitOverflowScrolling: 'touch', paddingBottom: isMobile ? 2 : 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 6 : 8, flexWrap: 'wrap' }}>
+                            <div style={{ display: 'flex', gap: isMobile ? 6 : 8, overflowX: 'auto', WebkitOverflowScrolling: 'touch', paddingBottom: isMobile ? 2 : 0 }}>
                                 {campaign.categories.map(cat => (
                                     <button
                                         key={cat.name}
                                         onClick={() => { setSelectedCategory(cat.name); setAutoMode(false); }}
-                                        style={{ padding: isMobile ? '6px 12px' : '0.4vh 1vw', borderRadius: 6, fontSize: isMobile ? 12 : '1.3vh', fontWeight: 700, border: selectedCategory === cat.name ? '2px solid #f59e0b' : '1px solid #475569', background: selectedCategory === cat.name ? '#f59e0b' : 'transparent', color: selectedCategory === cat.name ? '#1c1917' : '#cbd5e1', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }}
+                                        style={{ padding: isMobile ? '6px 12px' : '5px 14px', borderRadius: 6, fontSize: isMobile ? 12 : 13, fontWeight: 700, border: selectedCategory === cat.name ? '2px solid #f59e0b' : '1px solid #475569', background: selectedCategory === cat.name ? '#f59e0b' : 'transparent', color: selectedCategory === cat.name ? '#1c1917' : '#cbd5e1', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }}
                                     >
                                         {cat.name}{cat.distance ? ` (${cat.distance})` : ''}
                                     </button>
@@ -382,7 +412,7 @@ export default function BestOfWinnersBySlugPage() {
                             {campaign.categories.length > 1 && (
                                 <button
                                     onClick={() => setAutoMode(m => !m)}
-                                    style={{ display: 'flex', alignItems: 'center', gap: 6, padding: isMobile ? '6px 12px' : '0.4vh 0.8vw', background: autoMode ? '#f59e0b' : 'transparent', border: `1px solid ${autoMode ? '#f59e0b' : '#475569'}`, borderRadius: 6, color: autoMode ? '#1c1917' : '#94a3b8', fontSize: isMobile ? 12 : '1.3vh', fontWeight: 800, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0, minWidth: isMobile ? 80 : 72, justifyContent: 'center', transition: 'background 0.2s, color 0.2s, border-color 0.2s' }}
+                                    style={{ display: 'flex', alignItems: 'center', gap: 6, padding: isMobile ? '6px 12px' : '5px 12px', background: autoMode ? '#f59e0b' : 'transparent', border: `1px solid ${autoMode ? '#f59e0b' : '#475569'}`, borderRadius: 6, color: autoMode ? '#1c1917' : '#94a3b8', fontSize: isMobile ? 12 : 13, fontWeight: 800, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0, minWidth: isMobile ? 80 : 72, justifyContent: 'center' }}
                                 >
                                     {autoMode ? `⏸ ${autoCountdown}s` : '▶ AUTO'}
                                 </button>
@@ -392,31 +422,39 @@ export default function BestOfWinnersBySlugPage() {
                 </div>
             </header>
 
-            {campaign && (
-                <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', alignItems: 'center', justifyContent: 'center', gap: isMobile ? 4 : '0.8vw', padding: isMobile ? '8px 12px' : '0.5vh 1.5vw', background: '#1e293b', borderRadius: 10, marginBottom: isMobile ? 8 : '0.8vh', border: '1px solid #334155', flexShrink: 0, textAlign: 'center' }}>
-                    <span style={{ fontSize: isMobile ? 15 : '2.2vh', fontWeight: 900, color: '#f1f5f9', letterSpacing: 0.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: isMobile ? '100%' : '55vw' }}>
-                        Best Of {campaign.name}
+            {campaign && selectedCategory && (
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: isMobile ? 4 : 10, padding: isMobile ? '8px 12px' : '8px 20px', background: '#1e293b', borderRadius: 10, marginBottom: isMobile ? 8 : 10, border: '1px solid #334155', flexShrink: 0, textAlign: 'center' }}>
+                    <span style={{ fontSize: isMobile ? 15 : 20, fontWeight: 900, color: '#f1f5f9', letterSpacing: 0.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        Best of Province
                     </span>
-                    {selectedCategory && (
-                        <span style={{ display: 'inline-flex', alignItems: 'center', padding: isMobile ? '3px 14px' : '0.2vh 1.2vw', background: '#f59e0b', color: '#1c1917', borderRadius: 999, fontWeight: 900, fontSize: isMobile ? 13 : '1.8vh', letterSpacing: 1, whiteSpace: 'nowrap', flexShrink: 0 }}>
-                            {selectedCategory}
-                            {campaign.categories?.find(c => c.name === selectedCategory)?.distance
-                                ? ` · ${campaign.categories!.find(c => c.name === selectedCategory)!.distance}`
-                                : ''}
-                        </span>
-                    )}
+                    <span style={{ display: 'inline-flex', alignItems: 'center', padding: isMobile ? '3px 14px' : '3px 18px', background: '#f59e0b', color: '#1c1917', borderRadius: 999, fontWeight: 900, fontSize: isMobile ? 13 : 16, letterSpacing: 1, whiteSpace: 'nowrap', flexShrink: 0 }}>
+                        {selectedCategory}
+                        {campaign.categories?.find(c => c.name === selectedCategory)?.distance
+                            ? ` · ${campaign.categories!.find(c => c.name === selectedCategory)!.distance}`
+                            : ''}
+                    </span>
                 </div>
             )}
 
-            {/* Show loading only on very first load — never blank the screen on refresh */}
             {initialLoading && displayedRunners.length === 0 ? (
-                <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', fontSize: isMobile ? 16 : '2vh' }}>
+                <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', fontSize: isMobile ? 16 : 20 }}>
                     Loading...
                 </div>
+            ) : !provinceEnabled || provinceBoards.length === 0 ? (
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, color: '#64748b', textAlign: 'center', padding: 40 }}>
+                    <svg width={56} height={56} viewBox="0 0 24 24" fill="none" stroke="#475569" strokeWidth="1.5" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><polygon points="12,6.5 12.9,9 15.5,9 13.4,10.6 14.2,13.1 12,11.6 9.8,13.1 10.6,10.6 8.5,9 11.1,9" /></svg>
+                    <div style={{ fontSize: isMobile ? 16 : 20, fontWeight: 800, color: '#94a3b8' }}>
+                        {language === 'th' ? 'ยังไม่มีรางวัล Best of จังหวัด' : 'No Best of Province award'}
+                    </div>
+                    <div style={{ fontSize: isMobile ? 12 : 14 }}>
+                        {language === 'th'
+                            ? 'เปิดใช้งานและเลือกจังหวัดได้ที่ Admin → Best of จังหวัด'
+                            : 'Enable it and pick provinces in Admin → Best of Province'}
+                    </div>
+                </div>
             ) : (
-                <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: isMobile ? 12 : '1vw', flex: isMobile ? undefined : 1, minHeight: 0, paddingBottom: isMobile ? 16 : 0 }}>
-                    {renderColumn('♂ BEST MALE', '#2563eb', maleWinners, maleColRef, () => downloadLandscape('male'))}
-                    {renderColumn('♀ BEST FEMALE', '#db2777', femaleWinners, femaleColRef, () => downloadLandscape('female'))}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: isMobile ? 12 : 14, paddingBottom: isMobile ? 16 : 8 }}>
+                    {provinceBoards.map(renderProvinceBoard)}
                 </div>
             )}
         </div>

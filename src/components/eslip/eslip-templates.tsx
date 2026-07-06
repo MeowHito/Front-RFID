@@ -68,6 +68,8 @@ export interface CampaignData {
     overallDisplayCount?: number;
     ageGroupDisplayCount?: number;
     bestOfDisplayCount?: number;
+    bestOfProvinceEnabled?: boolean;
+    bestOfProvinces?: { province: string; count: number }[];
     excludeOverallFromAgeGroup?: number;
     excludeOverallThaiFromAgeGroup?: number;
     excludeOverallForeignFromAgeGroup?: number;

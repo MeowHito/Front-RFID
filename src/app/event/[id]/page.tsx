@@ -11,7 +11,7 @@ import { authHeaders } from '@/lib/authHeaders';
 import CutoffDateTimePicker from '@/components/CutoffDateTimePicker';
 import { getFollowedRunnersForEvent, isRunnerFollowed, loadFollowedRunners, subscribeFollowedRunners, type FollowedRunner } from '@/lib/followed-runners';
 import { computeAwardsForCategory, type AwardResult } from '@/lib/awards';
-import { isThaiNationality, normalizeCategoryName } from '@/lib/nationality';
+import { isThaiNationality } from '@/lib/nationality';
 import { type AgeGroupBucket, buildCanonicalAgeGroups, canonicalizeAgeGroup, normalizeAgeGroupLabel } from '@/lib/age-groups';
 import RankingMenuDropdown from '@/components/RankingMenuDropdown';
 import type { RankingMenuVisibility } from '@/lib/rankingMenu';
@@ -340,6 +340,8 @@ export default function EventLivePage() {
     const [filterCategory, setFilterCategory] = useState(catFromUrl);
     const [filterStatus, setFilterStatus] = useState('ALL');
     const [filterAgeGroup, setFilterAgeGroup] = useState('');
+    // Admin-only: when on, runners with an incomplete-checkpoint alert (⚠) are pulled to the top
+    const [sortAlertsFirst, setSortAlertsFirst] = useState(false);
     // Runner detail is now handled by /runner/[id] page
 
     const [showGenRank, setShowGenRank] = useState(true);
@@ -543,6 +545,15 @@ export default function EventLivePage() {
         };
     }
 
+    // Mirrors the per-row `showProgressAlert` predicate (see the ⚠ marker): a runner
+    // shown as finished/finish-like but whose passed-checkpoint count is still incomplete.
+    function runnerHasProgressAlert(runner: Runner) {
+        const meta = getRunnerCheckpointMeta(runner);
+        const isStoppedStatus = ['dns', 'dnf', 'dq', 'not_started'].includes(runner.status);
+        const isFinishLike = runner.status === 'finished' || (meta.isFinishLike && !isStoppedStatus);
+        return isFinishLike && meta.totalCheckpoints > 0 && meta.completedCpCount > 0 && meta.completedCpCount < meta.totalCheckpoints;
+    }
+
     useEffect(() => {
         const timer = setInterval(() => setCurrentTime(new Date()), 1000);
         return () => clearInterval(timer);
@@ -742,19 +753,11 @@ export default function EventLivePage() {
 
     // Category keys whose Overall ranking is split by nationality (Thai vs foreign).
     // The campaign stores category NAMES; map them onto the resolved category keys.
-    const natSplitCategoryKeys = useMemo(() => {
-        const list = campaign?.separateOverallNationalityCategories;
-        if (!Array.isArray(list) || list.length === 0) return new Set<string>();
-        const normalized = new Set(list.map(normalizeCategoryName).filter(Boolean));
-        const keys = new Set<string>();
-        for (const cat of categories) {
-            if ((cat.normalizedName && normalized.has(cat.normalizedName)) ||
-                (cat.normalizedDistance && normalized.has(cat.normalizedDistance))) {
-                keys.add(cat.key);
-            }
-        }
-        return keys;
-    }, [campaign?.separateOverallNationalityCategories, categories]);
+    // The main /event results page ALWAYS shows a combined overall ranking (Thai + foreign
+    // together) for both the RANK column and the AWARD label. The nationality split
+    // (campaign.separateOverallNationalityCategories) only applies to the dedicated
+    // Nationality-Winners board — never here — so this is intentionally always empty.
+    const natSplitCategoryKeys = useMemo(() => new Set<string>(), []);
 
     // Sync URL → state on back navigation (catFromUrl changes when browser restores URL)
     useEffect(() => {
@@ -1064,7 +1067,7 @@ export default function EventLivePage() {
     }, [runners, campaign?.separateOverallNationalityCategories]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const filteredRunners = useMemo(() => {
-        return allRankedRunners
+        const filtered = allRankedRunners
             .filter(runner => {
                 const matchesSearch = !searchQuery || runner.firstName?.toLowerCase().includes(searchQuery.toLowerCase()) || runner.lastName?.toLowerCase().includes(searchQuery.toLowerCase()) || runner.bib?.includes(searchQuery);
                 const matchesGender = filterGender === 'ALL' || filterGender === 'FOLLOWED' || runner.gender === filterGender;
@@ -1074,7 +1077,13 @@ export default function EventLivePage() {
                 const matchesAgeGroup = !filterAgeGroup || canonicalAgeGroupOf(runner) === filterAgeGroup;
                 return matchesSearch && matchesGender && matchesFollowed && matchesCategory && matchesStatus && matchesAgeGroup;
             });
-    }, [allRankedRunners, searchQuery, filterGender, followedRunnerIds, filterCategory, filterStatus, filterAgeGroup, resolveRunnerCategoryKey, canonicalAgeGroupOf]);
+        if (!sortAlertsFirst) return filtered;
+        // Stable sort: pull alert (incomplete-checkpoint) runners to the top, keep rank order otherwise.
+        return filtered
+            .map((runner, i) => ({ runner, i, alert: runnerHasProgressAlert(runner) }))
+            .sort((a, b) => (a.alert === b.alert ? a.i - b.i : a.alert ? -1 : 1))
+            .map(x => x.runner);
+    }, [allRankedRunners, searchQuery, filterGender, followedRunnerIds, filterCategory, filterStatus, filterAgeGroup, resolveRunnerCategoryKey, canonicalAgeGroupOf, sortAlertsFirst, cpDistanceLookup]); // eslint-disable-line react-hooks/exhaustive-deps
 
     // Compute live overall + gender + category ranks from sorted runners.
     // Rank=position within allRankedRunners so values are unique and sequential.
@@ -1715,6 +1724,19 @@ export default function EventLivePage() {
                                 </button>
                             ))}
                         </div>
+                        {isAdmin && (
+                            <button
+                                onClick={() => setSortAlertsFirst(v => !v)}
+                                title={language === 'th' ? 'เรียงคนที่ขึ้นแจ้งเตือน (⚠) ขึ้นบนสุด' : 'Sort incomplete-checkpoint alerts to the top'}
+                                className="flex shrink-0 items-center gap-1 whitespace-nowrap rounded-lg border px-2.5 py-1.5 text-[10px] font-bold transition-all duration-200"
+                                style={sortAlertsFirst
+                                    ? { background: '#f59e0b', borderColor: '#f59e0b', color: '#fff' }
+                                    : { background: themeStyles.cardBg, borderColor: themeStyles.border, color: themeStyles.textMuted }}
+                            >
+                                <span aria-hidden>⚠</span>
+                                {language === 'th' ? 'จัดเรียง' : 'Sort'}
+                            </button>
+                        )}
                     </div>
                 )}
 
@@ -1738,6 +1760,21 @@ export default function EventLivePage() {
                                 </button>
                             ))}
                         </div>
+
+                        {/* Sort incomplete-checkpoint alerts to the top — admin only */}
+                        {isAdmin && (
+                            <button
+                                onClick={() => setSortAlertsFirst(v => !v)}
+                                title={language === 'th' ? 'เรียงคนที่ขึ้นแจ้งเตือน (⚠) ขึ้นบนสุด' : 'Sort incomplete-checkpoint alerts to the top'}
+                                className="flex items-center gap-1 whitespace-nowrap rounded-lg border px-3 py-1.5 text-[11px] font-bold transition-all duration-200"
+                                style={sortAlertsFirst
+                                    ? { background: '#f59e0b', borderColor: '#f59e0b', color: '#fff' }
+                                    : { background: themeStyles.cardBg, borderColor: themeStyles.border, color: themeStyles.textMuted }}
+                            >
+                                <span aria-hidden>⚠</span>
+                                {language === 'th' ? 'จัดเรียงแจ้งเตือน' : 'Sort alerts'}
+                            </button>
+                        )}
 
                         {/* Age group filter — desktop only, shown when the selected distance has age groups */}
                         {ageGroupOptions.length > 0 && (
@@ -1797,13 +1834,13 @@ export default function EventLivePage() {
             {/* ===== TABLE ===== */}
             <main className="px-4">
                 <div className={`table-scroll border border-x-[var(--border)] border-y-0 bg-[var(--card-solid)] pb-10 ${isMobile && showAllColumns ? 'overflow-x-auto' : 'overflow-x-hidden'} overflow-y-auto`} style={{ height: 'calc(100vh - 100px)' }}>
-                    <table className="table-fixed border-collapse text-left" style={{ width: isMobile && showAllColumns ? 700 : '100%' }}>
+                    <table className="table-fixed border-collapse text-left" style={{ width: isMobile && showAllColumns ? Math.max(760, visibleColumns.length * 86) : '100%' }}>
                         <thead>
                             <tr className="sticky top-0 z-20 border-b-2 border-[var(--border)] bg-[var(--card-solid)] text-[10px] font-bold uppercase tracking-[-0.02em] text-[var(--muted-foreground)]">
                                 {visibleColumns.map(key => {
                                     const def = activeColDefs.find(c => c.key === key)!;
                                     return (
-                                        <th key={key} style={{ padding: isMobile && key === 'status' ? '6px 4px' : isMobile && key === 'gunTime' ? '6px 1px' : !isMobile && key === 'status' ? '8px 6px' : isMobile ? '6px 4px' : '8px 6px', textAlign: key === 'status' ? 'center' : def.align, width: isMobile ? def.mw : def.w }}>
+                                        <th key={key} className={isMobile ? 'overflow-hidden text-ellipsis whitespace-nowrap' : ''} style={{ padding: isMobile && key === 'status' ? '6px 4px' : isMobile && key === 'gunTime' ? '6px 1px' : !isMobile && key === 'status' ? '8px 6px' : isMobile ? '6px 4px' : '8px 6px', textAlign: key === 'status' ? 'center' : def.align, width: isMobile ? def.mw : def.w }}>
                                             {def.label}
                                         </th>
                                     );
@@ -1910,8 +1947,14 @@ export default function EventLivePage() {
                                                 const hideRank = ['dnf', 'dns', 'dq', 'not_started'].includes(runner.status);
                                                 // Use position-based live rank so values are always unique and sequential.
                                                 // Falls back to overallRank, then idx+1 if neither is available.
-                                                const liveOverall = liveRanks.get(runner._id)?.overallRank;
-                                                const displayRank = liveOverall || runner.overallRank || rank;
+                                                const liveRank = liveRanks.get(runner._id);
+                                                // On the collapsed mobile view, when the list is filtered to a single
+                                                // gender, show that gender's rank in the RANK slot (matches the GEN column).
+                                                // The expanded "More" view keeps the overall rank — it shows GEN separately.
+                                                const useGenderRank = isMobile && !showAllColumns && (filterGender === 'M' || filterGender === 'F');
+                                                const displayRank = useGenderRank
+                                                    ? (runner.genderRank || runner.genderNetRank || liveRank?.genRank || rank)
+                                                    : (liveRank?.overallRank || runner.overallRank || rank);
                                                 // All ranks (1 → last) are rendered in the primary text color;
                                                 // only DNS/DNF/DQ/not-started fall back to the muted grey "-".
                                                 const rankColor = hideRank

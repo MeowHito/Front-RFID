@@ -10,7 +10,7 @@ import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { computeAwardsForCategory, formatAwardLabel, formatOverallAwardLabel } from '@/lib/awards';
 import { isNationalitySplitCategory } from '@/lib/nationality';
-import { computeBuriramWinnerIds } from '@/lib/province';
+import { bestOfProvinceAwardFor } from '@/lib/thai-provinces';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -105,6 +105,8 @@ interface CampaignData {
     excludeOverallForeignFromAgeGroup?: number | null;
     separateOverallNationalityCategories?: string[];
     bestOfDisplayCount?: number;
+    bestOfProvinceEnabled?: boolean;
+    bestOfProvinces?: { province: string; count: number }[];
 }
 
 interface AwardLabels {
@@ -472,23 +474,22 @@ export default function CertificatePage() {
                     separateOverallByNationality: isNationalitySplitCategory(campaign.separateOverallNationalityCategories, category),
                 });
                 const mine = awardMap.get(runner._id);
-                const buriramIds = computeBuriramWinnerIds(pool, Math.max(1, campaign.bestOfDisplayCount || 1));
-                const isBestOfBrr = buriramIds.has(runner._id);
+                const bestOfProvinceLabel = bestOfProvinceAwardFor(runner._id, pool, !!campaign.bestOfProvinceEnabled, campaign.bestOfProvinces);
                 const overallLabel = mine?.overall ? formatOverallAwardLabel(mine) : null;
                 const ageGroupLabel = mine?.ageGroup ? `Age Group ${mine.ageGroup}` : null;
                 if (!cancelled) setAwards({
-                    combined: [isBestOfBrr ? 'Best of Buriram' : null, formatAwardLabel(mine) || null].filter(Boolean).join(' | ') || null,
+                    combined: [bestOfProvinceLabel, formatAwardLabel(mine) || null].filter(Boolean).join(' | ') || null,
                     overall: overallLabel,
                     gender: overallLabel,
                     ageGroup: ageGroupLabel,
                     overallThai: mine?.overallNat === 'thai' ? overallLabel : null,
                     overallForeign: mine?.overallNat === 'foreign' ? overallLabel : null,
-                    bestOfBrr: isBestOfBrr ? 'Best of Buriram' : null,
+                    bestOfBrr: bestOfProvinceLabel,
                 });
             } catch { if (!cancelled) setAwards(EMPTY_AWARDS); }
         })();
         return () => { cancelled = true; };
-    }, [runner, campaign?._id, campaign?.overallDisplayCount, campaign?.ageGroupDisplayCount, campaign?.excludeOverallFromAgeGroup, campaign?.excludeOverallThaiFromAgeGroup, campaign?.excludeOverallForeignFromAgeGroup, campaign?.separateOverallNationalityCategories, campaign?.bestOfDisplayCount]);
+    }, [runner, campaign?._id, campaign?.overallDisplayCount, campaign?.ageGroupDisplayCount, campaign?.excludeOverallFromAgeGroup, campaign?.excludeOverallThaiFromAgeGroup, campaign?.excludeOverallForeignFromAgeGroup, campaign?.separateOverallNationalityCategories, campaign?.bestOfProvinceEnabled, campaign?.bestOfProvinces]);
 
     // Track rendered canvas width so we can scale font sizes consistently with the editor.
     useEffect(() => {

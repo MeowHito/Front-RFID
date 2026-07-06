@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
 import { computeAwardsForCategory, formatAwardLabel } from '@/lib/awards';
-import { computeBuriramWinnerIds } from '@/lib/province';
+import { bestOfProvinceAwardFor } from '@/lib/thai-provinces';
 import { isNationalitySplitCategory } from '@/lib/nationality';
 import { useLanguage } from '@/lib/language-context';
 import {
@@ -32,13 +32,13 @@ export default function ESlipPage() {
     const [timings, setTimings] = useState<TimingRecord[]>([]);
     const [campaign, setCampaign] = useState<CampaignData | null>(null);
     const [awardLabel, setAwardLabel] = useState<string | null>(null);
-    const [bestOfBuriram, setBestOfBuriram] = useState(false);
-    // Award line shown on the slip: "Best of Buriram" leads (when earned), then the
+    const [bestOfProvince, setBestOfProvince] = useState<string | null>(null);
+    // Award line shown on the slip: "Best of <province>" leads (when earned), then the
     // Overall / Age-group award, separated by " | ".
     const displayAwardLabel = useMemo(() => {
-        const parts = [bestOfBuriram ? 'Best of Buriram' : null, awardLabel || null].filter(Boolean);
+        const parts = [bestOfProvince, awardLabel || null].filter(Boolean);
         return parts.length ? parts.join(' | ') : null;
-    }, [bestOfBuriram, awardLabel]);
+    }, [bestOfProvince, awardLabel]);
     const targetBandLabel = useMemo(() => (runner ? computeTargetBandLabel(runner, campaign) : null), [runner, campaign]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -105,19 +105,18 @@ export default function ESlipPage() {
     // Compute this runner's AWARD (Overall / Age Group) — same algorithm as the
     // public event table + winner boards — by pulling the whole category pool.
     useEffect(() => {
-        if (!runner || !campaign?._id || !runner.category) { setAwardLabel(null); setBestOfBuriram(false); return; }
+        if (!runner || !campaign?._id || !runner.category) { setAwardLabel(null); setBestOfProvince(null); return; }
         let cancelled = false;
         (async () => {
             try {
                 const p = new URLSearchParams({ campaignId: campaign._id, category: runner.category, limit: '10000', skipStatusCounts: 'true' });
                 const res = await fetch(`/api/runners/paged?${p.toString()}`, { cache: 'no-store' });
-                if (!res.ok) { if (!cancelled) { setAwardLabel(null); setBestOfBuriram(false); } return; }
+                if (!res.ok) { if (!cancelled) { setAwardLabel(null); setBestOfProvince(null); } return; }
                 const data = await res.json();
                 const pool = Array.isArray(data?.data) ? data.data : [];
-                // "Best of Buriram" — same top-N-per-gender local award as the board.
-                const buriramTopN = Math.max(1, campaign.bestOfDisplayCount || 1);
-                const buriramIds = computeBuriramWinnerIds(pool, buriramTopN);
-                if (!cancelled) setBestOfBuriram(buriramIds.has(runner._id));
+                // "Best of Province" — same top-N-per-gender local award as the board.
+                const provinceLabel = bestOfProvinceAwardFor(runner._id, pool, !!campaign.bestOfProvinceEnabled, campaign.bestOfProvinces);
+                if (!cancelled) setBestOfProvince(provinceLabel);
                 const awards = computeAwardsForCategory(pool, {
                     overallDisplayCount: campaign.overallDisplayCount,
                     ageGroupDisplayCount: campaign.ageGroupDisplayCount,
@@ -128,10 +127,10 @@ export default function ESlipPage() {
                 });
                 const mine = awards.get(runner._id);
                 if (!cancelled) setAwardLabel(mine ? formatAwardLabel(mine) : null);
-            } catch { if (!cancelled) { setAwardLabel(null); setBestOfBuriram(false); } }
+            } catch { if (!cancelled) { setAwardLabel(null); setBestOfProvince(null); } }
         })();
         return () => { cancelled = true; };
-    }, [runner, campaign?._id, campaign?.overallDisplayCount, campaign?.ageGroupDisplayCount, campaign?.bestOfDisplayCount, campaign?.excludeOverallFromAgeGroup, campaign?.excludeOverallThaiFromAgeGroup, campaign?.excludeOverallForeignFromAgeGroup, campaign?.excludeAgeGroupTop, campaign?.separateOverallNationalityCategories]);
+    }, [runner, campaign?._id, campaign?.overallDisplayCount, campaign?.ageGroupDisplayCount, campaign?.bestOfProvinceEnabled, campaign?.bestOfProvinces, campaign?.excludeOverallFromAgeGroup, campaign?.excludeOverallThaiFromAgeGroup, campaign?.excludeOverallForeignFromAgeGroup, campaign?.excludeAgeGroupTop, campaign?.separateOverallNationalityCategories]);
 
     const handleBgUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const input = e.currentTarget;

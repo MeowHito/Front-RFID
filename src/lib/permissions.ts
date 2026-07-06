@@ -52,6 +52,7 @@ export const ROUTE_TO_MODULE: Record<string, string> = {
     '/admin/display': 'results',
     '/admin/age-group-ranking': 'results',
     '/admin/top-overall': 'results',
+    '/admin/best-of-province': 'results',
     '/admin/certificates': 'certificates',
     '/admin/eslip': 'certificates',
     '/admin/eslip-scan': 'certificates',
