@@ -11,7 +11,7 @@ import { authHeaders } from '@/lib/authHeaders';
 import CutoffDateTimePicker from '@/components/CutoffDateTimePicker';
 import { getFollowedRunnersForEvent, isRunnerFollowed, loadFollowedRunners, subscribeFollowedRunners, type FollowedRunner } from '@/lib/followed-runners';
 import { computeAwardsForCategory, type AwardResult } from '@/lib/awards';
-import { isThaiNationality } from '@/lib/nationality';
+import { isThaiNationality, isNationalitySplitCategory } from '@/lib/nationality';
 import { type AgeGroupBucket, buildCanonicalAgeGroups, canonicalizeAgeGroup, normalizeAgeGroupLabel } from '@/lib/age-groups';
 import RankingMenuDropdown from '@/components/RankingMenuDropdown';
 import type { RankingMenuVisibility } from '@/lib/rankingMenu';
@@ -752,11 +752,8 @@ export default function EventLivePage() {
     }, [categories, filterCategory]);
 
     // Category keys whose Overall ranking is split by nationality (Thai vs foreign).
-    // The campaign stores category NAMES; map them onto the resolved category keys.
-    // The main /event results page ALWAYS shows a combined overall ranking (Thai + foreign
-    // together) for both the RANK column and the AWARD label. The nationality split
-    // (campaign.separateOverallNationalityCategories) only applies to the dedicated
-    // Nationality-Winners board — never here — so this is intentionally always empty.
+    // The RANK column ALWAYS shows a combined overall ranking (Thai + foreign together),
+    // so the rank-related `natSplitCategoryKeys` is intentionally always empty.
     const natSplitCategoryKeys = useMemo(() => new Set<string>(), []);
 
     // Sync URL → state on back navigation (catFromUrl changes when browser restores URL)
@@ -811,6 +808,23 @@ export default function EventLivePage() {
 
         return runner.category;
     }, [categories]);
+
+    // The AWARD column splits the Overall label by nationality ("OVERALL THA n" /
+    // "OVERALL INT n") when the campaign marks the category — only the label changes;
+    // the combined RANK number is untouched. Award pools are keyed by
+    // resolveRunnerCategoryKey(), so map each split runner's raw category name
+    // (stored on the campaign) onto its resolved pool key.
+    const natSplitAwardKeys = useMemo(() => {
+        const set = new Set<string>();
+        const splitCats = campaign?.separateOverallNationalityCategories;
+        if (!splitCats?.length) return set;
+        for (const r of runners) {
+            if (isNationalitySplitCategory(splitCats, r.category)) {
+                set.add(resolveRunnerCategoryKey(r));
+            }
+        }
+        return set;
+    }, [runners, campaign?.separateOverallNationalityCategories, resolveRunnerCategoryKey]);
 
     // Canonical age-group buckets per resolved category. RaceTiger sometimes tags
     // a handful of individual runners with a differently-shaped age-group label
@@ -919,13 +933,13 @@ export default function EventLivePage() {
                 excludeOverallFromAgeGroup: campaign?.excludeOverallFromAgeGroup,
                 excludeOverallThaiFromAgeGroup: campaign?.excludeOverallThaiFromAgeGroup,
                 excludeOverallForeignFromAgeGroup: campaign?.excludeOverallForeignFromAgeGroup,
-                // Nationality split is decided per race category
-                separateOverallByNationality: natSplitCategoryKeys.has(key),
+                // Nationality split is decided per race category (AWARD label only)
+                separateOverallByNationality: natSplitAwardKeys.has(key),
             };
             for (const [id, award] of computeAwardsForCategory(pool, cfg)) map.set(id, award);
         }
         return map;
-    }, [runners, resolveRunnerCategoryKey, campaign?.overallDisplayCount, campaign?.ageGroupDisplayCount, campaign?.excludeOverallFromAgeGroup, campaign?.excludeOverallThaiFromAgeGroup, campaign?.excludeOverallForeignFromAgeGroup, campaign?.excludeAgeGroupTop, natSplitCategoryKeys]);
+    }, [runners, resolveRunnerCategoryKey, campaign?.overallDisplayCount, campaign?.ageGroupDisplayCount, campaign?.excludeOverallFromAgeGroup, campaign?.excludeOverallThaiFromAgeGroup, campaign?.excludeOverallForeignFromAgeGroup, campaign?.excludeAgeGroupTop, natSplitAwardKeys]);
 
     // Build ordered list of visible columns based on admin displayColumns + mobile
     const visibleColumns = useMemo(() => {

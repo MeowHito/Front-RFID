@@ -917,7 +917,7 @@ export default function RunnerProfilePage() {
                         If the distance has no age groups configured, the card is hidden entirely. */}
                     {runner.ageGroup ? (
                         <div className="runner-stat-card" style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, padding: 12 }}>
-                            <p className="runner-stat-label" style={{ fontSize: 9, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', marginBottom: 2 }}>Category Rank</p>
+                            <p className="runner-stat-label" style={{ fontSize: 9, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', marginBottom: 2 }}>Age Group Rank</p>
                             <p className="runner-stat-value" style={{ fontSize: 20, fontWeight: 900, color: '#0f172a', margin: 0 }}>{categoryRank || '-'} <small style={{ fontSize: 11, color: '#94a3b8', fontWeight: 700 }}>({runner.ageGroup})</small></p>
                         </div>
                     ) : null}
