@@ -198,8 +198,8 @@ export default function TopOverallWinnersBySlugPage() {
     const { maleWinners, femaleWinners } = useMemo(() => {
         const finished = displayedRunners.filter(r => r.status === 'finished' && (r.netTime || r.gunTime || r.elapsedTime));
         const sorted = [...finished].sort((a, b) => {
-            const at = a.netTime || a.gunTime || a.elapsedTime || Infinity;
-            const bt = b.netTime || b.gunTime || b.elapsedTime || Infinity;
+            const at = a.gunTime || a.netTime || a.elapsedTime || Infinity; // Overall = gun time
+            const bt = b.gunTime || b.netTime || b.elapsedTime || Infinity;
             return at - bt;
         });
         return {
@@ -230,8 +230,8 @@ export default function TopOverallWinnersBySlugPage() {
                     const topNForCat = Math.max(1, campaign.overallDisplayCount || 5);
                     const finished = runners.filter(r => r.status === 'finished' && (r.netTime || r.gunTime || r.elapsedTime));
                     const sorted = [...finished].sort((a, b) => {
-                        const at = a.netTime || a.gunTime || a.elapsedTime || Infinity;
-                        const bt = b.netTime || b.gunTime || b.elapsedTime || Infinity;
+                        const at = a.gunTime || a.netTime || a.elapsedTime || Infinity; // Overall = gun time
+                        const bt = b.gunTime || b.netTime || b.elapsedTime || Infinity;
                         return at - bt;
                     });
                     return {

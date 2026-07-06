@@ -188,7 +188,7 @@ type ColDef = { key: string; label: string; w: string; mw: string; align: 'left'
 const COL_DEFS: ColDef[] = [
     { key: 'rank', label: 'Rank', w: '3%', mw: '4%', align: 'center', fixed: true },
     { key: 'genRank', label: 'Gen', w: '3%', mw: '4%', align: 'center' },
-    { key: 'catRank', label: 'Cat', w: '6%', mw: '9%', align: 'center' },
+    { key: 'catRank', label: 'Age', w: '6%', mw: '9%', align: 'center' },
     { key: 'award', label: 'Award', w: '7%', mw: '12%', align: 'center' },
     { key: 'runner', label: 'Runner', w: '15%', mw: '22%', align: 'left', fixed: true },
     { key: 'sex', label: 'Sex', w: '3%', mw: '5%', align: 'center' },
@@ -400,7 +400,30 @@ export default function EventLivePage() {
         return (a._id || '').localeCompare(b._id || '');
     }
 
+    // Overall placing is decided by GUN time — prefer gun fields, fall back to net
+    // (locally-timed events store only net time).
     function getRunnerPrimaryTimeMs(runner: Runner) {
+        const candidates = [
+            runner.gunTimeMs,
+            runner.totalGunTimeMs,
+            runner.totalGunTime,
+            runner.gunTime,
+            runner.netTimeMs,
+            runner.totalNetTimeMs,
+            runner.totalNetTime,
+            runner.netTime,
+            runner.elapsedTime,
+        ];
+        for (const value of candidates) {
+            const num = Number(value || 0);
+            if (Number.isFinite(num) && num > 0) return num;
+        }
+        return 0;
+    }
+
+    // Gender + age-group placings are decided by NET (chip) time — prefer net fields,
+    // fall back to gun.
+    function getRunnerNetTimeMs(runner: Runner) {
         const candidates = [
             runner.netTimeMs,
             runner.totalNetTimeMs,
@@ -1099,37 +1122,57 @@ export default function EventLivePage() {
             .map(x => x.runner);
     }, [allRankedRunners, searchQuery, filterGender, followedRunnerIds, filterCategory, filterStatus, filterAgeGroup, resolveRunnerCategoryKey, canonicalAgeGroupOf, sortAlertsFirst, cpDistanceLookup]); // eslint-disable-line react-hooks/exhaustive-deps
 
-    // Compute live overall + gender + category ranks from sorted runners.
-    // Rank=position within allRankedRunners so values are unique and sequential.
+    // Compute live overall + gender + category ranks.
+    // Ranking convention: Overall placing is decided by GUN time, while Gender (GEN)
+    // and Age-group (CAT) placings are decided by NET (chip) time. Overall therefore
+    // follows allRankedRunners (already gun-ordered); GEN/CAT follow a net-time order.
     // CAT rank is scoped to gender + ageGroup so M40-49 and F40-49 rank separately.
     const liveRanks = useMemo(() => {
-        const eventCounters: Record<string, number> = {};
-        const genderCounters: Record<string, number> = {};
-        const categoryCounters: Record<string, number> = {};
-        const ranks = new Map<string, { overallRank: number; genRank: number; catRank: number }>();
-        for (const runner of allRankedRunners) {
+        const rankable = (runner: Runner) => {
             // Rank runners who have passed at least one checkpoint (finished, in_progress, or DNF with progress)
             // Skip DNS/DQ/not_started runners with no checkpoint progress
-            if (runner.status === 'not_started' || runner.status === 'dns' || runner.status === 'dq') continue;
-            if (runner.status === 'dnf' && !((runner.passedCount ?? 0) > 0)) continue;
-            // In nationality-split categories the Overall counter is scoped to the
-            // runner's Thai/foreign bucket; gender + category counters stay combined.
-            // Both combined and nationality counters advance for every runner so
-            // non-split categories in the same event keep their full combined rank.
+            if (runner.status === 'not_started' || runner.status === 'dns' || runner.status === 'dq') return false;
+            if (runner.status === 'dnf' && !((runner.passedCount ?? 0) > 0)) return false;
+            return true;
+        };
+        const eligible = allRankedRunners.filter(rankable);
+        const ranks = new Map<string, { overallRank: number; genRank: number; catRank: number }>();
+        for (const runner of eligible) {
+            ranks.set(runner._id, { overallRank: 0, genRank: 0, catRank: 0 });
+        }
+
+        // Overall — by GUN time (eligible is already gun-ordered via allRankedRunners).
+        // In nationality-split categories the Overall counter is scoped to the runner's
+        // Thai/foreign bucket; both combined and nationality counters advance for every
+        // runner so non-split categories in the same event keep their full combined rank.
+        const eventCounters: Record<string, number> = {};
+        for (const runner of eligible) {
             const isSplit = natSplitCategoryKeys.size > 0 && natSplitCategoryKeys.has(resolveRunnerCategoryKey(runner));
             const eventKey = runner.eventId || '_';
             const natEventKey = `${eventKey}${isThaiNationality(runner.nationality) ? '::th' : '::intl'}`;
-            const genderKey = `${eventKey}::${runner.gender || '_'}`;
-            const catKey = `${eventKey}::${runner.gender || '_'}::${canonicalAgeGroupOf(runner) || '_'}`;
             eventCounters[eventKey] = (eventCounters[eventKey] || 0) + 1;
             eventCounters[natEventKey] = (eventCounters[natEventKey] || 0) + 1;
+            ranks.get(runner._id)!.overallRank = eventCounters[isSplit ? natEventKey : eventKey];
+        }
+
+        // Gender + age-group — by NET time. Stable sort keeps in-progress runners (no net
+        // time yet) in their existing relative order.
+        const byNet = [...eligible].sort((a, b) => {
+            const at = getRunnerNetTimeMs(a);
+            const bt = getRunnerNetTimeMs(b);
+            return (at > 0 ? at : Infinity) - (bt > 0 ? bt : Infinity);
+        });
+        const genderCounters: Record<string, number> = {};
+        const categoryCounters: Record<string, number> = {};
+        for (const runner of byNet) {
+            const eventKey = runner.eventId || '_';
+            const genderKey = `${eventKey}::${runner.gender || '_'}`;
+            const catKey = `${eventKey}::${runner.gender || '_'}::${canonicalAgeGroupOf(runner) || '_'}`;
             genderCounters[genderKey] = (genderCounters[genderKey] || 0) + 1;
             categoryCounters[catKey] = (categoryCounters[catKey] || 0) + 1;
-            ranks.set(runner._id, {
-                overallRank: eventCounters[isSplit ? natEventKey : eventKey],
-                genRank: genderCounters[genderKey],
-                catRank: categoryCounters[catKey],
-            });
+            const entry = ranks.get(runner._id)!;
+            entry.genRank = genderCounters[genderKey];
+            entry.catRank = categoryCounters[catKey];
         }
         return ranks;
     }, [allRankedRunners, natSplitCategoryKeys, resolveRunnerCategoryKey, canonicalAgeGroupOf]);

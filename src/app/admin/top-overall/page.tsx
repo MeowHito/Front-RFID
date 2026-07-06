@@ -114,8 +114,8 @@ export default function TopOverallPage() {
         return [...previewRunners]
             .filter(r => r.status === 'finished' && (r.netTime || r.gunTime || r.elapsedTime))
             .sort((a, b) => {
-                const at = a.netTime || a.gunTime || a.elapsedTime || Infinity;
-                const bt = b.netTime || b.gunTime || b.elapsedTime || Infinity;
+                const at = a.gunTime || a.netTime || a.elapsedTime || Infinity; // Overall = gun time
+                const bt = b.gunTime || b.netTime || b.elapsedTime || Infinity;
                 return at - bt;
             });
     }, [previewRunners]);
