@@ -40,6 +40,7 @@ export interface AwardRunnerLike {
     gunTime?: number;
     elapsedTime?: number;
     ageGroupRank?: number;
+    overallRank?: number;
     nationality?: string;
 }
 
@@ -57,7 +58,22 @@ export function normalizeAgeGroupLabel(value?: string | null): string {
 // placing is decided by NET (chip) time. Each falls back to the other when its own
 // time is missing (locally-timed events store only net time).
 const gunTimeOf = (r: AwardRunnerLike) => r.gunTime || r.netTime || r.elapsedTime || Infinity;
-const netTimeOf = (r: AwardRunnerLike) => r.netTime || r.gunTime || r.elapsedTime || Infinity;
+
+// Every placing (Overall, Gender, Age-group) is now decided by GUN time.
+// Overall placing is by GUN time, but RaceTiger stores gun time only to the second,
+// so two runners crossing in the same second tie exactly. Without a deterministic
+// tie-break the order falls to whatever the DB returned, which made /runner disagree
+// with the /event RANK column. Break gun-time ties by the stored overall placing
+// (RaceTiger's own finish-time order — the same order /event shows), then by bib, so
+// every surface ranks a gun-time tie identically.
+const compareOverallByGun = (a: AwardRunnerLike, b: AwardRunnerLike) => {
+    const g = gunTimeOf(a) - gunTimeOf(b);
+    if (g !== 0) return g;
+    const ar = a.overallRank && a.overallRank > 0 ? a.overallRank : Infinity;
+    const br = b.overallRank && b.overallRank > 0 ? b.overallRank : Infinity;
+    if (ar !== br) return ar - br;
+    return String(a.bib || '').localeCompare(String(b.bib || ''), undefined, { numeric: true });
+};
 
 /**
  * Gun-time overall placing across the whole category pool (all finishers combined,
@@ -70,7 +86,7 @@ export function computeOverallRanks(
     opts?: { separateByNationality?: boolean },
 ): Map<string, number> {
     const finished = runners.filter(r => r.status === 'finished' && (r.netTime || r.gunTime || r.elapsedTime));
-    const byGun = [...finished].sort((a, b) => gunTimeOf(a) - gunTimeOf(b));
+    const byGun = [...finished].sort(compareOverallByGun);
     const result = new Map<string, number>();
     if (opts?.separateByNationality) {
         const counters: Record<'thai' | 'foreign', number> = { thai: 0, foreign: 0 };
@@ -98,10 +114,6 @@ export function computeAwardsForCategory(
     const ageGroupDisplayCount = Math.max(1, Number(cfg.ageGroupDisplayCount) || 5);
     const excludeOv = Math.max(0, Number(cfg.excludeOverallFromAgeGroup) || 0);
     const separateNat = !!cfg.separateOverallByNationality;
-    const excludeNatCount: Record<'thai' | 'foreign', number> = {
-        thai: cfg.excludeOverallThaiFromAgeGroup != null ? Math.max(0, Number(cfg.excludeOverallThaiFromAgeGroup)) : overallDisplayCount,
-        foreign: cfg.excludeOverallForeignFromAgeGroup != null ? Math.max(0, Number(cfg.excludeOverallForeignFromAgeGroup)) : overallDisplayCount,
-    };
 
     const finished = runners.filter(r => r.status === 'finished' && (r.netTime || r.gunTime || r.elapsedTime));
     // RaceTiger occasionally tags a handful of runners with a differently-shaped
@@ -115,57 +127,30 @@ export function computeAwardsForCategory(
         return a;
     };
 
+    // OVERALL — a single combined placing across every finisher (both genders, all
+    // nationalities), ranked by GUN time. Labeled "Overall n" (no gender / THA-INT
+    // split), so it matches the /event RANK column exactly.
+    const byGunAll = [...finished].sort(compareOverallByGun);
+    byGunAll.slice(0, overallDisplayCount).forEach((r, i) => {
+        ensure(r._id).overall = i + 1;
+    });
+
+    // Runners kept out of age-group prizes: the top overall finishers. `excludeOv`
+    // (excludeOverallFromAgeGroup) controls how many; nationality-split categories
+    // still exclude their overall winners by default, matching the old behavior.
+    const excludeCount = excludeOv > 0 ? excludeOv : (separateNat ? overallDisplayCount : 0);
+    const excludedBibs = new Set<string>();
+    if (excludeCount > 0) byGunAll.slice(0, excludeCount).forEach(r => excludedBibs.add(r.bib));
+
+    // AGE GROUP — winners per (gender, age-group), ranked by GUN time. In
+    // nationality-split categories foreigners stay ineligible for age-group prizes
+    // (organizer rule); only the OVERALL placing dropped its nationality split.
     for (const female of [false, true]) {
         const group = finished.filter(r => (r.gender === 'F') === female);
-        // Overall winners are ranked by GUN time; age-group winners by NET time.
-        const byGun = [...group].sort((a, b) => gunTimeOf(a) - gunTimeOf(b));
-
-        // Overall winners (per gender). When nationality-split is on, the overall
-        // placing is scoped further to the Thai / foreign bucket, so each bucket has
-        // its own "OVERALL THA 1..N" / "OVERALL INT 1..N".
-        const excludedBibs = new Set<string>();
-        if (separateNat) {
-            const natCount: Record<'thai' | 'foreign', number> = { thai: 0, foreign: 0 };
-            for (const r of byGun) {
-                const key = isThaiNationality(r.nationality) ? 'thai' : 'foreign';
-                natCount[key] += 1;
-                if (natCount[key] <= overallDisplayCount) {
-                    const a = ensure(r._id);
-                    a.overall = natCount[key];
-                    a.overallNat = key;
-                }
-                // Exclusion count is independently configurable per Thai/foreign bucket
-                // (e.g. exclude top 5 Thai but only top 3 foreign from age-group awards).
-                if (natCount[key] <= excludeNatCount[key]) excludedBibs.add(r.bib);
-            }
-        } else {
-            byGun.slice(0, overallDisplayCount).forEach((r, i) => {
-                ensure(r._id).overall = i + 1;
-            });
-        }
-
-        // Age-group winners (per gender) — overall winners stay eligible unless the
-        // admin chose to exclude the top `excludeOv` overall from age-group prizes
-        // (or the category is nationality-split, which always excludes them).
-        if (excludeOv > 0) byGun.slice(0, excludeOv).forEach(r => excludedBibs.add(r.bib));
-
-        // Sort by actual NET finish time first — RaceTiger's ageGroupRank can be stale
-        // or wrong for individual runners (e.g. after a time correction), so it's
-        // only used to break ties, never as the primary order.
-        const byAgeRank = [...group].sort((a, b) => {
-            const at = netTimeOf(a);
-            const bt = netTimeOf(b);
-            if (at !== bt) return at - bt;
-            const ar = (a.ageGroupRank && a.ageGroupRank > 0) ? a.ageGroupRank : Infinity;
-            const br = (b.ageGroupRank && b.ageGroupRank > 0) ? b.ageGroupRank : Infinity;
-            return ar - br;
-        });
-
+        const byGun = [...group].sort(compareOverallByGun);
         const bucketCount = new Map<string, number>();
-        for (const r of byAgeRank) {
+        for (const r of byGun) {
             if (excludedBibs.has(r.bib)) continue;
-            // Nationality-split categories: foreigners are not eligible for age-group
-            // awards at all (organizer rule) — they only place in the OVERALL INT ranking.
             if (separateNat && !isThaiNationality(r.nationality)) continue;
             const ag = canonicalizeAgeGroup(r.ageGroup, canonicalLabelOf);
             if (!ag) continue;
@@ -178,6 +163,43 @@ export function computeAwardsForCategory(
         }
     }
     return map;
+}
+
+/**
+ * Gender placing across the pool, by GUN time (both nationalities combined).
+ * Returns a map of runnerId → rank within the runner's gender.
+ */
+export function computeGenderRanks(runners: AwardRunnerLike[]): Map<string, number> {
+    const finished = runners.filter(r => r.status === 'finished' && (r.netTime || r.gunTime || r.elapsedTime));
+    const byGun = [...finished].sort(compareOverallByGun);
+    const counters: Record<string, number> = {};
+    const result = new Map<string, number>();
+    for (const r of byGun) {
+        const key = String(r.gender || '_');
+        counters[key] = (counters[key] || 0) + 1;
+        result.set(r._id, counters[key]);
+    }
+    return result;
+}
+
+/**
+ * Age-group placing scoped to (gender, age-group), by GUN time. Age groups are
+ * canonicalized the same way as the award computation so labels group consistently.
+ * Returns a map of runnerId → rank within the runner's gender + age group.
+ */
+export function computeAgeGroupRanks(runners: AwardRunnerLike[]): Map<string, number> {
+    const finished = runners.filter(r => r.status === 'finished' && (r.netTime || r.gunTime || r.elapsedTime));
+    const { canonicalLabelOf } = buildCanonicalAgeGroups(finished.map(r => r.ageGroup));
+    const byGun = [...finished].sort(compareOverallByGun);
+    const counters: Record<string, number> = {};
+    const result = new Map<string, number>();
+    for (const r of byGun) {
+        const ag = canonicalizeAgeGroup(r.ageGroup, canonicalLabelOf);
+        const key = `${String(r.gender || '_')}::${ag || '_'}`;
+        counters[key] = (counters[key] || 0) + 1;
+        result.set(r._id, counters[key]);
+    }
+    return result;
 }
 
 /** Label for the Overall part of an award: "Overall 1", or in nationality-split

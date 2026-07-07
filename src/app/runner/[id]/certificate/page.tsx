@@ -477,7 +477,7 @@ export default function CertificatePage() {
                     excludeOverallForeignFromAgeGroup: campaign.excludeOverallForeignFromAgeGroup ?? undefined,
                     separateOverallByNationality: natSplit,
                 });
-                const overallRanks = computeOverallRanks(pool, { separateByNationality: natSplit });
+                const overallRanks = computeOverallRanks(pool, { separateByNationality: false });
                 if (!cancelled) setGunOverallRank(overallRanks.get(runner._id) || null);
                 const mine = awardMap.get(runner._id);
                 const bestOfProvinceLabel = bestOfProvinceAwardFor(runner._id, pool, !!campaign.bestOfProvinceEnabled, campaign.bestOfProvinces);

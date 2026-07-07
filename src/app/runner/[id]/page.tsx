@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
 import { isRunnerFollowed, loadFollowedRunners, saveFollowedRunners, subscribeFollowedRunners, toggleFollowedRunner, type FollowedRunner } from '@/lib/followed-runners';
-import { computeAwardsForCategory, computeOverallRanks, formatOverallAwardLabel, type AwardResult } from '@/lib/awards';
+import { computeAwardsForCategory, computeOverallRanks, computeGenderRanks, computeAgeGroupRanks, formatOverallAwardLabel, type AwardResult } from '@/lib/awards';
 import { bestOfProvinceAwardFor } from '@/lib/thai-provinces';
 import { isNationalitySplitCategory } from '@/lib/nationality';
 import { useLanguage } from '@/lib/language-context';
@@ -336,9 +336,12 @@ export default function RunnerProfilePage() {
     const [campaign, setCampaign] = useState<CampaignData | null>(null);
     const [award, setAward] = useState<AwardResult | null>(null);
     const [bestOfProvince, setBestOfProvince] = useState<string | null>(null);
-    // Gun-time overall placing computed from the category pool (Overall = gun time),
-    // so this matches the /event RANK column instead of the net-time stored rank.
+    // Gun-time placings computed from the category pool. Overall is a single combined
+    // list (no gender / nationality split); Gender and Age-group are also by gun time —
+    // matching the /event columns instead of the net-time stored ranks.
     const [gunOverallRank, setGunOverallRank] = useState<number | null>(null);
+    const [gunGenderRank, setGunGenderRank] = useState<number | null>(null);
+    const [gunAgeGroupRank, setGunAgeGroupRank] = useState<number | null>(null);
     const [cpMappings, setCpMappings] = useState<CheckpointMappingData[]>([]);
     const [checkpointRanks, setCheckpointRanks] = useState<Record<string, number>>({});
     const [loading, setLoading] = useState(true);
@@ -415,7 +418,7 @@ export default function RunnerProfilePage() {
     // event table and winner boards do — fetch the whole category pool, then run
     // the shared award algorithm and keep only this runner's result.
     useEffect(() => {
-        if (!runner || !campaign?._id || !runner.category) { setAward(null); setBestOfProvince(null); setGunOverallRank(null); return; }
+        if (!runner || !campaign?._id || !runner.category) { setAward(null); setBestOfProvince(null); setGunOverallRank(null); setGunGenderRank(null); setGunAgeGroupRank(null); return; }
         let cancelled = false;
         (async () => {
             try {
@@ -426,7 +429,7 @@ export default function RunnerProfilePage() {
                     skipStatusCounts: 'true',
                 });
                 const res = await fetch(`/api/runners/paged?${params.toString()}`, { cache: 'no-store' });
-                if (!res.ok) { if (!cancelled) { setAward(null); setBestOfProvince(null); setGunOverallRank(null); } return; }
+                if (!res.ok) { if (!cancelled) { setAward(null); setBestOfProvince(null); setGunOverallRank(null); setGunGenderRank(null); setGunAgeGroupRank(null); } return; }
                 const data = await res.json();
                 const pool = Array.isArray(data?.data) ? data.data : [];
                 // "Best of Province" — same top-N-per-gender local award as the board.
@@ -441,12 +444,18 @@ export default function RunnerProfilePage() {
                     excludeOverallForeignFromAgeGroup: campaign.excludeOverallForeignFromAgeGroup,
                     separateOverallByNationality: natSplit,
                 });
-                const overallRanks = computeOverallRanks(pool, { separateByNationality: natSplit });
+                // Overall is now a single combined placing (no nationality split); Gender
+                // and Age-group placings are also by gun time.
+                const overallRanks = computeOverallRanks(pool, { separateByNationality: false });
+                const genderRanks = computeGenderRanks(pool);
+                const ageGroupRanks = computeAgeGroupRanks(pool);
                 if (!cancelled) {
                     setAward(awards.get(runner._id) || null);
                     setGunOverallRank(overallRanks.get(runner._id) || null);
+                    setGunGenderRank(genderRanks.get(runner._id) || null);
+                    setGunAgeGroupRank(ageGroupRanks.get(runner._id) || null);
                 }
-            } catch { if (!cancelled) { setAward(null); setBestOfProvince(null); setGunOverallRank(null); } }
+            } catch { if (!cancelled) { setAward(null); setBestOfProvince(null); setGunOverallRank(null); setGunGenderRank(null); setGunAgeGroupRank(null); } }
         })();
         return () => { cancelled = true; };
     }, [runner, campaign?._id, campaign?.overallDisplayCount, campaign?.ageGroupDisplayCount, campaign?.bestOfProvinceEnabled, campaign?.bestOfProvinces, campaign?.excludeOverallFromAgeGroup, campaign?.excludeOverallThaiFromAgeGroup, campaign?.excludeOverallForeignFromAgeGroup, campaign?.separateOverallNationalityCategories]);
@@ -594,9 +603,10 @@ export default function RunnerProfilePage() {
         || (isFinished && lastTiming ? checkpointRanks[lastTiming.checkpoint] : undefined)
         || 0;
 
-    // Gender/Category rank: use runner fields (no per-checkpoint gender rank available)
-    const genderRank = runner.genderRank || runner.genderNetRank || 0;
-    const categoryRank = runner.ageGroupRank || runner.ageGroupNetRank || runner.categoryRank || runner.categoryNetRank || 0;
+    // Gender/Category rank: prefer the gun-time placings computed from the category pool
+    // (Gender + Age-group = gun time now), then fall back to the stored fields.
+    const genderRank = gunGenderRank || runner.genderRank || runner.genderNetRank || 0;
+    const categoryRank = gunAgeGroupRank || runner.ageGroupRank || runner.ageGroupNetRank || runner.categoryRank || runner.categoryNetRank || 0;
 
     const runnerHitMap = new Map(runnerHits.map(hit => [normalizeCheckpoint(hit.checkpoint), hit]));
     const availableVideoCount = runnerHits.filter(hit => hit.recording).length;

@@ -135,7 +135,7 @@ export default function ESlipPage() {
                     excludeOverallForeignFromAgeGroup: campaign.excludeOverallForeignFromAgeGroup,
                     separateOverallByNationality: natSplit,
                 });
-                const overallRanks = computeOverallRanks(pool, { separateByNationality: natSplit });
+                const overallRanks = computeOverallRanks(pool, { separateByNationality: false });
                 const mine = awards.get(runner._id);
                 if (!cancelled) {
                     setAwardLabel(mine ? formatAwardLabel(mine) : null);

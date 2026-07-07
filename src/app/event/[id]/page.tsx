@@ -11,7 +11,7 @@ import { authHeaders } from '@/lib/authHeaders';
 import CutoffDateTimePicker from '@/components/CutoffDateTimePicker';
 import { getFollowedRunnersForEvent, isRunnerFollowed, loadFollowedRunners, subscribeFollowedRunners, type FollowedRunner } from '@/lib/followed-runners';
 import { computeAwardsForCategory, type AwardResult } from '@/lib/awards';
-import { isThaiNationality, isNationalitySplitCategory } from '@/lib/nationality';
+import { isNationalitySplitCategory } from '@/lib/nationality';
 import { type AgeGroupBucket, buildCanonicalAgeGroups, canonicalizeAgeGroup, normalizeAgeGroupLabel } from '@/lib/age-groups';
 import RankingMenuDropdown from '@/components/RankingMenuDropdown';
 import type { RankingMenuVisibility } from '@/lib/rankingMenu';
@@ -774,11 +774,6 @@ export default function EventLivePage() {
         return categories.find(c => c.key === filterCategory)?.categoryName || '';
     }, [categories, filterCategory]);
 
-    // Category keys whose Overall ranking is split by nationality (Thai vs foreign).
-    // The RANK column ALWAYS shows a combined overall ranking (Thai + foreign together),
-    // so the rank-related `natSplitCategoryKeys` is intentionally always empty.
-    const natSplitCategoryKeys = useMemo(() => new Set<string>(), []);
-
     // Sync URL → state on back navigation (catFromUrl changes when browser restores URL)
     useEffect(() => {
         if (catFromUrl && catFromUrl !== filterCategory) {
@@ -1139,10 +1134,10 @@ export default function EventLivePage() {
     }, [allRankedRunners, searchQuery, filterGender, followedRunnerIds, filterCategory, filterStatus, filterAgeGroup, resolveRunnerCategoryKey, canonicalAgeGroupOf, sortAlertsFirst, cpDistanceLookup, isMobile, showAllColumns]); // eslint-disable-line react-hooks/exhaustive-deps
 
     // Compute live overall + gender + category ranks.
-    // Ranking convention: Overall placing is decided by GUN time, while Gender (GEN)
-    // and Age-group (CAT) placings are decided by NET (chip) time. Overall therefore
-    // follows allRankedRunners (already gun-ordered); GEN/CAT follow a net-time order.
-    // CAT rank is scoped to gender + ageGroup so M40-49 and F40-49 rank separately.
+    // Ranking convention: Overall, Gender (GEN) and Age-group (CAT) are ALL decided by
+    // GUN time. Overall is a single combined list — no gender or nationality split — so
+    // it matches the AWARD "Overall n" and the RANK column one-to-one. CAT rank is scoped
+    // to gender + ageGroup so M40-49 and F40-49 rank separately.
     const liveRanks = useMemo(() => {
         const rankable = (runner: Runner) => {
             // Rank runners who have passed at least one checkpoint (finished, in_progress, or DNF with progress)
@@ -1157,41 +1152,25 @@ export default function EventLivePage() {
             ranks.set(runner._id, { overallRank: 0, genRank: 0, catRank: 0 });
         }
 
-        // Overall — by GUN time (eligible is already gun-ordered via allRankedRunners).
-        // In nationality-split categories the Overall counter is scoped to the runner's
-        // Thai/foreign bucket; both combined and nationality counters advance for every
-        // runner so non-split categories in the same event keep their full combined rank.
+        // `eligible` is already gun-ordered via allRankedRunners, so a single pass
+        // assigns Overall (combined), Gender and Age-group placings all by GUN time.
         const eventCounters: Record<string, number> = {};
-        for (const runner of eligible) {
-            const isSplit = natSplitCategoryKeys.size > 0 && natSplitCategoryKeys.has(resolveRunnerCategoryKey(runner));
-            const eventKey = runner.eventId || '_';
-            const natEventKey = `${eventKey}${isThaiNationality(runner.nationality) ? '::th' : '::intl'}`;
-            eventCounters[eventKey] = (eventCounters[eventKey] || 0) + 1;
-            eventCounters[natEventKey] = (eventCounters[natEventKey] || 0) + 1;
-            ranks.get(runner._id)!.overallRank = eventCounters[isSplit ? natEventKey : eventKey];
-        }
-
-        // Gender + age-group — by NET time. Stable sort keeps in-progress runners (no net
-        // time yet) in their existing relative order.
-        const byNet = [...eligible].sort((a, b) => {
-            const at = getRunnerNetTimeMs(a);
-            const bt = getRunnerNetTimeMs(b);
-            return (at > 0 ? at : Infinity) - (bt > 0 ? bt : Infinity);
-        });
         const genderCounters: Record<string, number> = {};
         const categoryCounters: Record<string, number> = {};
-        for (const runner of byNet) {
+        for (const runner of eligible) {
             const eventKey = runner.eventId || '_';
             const genderKey = `${eventKey}::${runner.gender || '_'}`;
             const catKey = `${eventKey}::${runner.gender || '_'}::${canonicalAgeGroupOf(runner) || '_'}`;
+            eventCounters[eventKey] = (eventCounters[eventKey] || 0) + 1;
             genderCounters[genderKey] = (genderCounters[genderKey] || 0) + 1;
             categoryCounters[catKey] = (categoryCounters[catKey] || 0) + 1;
             const entry = ranks.get(runner._id)!;
+            entry.overallRank = eventCounters[eventKey];
             entry.genRank = genderCounters[genderKey];
             entry.catRank = categoryCounters[catKey];
         }
         return ranks;
-    }, [allRankedRunners, natSplitCategoryKeys, resolveRunnerCategoryKey, canonicalAgeGroupOf]);
+    }, [allRankedRunners, canonicalAgeGroupOf]);
 
 
 
@@ -2029,7 +2008,7 @@ export default function EventLivePage() {
                                                 // age-group (net-time) rank in the RANK slot instead of the overall rank.
                                                 const useCatRank = isMobile && !showAllColumns && !useGenderRank && !!filterAgeGroup;
                                                 const displayRank = useGenderRank
-                                                    ? (runner.genderRank || runner.genderNetRank || liveRank?.genRank || rank)
+                                                    ? (liveRank?.genRank || runner.genderRank || rank)
                                                     : useCatRank
                                                     ? (liveRank?.catRank || runner.ageGroupRank || runner.ageGroupNetRank || rank)
                                                     : (liveRank?.overallRank || runner.overallRank || rank);
@@ -2047,7 +2026,7 @@ export default function EventLivePage() {
                                             case 'genRank': {
                                                 const hideGenRank = ['dnf', 'dns', 'dq', 'not_started'].includes(runner.status);
                                                 const liveGen = liveRanks.get(runner._id)?.genRank;
-                                                const displayGenRank = hideGenRank ? '-' : (runner.genderRank || runner.genderNetRank || liveGen || '-');
+                                                const displayGenRank = hideGenRank ? '-' : (liveGen || runner.genderRank || '-');
                                                 return (
                                                     <td key={key} className={isMobile ? 'px-0.5 py-1 text-center' : 'px-1.5 py-1.5 text-center'}>
                                                         <span className={isMobile ? 'text-[11px] font-bold' : 'text-xs font-bold'} style={{ color: isMobile ? '#0f172a' : themeStyles.textMuted }}>{displayGenRank}</span>
