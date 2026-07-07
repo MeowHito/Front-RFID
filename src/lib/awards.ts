@@ -53,7 +53,37 @@ export function normalizeAgeGroupLabel(value?: string | null): string {
     return String(value || '').replace(/^[MF]\s*/i, '').replace(/\s*ปี$/i, '').trim();
 }
 
-const timeOf = (r: AwardRunnerLike) => r.netTime || r.gunTime || r.elapsedTime || Infinity;
+// Ranking convention: Overall placing is decided by GUN time, while Age-group
+// placing is decided by NET (chip) time. Each falls back to the other when its own
+// time is missing (locally-timed events store only net time).
+const gunTimeOf = (r: AwardRunnerLike) => r.gunTime || r.netTime || r.elapsedTime || Infinity;
+const netTimeOf = (r: AwardRunnerLike) => r.netTime || r.gunTime || r.elapsedTime || Infinity;
+
+/**
+ * Gun-time overall placing across the whole category pool (all finishers combined,
+ * both genders). When `separateByNationality` is set, the placing is scoped to the
+ * runner's Thai / foreign bucket — matching the /event RANK column and the
+ * "OVERALL THA n" / "OVERALL INT n" award. Returns a map of runnerId → rank.
+ */
+export function computeOverallRanks(
+    runners: AwardRunnerLike[],
+    opts?: { separateByNationality?: boolean },
+): Map<string, number> {
+    const finished = runners.filter(r => r.status === 'finished' && (r.netTime || r.gunTime || r.elapsedTime));
+    const byGun = [...finished].sort((a, b) => gunTimeOf(a) - gunTimeOf(b));
+    const result = new Map<string, number>();
+    if (opts?.separateByNationality) {
+        const counters: Record<'thai' | 'foreign', number> = { thai: 0, foreign: 0 };
+        for (const r of byGun) {
+            const key = isThaiNationality(r.nationality) ? 'thai' : 'foreign';
+            counters[key] += 1;
+            result.set(r._id, counters[key]);
+        }
+    } else {
+        byGun.forEach((r, i) => result.set(r._id, i + 1));
+    }
+    return result;
+}
 
 /**
  * Compute awards for a single race category pool (all runners already share the
@@ -87,7 +117,8 @@ export function computeAwardsForCategory(
 
     for (const female of [false, true]) {
         const group = finished.filter(r => (r.gender === 'F') === female);
-        const byTime = [...group].sort((a, b) => timeOf(a) - timeOf(b));
+        // Overall winners are ranked by GUN time; age-group winners by NET time.
+        const byGun = [...group].sort((a, b) => gunTimeOf(a) - gunTimeOf(b));
 
         // Overall winners (per gender). When nationality-split is on, the overall
         // placing is scoped further to the Thai / foreign bucket, so each bucket has
@@ -95,7 +126,7 @@ export function computeAwardsForCategory(
         const excludedBibs = new Set<string>();
         if (separateNat) {
             const natCount: Record<'thai' | 'foreign', number> = { thai: 0, foreign: 0 };
-            for (const r of byTime) {
+            for (const r of byGun) {
                 const key = isThaiNationality(r.nationality) ? 'thai' : 'foreign';
                 natCount[key] += 1;
                 if (natCount[key] <= overallDisplayCount) {
@@ -108,7 +139,7 @@ export function computeAwardsForCategory(
                 if (natCount[key] <= excludeNatCount[key]) excludedBibs.add(r.bib);
             }
         } else {
-            byTime.slice(0, overallDisplayCount).forEach((r, i) => {
+            byGun.slice(0, overallDisplayCount).forEach((r, i) => {
                 ensure(r._id).overall = i + 1;
             });
         }
@@ -116,14 +147,14 @@ export function computeAwardsForCategory(
         // Age-group winners (per gender) — overall winners stay eligible unless the
         // admin chose to exclude the top `excludeOv` overall from age-group prizes
         // (or the category is nationality-split, which always excludes them).
-        if (excludeOv > 0) byTime.slice(0, excludeOv).forEach(r => excludedBibs.add(r.bib));
+        if (excludeOv > 0) byGun.slice(0, excludeOv).forEach(r => excludedBibs.add(r.bib));
 
-        // Sort by actual finish time first — RaceTiger's ageGroupRank can be stale
+        // Sort by actual NET finish time first — RaceTiger's ageGroupRank can be stale
         // or wrong for individual runners (e.g. after a time correction), so it's
         // only used to break ties, never as the primary order.
         const byAgeRank = [...group].sort((a, b) => {
-            const at = timeOf(a);
-            const bt = timeOf(b);
+            const at = netTimeOf(a);
+            const bt = netTimeOf(b);
             if (at !== bt) return at - bt;
             const ar = (a.ageGroupRank && a.ageGroupRank > 0) ? a.ageGroupRank : Infinity;
             const br = (b.ageGroupRank && b.ageGroupRank > 0) ? b.ageGroupRank : Infinity;

@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
 import { isRunnerFollowed, loadFollowedRunners, saveFollowedRunners, subscribeFollowedRunners, toggleFollowedRunner, type FollowedRunner } from '@/lib/followed-runners';
-import { computeAwardsForCategory, formatOverallAwardLabel, type AwardResult } from '@/lib/awards';
+import { computeAwardsForCategory, computeOverallRanks, formatOverallAwardLabel, type AwardResult } from '@/lib/awards';
 import { bestOfProvinceAwardFor } from '@/lib/thai-provinces';
 import { isNationalitySplitCategory } from '@/lib/nationality';
 import { useLanguage } from '@/lib/language-context';
@@ -336,6 +336,9 @@ export default function RunnerProfilePage() {
     const [campaign, setCampaign] = useState<CampaignData | null>(null);
     const [award, setAward] = useState<AwardResult | null>(null);
     const [bestOfProvince, setBestOfProvince] = useState<string | null>(null);
+    // Gun-time overall placing computed from the category pool (Overall = gun time),
+    // so this matches the /event RANK column instead of the net-time stored rank.
+    const [gunOverallRank, setGunOverallRank] = useState<number | null>(null);
     const [cpMappings, setCpMappings] = useState<CheckpointMappingData[]>([]);
     const [checkpointRanks, setCheckpointRanks] = useState<Record<string, number>>({});
     const [loading, setLoading] = useState(true);
@@ -412,7 +415,7 @@ export default function RunnerProfilePage() {
     // event table and winner boards do — fetch the whole category pool, then run
     // the shared award algorithm and keep only this runner's result.
     useEffect(() => {
-        if (!runner || !campaign?._id || !runner.category) { setAward(null); setBestOfProvince(null); return; }
+        if (!runner || !campaign?._id || !runner.category) { setAward(null); setBestOfProvince(null); setGunOverallRank(null); return; }
         let cancelled = false;
         (async () => {
             try {
@@ -423,22 +426,27 @@ export default function RunnerProfilePage() {
                     skipStatusCounts: 'true',
                 });
                 const res = await fetch(`/api/runners/paged?${params.toString()}`, { cache: 'no-store' });
-                if (!res.ok) { if (!cancelled) { setAward(null); setBestOfProvince(null); } return; }
+                if (!res.ok) { if (!cancelled) { setAward(null); setBestOfProvince(null); setGunOverallRank(null); } return; }
                 const data = await res.json();
                 const pool = Array.isArray(data?.data) ? data.data : [];
                 // "Best of Province" — same top-N-per-gender local award as the board.
                 const provinceLabel = bestOfProvinceAwardFor(runner._id, pool, !!campaign.bestOfProvinceEnabled, campaign.bestOfProvinces);
                 if (!cancelled) setBestOfProvince(provinceLabel);
+                const natSplit = isNationalitySplitCategory(campaign.separateOverallNationalityCategories, runner.category);
                 const awards = computeAwardsForCategory(pool, {
                     overallDisplayCount: campaign.overallDisplayCount,
                     ageGroupDisplayCount: campaign.ageGroupDisplayCount,
                     excludeOverallFromAgeGroup: campaign.excludeOverallFromAgeGroup,
                     excludeOverallThaiFromAgeGroup: campaign.excludeOverallThaiFromAgeGroup,
                     excludeOverallForeignFromAgeGroup: campaign.excludeOverallForeignFromAgeGroup,
-                    separateOverallByNationality: isNationalitySplitCategory(campaign.separateOverallNationalityCategories, runner.category),
+                    separateOverallByNationality: natSplit,
                 });
-                if (!cancelled) setAward(awards.get(runner._id) || null);
-            } catch { if (!cancelled) { setAward(null); setBestOfProvince(null); } }
+                const overallRanks = computeOverallRanks(pool, { separateByNationality: natSplit });
+                if (!cancelled) {
+                    setAward(awards.get(runner._id) || null);
+                    setGunOverallRank(overallRanks.get(runner._id) || null);
+                }
+            } catch { if (!cancelled) { setAward(null); setBestOfProvince(null); setGunOverallRank(null); } }
         })();
         return () => { cancelled = true; };
     }, [runner, campaign?._id, campaign?.overallDisplayCount, campaign?.ageGroupDisplayCount, campaign?.bestOfProvinceEnabled, campaign?.bestOfProvinces, campaign?.excludeOverallFromAgeGroup, campaign?.excludeOverallThaiFromAgeGroup, campaign?.excludeOverallForeignFromAgeGroup, campaign?.separateOverallNationalityCategories]);
@@ -577,8 +585,11 @@ export default function RunnerProfilePage() {
     const targetBandLabel = isFinished ? computeTargetBandLabel(runner, campaign) : null;
     const pace = runner.netPace || runner.gunPace || '-';
 
-    // Overall rank: prefer runner field, fallback to FINISH checkpoint rank
-    const overallRank = runner.overallRank
+    // Overall rank: prefer the gun-time placing computed from the category pool
+    // (Overall = gun time — matches the /event RANK column), then the stored field,
+    // then the FINISH checkpoint rank.
+    const overallRank = gunOverallRank
+        || runner.overallRank
         || (finishTiming ? checkpointRanks[finishTiming.checkpoint] : undefined)
         || (isFinished && lastTiming ? checkpointRanks[lastTiming.checkpoint] : undefined)
         || 0;

@@ -8,7 +8,7 @@
 import { useEffect, useState, useRef, useCallback, useMemo, type CSSProperties } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import { computeAwardsForCategory, formatAwardLabel, formatOverallAwardLabel } from '@/lib/awards';
+import { computeAwardsForCategory, computeOverallRanks, formatAwardLabel, formatOverallAwardLabel } from '@/lib/awards';
 import { isNationalitySplitCategory } from '@/lib/nationality';
 import { bestOfProvinceAwardFor } from '@/lib/thai-provinces';
 
@@ -398,6 +398,9 @@ export default function CertificatePage() {
     const [runner, setRunner] = useState<RunnerData | null>(null);
     const [campaign, setCampaign] = useState<CampaignData | null>(null);
     const [awards, setAwards] = useState<AwardLabels>(EMPTY_AWARDS);
+    // Gun-time overall placing from the category pool (Overall = gun time), overriding
+    // the net-time stored rank so the certificate matches the /event RANK column.
+    const [gunOverallRank, setGunOverallRank] = useState<number | null>(null);
     const [timingRecords, setTimingRecords] = useState<Record<string, unknown>[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
@@ -456,23 +459,26 @@ export default function CertificatePage() {
     useEffect(() => {
         const campaignId = campaign?._id;
         const category = runner?.category;
-        if (!runner || !campaignId || !category) { setAwards(EMPTY_AWARDS); return; }
+        if (!runner || !campaignId || !category) { setAwards(EMPTY_AWARDS); setGunOverallRank(null); return; }
         let cancelled = false;
         (async () => {
             try {
                 const p = new URLSearchParams({ campaignId, category, limit: '10000', skipStatusCounts: 'true' });
                 const res = await fetch(`/api/runners/paged?${p.toString()}`, { cache: 'no-store' });
-                if (!res.ok) { if (!cancelled) setAwards(EMPTY_AWARDS); return; }
+                if (!res.ok) { if (!cancelled) { setAwards(EMPTY_AWARDS); setGunOverallRank(null); } return; }
                 const data = await res.json();
                 const pool = Array.isArray(data?.data) ? data.data : [];
+                const natSplit = isNationalitySplitCategory(campaign.separateOverallNationalityCategories, category);
                 const awardMap = computeAwardsForCategory(pool, {
                     overallDisplayCount: campaign.overallDisplayCount,
                     ageGroupDisplayCount: campaign.ageGroupDisplayCount,
                     excludeOverallFromAgeGroup: campaign.excludeOverallFromAgeGroup,
                     excludeOverallThaiFromAgeGroup: campaign.excludeOverallThaiFromAgeGroup ?? undefined,
                     excludeOverallForeignFromAgeGroup: campaign.excludeOverallForeignFromAgeGroup ?? undefined,
-                    separateOverallByNationality: isNationalitySplitCategory(campaign.separateOverallNationalityCategories, category),
+                    separateOverallByNationality: natSplit,
                 });
+                const overallRanks = computeOverallRanks(pool, { separateByNationality: natSplit });
+                if (!cancelled) setGunOverallRank(overallRanks.get(runner._id) || null);
                 const mine = awardMap.get(runner._id);
                 const bestOfProvinceLabel = bestOfProvinceAwardFor(runner._id, pool, !!campaign.bestOfProvinceEnabled, campaign.bestOfProvinces);
                 const overallLabel = mine?.overall ? formatOverallAwardLabel(mine) : null;
@@ -486,10 +492,17 @@ export default function CertificatePage() {
                     overallForeign: mine?.overallNat === 'foreign' ? overallLabel : null,
                     bestOfBrr: bestOfProvinceLabel,
                 });
-            } catch { if (!cancelled) setAwards(EMPTY_AWARDS); }
+            } catch { if (!cancelled) { setAwards(EMPTY_AWARDS); setGunOverallRank(null); } }
         })();
         return () => { cancelled = true; };
     }, [runner, campaign?._id, campaign?.overallDisplayCount, campaign?.ageGroupDisplayCount, campaign?.excludeOverallFromAgeGroup, campaign?.excludeOverallThaiFromAgeGroup, campaign?.excludeOverallForeignFromAgeGroup, campaign?.separateOverallNationalityCategories, campaign?.bestOfProvinceEnabled, campaign?.bestOfProvinces]);
+
+    // Runner with the gun-time overall rank applied, used for token substitution so
+    // the certificate's Overall rank matches the /event RANK column.
+    const runnerForCert = useMemo(
+        () => (runner && gunOverallRank ? { ...runner, overallRank: gunOverallRank } : runner),
+        [runner, gunOverallRank],
+    );
 
     // Track rendered canvas width so we can scale font sizes consistently with the editor.
     useEffect(() => {
@@ -783,7 +796,7 @@ export default function CertificatePage() {
                         ) : isShape ? <ShapeRender el={el} />
                         : isFlag ? <FlagRender el={el} runner={runner} fontScale={renderScale} />
                         : isTable ? <TableRender el={el} splits={splits} fontScale={renderScale} />
-                        : substituteFields(el.content, runner, campaign, awards)}
+                        : substituteFields(el.content, runnerForCert, campaign, awards)}
                     </div>
                 );
             })}

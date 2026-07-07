@@ -1114,13 +1114,29 @@ export default function EventLivePage() {
                 const matchesAgeGroup = !filterAgeGroup || canonicalAgeGroupOf(runner) === filterAgeGroup;
                 return matchesSearch && matchesGender && matchesFollowed && matchesCategory && matchesStatus && matchesAgeGroup;
             });
-        if (!sortAlertsFirst) return filtered;
+        // On the collapsed mobile view the RANK slot shows the gender / age-group
+        // sub-rank when one of those filters is active — order the rows by NET time
+        // (the basis for those ranks) so the numbers read 1 → N ascending.
+        const subRankOrder = isMobile && !showAllColumns
+            && (filterGender === 'M' || filterGender === 'F' || !!filterAgeGroup);
+        let ordered = filtered;
+        if (subRankOrder) {
+            const statusOrder: Record<string, number> = { finished: 0, in_progress: 1, dnf: 2, dns: 3, dq: 4, not_started: 5 };
+            ordered = [...filtered].sort((a, b) => {
+                const sd = (statusOrder[a.status] ?? 6) - (statusOrder[b.status] ?? 6);
+                if (sd !== 0) return sd;
+                const at = getRunnerNetTimeMs(a);
+                const bt = getRunnerNetTimeMs(b);
+                return (at > 0 ? at : Infinity) - (bt > 0 ? bt : Infinity);
+            });
+        }
+        if (!sortAlertsFirst) return ordered;
         // Stable sort: pull alert (incomplete-checkpoint) runners to the top, keep rank order otherwise.
-        return filtered
+        return ordered
             .map((runner, i) => ({ runner, i, alert: runnerHasProgressAlert(runner) }))
             .sort((a, b) => (a.alert === b.alert ? a.i - b.i : a.alert ? -1 : 1))
             .map(x => x.runner);
-    }, [allRankedRunners, searchQuery, filterGender, followedRunnerIds, filterCategory, filterStatus, filterAgeGroup, resolveRunnerCategoryKey, canonicalAgeGroupOf, sortAlertsFirst, cpDistanceLookup]); // eslint-disable-line react-hooks/exhaustive-deps
+    }, [allRankedRunners, searchQuery, filterGender, followedRunnerIds, filterCategory, filterStatus, filterAgeGroup, resolveRunnerCategoryKey, canonicalAgeGroupOf, sortAlertsFirst, cpDistanceLookup, isMobile, showAllColumns]); // eslint-disable-line react-hooks/exhaustive-deps
 
     // Compute live overall + gender + category ranks.
     // Ranking convention: Overall placing is decided by GUN time, while Gender (GEN)
@@ -2009,8 +2025,13 @@ export default function EventLivePage() {
                                                 // gender, show that gender's rank in the RANK slot (matches the GEN column).
                                                 // The expanded "More" view keeps the overall rank — it shows GEN separately.
                                                 const useGenderRank = isMobile && !showAllColumns && (filterGender === 'M' || filterGender === 'F');
+                                                // When an age-group filter is active on collapsed mobile, show the
+                                                // age-group (net-time) rank in the RANK slot instead of the overall rank.
+                                                const useCatRank = isMobile && !showAllColumns && !useGenderRank && !!filterAgeGroup;
                                                 const displayRank = useGenderRank
                                                     ? (runner.genderRank || runner.genderNetRank || liveRank?.genRank || rank)
+                                                    : useCatRank
+                                                    ? (liveRank?.catRank || runner.ageGroupRank || runner.ageGroupNetRank || rank)
                                                     : (liveRank?.overallRank || runner.overallRank || rank);
                                                 // All ranks (1 → last) are rendered in the primary text color;
                                                 // only DNS/DNF/DQ/not-started fall back to the muted grey "-".
