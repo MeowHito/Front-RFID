@@ -843,7 +843,15 @@ export default function RunnerProfilePage() {
                             {runner.nationality && ' | '}
                             <span style={{ color: '#94a3b8' }}>BIB Number</span>
                             <span style={{ color: '#0f172a', fontWeight: 750 }}>{runner.bib}</span>
-                            {genderLabel}
+                            {runner.gender === 'F' ? (
+                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: '#db2777', fontWeight: 750 }}>
+                                    <span style={{ fontSize: 16, lineHeight: 1 }}>♀</span>Female
+                                </span>
+                            ) : runner.gender === 'M' ? (
+                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: '#2563eb', fontWeight: 750 }}>
+                                    <span style={{ fontSize: 16, lineHeight: 1 }}>♂</span>Male
+                                </span>
+                            ) : genderLabel}
                             {runner.ageGroup || ''}
                             | <span style={{ color: '#0f172a' }}>{runner.category}</span>
                         </p>

@@ -2097,7 +2097,7 @@ export default function EventLivePage() {
                                                     <td key={key} className={isMobile ? 'overflow-hidden px-1 py-1' : 'overflow-hidden px-2 py-1.5'}>
                                                         <div className={isMobile ? 'grid min-h-7 overflow-hidden [grid-template-rows:auto_auto] gap-y-[3px]' : 'grid min-h-8 overflow-hidden [grid-template-rows:auto_auto] gap-y-[3px]'}>
                                                             <span className={`flex min-w-0 items-center ${isMobile ? 'gap-1' : 'gap-1.5'}`}>
-                                                                <span className={`block min-w-0 flex-1 truncate font-bold uppercase ${isMobile ? 'text-[11px]' : 'text-[13px]'}`} style={{ color: themeStyles.text, lineHeight: 1.15 }}>
+                                                                <span className={`block min-w-0 flex-1 truncate font-bold uppercase ${isMobile ? 'text-[11px]' : 'text-[13px]'}`} style={{ color: runner.gender === 'F' ? '#be185d' : themeStyles.text, lineHeight: 1.15 }}>
                                                                     {language === 'th' && runner.firstNameTh
                                                                         ? `${runner.firstNameTh} ${runner.lastNameTh || ''}`.trim()
                                                                         : `${runner.firstName} ${runner.lastName}`}
@@ -2673,28 +2673,6 @@ export default function EventLivePage() {
                     </table>
                 </div>
             </main>
-
-            {/* ===== FOOTER ===== */}
-            <footer className="fixed bottom-0 z-30 flex w-full items-center justify-between border-t border-[var(--border)] bg-[var(--card-solid)] px-4 py-2">
-                <p className="m-0 text-[9px] font-bold uppercase tracking-[0.1em]" style={{ color: themeStyles.textSecondary }}>
-                    Results
-                </p>
-                <div className="flex items-center gap-4">
-                    <span className="text-[9px] font-bold uppercase" style={{ color: themeStyles.textMuted }}>
-                        {filteredRunners.length} / {runners.length} {language === 'th' ? 'คน' : 'runners'}
-                    </span>
-                    <span className="text-[9px] font-semibold" style={{ color: themeStyles.textSecondary }}>
-                        {language === 'th' ? 'อัพเดทล่าสุด' : 'Updated'}: {lastUpdated.toLocaleTimeString(language === 'th' ? 'th-TH' : 'en-US')}
-                    </span>
-                    <span className={`text-[9px] font-bold uppercase ${isRaceFinished ? 'text-blue-500' : 'text-green-500'}`}>
-                        {!isRaceFinished && <span className="mr-1 inline-block h-[5px] w-[5px] rounded-full bg-green-500" style={{ animation: 'pulseLive 1.5s infinite' }} />}
-                        {isRaceFinished ? (language === 'th' ? 'ผลคงที่' : 'Results frozen') : 'Auto-refresh 10s'}
-                    </span>
-                    <span className="font-mono text-[10px]" style={{ color: themeStyles.textSecondary }}>
-                        {currentTime.toLocaleTimeString(language === 'th' ? 'th-TH' : 'en-US')}
-                    </span>
-                </div>
-            </footer>
 
             {/* Runner detail now navigated to /runner/[id] page */}
 
