@@ -42,6 +42,13 @@ export interface AwardRunnerLike {
     ageGroupRank?: number;
     overallRank?: number;
     nationality?: string;
+    // Finish crossing timestamp — used to break gun-time ties (whoever crossed first
+    // ranks first), matching the /event RANK column. Different surfaces expose it under
+    // different fields: `scanTime` on /event, `lastPassTime` on the synced runner doc
+    // (/runner paged pool), `finishTime` when set by a manual status edit. Any works.
+    finishTime?: string | number | Date;
+    scanTime?: string | number | Date;
+    lastPassTime?: string | number | Date;
 }
 
 // A runner may earn an overall placing, an age-group placing, or both.
@@ -60,18 +67,27 @@ export function normalizeAgeGroupLabel(value?: string | null): string {
 const gunTimeOf = (r: AwardRunnerLike) => r.gunTime || r.netTime || r.elapsedTime || Infinity;
 const netTimeOf = (r: AwardRunnerLike) => r.netTime || r.gunTime || r.elapsedTime || Infinity;
 
+// Finish crossing time in ms (whoever crossed first). Reads whichever finish-timestamp
+// field the current surface provides: finishTime, scanTime (/event), or lastPassTime
+// (synced runner doc — set by sync as the latest checkpoint pass = finish for finishers).
+const finishMsOf = (r: AwardRunnerLike) => {
+    const v = r.finishTime ?? r.scanTime ?? r.lastPassTime;
+    if (v == null || v === '') return Infinity;
+    const t = typeof v === 'number' ? v : new Date(v).getTime();
+    return Number.isFinite(t) && t > 0 ? t : Infinity;
+};
+
 // Overall placing is by GUN time, but RaceTiger stores gun time only to the second,
-// so two runners crossing in the same second tie exactly. Without a deterministic
-// tie-break the order falls to whatever the DB returned, which made /runner disagree
-// with the /event RANK column. Break gun-time ties by the stored overall placing
-// (RaceTiger's own finish-time order — the same order /event shows), then by bib, so
-// every surface ranks a gun-time tie identically.
+// so two runners crossing in the same second tie exactly. Break gun-time ties by the
+// finish crossing time (whoever crossed the line first ranks first) — the SAME tie-break
+// the /event RANK column uses — then by bib. This keeps the AWARD "OVERALL THA/INT n"
+// numbering in the same order as the RANK column (was previously broken by the stored
+// overallRank, which RaceTiger derives with a net-time influence and so disagreed).
 const compareOverallByGun = (a: AwardRunnerLike, b: AwardRunnerLike) => {
     const g = gunTimeOf(a) - gunTimeOf(b);
     if (g !== 0) return g;
-    const ar = a.overallRank && a.overallRank > 0 ? a.overallRank : Infinity;
-    const br = b.overallRank && b.overallRank > 0 ? b.overallRank : Infinity;
-    if (ar !== br) return ar - br;
+    const f = finishMsOf(a) - finishMsOf(b);
+    if (f !== 0) return f;
     return String(a.bib || '').localeCompare(String(b.bib || ''), undefined, { numeric: true });
 };
 
