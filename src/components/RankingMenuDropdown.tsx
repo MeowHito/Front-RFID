@@ -124,7 +124,7 @@ export default function RankingMenuDropdown({
     };
 
     return (
-        <div ref={rootRef} className="relative">
+        <div ref={rootRef} className="relative shrink-0">
             <button
                 onClick={() => setOpen(o => !o)}
                 aria-label={language === 'th' ? 'อันดับ/รางวัล' : 'Rankings'}

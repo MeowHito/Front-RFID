@@ -1823,7 +1823,7 @@ export default function EventLivePage() {
                         </div>
 
                         {/* Row 2: Gender box + Age group + ranking trophy + column toggle */}
-                        <div className="mt-2 flex items-center gap-1.5">
+                        <div className="mt-2 flex items-center gap-2">
                             <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto [scrollbar-width:none]">
                                 {genderBoxEl}
                                 {ageSelectEl}
