@@ -29,6 +29,8 @@ interface RankingMenuDropdownProps {
     rankingMenuVisibility?: RankingMenuVisibility[];
     isAdmin: boolean;
     language: 'th' | 'en';
+    /** Which edge of the trigger the dropdown panel aligns to (use 'right' when the trigger sits near the viewport's right edge) */
+    align?: 'left' | 'right';
     /** Called with the full updated array after a successful save, so the parent can refresh its campaign state */
     onSaved?: (next: RankingMenuVisibility[]) => void;
 }
@@ -46,6 +48,7 @@ export default function RankingMenuDropdown({
     rankingMenuVisibility,
     isAdmin,
     language,
+    align = 'left',
     onSaved,
 }: RankingMenuDropdownProps) {
     const [open, setOpen] = useState(false);
@@ -120,14 +123,14 @@ export default function RankingMenuDropdown({
         <div ref={rootRef} className="relative">
             <button
                 onClick={() => setOpen(o => !o)}
-                className="flex items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--card-solid)] px-4 py-2.5 text-sm font-bold text-[var(--muted-foreground)]"
+                className="flex items-center gap-1.5 whitespace-nowrap rounded-full border border-[var(--border)] bg-[var(--card-solid)] px-3.5 py-1.5 text-xs font-bold text-[var(--muted-foreground)]"
             >
-                <span aria-hidden className="text-base">🏆</span>
+                <span aria-hidden className="text-sm">🏆</span>
                 {language === 'th' ? 'อันดับ/รางวัล' : 'Rankings'}
                 <span className="text-xs opacity-60">▾</span>
             </button>
             {open && (
-                <div className="absolute left-0 top-11 z-30 min-w-72 rounded-lg border border-[var(--border)] bg-[var(--card-solid)] p-3 shadow-[0_8px_16px_rgba(0,0,0,0.15)] dark:shadow-[0_8px_16px_rgba(0,0,0,0.4)]">
+                <div className={`absolute top-10 z-30 min-w-72 rounded-lg border border-[var(--border)] bg-[var(--card-solid)] p-3 shadow-[0_8px_16px_rgba(0,0,0,0.15)] dark:shadow-[0_8px_16px_rgba(0,0,0,0.4)] ${align === 'right' ? 'right-0' : 'left-0'}`}>
                     {items.map(item => {
                         const isVisible = draft[item.key];
                         if (!isAdmin && !isVisible) return null;

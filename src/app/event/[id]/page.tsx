@@ -1567,6 +1567,131 @@ export default function EventLivePage() {
         hoverBg: isDark ? 'rgba(34,197,94,0.1)' : '#f0fdf4',
     };
 
+    // ── Filter bar controls, shared between the mobile (3 rows) and desktop (single row) layouts ──
+    const searchBoxEl = (
+        <div className={`relative min-w-0 flex-1 ${isMobile ? '' : 'max-w-[340px]'}`}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--muted-foreground)]">
+                <circle cx="11" cy="11" r="8" /><path d="M21 21l-4.35-4.35" />
+            </svg>
+            <input
+                type="text"
+                placeholder={language === 'th' ? 'ค้นหา BIB หรือ ชื่อ..' : 'Search BIB or Name..'}
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full rounded-xl border border-[var(--border)] bg-transparent py-2 pl-[34px] pr-3 text-xs font-medium text-[var(--foreground)] outline-none transition-colors duration-150 placeholder:text-[var(--muted-foreground)] focus:border-[var(--muted-foreground)]"
+            />
+        </div>
+    );
+
+    const genderBoxEl = (
+        <div className="flex shrink-0 items-center rounded-full border border-[var(--border)] bg-[var(--card-solid)] p-[3px]">
+            {(['ALL', 'M', 'F'] as const).map(g => (
+                <button
+                    key={g}
+                    onClick={() => setFilterGender(g)}
+                    className={`cursor-pointer whitespace-nowrap rounded-full border-none px-3 py-1 text-[11px] font-bold transition-all duration-200 ${filterGender === g
+                        ? 'bg-[var(--foreground)] text-[var(--background)]'
+                        : 'bg-transparent text-[var(--muted-foreground)]'}`}
+                >
+                    {g === 'ALL' ? (language === 'th' ? 'ทั้งหมด' : 'All') : g === 'M' ? (language === 'th' ? 'ชาย' : 'Male') : (language === 'th' ? 'หญิง' : 'Female')}
+                </button>
+            ))}
+            <span aria-hidden className="mx-0.5 h-3.5 w-px shrink-0 bg-[var(--border)]" />
+            <button
+                onClick={() => setFilterGender('FOLLOWED')}
+                aria-label={language === 'th' ? 'แสดงเฉพาะนักกีฬาที่ติดตาม' : 'Show followed runners only'}
+                title={language === 'th' ? 'แสดงเฉพาะนักกีฬาที่ติดตาม' : 'Show followed runners only'}
+                className="flex cursor-pointer items-center justify-center rounded-full border-none px-2.5 py-1 transition-all duration-200"
+                style={{ background: filterGender === 'FOLLOWED' ? (isDark ? 'rgba(225,29,72,0.18)' : '#fff1f2') : 'transparent' }}
+            >
+                <FollowHeartIcon filled={filterGender === 'FOLLOWED'} size={13} color="#e11d48" />
+            </button>
+        </div>
+    );
+
+    const ageSelectEl = ageGroupOptions.length > 0 ? (
+        <select
+            value={filterAgeGroup}
+            onChange={(e) => setFilterAgeGroup(e.target.value)}
+            title={language === 'th' ? 'ช่วงอายุ' : 'Age group'}
+            className={`shrink-0 cursor-pointer appearance-none rounded-full border px-3.5 py-1.5 text-[11px] font-bold outline-none transition-all duration-200 ${filterAgeGroup
+                ? 'border-[var(--foreground)] bg-[var(--foreground)] text-[var(--background)]'
+                : 'border-[var(--border)] bg-transparent text-[var(--muted-foreground)]'}`}
+        >
+            <option value="">{language === 'th' ? 'ทุกอายุ' : 'All ages'}</option>
+            {ageGroupOptions.map(ag => (
+                <option key={ag} value={ag}>{language === 'th' ? `อายุ ${ag}` : `Age ${ag}`}</option>
+            ))}
+        </select>
+    ) : null;
+
+    const slidersEl = (
+        <div className="relative shrink-0">
+            <button
+                onClick={() => (isMobile ? setShowAllColumns(!showAllColumns) : setShowColDropdown(!showColDropdown))}
+                title={isMobile
+                    ? (showAllColumns ? (language === 'th' ? 'ย่อคอลัมน์' : 'Less columns') : (language === 'th' ? 'แสดงคอลัมน์เพิ่มเติม' : 'More columns'))
+                    : 'Columns'}
+                className={`flex h-[29px] w-[40px] cursor-pointer items-center justify-center rounded-full border transition-all duration-200 ${(isMobile ? showAllColumns : showColDropdown)
+                    ? 'border-[var(--foreground)] bg-[var(--foreground)] text-[var(--background)]'
+                    : 'border-[var(--border)] bg-transparent text-[var(--muted-foreground)]'}`}
+            >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                    <line x1="4" y1="21" x2="4" y2="14" /><line x1="4" y1="10" x2="4" y2="3" />
+                    <line x1="12" y1="21" x2="12" y2="12" /><line x1="12" y1="8" x2="12" y2="3" />
+                    <line x1="20" y1="21" x2="20" y2="16" /><line x1="20" y1="12" x2="20" y2="3" />
+                    <line x1="1" y1="14" x2="7" y2="14" /><line x1="9" y1="8" x2="15" y2="8" /><line x1="17" y1="16" x2="23" y2="16" />
+                </svg>
+            </button>
+            {!isMobile && showColDropdown && (
+                <div className="absolute right-0 top-9 z-30 min-w-40 rounded-lg border p-2" style={{ background: themeStyles.cardBg, boxShadow: isDark ? '0 8px 16px rgba(0,0,0,0.4)' : '0 8px 16px rgba(0,0,0,0.1)', borderColor: themeStyles.border }}>
+                    <p className="mb-1 px-2 text-[10px] font-bold uppercase" style={{ color: themeStyles.textSecondary }}>Display</p>
+                    <label className="flex cursor-pointer items-center gap-2 px-2 py-1 text-xs" style={{ color: themeStyles.text }}>
+                        <input type="checkbox" checked={showGenRank} onChange={e => setShowGenRank(e.target.checked)} /> Gender Rank
+                    </label>
+                    <label className="flex cursor-pointer items-center gap-2 px-2 py-1 text-xs" style={{ color: themeStyles.text }}>
+                        <input type="checkbox" checked={showCatRank} onChange={e => setShowCatRank(e.target.checked)} /> Category Rank
+                    </label>
+                </div>
+            )}
+        </div>
+    );
+
+    // Ranking menu — General / Best of / Nationality / Age Group for the selected distance
+    const rankingMenuEl = currentCategoryName ? (
+        <RankingMenuDropdown
+            campaignId={campaign._id}
+            campaignSlugOrId={campaign.slug || campaign._id}
+            campaignName={campaign.name}
+            categoryName={currentCategoryName}
+            overallDisplayCount={campaign.overallDisplayCount}
+            excludeOverallThaiFromAgeGroup={campaign.excludeOverallThaiFromAgeGroup}
+            excludeOverallForeignFromAgeGroup={campaign.excludeOverallForeignFromAgeGroup}
+            ageGroupDisplayCount={campaign.ageGroupDisplayCount}
+            bestOfDisplayCount={campaign.bestOfDisplayCount}
+            rankingMenuVisibility={campaign.rankingMenuVisibility}
+            isAdmin={isAdmin}
+            language={language}
+            align={isMobile ? 'left' : 'right'}
+            onSaved={(next) => setCampaign(prev => prev ? { ...prev, rankingMenuVisibility: next } : prev)}
+        />
+    ) : null;
+
+    // Sort incomplete-checkpoint alerts to the top — admin only
+    const adminSortEl = isAdmin ? (
+        <button
+            onClick={() => setSortAlertsFirst(v => !v)}
+            title={language === 'th' ? 'เรียงคนที่ขึ้นแจ้งเตือน (⚠) ขึ้นบนสุด' : 'Sort incomplete-checkpoint alerts to the top'}
+            className="flex shrink-0 cursor-pointer items-center gap-1 whitespace-nowrap rounded-full border px-3.5 py-1.5 text-[11px] font-bold transition-all duration-200"
+            style={sortAlertsFirst
+                ? { background: '#f59e0b', borderColor: '#f59e0b', color: '#fff' }
+                : { background: 'transparent', borderColor: themeStyles.border, color: themeStyles.textMuted }}
+        >
+            <span aria-hidden>⚠</span>
+            {language === 'th' ? 'จัดเรียง' : 'Sort'}
+        </button>
+    ) : null;
+
     return (
         <div className="min-h-screen overflow-hidden bg-[var(--background)] font-['Inter','Prompt',sans-serif] text-[var(--foreground)]">
             <style>{`
@@ -1673,225 +1798,76 @@ export default function EventLivePage() {
             </header>
 
             {/* ===== FILTER BAR ===== */}
-            <div className={`flex flex-wrap items-center justify-between border-b border-[var(--border)] bg-[var(--card-solid)] px-4 py-2 ${isMobile ? 'gap-1.5' : 'gap-3'}`}>
-                {/* Row 1: Distance + More button (mobile) */}
-                <div className={`flex flex-wrap items-center gap-2.5 ${isMobile ? 'w-full' : ''}`}>
-                    <span className="whitespace-nowrap text-[10px] font-bold uppercase text-[var(--muted-foreground)]">
-                        Distance:
-                    </span>
-                    {isMobile ? (
-                        <select
-                            value={filterCategory}
-                            onChange={e => setFilterCategory(e.target.value)}
-                            className="flex-1 cursor-pointer appearance-auto rounded-lg border border-[var(--border)] bg-[var(--muted)] px-2.5 py-1.5 text-xs font-bold text-[var(--foreground)] outline-none"
-                            style={{ WebkitAppearance: 'menulist' }}
-                        >
-                            {categories.map(cat => (
-                                <option key={cat.key} value={cat.key}>{cat.label}</option>
-                            ))}
-                        </select>
-                    ) : (
-                        <div className="flex flex-wrap gap-1.5">
-                            {categories.map(cat => (
-                                <button
-                                    key={cat.key}
-                                    onClick={() => setFilterCategory(cat.key)}
-                                    className="cursor-pointer rounded-[20px] border px-3.5 py-1.5 text-[11px] font-bold transition-all duration-200"
-                                    style={filterCategory === cat.key
-                                        ? { background: '#22c55e', color: '#fff', borderColor: '#22c55e' }
-                                        : { background: themeStyles.cardBg, color: themeStyles.textMuted, borderColor: themeStyles.border }}
+            <div className="border-b border-[var(--border)] bg-[var(--card-solid)] px-4 py-2.5">
+                {isMobile ? (
+                    <>
+                        {/* Row 1: Search + Distance — half & half */}
+                        <div className="flex items-center gap-2">
+                            {searchBoxEl}
+                            <div className="relative min-w-0 flex-1">
+                                <select
+                                    value={filterCategory}
+                                    onChange={e => setFilterCategory(e.target.value)}
+                                    title="Distance"
+                                    className="w-full cursor-pointer appearance-none rounded-xl border border-[var(--border)] bg-transparent py-2 pl-3.5 pr-8 text-xs font-bold text-[var(--foreground)] outline-none"
                                 >
-                                    {cat.label}
-                                </button>
-                            ))}
+                                    {categories.map(cat => (
+                                        <option key={cat.key} value={cat.key}>{cat.label}</option>
+                                    ))}
+                                </select>
+                                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[var(--muted-foreground)]">
+                                    <path d="M6 9l6 6 6-6" />
+                                </svg>
+                            </div>
                         </div>
-                    )}
 
-                    {/* Mobile toggle — placed on same row as distance */}
-                    {isMobile && (
-                        <button
-                            onClick={() => setShowAllColumns(!showAllColumns)}
-                            className="ml-auto flex items-center gap-1 whitespace-nowrap rounded-lg border px-3 py-1.5 text-[11px] font-bold"
-                            style={{ background: showAllColumns ? '#22c55e' : themeStyles.cardBg, borderColor: showAllColumns ? '#22c55e' : themeStyles.border, color: showAllColumns ? '#fff' : themeStyles.textMuted }}
-                        >
-                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 3v18M3 12h18" /></svg>
-                            {showAllColumns ? (language === 'th' ? 'ย่อ' : 'Less') : (language === 'th' ? 'เพิ่มเติม' : 'More')}
-                        </button>
-                    )}
-                </div>
+                        {/* Row 2: Gender box + Age group + column toggle */}
+                        <div className="mt-2 flex items-center gap-1.5">
+                            <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto [scrollbar-width:none]">
+                                {genderBoxEl}
+                                {ageSelectEl}
+                            </div>
+                            {slidersEl}
+                        </div>
 
-                {/* Ranking menu — General / Best of / Nationality / Age Group for the selected distance */}
-                {campaign && currentCategoryName && (
-                    <RankingMenuDropdown
-                        campaignId={campaign._id}
-                        campaignSlugOrId={campaign.slug || campaign._id}
-                        campaignName={campaign.name}
-                        categoryName={currentCategoryName}
-                        overallDisplayCount={campaign.overallDisplayCount}
-                        excludeOverallThaiFromAgeGroup={campaign.excludeOverallThaiFromAgeGroup}
-                        excludeOverallForeignFromAgeGroup={campaign.excludeOverallForeignFromAgeGroup}
-                        ageGroupDisplayCount={campaign.ageGroupDisplayCount}
-                        bestOfDisplayCount={campaign.bestOfDisplayCount}
-                        rankingMenuVisibility={campaign.rankingMenuVisibility}
-                        isAdmin={isAdmin}
-                        language={language}
-                        onSaved={(next) => setCampaign(prev => prev ? { ...prev, rankingMenuVisibility: next } : prev)}
-                    />
-                )}
-
-                {/* Row 2 (mobile): Search input + Age group + Gender filter — full width */}
-                {isMobile && (
-                    <div className="flex w-full items-center gap-2">
-                        {/* Age group filter — shown when the selected distance has age groups */}
-                        {ageGroupOptions.length > 0 && (
-                            <select
-                                value={filterAgeGroup}
-                                onChange={(e) => setFilterAgeGroup(e.target.value)}
-                                title={language === 'th' ? 'ช่วงอายุ' : 'Age group'}
-                                className="shrink-0 cursor-pointer rounded-lg border border-[var(--border)] bg-[var(--muted)] px-2 py-1.5 text-[10px] font-bold text-[var(--foreground)] outline-none"
-                                style={{ WebkitAppearance: 'menulist' }}
-                            >
-                                <option value="">{language === 'th' ? 'ทุกอายุ' : 'All ages'}</option>
-                                {ageGroupOptions.map(ag => (
-                                    <option key={ag} value={ag}>{ag}</option>
+                        {/* Row 3: Ranking menu + admin tools */}
+                        {(rankingMenuEl || adminSortEl) && (
+                            <div className="mt-2 flex items-center gap-1.5">
+                                {rankingMenuEl}
+                                {adminSortEl}
+                            </div>
+                        )}
+                    </>
+                ) : (
+                    /* Desktop: all tools on a single row */
+                    <div className="flex flex-wrap items-center gap-2.5">
+                        {/* Distance segmented control */}
+                        <div className="flex shrink-0 items-center gap-2">
+                            <span className="text-[10px] font-bold uppercase tracking-[0.05em] text-[var(--muted-foreground)]">KM:</span>
+                            <div className="flex flex-wrap rounded-full bg-[var(--muted)] p-[3px]">
+                                {categories.map(cat => (
+                                    <button
+                                        key={cat.key}
+                                        onClick={() => setFilterCategory(cat.key)}
+                                        className="cursor-pointer whitespace-nowrap rounded-full border-none px-3.5 py-1.5 text-[11px] font-bold transition-all duration-200"
+                                        style={filterCategory === cat.key
+                                            ? { background: '#22c55e', color: '#fff' }
+                                            : { background: 'transparent', color: themeStyles.textMuted }}
+                                    >
+                                        {cat.label}
+                                    </button>
                                 ))}
-                            </select>
-                        )}
-                        {/* Search */}
-                        <div className="relative min-w-0 flex-1">
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={themeStyles.textSecondary} strokeWidth="2" className="absolute left-2.5 top-1/2 -translate-y-1/2">
-                                <circle cx="11" cy="11" r="8" /><path d="M21 21l-4.35-4.35" />
-                            </svg>
-                            <input
-                                type="text"
-                                placeholder={language === 'th' ? 'BIB หรือ ชื่อ...' : 'BIB or Name...'}
-                                value={searchQuery}
-                                onChange={(e) => setSearchQuery(e.target.value)}
-                                className="w-full rounded-lg border-none bg-[var(--muted)] px-2.5 py-1.5 pl-[30px] text-xs text-[var(--foreground)] outline-none"
-                            />
+                            </div>
                         </div>
-                        {/* Gender Filter */}
-                        <div className="flex shrink-0 rounded-lg bg-[var(--muted)] p-[3px]">
-                            {(['ALL', 'FOLLOWED', 'M', 'F'] as const).map(g => (
-                                <button
-                                    key={g}
-                                    onClick={() => setFilterGender(g)}
-                                    aria-label={g === 'FOLLOWED' ? (language === 'th' ? 'แสดงเฉพาะนักกีฬาที่ติดตาม' : 'Show followed runners only') : undefined}
-                                    title={g === 'FOLLOWED' ? (language === 'th' ? 'แสดงเฉพาะนักกีฬาที่ติดตาม' : 'Show followed runners only') : undefined}
-                                    className="whitespace-nowrap rounded-md border-none px-2.5 py-1 text-[10px] font-bold transition-all duration-200"
-                                    style={filterGender === g
-                                        ? { background: g === 'FOLLOWED' ? (isDark ? 'rgba(225,29,72,0.18)' : '#fff1f2') : '#22c55e', color: g === 'FOLLOWED' ? '#e11d48' : '#fff' }
-                                        : { background: 'transparent', color: themeStyles.textMuted }}
-                                >
-                                    {g === 'FOLLOWED' ? <span className="inline-flex items-center justify-center"><FollowHeartIcon filled={filterGender === g} size={12} color="#e11d48" /></span> : g === 'ALL' ? (language === 'th' ? 'ทั้งหมด' : 'All') : g === 'M' ? (language === 'th' ? 'ชาย' : 'Male') : (language === 'th' ? 'หญิง' : 'Female')}
-                                </button>
-                            ))}
-                        </div>
-                        {isAdmin && (
-                            <button
-                                onClick={() => setSortAlertsFirst(v => !v)}
-                                title={language === 'th' ? 'เรียงคนที่ขึ้นแจ้งเตือน (⚠) ขึ้นบนสุด' : 'Sort incomplete-checkpoint alerts to the top'}
-                                className="flex shrink-0 items-center gap-1 whitespace-nowrap rounded-lg border px-2.5 py-1.5 text-[10px] font-bold transition-all duration-200"
-                                style={sortAlertsFirst
-                                    ? { background: '#f59e0b', borderColor: '#f59e0b', color: '#fff' }
-                                    : { background: themeStyles.cardBg, borderColor: themeStyles.border, color: themeStyles.textMuted }}
-                            >
-                                <span aria-hidden>⚠</span>
-                                {language === 'th' ? 'จัดเรียง' : 'Sort'}
-                            </button>
-                        )}
+                        {searchBoxEl}
+                        {genderBoxEl}
+                        {ageSelectEl}
+                        {slidersEl}
+                        {rankingMenuEl}
+                        {adminSortEl}
                     </div>
                 )}
 
-                {/* Right controls (desktop only) */}
-                {!isMobile && (
-                    <div className="flex items-center gap-2.5">
-                        {/* Gender Filter — desktop only */}
-                        <div className="flex rounded-lg bg-[var(--muted)] p-[3px]">
-                            {(['ALL', 'FOLLOWED', 'M', 'F'] as const).map(g => (
-                                <button
-                                    key={g}
-                                    onClick={() => setFilterGender(g)}
-                                    aria-label={g === 'FOLLOWED' ? (language === 'th' ? 'แสดงเฉพาะนักกีฬาที่ติดตาม' : 'Show followed runners only') : undefined}
-                                    title={g === 'FOLLOWED' ? (language === 'th' ? 'แสดงเฉพาะนักกีฬาที่ติดตาม' : 'Show followed runners only') : undefined}
-                                    className="whitespace-nowrap rounded-md border-none px-3 py-1 text-[10px] font-bold transition-all duration-200"
-                                    style={filterGender === g
-                                        ? { background: g === 'FOLLOWED' ? (isDark ? 'rgba(225,29,72,0.18)' : '#fff1f2') : '#22c55e', color: g === 'FOLLOWED' ? '#e11d48' : '#fff' }
-                                        : { background: 'transparent', color: themeStyles.textMuted }}
-                                >
-                                    {g === 'FOLLOWED' ? <span className="inline-flex items-center justify-center"><FollowHeartIcon filled={filterGender === g} size={12} color="#e11d48" /></span> : g === 'ALL' ? (language === 'th' ? 'ทั้งหมด' : 'All') : g === 'M' ? (language === 'th' ? 'ชาย' : 'Male') : (language === 'th' ? 'หญิง' : 'Female')}
-                                </button>
-                            ))}
-                        </div>
-
-                        {/* Sort incomplete-checkpoint alerts to the top — admin only */}
-                        {isAdmin && (
-                            <button
-                                onClick={() => setSortAlertsFirst(v => !v)}
-                                title={language === 'th' ? 'เรียงคนที่ขึ้นแจ้งเตือน (⚠) ขึ้นบนสุด' : 'Sort incomplete-checkpoint alerts to the top'}
-                                className="flex items-center gap-1 whitespace-nowrap rounded-lg border px-3 py-1.5 text-[11px] font-bold transition-all duration-200"
-                                style={sortAlertsFirst
-                                    ? { background: '#f59e0b', borderColor: '#f59e0b', color: '#fff' }
-                                    : { background: themeStyles.cardBg, borderColor: themeStyles.border, color: themeStyles.textMuted }}
-                            >
-                                <span aria-hidden>⚠</span>
-                                {language === 'th' ? 'จัดเรียงแจ้งเตือน' : 'Sort alerts'}
-                            </button>
-                        )}
-
-                        {/* Age group filter — desktop only, shown when the selected distance has age groups */}
-                        {ageGroupOptions.length > 0 && (
-                            <select
-                                value={filterAgeGroup}
-                                onChange={(e) => setFilterAgeGroup(e.target.value)}
-                                title={language === 'th' ? 'ช่วงอายุ' : 'Age group'}
-                                className="cursor-pointer rounded-lg border border-[var(--border)] bg-[var(--muted)] px-2.5 py-1.5 text-[11px] font-bold text-[var(--foreground)] outline-none"
-                                style={{ WebkitAppearance: 'menulist' }}
-                            >
-                                <option value="">{language === 'th' ? 'ทุกช่วงอายุ' : 'All ages'}</option>
-                                {ageGroupOptions.map(ag => (
-                                    <option key={ag} value={ag}>{ag}</option>
-                                ))}
-                            </select>
-                        )}
-
-                        {/* Search */}
-                        <div className="relative">
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={themeStyles.textSecondary} strokeWidth="2" className="absolute left-2.5 top-1/2 -translate-y-1/2">
-                                <circle cx="11" cy="11" r="8" /><path d="M21 21l-4.35-4.35" />
-                            </svg>
-                            <input
-                                type="text"
-                                placeholder={language === 'th' ? 'BIB หรือ ชื่อ...' : 'BIB or Name...'}
-                                value={searchQuery}
-                                onChange={(e) => setSearchQuery(e.target.value)}
-                                className="w-[180px] rounded-lg border-none bg-[var(--muted)] px-4 py-1.5 pl-[30px] text-xs text-[var(--foreground)] outline-none"
-                            />
-                        </div>
-
-                        {/* Column dropdown */}
-                        <div className="relative">
-                            <button
-                                onClick={() => setShowColDropdown(!showColDropdown)}
-                                className="flex items-center gap-1.5 rounded-lg border border-[var(--border)] bg-[var(--card-solid)] px-3 py-1.5 text-xs font-bold text-[var(--muted-foreground)]"
-                            >
-                                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /><rect x="14" y="14" width="7" height="7" /></svg>
-                                Columns
-                            </button>
-                            {showColDropdown && (
-                                <div className="absolute right-0 top-9 z-30 min-w-40 rounded-lg border p-2" style={{ background: themeStyles.cardBg, boxShadow: isDark ? '0 8px 16px rgba(0,0,0,0.4)' : '0 8px 16px rgba(0,0,0,0.1)', borderColor: themeStyles.border }}>
-                                    <p className="mb-1 px-2 text-[10px] font-bold uppercase" style={{ color: themeStyles.textSecondary }}>Display</p>
-                                    <label className="flex cursor-pointer items-center gap-2 px-2 py-1 text-xs" style={{ color: themeStyles.text }}>
-                                        <input type="checkbox" checked={showGenRank} onChange={e => setShowGenRank(e.target.checked)} /> Gender Rank
-                                    </label>
-                                    <label className="flex cursor-pointer items-center gap-2 px-2 py-1 text-xs" style={{ color: themeStyles.text }}>
-                                        <input type="checkbox" checked={showCatRank} onChange={e => setShowCatRank(e.target.checked)} /> Category Rank
-                                    </label>
-                                </div>
-                            )}
-                        </div>
-                    </div>
-                )}
             </div>
 
             {/* ===== TABLE ===== */}
