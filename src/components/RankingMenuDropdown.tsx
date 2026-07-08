@@ -90,8 +90,9 @@ export default function RankingMenuDropdown({
         { key: 'ageGroup', label: `Age group ${ageGroupN}`, href: `/Result-Winners/${encodeURIComponent(campaignSlugOrId)}${catQuery}` },
     ];
 
-    // The whole rankings/awards menu is admin-only — public users never see it.
-    if (!isAdmin) return null;
+    // Admins always see the menu; public users see it only when the admin has ticked at least one item visible
+    const hasPublicItems = items.some(item => draft[item.key]);
+    if (!isAdmin && !hasPublicItems) return null;
     if (!categoryName) return null;
 
     const toggle = (key: RankingMenuItemKey) => {
