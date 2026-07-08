@@ -1589,7 +1589,7 @@ export default function EventLivePage() {
                 <button
                     key={g}
                     onClick={() => setFilterGender(g)}
-                    className={`cursor-pointer whitespace-nowrap rounded-full border-none px-3 py-1 text-[11px] font-bold transition-all duration-200 ${filterGender === g
+                    className={`cursor-pointer whitespace-nowrap rounded-full border-none py-1 text-[11px] font-bold transition-all duration-200 ${isMobile ? 'px-2.5' : 'px-3'} ${filterGender === g
                         ? 'bg-[var(--foreground)] text-[var(--background)]'
                         : 'bg-transparent text-[var(--muted-foreground)]'}`}
                 >
@@ -1601,7 +1601,7 @@ export default function EventLivePage() {
                 onClick={() => setFilterGender('FOLLOWED')}
                 aria-label={language === 'th' ? 'แสดงเฉพาะนักกีฬาที่ติดตาม' : 'Show followed runners only'}
                 title={language === 'th' ? 'แสดงเฉพาะนักกีฬาที่ติดตาม' : 'Show followed runners only'}
-                className="flex cursor-pointer items-center justify-center rounded-full border-none px-2.5 py-1 transition-all duration-200"
+                className={`flex cursor-pointer items-center justify-center rounded-full border-none py-1 transition-all duration-200 ${isMobile ? 'px-2' : 'px-2.5'}`}
                 style={{ background: filterGender === 'FOLLOWED' ? (isDark ? 'rgba(225,29,72,0.18)' : '#fff1f2') : 'transparent' }}
             >
                 <FollowHeartIcon filled={filterGender === 'FOLLOWED'} size={13} color="#e11d48" />
@@ -1614,7 +1614,7 @@ export default function EventLivePage() {
             value={filterAgeGroup}
             onChange={(e) => setFilterAgeGroup(e.target.value)}
             title={language === 'th' ? 'ช่วงอายุ' : 'Age group'}
-            className={`shrink-0 cursor-pointer appearance-none rounded-full border px-3.5 py-1.5 text-[11px] font-bold outline-none transition-all duration-200 ${filterAgeGroup
+            className={`shrink-0 cursor-pointer appearance-none rounded-full border py-1.5 text-[11px] font-bold outline-none transition-all duration-200 ${isMobile ? 'px-3' : 'px-3.5'} ${filterAgeGroup
                 ? 'border-[var(--foreground)] bg-[var(--foreground)] text-[var(--background)]'
                 : 'border-[var(--border)] bg-transparent text-[var(--muted-foreground)]'}`}
         >
@@ -1822,14 +1822,14 @@ export default function EventLivePage() {
                             </div>
                         </div>
 
-                        {/* Row 2: Gender box + Age group + ranking trophy + column toggle */}
-                        <div className="mt-2 flex items-center gap-2">
-                            <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto [scrollbar-width:none]">
-                                {genderBoxEl}
-                                {ageSelectEl}
+                        {/* Row 2: Gender box + Age group + ranking trophy + column toggle — wraps instead of clipping */}
+                        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                            {genderBoxEl}
+                            {ageSelectEl}
+                            <div className="ml-auto flex items-center gap-1">
+                                {rankingMenuEl}
+                                {slidersEl}
                             </div>
-                            {rankingMenuEl}
-                            {slidersEl}
                         </div>
 
                         {/* Row 3: admin tools */}
