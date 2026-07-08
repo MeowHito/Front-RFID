@@ -31,6 +31,8 @@ interface RankingMenuDropdownProps {
     language: 'th' | 'en';
     /** Which edge of the trigger the dropdown panel aligns to (use 'right' when the trigger sits near the viewport's right edge) */
     align?: 'left' | 'right';
+    /** Render the trigger as a trophy icon only, without the label (mobile) */
+    iconOnly?: boolean;
     /** Called with the full updated array after a successful save, so the parent can refresh its campaign state */
     onSaved?: (next: RankingMenuVisibility[]) => void;
 }
@@ -49,6 +51,7 @@ export default function RankingMenuDropdown({
     isAdmin,
     language,
     align = 'left',
+    iconOnly = false,
     onSaved,
 }: RankingMenuDropdownProps) {
     const [open, setOpen] = useState(false);
@@ -123,11 +126,20 @@ export default function RankingMenuDropdown({
         <div ref={rootRef} className="relative">
             <button
                 onClick={() => setOpen(o => !o)}
-                className="flex items-center gap-1.5 whitespace-nowrap rounded-full border border-[var(--border)] bg-[var(--card-solid)] px-3.5 py-1.5 text-xs font-bold text-[var(--muted-foreground)]"
+                aria-label={language === 'th' ? 'อันดับ/รางวัล' : 'Rankings'}
+                title={iconOnly ? (language === 'th' ? 'อันดับ/รางวัล' : 'Rankings') : undefined}
+                className={`flex items-center whitespace-nowrap rounded-full border border-[var(--border)] bg-[var(--card-solid)] text-xs font-bold text-[var(--muted-foreground)] ${iconOnly ? 'h-[29px] w-[40px] justify-center' : 'gap-1.5 px-3.5 py-1.5'}`}
             >
-                <span aria-hidden className="text-sm">🏆</span>
-                {language === 'th' ? 'อันดับ/รางวัล' : 'Rankings'}
-                <span className="text-xs opacity-60">▾</span>
+                <svg aria-hidden width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#eab308" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
+                    <path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6" />
+                    <path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18" />
+                    <path d="M4 22h16" />
+                    <path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22" />
+                    <path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22" />
+                    <path d="M18 2H6v7a6 6 0 0 0 12 0V2Z" />
+                </svg>
+                {!iconOnly && (language === 'th' ? 'อันดับ/รางวัล' : 'Rankings')}
+                {!iconOnly && <span className="text-xs opacity-60">▾</span>}
             </button>
             {open && (
                 <div className={`absolute top-10 z-30 min-w-72 rounded-lg border border-[var(--border)] bg-[var(--card-solid)] p-3 shadow-[0_8px_16px_rgba(0,0,0,0.15)] dark:shadow-[0_8px_16px_rgba(0,0,0,0.4)] ${align === 'right' ? 'right-0' : 'left-0'}`}>

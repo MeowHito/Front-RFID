@@ -1672,7 +1672,8 @@ export default function EventLivePage() {
             rankingMenuVisibility={campaign.rankingMenuVisibility}
             isAdmin={isAdmin}
             language={language}
-            align={isMobile ? 'left' : 'right'}
+            align="right"
+            iconOnly={isMobile}
             onSaved={(next) => setCampaign(prev => prev ? { ...prev, rankingMenuVisibility: next } : prev)}
         />
     ) : null;
@@ -1821,19 +1822,19 @@ export default function EventLivePage() {
                             </div>
                         </div>
 
-                        {/* Row 2: Gender box + Age group + column toggle */}
+                        {/* Row 2: Gender box + Age group + ranking trophy + column toggle */}
                         <div className="mt-2 flex items-center gap-1.5">
                             <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto [scrollbar-width:none]">
                                 {genderBoxEl}
                                 {ageSelectEl}
                             </div>
+                            {rankingMenuEl}
                             {slidersEl}
                         </div>
 
-                        {/* Row 3: Ranking menu + admin tools */}
-                        {(rankingMenuEl || adminSortEl) && (
+                        {/* Row 3: admin tools */}
+                        {adminSortEl && (
                             <div className="mt-2 flex items-center gap-1.5">
-                                {rankingMenuEl}
                                 {adminSortEl}
                             </div>
                         )}
