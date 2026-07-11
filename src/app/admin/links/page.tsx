@@ -59,6 +59,12 @@ const LINK_ROWS: LinkRow[] = [
         buildUrl: (origin, campaign) => `${origin}/certificate-search/${campaign?.slug || campaign?._id || ''}`,
     },
     {
+        id: 'bib-link',
+        label: 'สร้างลิงก์/QR หน้าผลนักกีฬาจากเลข BIB',
+        labelEn: 'BIB to Runner Link & QR generator',
+        buildUrl: (origin, campaign) => `${origin}/bib-link/${campaign?.slug || campaign?._id || ''}`,
+    },
+    {
         id: 'applicant-status',
         label: '📋 ตรวจสอบข้อมูลการสมัคร (ชื่อ / BIB / เลขบัตร / เบอร์)',
         labelEn: '📋 Applicant Status Check (Name / BIB / ID / Phone)',
