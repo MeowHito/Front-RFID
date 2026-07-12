@@ -124,6 +124,25 @@ function CreateEventForm() {
 
     const [saving, setSaving] = useState(false);
     const [toastMessage, setToastMessage] = useState<string | null>(null);
+    const [slugCopied, setSlugCopied] = useState(false);
+
+    const copyEslipUrl = async (url: string) => {
+        try {
+            await navigator.clipboard.writeText(url);
+        } catch {
+            // Fallback for insecure contexts where navigator.clipboard is unavailable
+            const ta = document.createElement('textarea');
+            ta.value = url;
+            ta.style.position = 'fixed';
+            ta.style.opacity = '0';
+            document.body.appendChild(ta);
+            ta.select();
+            try { document.execCommand('copy'); } catch { /* ignore */ }
+            document.body.removeChild(ta);
+        }
+        setSlugCopied(true);
+        setTimeout(() => setSlugCopied(false), 1800);
+    };
     const [cropModalOpen, setCropModalOpen] = useState(false);
     const [rawImage, setRawImage] = useState<string>('');
     const [thumbnail, setThumbnail] = useState<string>('');
@@ -589,20 +608,46 @@ function CreateEventForm() {
                                                 ? 'ลิงก์ E-Slip ของนักวิ่งแต่ละคนจะเป็น:'
                                                 : "Each runner's E-Slip link will be:"}
                                         </div>
-                                        <code style={{
-                                            display: 'inline-block', background: '#f1f5f9', border: '1px solid #e2e8f0',
-                                            borderRadius: 6, padding: '5px 9px', fontSize: 12.5, color: '#0f172a',
-                                            fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', wordBreak: 'break-all',
-                                        }}>
-                                            {ESLIP_HOST}/{effectiveSlug}/
-                                            <span style={{ background: '#fde68a', color: '#78350f', padding: '1px 5px', borderRadius: 4, fontWeight: 700 }}>
-                                                &lt;bib&gt;
-                                            </span>
-                                        </code>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                                            <code style={{
+                                                display: 'inline-block', background: '#f1f5f9', border: '1px solid #e2e8f0',
+                                                borderRadius: 6, padding: '5px 9px', fontSize: 12.5, color: '#0f172a',
+                                                fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', wordBreak: 'break-all',
+                                            }}>
+                                                {ESLIP_HOST}/{effectiveSlug}/
+                                                <span style={{ background: '#fde68a', color: '#78350f', padding: '1px 5px', borderRadius: 4, fontWeight: 700 }}>
+                                                    xxxx
+                                                </span>
+                                            </code>
+                                            <button
+                                                type="button"
+                                                onClick={() => copyEslipUrl(`https://${ESLIP_HOST}/${effectiveSlug}/`)}
+                                                title={language === 'th' ? 'คัดลอกลิงก์ (แล้วเติมเลข BIB ต่อท้าย)' : 'Copy link (then append the BIB number)'}
+                                                style={{
+                                                    display: 'inline-flex', alignItems: 'center', gap: 5, cursor: 'pointer',
+                                                    background: slugCopied ? '#16a34a' : '#fff', color: slugCopied ? '#fff' : '#334155',
+                                                    border: `1px solid ${slugCopied ? '#16a34a' : '#cbd5e1'}`, borderRadius: 6,
+                                                    padding: '5px 10px', fontSize: 12, fontWeight: 600, fontFamily: 'inherit',
+                                                    transition: 'all 0.15s',
+                                                }}
+                                            >
+                                                {slugCopied ? (
+                                                    <>
+                                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="20 6 9 17 4 12" /></svg>
+                                                        {language === 'th' ? 'คัดลอกแล้ว' : 'Copied'}
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>
+                                                        {language === 'th' ? 'คัดลอก' : 'Copy'}
+                                                    </>
+                                                )}
+                                            </button>
+                                        </div>
                                         <div style={{ marginTop: 6, color: '#b45309' }}>
                                             {language === 'th'
-                                                ? '⚠️ ส่วน <bib> ให้เปลี่ยนเป็นเลข BIB ของนักวิ่งแต่ละคน เช่น '
-                                                : '⚠️ Replace <bib> with each runner\'s BIB number, e.g. '}
+                                                ? '⚠️ ส่วน xxxx ให้เปลี่ยนเป็นเลข BIB ของนักวิ่งแต่ละคน เช่น '
+                                                : '⚠️ Replace xxxx with each runner\'s BIB number, e.g. '}
                                             <code style={{ background: '#f1f5f9', borderRadius: 4, padding: '1px 5px' }}>
                                                 {ESLIP_HOST}/{effectiveSlug}/1234
                                             </code>
