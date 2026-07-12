@@ -41,6 +41,7 @@ interface CreateEventForm {
     partnerCode: string;
     raceTigerBaseUrl: string;
     cardColor: string;
+    slug: string;
     categories: RaceCategory[];
 }
 
@@ -100,6 +101,19 @@ const normalizeThemeType = (value?: string): string => {
             return 'road_race';
     }
 };
+
+// Mirrors the backend slugify (campaigns.service.ts) so the URL preview matches
+// what will actually be stored. Thai characters (ก-๙) are preserved.
+const slugifyPreview = (value: string): string =>
+    (value || '')
+        .normalize('NFKD')
+        .replace(/[̀-ͯ]/g, '')
+        .toLowerCase()
+        .replace(/[^a-z0-9฀-๿]+/g, '-')
+        .replace(/^-+|-+$/g, '');
+
+// Public host where the e-slip pages are served.
+const ESLIP_HOST = 'live.action.in.th';
 
 function CreateEventForm() {
     const { language } = useLanguage();
@@ -184,6 +198,7 @@ function CreateEventForm() {
         partnerCode: '',
         raceTigerBaseUrl: '',
         cardColor: '',
+        slug: '',
         categories: [],
     });
 
@@ -215,6 +230,7 @@ function CreateEventForm() {
                     partnerCode: campaign.partnerCode || '',
                     raceTigerBaseUrl: campaign.raceTigerBaseUrl || '',
                     cardColor: campaign.cardColor || '',
+                    slug: campaign.slug || '',
                     categories: (campaign.categories || []).map((cat: RaceCategory) => ({
                         name: cat.name || '',
                         distance: cat.distance || '',
@@ -362,6 +378,7 @@ function CreateEventForm() {
             if (form.partnerCode.trim()) payload.partnerCode = form.partnerCode.trim();
             if (form.raceTigerBaseUrl.trim()) payload.raceTigerBaseUrl = form.raceTigerBaseUrl.trim();
             if (form.cardColor.trim()) payload.cardColor = form.cardColor.trim();
+            if (form.slug.trim()) payload.slug = form.slug.trim();
             if (form.themeType) payload.themeType = form.themeType;
             if (cleanCategories.length > 0) payload.categories = cleanCategories;
             // Use API proxy route to work on both localhost and Vercel
@@ -553,6 +570,51 @@ function CreateEventForm() {
                                 value={form.location}
                                 onChange={(e) => updateField('location', e.target.value)}
                             />
+                        </div>
+                        <div className="ce-form-group ce-full">
+                            <label className="ce-label">{language === 'th' ? 'URL E-Slip (ลิงก์ผลการแข่งขันนักวิ่ง)' : 'E-Slip URL (runner result link)'}</label>
+                            <input
+                                type="text"
+                                className="ce-input"
+                                placeholder={language === 'th' ? 'เช่น buriram-10-thunder-speed-2026' : 'e.g. buriram-10-thunder-speed-2026'}
+                                value={form.slug}
+                                onChange={(e) => updateField('slug', e.target.value)}
+                            />
+                            {(() => {
+                                const effectiveSlug = slugifyPreview(form.slug || form.name) || 'your-event';
+                                return (
+                                    <div style={{ marginTop: 8, fontSize: 12.5, lineHeight: 1.7, color: '#475569' }}>
+                                        <div style={{ marginBottom: 4 }}>
+                                            {language === 'th'
+                                                ? 'ลิงก์ E-Slip ของนักวิ่งแต่ละคนจะเป็น:'
+                                                : "Each runner's E-Slip link will be:"}
+                                        </div>
+                                        <code style={{
+                                            display: 'inline-block', background: '#f1f5f9', border: '1px solid #e2e8f0',
+                                            borderRadius: 6, padding: '5px 9px', fontSize: 12.5, color: '#0f172a',
+                                            fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', wordBreak: 'break-all',
+                                        }}>
+                                            {ESLIP_HOST}/{effectiveSlug}/
+                                            <span style={{ background: '#fde68a', color: '#78350f', padding: '1px 5px', borderRadius: 4, fontWeight: 700 }}>
+                                                &lt;bib&gt;
+                                            </span>
+                                        </code>
+                                        <div style={{ marginTop: 6, color: '#b45309' }}>
+                                            {language === 'th'
+                                                ? '⚠️ ส่วน <bib> ให้เปลี่ยนเป็นเลข BIB ของนักวิ่งแต่ละคน เช่น '
+                                                : '⚠️ Replace <bib> with each runner\'s BIB number, e.g. '}
+                                            <code style={{ background: '#f1f5f9', borderRadius: 4, padding: '1px 5px' }}>
+                                                {ESLIP_HOST}/{effectiveSlug}/1234
+                                            </code>
+                                        </div>
+                                        {language === 'th' && (
+                                            <div style={{ marginTop: 4, color: '#94a3b8', fontSize: 11.5 }}>
+                                                เว้นว่างไว้ได้ ระบบจะสร้างลิงก์อัตโนมัติจากชื่ออีเว้นท์
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })()}
                         </div>
                         <div className="ce-form-group ce-full">
                             <label className="ce-label">{language === 'th' ? 'รายละเอียดและวัตถุประสงค์' : 'Description & Objectives'}</label>

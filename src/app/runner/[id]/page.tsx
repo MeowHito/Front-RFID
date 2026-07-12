@@ -911,7 +911,7 @@ export default function RunnerProfilePage() {
                         </button>
                         {isFinished ? (
                             <>
-                                <Link href={`/runner/${runnerId}/eslip`} className="runner-action-btn" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, background: '#16a34a', color: '#fff', padding: '8px 18px', borderRadius: 10, fontWeight: 700, fontSize: 13, textDecoration: 'none', border: 'none', cursor: 'pointer', minWidth: 200, minHeight: 38, width: '100%' }}>
+                                <Link href={campaign?.slug && runner?.bib ? `/${campaign.slug}/${runner.bib}` : `/runner/${runnerId}/eslip`} className="runner-action-btn" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, background: '#16a34a', color: '#fff', padding: '8px 18px', borderRadius: 10, fontWeight: 700, fontSize: 13, textDecoration: 'none', border: 'none', cursor: 'pointer', minWidth: 200, minHeight: 38, width: '100%' }}>
                                     Finished — ดู E-Slip
                                 </Link>
                                 {campaign?.isApproveCertificate && (
