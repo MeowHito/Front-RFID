@@ -5,6 +5,19 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
 import { QRCodeCanvas } from 'qrcode.react';
+import { useAuth } from '@/lib/auth-context';
+import ThermalReceipt from '@/components/eslip/ThermalReceipt';
+import {
+    RunnerData,
+    TimingRecord,
+    CampaignData,
+    computeTargetBandLabel,
+} from '@/components/eslip/eslip-templates';
+import { computeAwardsForCategory, formatAwardLabel } from '@/lib/awards';
+import { isNationalitySplitCategory } from '@/lib/nationality';
+
+/** Roles that get the auto-print E-Slip receipt flow instead of the link/QR card. */
+const PRINT_ROLES = ['admin_master', 'admin', 'organizer'];
 
 interface Campaign {
     _id: string;
@@ -43,10 +56,15 @@ const IconExternal = ({ size = 16 }: { size?: number }) => (
 const IconDownload = ({ size = 16 }: { size?: number }) => (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
 );
+const IconPrinter = ({ size = 18 }: { size?: number }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 6 2 18 2 18 9" /><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" /><rect x="6" y="14" width="12" height="8" /></svg>
+);
 
 export default function BibLinkPage() {
     const { slug } = useParams<{ slug: string }>();
     const router = useRouter();
+    const { user } = useAuth();
+    const isPrivileged = !!user && PRINT_ROLES.includes(user.role);
 
     const [campaign, setCampaign] = useState<Campaign | null>(null);
     const [loadingCampaign, setLoadingCampaign] = useState(true);
@@ -58,12 +76,27 @@ export default function BibLinkPage() {
     const [runner, setRunner] = useState<Runner | null>(null);
     const [copied, setCopied] = useState(false);
 
+    // Admin/organizer E-Slip receipt (58mm thermal) state
+    const [slip, setSlip] = useState<{ runner: RunnerData; timings: TimingRecord[]; campaign: CampaignData } | null>(null);
+    const [slipAward, setSlipAward] = useState<string | null>(null);
+    const [slipTarget, setSlipTarget] = useState<string | null>(null);
+    const [pendingPrint, setPendingPrint] = useState(false);
+
     const [origin, setOrigin] = useState('');
     const qrWrapRef = useRef<HTMLDivElement>(null);
+    const inputRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => {
         if (typeof window !== 'undefined') setOrigin(window.location.origin);
     }, []);
+
+    // Auto-open the browser print dialog once the receipt has rendered.
+    useEffect(() => {
+        if (!slip || !pendingPrint) return;
+        setPendingPrint(false);
+        const id = setTimeout(() => window.print(), 300);
+        return () => clearTimeout(id);
+    }, [slip, pendingPrint]);
 
     // Load campaign by slug (or id)
     useEffect(() => {
@@ -94,10 +127,85 @@ export default function BibLinkPage() {
             || '-')
         : '';
 
+    // Admin/organizer flow: resolve the runner, build a full E-Slip and auto-print
+    // it to a 58mm thermal receipt printer.
+    const handlePrintSearch = useCallback(async (term: string) => {
+        if (!campaign?._id) return;
+        setSearching(true);
+        setError('');
+        setSlip(null);
+        setSlipAward(null);
+        setSlipTarget(null);
+        try {
+            const lookupRes = await fetch(
+                `/api/runners/lookup?campaignId=${campaign._id}&code=${encodeURIComponent(term)}`,
+                { cache: 'no-store' }
+            );
+            const lookup = lookupRes.ok ? await lookupRes.json() : null;
+            const found = lookup?.runner;
+            if (!found?._id) {
+                setError(`ไม่พบนักกีฬาเลข BIB "${term}" ในกิจกรรมนี้`);
+                return;
+            }
+            // Full e-slip payload (ranks + checkpoint splits), same shape as /runner/:id/eslip.
+            const detailRes = await fetch(`/api/runner/${found._id}`, { cache: 'no-store' });
+            const detail = detailRes.ok ? await detailRes.json() : null;
+            const r: RunnerData | undefined = detail?.data?.runner;
+            if (detail?.status?.code !== '200' || !r) {
+                setError(`ไม่พบข้อมูลผลการแข่งขันของ BIB "${term}"`);
+                return;
+            }
+            if (r.status !== 'finished') {
+                setError(`BIB ${r.bib} · ${`${r.firstName || ''} ${r.lastName || ''}`.trim()} ยังไม่จบการแข่งขัน — ยังไม่มี E-Slip`);
+                return;
+            }
+            const timings: TimingRecord[] = detail.data.timingRecords || [];
+            const c: CampaignData = detail.data.campaign;
+
+            // AWARD (Overall / Age Group) — same algorithm as the e-slip page + winner boards.
+            let award: string | null = null;
+            if (c?._id && r.category) {
+                try {
+                    const p = new URLSearchParams({ campaignId: c._id, category: r.category, limit: '10000', skipStatusCounts: 'true' });
+                    const poolRes = await fetch(`/api/runners/paged?${p.toString()}`, { cache: 'no-store' });
+                    if (poolRes.ok) {
+                        const poolData = await poolRes.json();
+                        const pool = Array.isArray(poolData?.data) ? poolData.data : [];
+                        const awards = computeAwardsForCategory(pool, {
+                            overallDisplayCount: c.overallDisplayCount,
+                            ageGroupDisplayCount: c.ageGroupDisplayCount,
+                            excludeOverallFromAgeGroup: c.excludeOverallFromAgeGroup,
+                            excludeOverallThaiFromAgeGroup: c.excludeOverallThaiFromAgeGroup,
+                            excludeOverallForeignFromAgeGroup: c.excludeOverallForeignFromAgeGroup,
+                            separateOverallByNationality: isNationalitySplitCategory(c.separateOverallNationalityCategories, r.category),
+                        });
+                        const mine = awards.get(r._id);
+                        award = mine ? formatAwardLabel(mine) : null;
+                    }
+                } catch { /* award is best-effort; slip still prints without it */ }
+            }
+
+            setSlipAward(award);
+            setSlipTarget(computeTargetBandLabel(r, c));
+            setSlip({ runner: r, timings, campaign: c });
+            setPendingPrint(true);
+        } catch {
+            setError('เกิดข้อผิดพลาด ลองใหม่อีกครั้ง');
+        } finally {
+            setSearching(false);
+        }
+    }, [campaign]);
+
     const handleSearch = useCallback(async (e?: React.FormEvent) => {
         if (e) e.preventDefault();
         const term = bib.trim();
         if (!term || !campaign?._id) return;
+
+        if (isPrivileged) {
+            await handlePrintSearch(term);
+            return;
+        }
+
         setSearching(true);
         setError('');
         setRunner(null);
@@ -120,7 +228,7 @@ export default function BibLinkPage() {
         } finally {
             setSearching(false);
         }
-    }, [bib, campaign]);
+    }, [bib, campaign, isPrivileged, handlePrintSearch]);
 
     const handleCopy = async () => {
         if (!runnerUrl) return;
@@ -170,9 +278,13 @@ export default function BibLinkPage() {
 
     const resetSearch = () => {
         setRunner(null);
+        setSlip(null);
+        setSlipAward(null);
+        setSlipTarget(null);
         setBib('');
         setError('');
         setCopied(false);
+        setTimeout(() => inputRef.current?.focus(), 0);
     };
 
     const genderTag = runner?.gender === 'F'
@@ -211,6 +323,13 @@ export default function BibLinkPage() {
                 .bl-card { animation: fadeUp 0.28s ease both; }
                 .bl-input:focus { border-color: #22c55e !important; box-shadow: 0 0 0 4px rgba(34,197,94,0.12); }
                 .bl-btn-primary:not(:disabled):active { transform: translateY(1px); }
+                @media print {
+                    @page { size: 58mm auto; margin: 0; }
+                    html, body { margin: 0 !important; padding: 0 !important; background: #fff !important; }
+                    body * { visibility: hidden !important; }
+                    [data-thermal-receipt], [data-thermal-receipt] * { visibility: visible !important; }
+                    [data-thermal-receipt] { position: absolute !important; left: 0 !important; top: 0 !important; }
+                }
             `}</style>
 
             {/* HEADER */}
@@ -231,7 +350,9 @@ export default function BibLinkPage() {
             <main style={{ flex: '1 0 auto', width: '100%', maxWidth: 480, margin: '0 auto', padding: '24px 16px 48px', display: 'flex', flexDirection: 'column', gap: 16 }}>
                 {/* Title */}
                 <div style={{ textAlign: 'center' }}>
-                    <h1 style={{ fontSize: 24, fontWeight: 800, margin: 0, color: '#0f172a', letterSpacing: 0.2 }}>ค้นหานักกีฬาด้วยเลข BIB</h1>
+                    <h1 style={{ fontSize: 24, fontWeight: 800, margin: 0, color: '#0f172a', letterSpacing: 0.2 }}>
+                        {isPrivileged ? 'พิมพ์ใบเสร็จ E-Slip ด้วยเลข BIB' : 'ค้นหานักกีฬาด้วยเลข BIB'}
+                    </h1>
                     <p style={{ fontSize: 13, color: '#64748b', fontWeight: 600, margin: '6px 0 0' }}>
                         {campaign.nameTh || campaign.nameEn || campaign.name}
                     </p>
@@ -240,9 +361,10 @@ export default function BibLinkPage() {
                 {/* Search form */}
                 <form onSubmit={handleSearch} style={{ background: '#fff', borderRadius: 16, padding: 20, boxShadow: '0 4px 24px rgba(0,0,0,0.08)' }}>
                     <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#94a3b8', marginBottom: 10, textAlign: 'center', letterSpacing: 1, textTransform: 'uppercase' }}>
-                        กรอกเลข BIB นักกีฬา
+                        {isPrivileged ? 'กรอกเลข BIB แล้วกดพิมพ์ใบเสร็จ' : 'กรอกเลข BIB นักกีฬา'}
                     </label>
                     <input
+                        ref={inputRef}
                         className="bl-input"
                         type="text"
                         inputMode="numeric"
@@ -290,8 +412,8 @@ export default function BibLinkPage() {
                         }}
                     >
                         {searching
-                            ? <><span style={{ width: 16, height: 16, border: '2.5px solid rgba(255,255,255,0.4)', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />กำลังค้นหา...</>
-                            : <><IconSearch />ค้นหา</>}
+                            ? <><span style={{ width: 16, height: 16, border: '2.5px solid rgba(255,255,255,0.4)', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />{isPrivileged ? 'กำลังเตรียมใบเสร็จ...' : 'กำลังค้นหา...'}</>
+                            : isPrivileged ? <><IconPrinter />พิมพ์ใบเสร็จ E-Slip</> : <><IconSearch />ค้นหา</>}
                     </button>
                 </form>
 
@@ -302,8 +424,51 @@ export default function BibLinkPage() {
                     </div>
                 )}
 
-                {/* Result card */}
-                {runner && (
+                {/* Admin/organizer E-Slip receipt (58mm) — auto-printed on search */}
+                {isPrivileged && slip && slip.runner.status === 'finished' && (
+                    <div className="bl-card" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>
+                        <div style={{ fontSize: 13, color: '#16a34a', fontWeight: 800, display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <IconPrinter size={16} />ส่งใบเสร็จไปยังเครื่องพิมพ์แล้ว
+                        </div>
+                        {/* Paper preview — matches what prints on the 58mm roll */}
+                        <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, boxShadow: '0 6px 24px rgba(0,0,0,0.12)', padding: 4 }}>
+                            <ThermalReceipt
+                                runner={slip.runner}
+                                timings={slip.timings}
+                                campaign={slip.campaign}
+                                awardLabel={slipAward}
+                                targetBandLabel={slipTarget}
+                                origin={origin}
+                            />
+                        </div>
+                        <div style={{ display: 'flex', gap: 10, width: '100%', maxWidth: 320 }}>
+                            <button
+                                onClick={() => window.print()}
+                                style={{
+                                    flex: 1, padding: '13px', borderRadius: 12, border: 'none',
+                                    background: '#0f172a', color: '#fff', fontWeight: 700, fontSize: 14,
+                                    cursor: 'pointer', fontFamily: 'inherit',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7,
+                                }}
+                            >
+                                <IconPrinter size={16} />พิมพ์อีกครั้ง
+                            </button>
+                            <button
+                                onClick={resetSearch}
+                                style={{
+                                    flex: 1, padding: '13px', borderRadius: 12,
+                                    border: '2px solid #22c55e', background: '#f0fdf4', color: '#16a34a',
+                                    fontWeight: 700, fontSize: 14, cursor: 'pointer', fontFamily: 'inherit',
+                                }}
+                            >
+                                BIB ถัดไป
+                            </button>
+                        </div>
+                    </div>
+                )}
+
+                {/* Result card (public / non-print roles) */}
+                {!isPrivileged && runner && (
                     <div className="bl-card" style={{ background: '#fff', borderRadius: 16, padding: 20, boxShadow: '0 4px 24px rgba(0,0,0,0.08)', display: 'flex', flexDirection: 'column', gap: 18 }}>
                         {/* Runner header */}
                         <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
@@ -393,9 +558,11 @@ export default function BibLinkPage() {
                     </div>
                 )}
 
-                {!runner && !error && (
+                {((isPrivileged && !slip) || (!isPrivileged && !runner)) && !error && (
                     <div style={{ color: '#94a3b8', fontSize: 12, fontWeight: 600, textAlign: 'center', marginTop: 4, lineHeight: 1.6 }}>
-                        กรอกเลข BIB แล้วกดค้นหา<br />เพื่อรับลิงก์และ QR Code ของนักกีฬาคนนั้น
+                        {isPrivileged
+                            ? <>กรอกเลข BIB แล้วกดพิมพ์<br />ระบบจะพิมพ์ใบเสร็จ E-Slip ออกทางเครื่องพิมพ์ 58 มม. อัตโนมัติ</>
+                            : <>กรอกเลข BIB แล้วกดค้นหา<br />เพื่อรับลิงก์และ QR Code ของนักกีฬาคนนั้น</>}
                     </div>
                 )}
             </main>
