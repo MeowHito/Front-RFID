@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { useLanguage } from '@/lib/language-context';
 import { usePermissions } from '@/lib/usePermissions';
 import { authHeaders } from '@/lib/authHeaders';
+import { parseAgeGroupBucket } from '@/lib/age-groups';
 import AdminLayout from '../AdminLayout';
 import '../admin.css';
 
@@ -33,6 +34,22 @@ interface Campaign {
     categories?: RaceCategory[];
 }
 
+/** Age-group member counts pulled live from RaceTiger BIO (for verifying against RaceTiger's Categories screen) */
+interface RtGroupCount {
+    ageGroup: string;
+    members: number;
+    men: number;
+    women: number;
+}
+
+interface RtCategoryCounts {
+    category: string;
+    members: number;
+    men: number;
+    women: number;
+    groups: RtGroupCount[];
+}
+
 export default function CategoriesPage() {
     const { language } = useLanguage();
     const { readOnly } = usePermissions('participants');
@@ -52,6 +69,12 @@ export default function CategoriesPage() {
     // Age groups state
     const [maleGroups, setMaleGroups] = useState<AgeGroup[]>([]);
     const [femaleGroups, setFemaleGroups] = useState<AgeGroup[]>([]);
+
+    // Live age-group counts from RaceTiger (to verify member numbers)
+    const [rtCounts, setRtCounts] = useState<RtCategoryCounts[] | null>(null);
+    const [rtLoading, setRtLoading] = useState(false);
+    const [rtError, setRtError] = useState('');
+    const [rtFetchedAt, setRtFetchedAt] = useState('');
 
     const showToast = (message: string, type: 'success' | 'error') => {
         setToast({ message, type });
@@ -79,6 +102,28 @@ export default function CategoriesPage() {
         }
         loadFeatured();
     }, []);
+
+    // Load live age-group member counts from RaceTiger for verification
+    const loadRaceTigerCounts = useCallback(async (campaignId: string) => {
+        setRtLoading(true);
+        setRtError('');
+        try {
+            const res = await fetch(`/api/sync/racetiger-category-counts?id=${campaignId}`, { cache: 'no-store' });
+            const body = await res.json();
+            if (!res.ok) throw new Error(body?.error || 'Failed to fetch RaceTiger counts');
+            setRtCounts(body?.data?.categories || []);
+            setRtFetchedAt(body?.data?.fetchedAt || '');
+        } catch (e: any) {
+            setRtCounts(null);
+            setRtError(e?.message || 'Failed to fetch RaceTiger counts');
+        } finally {
+            setRtLoading(false);
+        }
+    }, []);
+
+    useEffect(() => {
+        if (campaign?._id) loadRaceTigerCounts(campaign._id);
+    }, [campaign?._id, loadRaceTigerCounts]);
 
     // Load age groups when category changes
     useEffect(() => {
@@ -257,6 +302,23 @@ export default function CategoriesPage() {
         return language === 'th' ? (campaign.nameTh || campaign.name) : (campaign.nameEn || campaign.name);
     };
 
+    // RaceTiger counts for the selected distance, age groups sorted young → old (unknown labels last)
+    const rtSelected = rtCounts && selectedCategory
+        ? (rtCounts.find(c => c.category === selectedCategory)
+            || rtCounts.find(c => c.category.startsWith(selectedCategory) || selectedCategory.startsWith(c.category))
+            || null)
+        : null;
+    const rtSortedGroups = rtSelected
+        ? [...rtSelected.groups].sort((a, b) => {
+            const pa = parseAgeGroupBucket(a.ageGroup);
+            const pb = parseAgeGroupBucket(b.ageGroup);
+            if (!pa && !pb) return 0;
+            if (!pa) return 1;
+            if (!pb) return -1;
+            return pa.min - pb.min || pa.max - pb.max;
+        })
+        : [];
+
     return (
         <AdminLayout
             breadcrumbItems={[
@@ -430,6 +492,89 @@ export default function CategoriesPage() {
                                     {language === 'th' ? 'เฉพาะรุ่น Open' : 'Open category only'}
                                 </button>
                             </div>
+                        </div>
+
+                        {/* Age groups + member counts pulled live from RaceTiger (verification against RaceTiger's Categories screen) */}
+                        <div style={{
+                            background: '#f6fff9',
+                            border: '1px dashed #00a65a',
+                            padding: 15,
+                            borderRadius: 4,
+                            marginBottom: 15,
+                        }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, gap: 10, flexWrap: 'wrap' }}>
+                                <div style={{ fontWeight: 'bold', color: '#00a65a', fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                        <path d="M9 11l3 3L22 4" />
+                                        <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
+                                    </svg>
+                                    {language === 'th'
+                                        ? `กลุ่มอายุจาก RaceTiger${selectedCategory ? ` — ${selectedCategory}` : ''} (สำหรับตรวจสอบจำนวน)`
+                                        : `Age groups from RaceTiger${selectedCategory ? ` — ${selectedCategory}` : ''} (for count verification)`}
+                                </div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                    {rtFetchedAt && (
+                                        <span style={{ fontSize: 11, color: '#888' }}>
+                                            {language === 'th' ? 'ดึงเมื่อ' : 'Fetched'} {new Date(rtFetchedAt).toLocaleTimeString(language === 'th' ? 'th-TH' : 'en-GB')}
+                                        </span>
+                                    )}
+                                    <button
+                                        className="btn"
+                                        onClick={() => campaign?._id && loadRaceTigerCounts(campaign._id)}
+                                        disabled={rtLoading}
+                                        style={{ padding: '4px 12px', fontSize: 11, background: '#00a65a', fontWeight: 600, opacity: rtLoading ? 0.7 : 1 }}
+                                    >
+                                        {rtLoading
+                                            ? (language === 'th' ? 'กำลังดึง...' : 'Fetching...')
+                                            : (language === 'th' ? 'ดึงข้อมูลใหม่' : 'Refresh')}
+                                    </button>
+                                </div>
+                            </div>
+                            {rtLoading ? (
+                                <div style={{ textAlign: 'center', padding: 16, color: '#999', fontSize: 12 }}>
+                                    {language === 'th' ? 'กำลังดึงข้อมูลจาก RaceTiger...' : 'Fetching data from RaceTiger...'}
+                                </div>
+                            ) : rtError ? (
+                                <div style={{ textAlign: 'center', padding: 16, color: '#dd4b39', fontSize: 12 }}>
+                                    {language === 'th' ? 'ดึงข้อมูลจาก RaceTiger ไม่สำเร็จ: ' : 'Failed to fetch from RaceTiger: '}{rtError}
+                                </div>
+                            ) : !rtSelected ? (
+                                <div style={{ textAlign: 'center', padding: 16, color: '#999', fontSize: 12 }}>
+                                    {language === 'th' ? 'ไม่พบข้อมูลระยะนี้จาก RaceTiger' : 'No RaceTiger data for this distance'}
+                                </div>
+                            ) : (
+                                <table className="data-table" style={{ marginBottom: 0 }}>
+                                    <thead>
+                                        <tr>
+                                            <th style={{ width: 50, background: '#00a65a', color: '#fff' }}>#</th>
+                                            <th style={{ textAlign: 'left', background: '#00a65a', color: '#fff' }}>{language === 'th' ? 'กลุ่มอายุ (Category name)' : 'Category name'}</th>
+                                            <th style={{ width: 140, background: '#00a65a', color: '#fff' }}>{language === 'th' ? 'จำนวนทั้งหมด' : 'Number of members'}</th>
+                                            <th style={{ width: 120, background: '#00a65a', color: '#fff' }}>{language === 'th' ? 'ชาย' : 'Number of men'}</th>
+                                            <th style={{ width: 120, background: '#00a65a', color: '#fff' }}>{language === 'th' ? 'หญิง' : 'Number of women'}</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {rtSortedGroups.map((group, i) => (
+                                            <tr key={`rt-${group.ageGroup || 'none'}-${i}`}>
+                                                <td style={{ textAlign: 'center' }}>{i + 1}</td>
+                                                <td style={{ textAlign: 'left', fontWeight: 600, color: group.ageGroup ? '#333' : '#999' }}>
+                                                    {group.ageGroup || (language === 'th' ? 'ไม่ระบุกลุ่มอายุ' : 'No age group')}
+                                                </td>
+                                                <td style={{ textAlign: 'center' }}>{group.members}</td>
+                                                <td style={{ textAlign: 'center' }}>{group.men}</td>
+                                                <td style={{ textAlign: 'center' }}>{group.women}</td>
+                                            </tr>
+                                        ))}
+                                        <tr style={{ background: '#f0fdf4', fontWeight: 'bold' }}>
+                                            <td></td>
+                                            <td style={{ textAlign: 'left' }}>{language === 'th' ? 'รวม' : 'Total'}</td>
+                                            <td style={{ textAlign: 'center' }}>{rtSelected.members}</td>
+                                            <td style={{ textAlign: 'center' }}>{rtSelected.men}</td>
+                                            <td style={{ textAlign: 'center' }}>{rtSelected.women}</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            )}
                         </div>
 
                         {/* Male groups */}

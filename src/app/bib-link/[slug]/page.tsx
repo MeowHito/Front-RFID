@@ -94,9 +94,29 @@ export default function BibLinkPage() {
     useEffect(() => {
         if (!slip || !pendingPrint) return;
         setPendingPrint(false);
-        const id = setTimeout(() => window.print(), 300);
+        const id = setTimeout(() => {
+            window.print();
+            // window.print() blocks until the dialog closes on most desktop browsers —
+            // clear the BIB box right after so the next number can be typed immediately.
+            setBib('');
+            setError('');
+            inputRef.current?.focus();
+        }, 300);
         return () => clearTimeout(id);
     }, [slip, pendingPrint]);
+
+    // Safety net for browsers where window.print() returns before the dialog closes
+    // (mobile Safari/Chrome): reset + refocus once the print dialog is dismissed,
+    // so the operator can immediately type the next BIB.
+    useEffect(() => {
+        const onAfterPrint = () => {
+            setBib('');
+            setError('');
+            setTimeout(() => inputRef.current?.focus(), 100);
+        };
+        window.addEventListener('afterprint', onAfterPrint);
+        return () => window.removeEventListener('afterprint', onAfterPrint);
+    }, []);
 
     // Load campaign by slug (or id)
     useEffect(() => {
@@ -428,7 +448,7 @@ export default function BibLinkPage() {
                 {isPrivileged && slip && slip.runner.status === 'finished' && (
                     <div className="bl-card" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>
                         <div style={{ fontSize: 13, color: '#16a34a', fontWeight: 800, display: 'flex', alignItems: 'center', gap: 6 }}>
-                            <IconPrinter size={16} />ส่งใบเสร็จไปยังเครื่องพิมพ์แล้ว
+                            <IconPrinter size={16} />ส่งใบเสร็จไปยังเครื่องพิมพ์แล้ว — พิมพ์ BIB ถัดไปได้เลย
                         </div>
                         {/* Paper preview — matches what prints on the 58mm roll */}
                         <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, boxShadow: '0 6px 24px rgba(0,0,0,0.12)', padding: 4 }}>
@@ -438,7 +458,6 @@ export default function BibLinkPage() {
                                 campaign={slip.campaign}
                                 awardLabel={slipAward}
                                 targetBandLabel={slipTarget}
-                                origin={origin}
                             />
                         </div>
                         <div style={{ display: 'flex', gap: 10, width: '100%', maxWidth: 320 }}>

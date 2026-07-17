@@ -1,6 +1,5 @@
 'use client';
 
-import { QRCodeSVG } from 'qrcode.react';
 import {
     RunnerData,
     TimingRecord,
@@ -15,8 +14,8 @@ import {
 /**
  * A monochrome 58mm-thermal receipt rendition of a runner's e-slip. Mirrors the
  * key fields of the on-screen individual e-slip (Template3) — BIB, name, gun/net
- * time, pace, ranks, award, checkpoint splits and a QR to the full result page —
- * but laid out for a narrow thermal printer (black-on-white, no fills/emoji).
+ * time, pace, ranks, award and checkpoint splits — but laid out for a narrow
+ * thermal printer (black-on-white, no fills/emoji).
  *
  * Designed at a 219px content width (≈58mm at 96dpi) so the on-screen preview and
  * the printed paper match. The parent supplies `@media print` rules that isolate
@@ -28,14 +27,12 @@ export default function ThermalReceipt({
     campaign,
     awardLabel,
     targetBandLabel,
-    origin,
 }: {
     runner: RunnerData;
     timings: TimingRecord[];
     campaign: CampaignData | null;
     awardLabel?: string | null;
     targetBandLabel?: string | null;
-    origin: string;
 }) {
     const displayName = resolveRunnerName(runner, 'en');
     const genderLabel = runner.gender === 'M' ? 'Male' : runner.gender === 'F' ? 'Female' : '-';
@@ -54,7 +51,6 @@ export default function ThermalReceipt({
         })
         .filter(t => !((t.checkpoint || '').toLowerCase().includes('start')));
 
-    const runnerUrl = origin ? `${origin}/runner/${runner._id}` : '';
     const printedAt = new Date().toLocaleString('th-TH', {
         day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
     });
@@ -177,19 +173,6 @@ export default function ThermalReceipt({
                         );
                     })}
                 </div>
-            )}
-
-            {/* QR to full result */}
-            {runnerUrl && (
-                <>
-                    <div style={rule} />
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
-                        <QRCodeSVG value={runnerUrl} size={110} level="M" bgColor="#ffffff" fgColor="#000000" />
-                        <div style={{ fontSize: 9, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.5, textAlign: 'center' }}>
-                            สแกนดูผลการแข่งขันฉบับเต็ม
-                        </div>
-                    </div>
-                </>
             )}
 
             <div style={rule} />

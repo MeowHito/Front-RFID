@@ -45,6 +45,13 @@ export function parseAgeGroupBucket(value?: string | null): AgeGroupBucket | nul
         return { label, min: parseInt(plusMatch[1]), max: 999 };
     }
 
+    // "60&Over", "60 & Up", "60 and over", "60 ขึ้นไป", "Over 60"
+    const overMatch = label.match(/(\d+)\s*(?:&|and\b)?\s*(?:over|up|ขึ้นไป)/i)
+        || label.match(/\b(?:over|above)\s*(\d+)/i);
+    if (overMatch) {
+        return { label, min: parseInt(overMatch[1]), max: 999 };
+    }
+
     return null;
 }
 
