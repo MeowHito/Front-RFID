@@ -31,12 +31,12 @@ export interface AgeGroupWinnerConfig {
 }
 
 const DEFAULT_AGE_GROUPS: AgeGroupBucket[] = [
-    { label: '1-18', min: 0, max: 18 },
-    { label: '19-29', min: 19, max: 29 },
+    { label: 'Under 18', min: 0, max: 17 },
+    { label: '18-29', min: 18, max: 29 },
     { label: '30-39', min: 30, max: 39 },
     { label: '40-49', min: 40, max: 49 },
     { label: '50-59', min: 50, max: 59 },
-    { label: '60+', min: 60, max: 999 },
+    { label: '60&Over', min: 60, max: 999 },
 ];
 
 export function computeAgeGroupWinners<T extends AgeGroupWinnerRunner>(

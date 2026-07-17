@@ -89,6 +89,8 @@ export default function BibLinkPage() {
     const [pendingPrint, setPendingPrint] = useState(false);
     const [printed, setPrinted] = useState(false);
     const [printHistory, setPrintHistory] = useState<{ bib: string; time: string }[]>([]);
+    // Preview panel is hidden by default — only opens when the operator taps "ดูตัวอย่าง".
+    const [showPreview, setShowPreview] = useState(false);
 
     const [origin, setOrigin] = useState('');
     const qrWrapRef = useRef<HTMLDivElement>(null);
@@ -268,10 +270,11 @@ export default function BibLinkPage() {
         }
     }, [bib, campaign, isPrivileged, handlePrintSearch]);
 
-    // Preview-only: fetch the slip but show it on screen instead of printing.
+    // Preview-only: fetch the slip and reveal the right-hand preview panel (no printing).
     const handlePreview = useCallback(async () => {
         const term = bib.trim();
         if (!term || searching) return;
+        setShowPreview(true);
         await handlePrintSearch(term, false);
     }, [bib, searching, handlePrintSearch]);
 
@@ -327,6 +330,7 @@ export default function BibLinkPage() {
         setSlipAward(null);
         setSlipTarget(null);
         setPrinted(false);
+        setShowPreview(false);
         setBib('');
         setError('');
         setCopied(false);
@@ -361,201 +365,233 @@ export default function BibLinkPage() {
     }
 
     /* ─────────────────────────────────────────────────────────────────────
-       ADMIN / ORGANIZER: split-screen "print terminal" — controls on the left,
-       a persistent LIVE PREVIEW on the right. No scrolling to see the slip.
+       ADMIN / ORGANIZER print terminal.
+       • Default: a clean full-screen BIB entry — type a BIB, press Enter, and
+         the e-slip is sent straight to the thermal printer (no preview shown).
+       • The e-slip only appears (in a right-hand panel) when the operator taps
+         "ดูตัวอย่างก่อนพิมพ์".
        ───────────────────────────────────────────────────────────────────── */
     if (isPrivileged) {
         const disabled = searching || !bib.trim();
-        const dateStr = (campaign.eventDate ? new Date(campaign.eventDate) : new Date())
-            .toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' });
+        const eventName = campaign.nameTh || campaign.nameEn || campaign.name;
 
-        return (
-            <div className="esp-root">
-                <style>{`
-                    @import url('https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700;800;900&display=swap');
-                    @keyframes spin { to { transform: rotate(360deg); } }
-                    @keyframes fadeUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
-                    .esp-card { animation: fadeUp 0.28s ease both; }
-                    .esp-input:focus { border-color: #16a34a !important; box-shadow: 0 0 0 4px rgba(22,163,74,0.14); }
-                    .esp-btn:not(:disabled):active { transform: translateY(1px); }
-                    .esp-preview-scale { transform: scale(1.42); transform-origin: center top; }
-                    @media (max-width: 900px) {
-                        .esp-root { flex-direction: column; height: auto; min-height: 100vh; overflow: auto; }
-                        .esp-left { width: 100% !important; min-width: 0 !important; max-width: none !important; border-right: none !important; border-bottom: 1px solid #e5e7eb; }
-                        .esp-right { width: 100%; padding: 44px 0 60px !important; }
-                        .esp-preview-scale { transform: scale(1.2); }
-                    }
-                    @media print {
-                        @page { size: 58mm auto; margin: 0; }
-                        html, body { margin: 0 !important; padding: 0 !important; background: #fff !important; }
-                        body * { visibility: hidden !important; }
-                        .esp-root, .esp-right, .esp-paper, .esp-preview-scale { transform: none !important; }
-                        [data-thermal-receipt], [data-thermal-receipt] * { visibility: visible !important; }
-                        [data-thermal-receipt] { position: absolute !important; left: 0 !important; top: 0 !important; }
-                    }
-                `}</style>
+        const styleTag = (
+            <style>{`
+                @import url('https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700;800;900&display=swap');
+                @keyframes spin { to { transform: rotate(360deg); } }
+                @keyframes fadeUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+                @keyframes slideIn { from { opacity: 0; transform: translateX(24px); } to { opacity: 1; transform: translateX(0); } }
+                .esp-card { animation: fadeUp 0.3s ease both; }
+                .esp-input:focus { border-color: #16a34a !important; box-shadow: 0 0 0 5px rgba(22,163,74,0.15) !important; }
+                .esp-btn:not(:disabled):hover { filter: brightness(0.97); }
+                .esp-btn:not(:disabled):active { transform: translateY(1px); }
+                .esp-print-only { position: absolute; left: -9999px; top: 0; }
+                .esp-preview-scale { transform: scale(1.42); transform-origin: center top; }
+                @media (max-width: 900px) {
+                    .esp-split-body { flex-direction: column !important; overflow: auto !important; }
+                    .esp-split-left { width: 100% !important; max-width: none !important; border-right: none !important; border-bottom: 1px solid #eef1f4; }
+                    .esp-split-right { min-height: 440px; padding: 40px 16px 56px !important; }
+                    .esp-preview-scale { transform: scale(1.2); }
+                }
+                @media print {
+                    @page { size: 58mm auto; margin: 0; }
+                    html, body { margin: 0 !important; padding: 0 !important; background: #fff !important; }
+                    body * { visibility: hidden !important; }
+                    .esp-print-only { position: static !important; }
+                    .esp-preview-scale, .esp-split-right, .esp-paper { transform: none !important; }
+                    [data-thermal-receipt], [data-thermal-receipt] * { visibility: visible !important; }
+                    [data-thermal-receipt] { position: absolute !important; left: 0 !important; top: 0 !important; }
+                }
+            `}</style>
+        );
 
-                {/* ═══ LEFT — control panel ═══ */}
-                <div className="esp-left" style={{ width: '46%', minWidth: 440, maxWidth: 660, display: 'flex', flexDirection: 'column', background: '#fff', borderRight: '1px solid #e5e7eb' }}>
-                    {/* Header */}
-                    <header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 32px', borderBottom: '1px solid #eef1f4' }}>
-                        <Link href="/" style={{ display: 'flex', alignItems: 'center', gap: 10, textDecoration: 'none' }}>
-                            <Image src="/logo-black.png" alt="ACTION" width={78} height={26} style={{ objectFit: 'contain' }} />
-                            <span style={{ fontSize: 15, fontWeight: 800, color: '#0f172a', textTransform: 'uppercase', letterSpacing: 0.3, maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                {campaign.nameEn || campaign.name}
+        // Shared top bar (matches the public "ACTION | LIVE" header).
+        const header = (
+            <header style={{ background: '#fff', borderBottom: '1px solid #eef1f4', padding: '12px 24px', flexShrink: 0 }}>
+                <div style={{ maxWidth: 1200, margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <Link href="/" style={{ display: 'flex', alignItems: 'center', gap: 12, textDecoration: 'none' }}>
+                        <Image src="/logo-black.png" alt="ACTION" width={82} height={26} style={{ objectFit: 'contain' }} />
+                        <span style={{ borderLeft: '1px solid #e2e8f0', paddingLeft: 12, fontSize: 16, fontWeight: 800, color: '#16a34a', textTransform: 'uppercase', letterSpacing: 0.5 }}>Live</span>
+                    </Link>
+                    <button onClick={() => router.push('/')} style={{ fontSize: 13, fontWeight: 700, color: '#64748b', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>
+                        ← หน้าแรก
+                    </button>
+                </div>
+            </header>
+        );
+
+        // BIB input + action buttons (shared between the centered and split layouts).
+        const inputBlock = (
+            <form onSubmit={handleSearch} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                <label style={{ display: 'block', fontSize: 11, fontWeight: 800, color: '#94a3b8', letterSpacing: 1.5, textTransform: 'uppercase', textAlign: 'center' }}>
+                    กรอกเลข BIB แล้วกด Enter เพื่อพิมพ์
+                </label>
+                <input
+                    ref={inputRef}
+                    className="esp-input"
+                    type="text"
+                    inputMode="numeric"
+                    value={bib}
+                    onChange={e => { setBib(e.target.value); setError(''); }}
+                    placeholder="0000"
+                    autoFocus
+                    style={{
+                        width: '100%', padding: '20px 16px', borderRadius: 18,
+                        border: '2px solid #16a34a', background: '#fff',
+                        fontSize: 64, fontWeight: 900, textAlign: 'center', letterSpacing: 6,
+                        outline: 'none', color: '#0f172a', boxSizing: 'border-box',
+                        fontFamily: 'inherit', lineHeight: 1.05,
+                        transition: 'border-color 0.15s, box-shadow 0.15s',
+                    }}
+                />
+                <button
+                    type="submit"
+                    className="esp-btn"
+                    disabled={disabled}
+                    style={{
+                        width: '100%', padding: '18px', borderRadius: 16, border: 'none',
+                        background: disabled ? '#cbd5e1' : '#0a7d3c', color: '#fff',
+                        fontWeight: 800, fontSize: 19, cursor: disabled ? 'not-allowed' : 'pointer',
+                        fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
+                        boxShadow: disabled ? 'none' : '0 10px 24px rgba(10,125,60,0.24)',
+                        transition: 'background 0.15s, transform 0.05s, box-shadow 0.15s, filter 0.15s',
+                    }}
+                >
+                    {searching
+                        ? <><span style={{ width: 18, height: 18, border: '2.5px solid rgba(255,255,255,0.4)', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />กำลังเตรียมใบเสร็จ...</>
+                        : <><IconPrinter size={20} />พิมพ์ใบเสร็จ E-Slip</>}
+                </button>
+                <button
+                    type="button"
+                    className="esp-btn"
+                    onClick={handlePreview}
+                    disabled={disabled}
+                    style={{
+                        width: '100%', padding: '15px', borderRadius: 16,
+                        border: '2px solid', borderColor: disabled ? '#e2e8f0' : '#0a7d3c',
+                        background: '#fff', color: disabled ? '#cbd5e1' : '#0a7d3c',
+                        fontWeight: 800, fontSize: 16, cursor: disabled ? 'not-allowed' : 'pointer',
+                        fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 9,
+                        transition: 'border-color 0.15s, color 0.15s, transform 0.05s, filter 0.15s',
+                    }}
+                >
+                    <IconEye size={18} />ดูตัวอย่างก่อนพิมพ์
+                </button>
+            </form>
+        );
+
+        const errorBlock = error && (
+            <div className="esp-card" style={{ background: '#fef2f2', border: '1px solid #fecaca', color: '#b91c1c', padding: '12px 14px', borderRadius: 12, fontSize: 14, fontWeight: 600, textAlign: 'center' }}>
+                {error}
+            </div>
+        );
+
+        const confirmBlock = printed && (
+            <div className="esp-card" style={{ background: '#ecfdf3', border: '1px solid #bbf7d0', color: '#15803d', padding: '13px 15px', borderRadius: 12, fontSize: 14, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 9 }}>
+                <IconCheck size={17} />ส่งข้อมูลไปยังเครื่องพิมพ์แล้ว — พร้อมรับ BIB ถัดไป
+            </div>
+        );
+
+        const historyBlock = printHistory.length > 0 && (
+            <div style={{ borderTop: '1px solid #eef1f4', paddingTop: 18 }}>
+                <h3 style={{ fontSize: 12, fontWeight: 800, color: '#64748b', letterSpacing: 1, textTransform: 'uppercase', margin: '0 0 10px' }}>ประวัติการพิมพ์ล่าสุด</h3>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+                    {printHistory.map((h, i) => (
+                        <div key={`${h.bib}-${i}`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: i === 0 ? '#f1f5f9' : '#f8fafc', border: '1px solid #eef1f4', borderRadius: 12, padding: '11px 14px' }}>
+                            <span style={{ display: 'flex', alignItems: 'center', gap: 9, fontSize: 14, fontWeight: i === 0 ? 800 : 600, color: i === 0 ? '#0f172a' : '#64748b' }}>
+                                <span style={{ color: i === 0 ? '#16a34a' : '#94a3b8', display: 'flex' }}><IconHistory /></span>BIB {h.bib}
                             </span>
-                        </Link>
-                        <div style={{ textAlign: 'right', lineHeight: 1.35 }}>
-                            <div style={{ fontSize: 11, fontWeight: 800, color: '#0f172a' }}>Admin Terminal</div>
-                            <div style={{ fontSize: 11, fontWeight: 600, color: '#94a3b8' }}>{dateStr}</div>
+                            <span style={{ fontSize: 13, fontWeight: 600, color: '#94a3b8' }}>{h.time}</span>
                         </div>
-                    </header>
+                    ))}
+                </div>
+            </div>
+        );
 
-                    {/* Body */}
-                    <div style={{ flex: 1, overflowY: 'auto', padding: 32, display: 'flex', flexDirection: 'column', gap: 22 }}>
-                        {/* Title */}
-                        <div>
-                            <h1 style={{ fontSize: 30, fontWeight: 900, margin: 0, color: '#0f172a', letterSpacing: 0.2 }}>พิมพ์ใบ E-Slip</h1>
-                            <p style={{ fontSize: 14, color: '#64748b', fontWeight: 500, margin: '6px 0 0' }}>
-                                กรอกหมายเลข BIB ของนักวิ่งเพื่อพิมพ์ใบรับรองผลการแข่งขัน
-                            </p>
+        // Off-screen receipt kept mounted only when the preview panel is closed,
+        // so Enter/print still works without showing the slip on screen.
+        const printOnly = slip && !showPreview && (
+            <div className="esp-print-only" aria-hidden="true">
+                <ThermalReceipt runner={slip.runner} timings={slip.timings} campaign={slip.campaign} awardLabel={slipAward} targetBandLabel={slipTarget} />
+            </div>
+        );
+
+        /* ── SPLIT LAYOUT — shown only after "ดูตัวอย่างก่อนพิมพ์" ── */
+        if (showPreview) {
+            return (
+                <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden', background: '#f2f4f6', fontFamily: "'Prompt', sans-serif", color: '#1e293b' }}>
+                    {styleTag}
+                    {header}
+                    <div className="esp-split-body" style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+                        {/* LEFT — controls */}
+                        <div className="esp-split-left" style={{ width: '44%', maxWidth: 560, background: '#fff', borderRight: '1px solid #eef1f4', overflowY: 'auto', padding: 32, display: 'flex', flexDirection: 'column', gap: 20 }}>
+                            <div>
+                                <h1 style={{ fontSize: 26, fontWeight: 900, margin: 0, color: '#0f172a' }}>พิมพ์ใบเสร็จ E-Slip</h1>
+                                <p style={{ fontSize: 13, color: '#64748b', fontWeight: 600, margin: '5px 0 0' }}>{eventName}</p>
+                            </div>
+                            {inputBlock}
+                            {errorBlock}
+                            {confirmBlock}
+                            {historyBlock}
                         </div>
 
-                        {/* BIB input + actions */}
-                        <form onSubmit={handleSearch} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                            <div style={{ background: '#f1f5f9', borderRadius: 18, padding: 18, border: '1px solid #e2e8f0' }}>
-                                <label style={{ display: 'block', fontSize: 11, fontWeight: 800, color: '#94a3b8', letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 10 }}>
-                                    BIB Number
-                                </label>
-                                <input
-                                    ref={inputRef}
-                                    className="esp-input"
-                                    type="text"
-                                    inputMode="numeric"
-                                    value={bib}
-                                    onChange={e => { setBib(e.target.value); setError(''); }}
-                                    placeholder="0000"
-                                    autoFocus
-                                    style={{
-                                        width: '100%', padding: '14px 12px', borderRadius: 14,
-                                        border: '2px solid #16a34a', background: '#fff',
-                                        fontSize: 58, fontWeight: 900, textAlign: 'center', letterSpacing: 4,
-                                        outline: 'none', color: '#0f172a', boxSizing: 'border-box',
-                                        fontFamily: 'inherit', lineHeight: 1.1,
-                                        transition: 'border-color 0.15s, box-shadow 0.15s',
-                                    }}
-                                />
-                            </div>
-
+                        {/* RIGHT — live preview */}
+                        <div className="esp-split-right" style={{ flex: 1, position: 'relative', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 26, overflow: 'auto', background: '#f2f4f6', padding: '40px 20px' }}>
+                            <div style={{ position: 'absolute', inset: 0, opacity: 0.04, pointerEvents: 'none', backgroundImage: 'radial-gradient(#000 1px, transparent 1px)', backgroundSize: '20px 20px' }} />
                             <button
-                                type="submit"
-                                className="esp-btn"
-                                disabled={disabled}
-                                style={{
-                                    width: '100%', padding: '17px', borderRadius: 16, border: 'none',
-                                    background: disabled ? '#cbd5e1' : '#0a7d3c', color: '#fff',
-                                    fontWeight: 800, fontSize: 19, cursor: disabled ? 'not-allowed' : 'pointer',
-                                    fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
-                                    boxShadow: disabled ? 'none' : '0 8px 20px rgba(10,125,60,0.22)',
-                                    transition: 'background 0.15s, transform 0.05s, box-shadow 0.15s',
-                                }}
+                                onClick={() => setShowPreview(false)}
+                                style={{ position: 'absolute', top: 18, right: 18, zIndex: 2, fontSize: 12.5, fontWeight: 700, color: '#64748b', background: '#fff', border: '1px solid #e2e8f0', borderRadius: 10, padding: '7px 12px', cursor: 'pointer', fontFamily: 'inherit' }}
                             >
-                                {searching
-                                    ? <><span style={{ width: 18, height: 18, border: '2.5px solid rgba(255,255,255,0.4)', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />กำลังเตรียมใบเสร็จ...</>
-                                    : <><IconPrinter size={20} />พิมพ์ใบเสร็จ E-Slip</>}
+                                ✕ ปิดตัวอย่าง
                             </button>
-
-                            <button
-                                type="button"
-                                className="esp-btn"
-                                onClick={handlePreview}
-                                disabled={disabled}
-                                style={{
-                                    width: '100%', padding: '15px', borderRadius: 16,
-                                    border: '2px solid', borderColor: disabled ? '#e2e8f0' : '#0a7d3c',
-                                    background: '#fff', color: disabled ? '#cbd5e1' : '#0a7d3c',
-                                    fontWeight: 800, fontSize: 16, cursor: disabled ? 'not-allowed' : 'pointer',
-                                    fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 9,
-                                    transition: 'border-color 0.15s, color 0.15s, transform 0.05s',
-                                }}
-                            >
-                                <IconEye size={18} />ดูตัวอย่างก่อนพิมพ์
-                            </button>
-                        </form>
-
-                        {/* Error */}
-                        {error && (
-                            <div className="esp-card" style={{ background: '#fef2f2', border: '1px solid #fecaca', color: '#b91c1c', padding: '12px 14px', borderRadius: 12, fontSize: 14, fontWeight: 600, textAlign: 'center' }}>
-                                {error}
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 12, fontSize: 12, fontWeight: 800, letterSpacing: 3, textTransform: 'uppercase', color: '#94a3b8', zIndex: 1 }}>
+                                <span style={{ width: 32, height: 1, background: '#cbd5e1' }} />Live Preview<span style={{ width: 32, height: 1, background: '#cbd5e1' }} />
                             </div>
-                        )}
-
-                        {/* Sent-to-printer confirmation */}
-                        {printed && (
-                            <div className="esp-card" style={{ background: '#ecfdf3', border: '1px solid #bbf7d0', color: '#15803d', padding: '13px 15px', borderRadius: 12, fontSize: 14, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 9 }}>
-                                <IconCheck size={17} />ส่งข้อมูลไปยังเครื่องพิมพ์แล้ว — พร้อมรับ BIB ถัดไป
-                            </div>
-                        )}
-
-                        {/* Print history */}
-                        {printHistory.length > 0 && (
-                            <div style={{ borderTop: '1px solid #eef1f4', paddingTop: 18 }}>
-                                <h3 style={{ fontSize: 12, fontWeight: 800, color: '#64748b', letterSpacing: 1, textTransform: 'uppercase', margin: '0 0 10px' }}>ประวัติการพิมพ์ล่าสุด</h3>
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-                                    {printHistory.map((h, i) => (
-                                        <div key={`${h.bib}-${i}`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: i === 0 ? '#f1f5f9' : '#f8fafc', border: '1px solid #eef1f4', borderRadius: 12, padding: '11px 14px' }}>
-                                            <span style={{ display: 'flex', alignItems: 'center', gap: 9, fontSize: 14, fontWeight: i === 0 ? 800 : 600, color: i === 0 ? '#0f172a' : '#64748b' }}>
-                                                <span style={{ color: i === 0 ? '#16a34a' : '#94a3b8', display: 'flex' }}><IconHistory /></span>BIB {h.bib}
-                                            </span>
-                                            <span style={{ fontSize: 13, fontWeight: 600, color: '#94a3b8' }}>{h.time}</span>
-                                        </div>
-                                    ))}
+                            {slip ? (
+                                <div key={slip.runner.bib} className="esp-paper" style={{ zIndex: 1, background: '#fff', borderRadius: 6, boxShadow: '0 20px 50px rgba(0,0,0,0.12)', border: '1px solid #e5e7eb', padding: '26px 30px', animation: 'slideIn 0.3s ease both' }}>
+                                    <div className="esp-preview-scale">
+                                        <ThermalReceipt runner={slip.runner} timings={slip.timings} campaign={slip.campaign} awardLabel={slipAward} targetBandLabel={slipTarget} />
+                                    </div>
                                 </div>
-                            </div>
-                        )}
-                    </div>
-
-                    {/* Footer */}
-                    <footer style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '11px 32px', borderTop: '1px solid #eef1f4', fontSize: 11, color: '#94a3b8', fontWeight: 600 }}>
-                        <span style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                            <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#16a34a' }} />
-                            Epson TM-T88VI (Ready)
-                        </span>
-                        <span>© {new Date().getFullYear()} Action Timing</span>
-                    </footer>
-                </div>
-
-                {/* ═══ RIGHT — persistent live preview ═══ */}
-                <div className="esp-right" style={{ flex: 1, position: 'relative', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 26, overflow: 'hidden', background: '#f2f4f6', padding: '40px 20px' }}>
-                    {/* Dotted backdrop */}
-                    <div style={{ position: 'absolute', inset: 0, opacity: 0.04, pointerEvents: 'none', backgroundImage: 'radial-gradient(#000 1px, transparent 1px)', backgroundSize: '20px 20px' }} />
-
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, fontSize: 12, fontWeight: 800, letterSpacing: 3, textTransform: 'uppercase', color: '#94a3b8', zIndex: 1 }}>
-                        <span style={{ width: 32, height: 1, background: '#cbd5e1' }} />Live Preview<span style={{ width: 32, height: 1, background: '#cbd5e1' }} />
-                    </div>
-
-                    {slip ? (
-                        <div className="esp-card esp-paper" style={{ zIndex: 1, background: '#fff', borderRadius: 6, boxShadow: '0 20px 50px rgba(0,0,0,0.12)', border: '1px solid #e5e7eb', padding: '26px 30px' }}>
-                            <div className="esp-preview-scale">
-                                <ThermalReceipt
-                                    runner={slip.runner}
-                                    timings={slip.timings}
-                                    campaign={slip.campaign}
-                                    awardLabel={slipAward}
-                                    targetBandLabel={slipTarget}
-                                />
-                            </div>
+                            ) : (
+                                <div style={{ zIndex: 1, textAlign: 'center', color: '#94a3b8' }}>
+                                    <span style={{ width: 22, height: 22, border: '2.5px solid #cbd5e1', borderTopColor: '#16a34a', borderRadius: '50%', animation: 'spin 0.8s linear infinite', display: 'inline-block' }} />
+                                    <div style={{ marginTop: 12, fontSize: 13, fontWeight: 600 }}>กำลังโหลดตัวอย่าง...</div>
+                                </div>
+                            )}
                         </div>
-                    ) : (
-                        <div style={{ zIndex: 1, textAlign: 'center', color: '#94a3b8', maxWidth: 300, lineHeight: 1.7 }}>
-                            <div style={{ width: 66, height: 66, borderRadius: '50%', background: '#e8ebee', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px', color: '#b6bcc4' }}>
-                                <IconPrinter size={30} />
-                            </div>
-                            <div style={{ fontSize: 15, fontWeight: 700, color: '#64748b' }}>ยังไม่มีตัวอย่างใบเสร็จ</div>
-                            <div style={{ fontSize: 13, fontWeight: 500, marginTop: 4 }}>กรอกเลข BIB แล้วกดพิมพ์ หรือกด “ดูตัวอย่างก่อนพิมพ์” เพื่อแสดงใบเสร็จที่นี่</div>
-                        </div>
-                    )}
+                    </div>
                 </div>
+            );
+        }
+
+        /* ── DEFAULT — full-screen centered BIB entry ── */
+        return (
+            <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', background: '#f7f9fb', fontFamily: "'Prompt', sans-serif", color: '#1e293b' }}>
+                {styleTag}
+                {printOnly}
+                {header}
+                <main style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '32px 16px 56px', gap: 26 }}>
+                    <div style={{ textAlign: 'center' }}>
+                        <h1 style={{ fontSize: 30, fontWeight: 900, margin: 0, color: '#0f172a', letterSpacing: 0.2 }}>พิมพ์ใบเสร็จ E-Slip ด้วยเลข BIB</h1>
+                        <p style={{ fontSize: 14, color: '#64748b', fontWeight: 600, margin: '8px 0 0' }}>{eventName}</p>
+                    </div>
+                    <div style={{ width: '100%', maxWidth: 540, display: 'flex', flexDirection: 'column', gap: 16 }}>
+                        <div style={{ background: '#fff', borderRadius: 24, padding: '30px 28px 32px', boxShadow: '0 12px 44px rgba(2,6,23,0.08)', border: '1px solid #eef1f4' }}>
+                            {inputBlock}
+                        </div>
+                        {errorBlock}
+                        {confirmBlock}
+                        {historyBlock}
+                    </div>
+                </main>
+                <footer style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', maxWidth: 1200, width: '100%', margin: '0 auto', padding: '11px 24px', fontSize: 11, color: '#94a3b8', fontWeight: 600 }}>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                        <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#16a34a' }} />
+                        Epson TM-T88VI (Ready)
+                    </span>
+                    <span>© {new Date().getFullYear()} Action Timing</span>
+                </footer>
             </div>
         );
     }
