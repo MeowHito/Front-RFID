@@ -390,7 +390,7 @@ export default function BibLinkPage() {
                 .esp-btn:not(:disabled):hover { filter: brightness(0.97); }
                 .esp-btn:not(:disabled):active { transform: translateY(1px); }
                 .esp-print-only { position: absolute; left: -9999px; top: 0; }
-                .esp-preview-scale { transform: scale(1.42); transform-origin: center top; }
+                .esp-preview-scale { transform: scale(1.42); transform-origin: center center; }
                 @media (max-width: 900px) {
                     .esp-split-body { flex-direction: column !important; overflow: auto !important; }
                     .esp-split-left { width: 100% !important; max-width: none !important; border-right: none !important; border-bottom: 1px solid #eef1f4; }

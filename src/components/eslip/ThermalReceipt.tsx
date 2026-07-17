@@ -176,7 +176,7 @@ export default function ThermalReceipt({
             )}
 
             <div style={rule} />
-            <div style={{ textAlign: 'center', fontSize: 8, fontWeight: 800, letterSpacing: 1 }}>OFFICIAL RESULT BY ACTION TIMING</div>
+            <div style={{ textAlign: 'center', fontSize: 8, fontWeight: 800, letterSpacing: 1 }}>UNOFFICIAL RESULT BY ACTION TIMING</div>
             <div style={{ textAlign: 'center', fontSize: 8, fontWeight: 600, marginTop: 2 }}>พิมพ์เมื่อ {printedAt}</div>
         </div>
     );

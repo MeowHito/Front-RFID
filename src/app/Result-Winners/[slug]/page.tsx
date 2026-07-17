@@ -7,7 +7,7 @@ import { buildWinnersExcel, triggerExcelDownload, ExcelSection } from '@/lib/win
 import NameLangToggle from '@/components/NameLangToggle';
 import { useLanguage } from '@/lib/language-context';
 import { useParams, useSearchParams } from 'next/navigation';
-import { type AgeGroupBucket } from '@/lib/age-groups';
+import { type AgeGroupBucket, buildCanonicalAgeGroups } from '@/lib/age-groups';
 import { computeAgeGroupWinners } from '@/lib/age-group-winners';
 
 interface Runner {
@@ -52,6 +52,18 @@ interface Campaign {
     excludeAgeGroupTop?: number;
     separateOverallNationalityCategories?: string[];
 }
+
+// Last-resort placeholder shown only when NOT A SINGLE runner in the category
+// carries an ageGroup tag. As soon as the field has real tags, the board derives
+// its brackets from those instead (see canonicalAgeGroups below).
+const DEFAULT_AGE_GROUPS: AgeGroupBucket[] = [
+    { label: 'Under 18', min: 0, max: 17 },
+    { label: '18-29', min: 18, max: 29 },
+    { label: '30-39', min: 30, max: 39 },
+    { label: '40-49', min: 40, max: 49 },
+    { label: '50-59', min: 50, max: 59 },
+    { label: '60&Over', min: 60, max: 999 },
+];
 
 const OVERALL_GROUP: AgeGroupBucket = { label: 'OVERALL', min: 0, max: 999 };
 
@@ -275,13 +287,25 @@ export default function ResultWinnersBySlugPage() {
     const disableAgeGroupRanking = false;
     const topN = Math.max(1, campaign?.ageGroupDisplayCount || 5);
 
-    // The age-group columns AND the winners filling them are derived from the
-    // SAME computeAgeGroupWinners call so the board can never show a phantom
-    // bracket. That helper only counts runners who are finished AND have a
-    // recorded time; deriving the columns separately from a looser filter
-    // (finished, no time) previously surfaced empty ghost brackets such as
-    // "Under 18" for a runner marked finished but without any result time.
-    const { activeAgeGroups, maleWinners, femaleWinners } = useMemo(() => {
+    // Age-group columns mirror the admin ranking page (/admin/age-group-ranking):
+    // both derive the visible brackets from the WHOLE field's ageGroup tags — every
+    // registered runner, finished or not — via buildCanonicalAgeGroups. This is what
+    // keeps the two pages in sync: the board shows exactly the brackets that exist
+    // in this category and never invents a generic "Under 18" from a hardcoded
+    // default just because nobody has finished yet.
+    const canonicalAgeGroups = useMemo(
+        () => buildCanonicalAgeGroups(displayedRunners.map(r => r.ageGroup)),
+        [displayedRunners],
+    );
+
+    const activeAgeGroups = useMemo<AgeGroupBucket[]>(() => {
+        if (disableAgeGroupRanking) return [OVERALL_GROUP];
+        return canonicalAgeGroups.buckets.length > 0 ? canonicalAgeGroups.buckets : DEFAULT_AGE_GROUPS;
+    }, [canonicalAgeGroups, disableAgeGroupRanking]);
+
+    // Winners are filled in by computeAgeGroupWinners (finished + timed runners only)
+    // as people cross the line; brackets with no finishers yet render empty rows.
+    const { maleWinners, femaleWinners } = useMemo(() => {
         if (disableAgeGroupRanking) {
             const finished = displayedRunners.filter(r => r.status === 'finished' && (r.netTime || r.gunTime || r.elapsedTime));
             const sorted = [...finished].sort((a, b) => (a.netTime || a.gunTime || a.elapsedTime || Infinity) - (b.netTime || b.gunTime || b.elapsedTime || Infinity));
@@ -291,9 +315,10 @@ export default function ResultWinnersBySlugPage() {
                 const bucket = runner.gender === 'F' ? femaleWinners : maleWinners;
                 if (bucket[OVERALL_GROUP.label].length < topN) bucket[OVERALL_GROUP.label].push(runner);
             }
-            return { activeAgeGroups: [OVERALL_GROUP], maleWinners, femaleWinners };
+            return { maleWinners, femaleWinners };
         }
-        return computeAgeGroupWinners(displayedRunners, campaign || {}, selectedCategory);
+        const { maleWinners, femaleWinners } = computeAgeGroupWinners(displayedRunners, campaign || {}, selectedCategory);
+        return { maleWinners, femaleWinners };
     }, [displayedRunners, disableAgeGroupRanking, topN, campaign, selectedCategory]);
 
     const downloadSection = useCallback(async (ageGroupLabel: string, gender: 'male' | 'female' | 'both' = 'both') => {
