@@ -109,10 +109,14 @@ export default function BibLinkPage() {
     }, []);
 
     // Auto-open the browser print dialog once the (off-screen) receipt has rendered.
+    // NOTE: pendingPrint is only cleared *inside* the timeout, after window.print()
+    // has fired. Clearing it up-front would change this effect's deps and make React
+    // run the cleanup (clearTimeout) on the next render — cancelling the print before
+    // the 100ms elapsed, so the dialog would never open.
     useEffect(() => {
         if (!slip || !pendingPrint) return;
-        setPendingPrint(false);
         const id = setTimeout(() => {
+            setPendingPrint(false);
             window.print();
             // window.print() blocks until the dialog closes on most desktop browsers —
             // clear the BIB box right after so the next number can be typed immediately.
