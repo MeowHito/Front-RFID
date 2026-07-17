@@ -60,8 +60,8 @@ const LINK_ROWS: LinkRow[] = [
     },
     {
         id: 'bib-link',
-        label: '🔗 สร้างลิงก์/QR หน้าผลนักกีฬาจากเลข BIB',
-        labelEn: '🔗 BIB to Runner Link & QR generator',
+        label: '🔗 พิมพ์ E-Slip',
+        labelEn: '🔗 Print E-Slip',
         buildUrl: (origin, campaign) => `${origin}/bib-link/${campaign?.slug || campaign?._id || ''}`,
     },
     {
