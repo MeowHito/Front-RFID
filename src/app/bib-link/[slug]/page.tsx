@@ -401,20 +401,14 @@ export default function BibLinkPage() {
                     @page { size: 58mm auto; margin: 0; }
                     html, body { margin: 0 !important; padding: 0 !important; background: #fff !important; }
                     body * { visibility: hidden !important; }
-                    .esp-print-only { position: static !important; }
-                    /* Neutralise every ancestor that could otherwise become the
-                       containing block / origin for the receipt below:
-                       - transform creates a containing block even for position:fixed
-                       - position:relative would anchor a position:absolute child
-                       Without this, printing from the preview panel (.esp-split-right
-                       is position:relative) put the slip at the top-left of the RIGHT
-                       PANEL instead of the page — i.e. shifted right / centre. */
-                    .esp-preview-scale, .esp-split-right, .esp-paper { transform: none !important; position: static !important; }
-                    [data-thermal-receipt], [data-thermal-receipt] * { visibility: visible !important; }
-                    /* position:fixed is resolved against the page, never a
-                       position:relative ancestor, so the slip always prints from the
-                       top-left corner like a thermal receipt, on every machine. */
-                    [data-thermal-receipt] { position: fixed !important; left: 0 !important; top: 0 !important; width: 58mm !important; }
+                    /* Print ONLY the dedicated off-screen copy (.esp-print-only). It is
+                       always mounted (both layouts) with a plain ancestor chain — no
+                       transforms, no positioned wrappers — so position:fixed resolves
+                       against the page and the slip prints from the top-left corner
+                       like a thermal receipt, identically whether or not the preview
+                       panel is open. The on-screen preview receipt stays hidden. */
+                    .esp-print-only, .esp-print-only * { visibility: visible !important; }
+                    .esp-print-only { position: fixed !important; left: 0 !important; top: 0 !important; width: 58mm !important; }
                 }
             `}</style>
         );
@@ -522,9 +516,15 @@ export default function BibLinkPage() {
             </div>
         );
 
-        // Off-screen receipt kept mounted only when the preview panel is closed,
-        // so Enter/print still works without showing the slip on screen.
-        const printOnly = slip && !showPreview && (
+        // Dedicated off-screen print copy — always mounted whenever a slip is ready,
+        // in BOTH the default and preview layouts. Printing ALWAYS targets this copy
+        // (see the @media print rules), never the on-screen preview receipt. The
+        // preview receipt lives inside .esp-paper / .esp-preview-scale, whose animation
+        // (slideIn leaves a translateX(0)) and scale transforms create a containing
+        // block that breaks position:fixed — so printing from the preview panel used
+        // to anchor the slip to that wrapper (off-page → nothing printed). This copy
+        // has a plain ancestor chain, so it prints from the top-left every time.
+        const printOnly = slip && (
             <div className="esp-print-only" aria-hidden="true">
                 <ThermalReceipt runner={slip.runner} timings={slip.timings} campaign={slip.campaign} awardLabel={slipAward} targetBandLabel={slipTarget} />
             </div>
@@ -535,6 +535,7 @@ export default function BibLinkPage() {
             return (
                 <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden', background: '#f2f4f6', fontFamily: "'Prompt', sans-serif", color: '#1e293b' }}>
                     {styleTag}
+                    {printOnly}
                     {header}
                     <div className="esp-split-body" style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
                         {/* LEFT — controls */}
