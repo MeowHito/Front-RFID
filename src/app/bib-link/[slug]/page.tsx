@@ -402,9 +402,19 @@ export default function BibLinkPage() {
                     html, body { margin: 0 !important; padding: 0 !important; background: #fff !important; }
                     body * { visibility: hidden !important; }
                     .esp-print-only { position: static !important; }
-                    .esp-preview-scale, .esp-split-right, .esp-paper { transform: none !important; }
+                    /* Neutralise every ancestor that could otherwise become the
+                       containing block / origin for the receipt below:
+                       - transform creates a containing block even for position:fixed
+                       - position:relative would anchor a position:absolute child
+                       Without this, printing from the preview panel (.esp-split-right
+                       is position:relative) put the slip at the top-left of the RIGHT
+                       PANEL instead of the page — i.e. shifted right / centre. */
+                    .esp-preview-scale, .esp-split-right, .esp-paper { transform: none !important; position: static !important; }
                     [data-thermal-receipt], [data-thermal-receipt] * { visibility: visible !important; }
-                    [data-thermal-receipt] { position: absolute !important; left: 0 !important; top: 0 !important; }
+                    /* position:fixed is resolved against the page, never a
+                       position:relative ancestor, so the slip always prints from the
+                       top-left corner like a thermal receipt, on every machine. */
+                    [data-thermal-receipt] { position: fixed !important; left: 0 !important; top: 0 !important; width: 58mm !important; }
                 }
             `}</style>
         );
