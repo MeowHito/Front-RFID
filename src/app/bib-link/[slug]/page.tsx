@@ -87,7 +87,6 @@ export default function BibLinkPage() {
     const [slipAward, setSlipAward] = useState<string | null>(null);
     const [slipTarget, setSlipTarget] = useState<string | null>(null);
     const [pendingPrint, setPendingPrint] = useState(false);
-    const [showPreview, setShowPreview] = useState(false);
     const [printed, setPrinted] = useState(false);
     const [printHistory, setPrintHistory] = useState<{ bib: string; time: string }[]>([]);
 
@@ -174,7 +173,6 @@ export default function BibLinkPage() {
         setSlip(null);
         setSlipAward(null);
         setSlipTarget(null);
-        setShowPreview(false);
         setPrinted(false);
         try {
             const lookupRes = await fetch(
@@ -229,7 +227,6 @@ export default function BibLinkPage() {
             setSlipTarget(computeTargetBandLabel(r, c));
             setSlip({ runner: r, timings, campaign: c });
             if (autoPrint) setPendingPrint(true);
-            else setShowPreview(true);
         } catch {
             setError('เกิดข้อผิดพลาด ลองใหม่อีกครั้ง');
         } finally {
@@ -329,7 +326,7 @@ export default function BibLinkPage() {
         setSlip(null);
         setSlipAward(null);
         setSlipTarget(null);
-        setShowPreview(false);
+        setPrinted(false);
         setBib('');
         setError('');
         setCopied(false);
@@ -363,6 +360,206 @@ export default function BibLinkPage() {
         );
     }
 
+    /* ─────────────────────────────────────────────────────────────────────
+       ADMIN / ORGANIZER: split-screen "print terminal" — controls on the left,
+       a persistent LIVE PREVIEW on the right. No scrolling to see the slip.
+       ───────────────────────────────────────────────────────────────────── */
+    if (isPrivileged) {
+        const disabled = searching || !bib.trim();
+        const dateStr = (campaign.eventDate ? new Date(campaign.eventDate) : new Date())
+            .toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' });
+
+        return (
+            <div className="esp-root">
+                <style>{`
+                    @import url('https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700;800;900&display=swap');
+                    @keyframes spin { to { transform: rotate(360deg); } }
+                    @keyframes fadeUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+                    .esp-card { animation: fadeUp 0.28s ease both; }
+                    .esp-input:focus { border-color: #16a34a !important; box-shadow: 0 0 0 4px rgba(22,163,74,0.14); }
+                    .esp-btn:not(:disabled):active { transform: translateY(1px); }
+                    .esp-preview-scale { transform: scale(1.42); transform-origin: center top; }
+                    @media (max-width: 900px) {
+                        .esp-root { flex-direction: column; height: auto; min-height: 100vh; overflow: auto; }
+                        .esp-left { width: 100% !important; min-width: 0 !important; max-width: none !important; border-right: none !important; border-bottom: 1px solid #e5e7eb; }
+                        .esp-right { width: 100%; padding: 44px 0 60px !important; }
+                        .esp-preview-scale { transform: scale(1.2); }
+                    }
+                    @media print {
+                        @page { size: 58mm auto; margin: 0; }
+                        html, body { margin: 0 !important; padding: 0 !important; background: #fff !important; }
+                        body * { visibility: hidden !important; }
+                        .esp-root, .esp-right, .esp-paper, .esp-preview-scale { transform: none !important; }
+                        [data-thermal-receipt], [data-thermal-receipt] * { visibility: visible !important; }
+                        [data-thermal-receipt] { position: absolute !important; left: 0 !important; top: 0 !important; }
+                    }
+                `}</style>
+
+                {/* ═══ LEFT — control panel ═══ */}
+                <div className="esp-left" style={{ width: '46%', minWidth: 440, maxWidth: 660, display: 'flex', flexDirection: 'column', background: '#fff', borderRight: '1px solid #e5e7eb' }}>
+                    {/* Header */}
+                    <header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 32px', borderBottom: '1px solid #eef1f4' }}>
+                        <Link href="/" style={{ display: 'flex', alignItems: 'center', gap: 10, textDecoration: 'none' }}>
+                            <Image src="/logo-black.png" alt="ACTION" width={78} height={26} style={{ objectFit: 'contain' }} />
+                            <span style={{ fontSize: 15, fontWeight: 800, color: '#0f172a', textTransform: 'uppercase', letterSpacing: 0.3, maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {campaign.nameEn || campaign.name}
+                            </span>
+                        </Link>
+                        <div style={{ textAlign: 'right', lineHeight: 1.35 }}>
+                            <div style={{ fontSize: 11, fontWeight: 800, color: '#0f172a' }}>Admin Terminal</div>
+                            <div style={{ fontSize: 11, fontWeight: 600, color: '#94a3b8' }}>{dateStr}</div>
+                        </div>
+                    </header>
+
+                    {/* Body */}
+                    <div style={{ flex: 1, overflowY: 'auto', padding: 32, display: 'flex', flexDirection: 'column', gap: 22 }}>
+                        {/* Title */}
+                        <div>
+                            <h1 style={{ fontSize: 30, fontWeight: 900, margin: 0, color: '#0f172a', letterSpacing: 0.2 }}>พิมพ์ใบ E-Slip</h1>
+                            <p style={{ fontSize: 14, color: '#64748b', fontWeight: 500, margin: '6px 0 0' }}>
+                                กรอกหมายเลข BIB ของนักวิ่งเพื่อพิมพ์ใบรับรองผลการแข่งขัน
+                            </p>
+                        </div>
+
+                        {/* BIB input + actions */}
+                        <form onSubmit={handleSearch} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                            <div style={{ background: '#f1f5f9', borderRadius: 18, padding: 18, border: '1px solid #e2e8f0' }}>
+                                <label style={{ display: 'block', fontSize: 11, fontWeight: 800, color: '#94a3b8', letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 10 }}>
+                                    BIB Number
+                                </label>
+                                <input
+                                    ref={inputRef}
+                                    className="esp-input"
+                                    type="text"
+                                    inputMode="numeric"
+                                    value={bib}
+                                    onChange={e => { setBib(e.target.value); setError(''); }}
+                                    placeholder="0000"
+                                    autoFocus
+                                    style={{
+                                        width: '100%', padding: '14px 12px', borderRadius: 14,
+                                        border: '2px solid #16a34a', background: '#fff',
+                                        fontSize: 58, fontWeight: 900, textAlign: 'center', letterSpacing: 4,
+                                        outline: 'none', color: '#0f172a', boxSizing: 'border-box',
+                                        fontFamily: 'inherit', lineHeight: 1.1,
+                                        transition: 'border-color 0.15s, box-shadow 0.15s',
+                                    }}
+                                />
+                            </div>
+
+                            <button
+                                type="submit"
+                                className="esp-btn"
+                                disabled={disabled}
+                                style={{
+                                    width: '100%', padding: '17px', borderRadius: 16, border: 'none',
+                                    background: disabled ? '#cbd5e1' : '#0a7d3c', color: '#fff',
+                                    fontWeight: 800, fontSize: 19, cursor: disabled ? 'not-allowed' : 'pointer',
+                                    fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
+                                    boxShadow: disabled ? 'none' : '0 8px 20px rgba(10,125,60,0.22)',
+                                    transition: 'background 0.15s, transform 0.05s, box-shadow 0.15s',
+                                }}
+                            >
+                                {searching
+                                    ? <><span style={{ width: 18, height: 18, border: '2.5px solid rgba(255,255,255,0.4)', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />กำลังเตรียมใบเสร็จ...</>
+                                    : <><IconPrinter size={20} />พิมพ์ใบเสร็จ E-Slip</>}
+                            </button>
+
+                            <button
+                                type="button"
+                                className="esp-btn"
+                                onClick={handlePreview}
+                                disabled={disabled}
+                                style={{
+                                    width: '100%', padding: '15px', borderRadius: 16,
+                                    border: '2px solid', borderColor: disabled ? '#e2e8f0' : '#0a7d3c',
+                                    background: '#fff', color: disabled ? '#cbd5e1' : '#0a7d3c',
+                                    fontWeight: 800, fontSize: 16, cursor: disabled ? 'not-allowed' : 'pointer',
+                                    fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 9,
+                                    transition: 'border-color 0.15s, color 0.15s, transform 0.05s',
+                                }}
+                            >
+                                <IconEye size={18} />ดูตัวอย่างก่อนพิมพ์
+                            </button>
+                        </form>
+
+                        {/* Error */}
+                        {error && (
+                            <div className="esp-card" style={{ background: '#fef2f2', border: '1px solid #fecaca', color: '#b91c1c', padding: '12px 14px', borderRadius: 12, fontSize: 14, fontWeight: 600, textAlign: 'center' }}>
+                                {error}
+                            </div>
+                        )}
+
+                        {/* Sent-to-printer confirmation */}
+                        {printed && (
+                            <div className="esp-card" style={{ background: '#ecfdf3', border: '1px solid #bbf7d0', color: '#15803d', padding: '13px 15px', borderRadius: 12, fontSize: 14, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 9 }}>
+                                <IconCheck size={17} />ส่งข้อมูลไปยังเครื่องพิมพ์แล้ว — พร้อมรับ BIB ถัดไป
+                            </div>
+                        )}
+
+                        {/* Print history */}
+                        {printHistory.length > 0 && (
+                            <div style={{ borderTop: '1px solid #eef1f4', paddingTop: 18 }}>
+                                <h3 style={{ fontSize: 12, fontWeight: 800, color: '#64748b', letterSpacing: 1, textTransform: 'uppercase', margin: '0 0 10px' }}>ประวัติการพิมพ์ล่าสุด</h3>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+                                    {printHistory.map((h, i) => (
+                                        <div key={`${h.bib}-${i}`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: i === 0 ? '#f1f5f9' : '#f8fafc', border: '1px solid #eef1f4', borderRadius: 12, padding: '11px 14px' }}>
+                                            <span style={{ display: 'flex', alignItems: 'center', gap: 9, fontSize: 14, fontWeight: i === 0 ? 800 : 600, color: i === 0 ? '#0f172a' : '#64748b' }}>
+                                                <span style={{ color: i === 0 ? '#16a34a' : '#94a3b8', display: 'flex' }}><IconHistory /></span>BIB {h.bib}
+                                            </span>
+                                            <span style={{ fontSize: 13, fontWeight: 600, color: '#94a3b8' }}>{h.time}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Footer */}
+                    <footer style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '11px 32px', borderTop: '1px solid #eef1f4', fontSize: 11, color: '#94a3b8', fontWeight: 600 }}>
+                        <span style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                            <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#16a34a' }} />
+                            Epson TM-T88VI (Ready)
+                        </span>
+                        <span>© {new Date().getFullYear()} Action Timing</span>
+                    </footer>
+                </div>
+
+                {/* ═══ RIGHT — persistent live preview ═══ */}
+                <div className="esp-right" style={{ flex: 1, position: 'relative', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 26, overflow: 'hidden', background: '#f2f4f6', padding: '40px 20px' }}>
+                    {/* Dotted backdrop */}
+                    <div style={{ position: 'absolute', inset: 0, opacity: 0.04, pointerEvents: 'none', backgroundImage: 'radial-gradient(#000 1px, transparent 1px)', backgroundSize: '20px 20px' }} />
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, fontSize: 12, fontWeight: 800, letterSpacing: 3, textTransform: 'uppercase', color: '#94a3b8', zIndex: 1 }}>
+                        <span style={{ width: 32, height: 1, background: '#cbd5e1' }} />Live Preview<span style={{ width: 32, height: 1, background: '#cbd5e1' }} />
+                    </div>
+
+                    {slip ? (
+                        <div className="esp-card esp-paper" style={{ zIndex: 1, background: '#fff', borderRadius: 6, boxShadow: '0 20px 50px rgba(0,0,0,0.12)', border: '1px solid #e5e7eb', padding: '26px 30px' }}>
+                            <div className="esp-preview-scale">
+                                <ThermalReceipt
+                                    runner={slip.runner}
+                                    timings={slip.timings}
+                                    campaign={slip.campaign}
+                                    awardLabel={slipAward}
+                                    targetBandLabel={slipTarget}
+                                />
+                            </div>
+                        </div>
+                    ) : (
+                        <div style={{ zIndex: 1, textAlign: 'center', color: '#94a3b8', maxWidth: 300, lineHeight: 1.7 }}>
+                            <div style={{ width: 66, height: 66, borderRadius: '50%', background: '#e8ebee', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px', color: '#b6bcc4' }}>
+                                <IconPrinter size={30} />
+                            </div>
+                            <div style={{ fontSize: 15, fontWeight: 700, color: '#64748b' }}>ยังไม่มีตัวอย่างใบเสร็จ</div>
+                            <div style={{ fontSize: 13, fontWeight: 500, marginTop: 4 }}>กรอกเลข BIB แล้วกดพิมพ์ หรือกด “ดูตัวอย่างก่อนพิมพ์” เพื่อแสดงใบเสร็จที่นี่</div>
+                        </div>
+                    )}
+                </div>
+            </div>
+        );
+    }
+
     return (
         <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', background: '#f8fafc', fontFamily: "'Prompt', sans-serif", color: '#1e293b' }}>
             <style>{`
@@ -372,16 +569,6 @@ export default function BibLinkPage() {
                 .bl-card { animation: fadeUp 0.28s ease both; }
                 .bl-input:focus { border-color: #22c55e !important; box-shadow: 0 0 0 4px rgba(34,197,94,0.12); }
                 .bl-btn-primary:not(:disabled):active { transform: translateY(1px); }
-                /* Receipt kept rendered but off-screen so window.print() works without an on-page preview */
-                .bl-print-wrap { position: absolute; left: -9999px; top: 0; }
-                @media print {
-                    @page { size: 58mm auto; margin: 0; }
-                    html, body { margin: 0 !important; padding: 0 !important; background: #fff !important; }
-                    body * { visibility: hidden !important; }
-                    .bl-print-wrap { position: static !important; }
-                    [data-thermal-receipt], [data-thermal-receipt] * { visibility: visible !important; }
-                    [data-thermal-receipt] { position: absolute !important; left: 0 !important; top: 0 !important; }
-                }
             `}</style>
 
             {/* HEADER */}
@@ -403,7 +590,7 @@ export default function BibLinkPage() {
                 {/* Title */}
                 <div style={{ textAlign: 'center' }}>
                     <h1 style={{ fontSize: 24, fontWeight: 800, margin: 0, color: '#0f172a', letterSpacing: 0.2 }}>
-                        {isPrivileged ? 'พิมพ์ใบเสร็จ E-Slip ด้วยเลข BIB' : 'ค้นหานักกีฬาด้วยเลข BIB'}
+                        ค้นหานักกีฬาด้วยเลข BIB
                     </h1>
                     <p style={{ fontSize: 13, color: '#64748b', fontWeight: 600, margin: '6px 0 0' }}>
                         {campaign.nameTh || campaign.nameEn || campaign.name}
@@ -413,7 +600,7 @@ export default function BibLinkPage() {
                 {/* Search form */}
                 <form onSubmit={handleSearch} style={{ background: '#fff', borderRadius: 16, padding: 20, boxShadow: '0 4px 24px rgba(0,0,0,0.08)' }}>
                     <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#94a3b8', marginBottom: 10, textAlign: 'center', letterSpacing: 1, textTransform: 'uppercase' }}>
-                        {isPrivileged ? 'กรอกเลข BIB แล้วกดพิมพ์ใบเสร็จ' : 'กรอกเลข BIB นักกีฬา'}
+                        กรอกเลข BIB นักกีฬา
                     </label>
                     <input
                         ref={inputRef}
@@ -464,125 +651,15 @@ export default function BibLinkPage() {
                         }}
                     >
                         {searching
-                            ? <><span style={{ width: 16, height: 16, border: '2.5px solid rgba(255,255,255,0.4)', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />{isPrivileged ? 'กำลังเตรียมใบเสร็จ...' : 'กำลังค้นหา...'}</>
-                            : isPrivileged ? <><IconPrinter />พิมพ์ใบเสร็จ E-Slip</> : <><IconSearch />ค้นหา</>}
+                            ? <><span style={{ width: 16, height: 16, border: '2.5px solid rgba(255,255,255,0.4)', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />กำลังค้นหา...</>
+                            : <><IconSearch />ค้นหา</>}
                     </button>
-                    {isPrivileged && (
-                        <button
-                            type="button"
-                            onClick={handlePreview}
-                            disabled={searching || !bib.trim()}
-                            style={{
-                                width: '100%',
-                                marginTop: 10,
-                                padding: '13px',
-                                borderRadius: 14,
-                                border: '2px solid',
-                                borderColor: searching || !bib.trim() ? '#e2e8f0' : '#22c55e',
-                                background: '#fff',
-                                color: searching || !bib.trim() ? '#cbd5e1' : '#16a34a',
-                                fontWeight: 800,
-                                fontSize: 15,
-                                cursor: searching || !bib.trim() ? 'not-allowed' : 'pointer',
-                                fontFamily: 'inherit',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                gap: 8,
-                                transition: 'border-color 0.15s, color 0.15s',
-                            }}
-                        >
-                            <IconEye size={17} />ดูตัวอย่างก่อนพิมพ์
-                        </button>
-                    )}
                 </form>
 
                 {/* Error */}
                 {error && (
                     <div style={{ background: '#fef2f2', border: '1px solid #fecaca', color: '#b91c1c', padding: '12px 14px', borderRadius: 12, fontSize: 14, fontWeight: 600, textAlign: 'center' }}>
                         {error}
-                    </div>
-                )}
-
-                {/* Admin/organizer: receipt rendered OFF-SCREEN so window.print() works with no on-page preview */}
-                {isPrivileged && slip && !showPreview && (
-                    <div className="bl-print-wrap" aria-hidden="true">
-                        <ThermalReceipt
-                            runner={slip.runner}
-                            timings={slip.timings}
-                            campaign={slip.campaign}
-                            awardLabel={slipAward}
-                            targetBandLabel={slipTarget}
-                        />
-                    </div>
-                )}
-
-                {/* Sent-to-printer confirmation */}
-                {isPrivileged && printed && !showPreview && (
-                    <div className="bl-card" style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', color: '#16a34a', padding: '12px 14px', borderRadius: 12, fontSize: 13.5, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
-                        <IconCheck size={16} />ส่งข้อมูลไปยังเครื่องพิมพ์แล้ว — พร้อมรับ BIB ถัดไป
-                    </div>
-                )}
-
-                {/* On-demand preview (shown only after pressing "ดูตัวอย่างก่อนพิมพ์") */}
-                {isPrivileged && slip && showPreview && (
-                    <div className="bl-card" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>
-                        {/* Paper preview — matches what prints on the 58mm roll */}
-                        <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, boxShadow: '0 6px 24px rgba(0,0,0,0.12)', padding: 4 }}>
-                            <ThermalReceipt
-                                runner={slip.runner}
-                                timings={slip.timings}
-                                campaign={slip.campaign}
-                                awardLabel={slipAward}
-                                targetBandLabel={slipTarget}
-                            />
-                        </div>
-                        <div style={{ display: 'flex', gap: 10, width: '100%', maxWidth: 320 }}>
-                            <button
-                                onClick={() => {
-                                    window.print();
-                                    recordPrint(slip.runner.bib);
-                                    setShowPreview(false);
-                                    setBib('');
-                                    inputRef.current?.focus();
-                                }}
-                                style={{
-                                    flex: 1, padding: '13px', borderRadius: 12, border: 'none',
-                                    background: '#22c55e', color: '#fff', fontWeight: 700, fontSize: 14,
-                                    cursor: 'pointer', fontFamily: 'inherit',
-                                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7,
-                                }}
-                            >
-                                <IconPrinter size={16} />พิมพ์ใบเสร็จ
-                            </button>
-                            <button
-                                onClick={resetSearch}
-                                style={{
-                                    flex: 1, padding: '13px', borderRadius: 12,
-                                    border: '2px solid #e2e8f0', background: '#fff', color: '#64748b',
-                                    fontWeight: 700, fontSize: 14, cursor: 'pointer', fontFamily: 'inherit',
-                                }}
-                            >
-                                ปิดตัวอย่าง
-                            </button>
-                        </div>
-                    </div>
-                )}
-
-                {/* Recent print history */}
-                {isPrivileged && printHistory.length > 0 && (
-                    <div className="bl-card" style={{ borderTop: '1px solid #e2e8f0', paddingTop: 14 }}>
-                        <div style={{ fontSize: 12, fontWeight: 800, color: '#475569', marginBottom: 8 }}>ประวัติการพิมพ์ล่าสุด</div>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                            {printHistory.map((h, i) => (
-                                <div key={`${h.bib}-${i}`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: i === 0 ? '#f1f5f9' : '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 10, padding: '10px 12px' }}>
-                                    <span style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13.5, fontWeight: i === 0 ? 800 : 600, color: i === 0 ? '#0f172a' : '#64748b' }}>
-                                        <IconHistory />BIB {h.bib}
-                                    </span>
-                                    <span style={{ fontSize: 12.5, fontWeight: 600, color: '#94a3b8' }}>{h.time}</span>
-                                </div>
-                            ))}
-                        </div>
                     </div>
                 )}
 
@@ -677,11 +754,9 @@ export default function BibLinkPage() {
                     </div>
                 )}
 
-                {((isPrivileged && !slip) || (!isPrivileged && !runner)) && !error && (
+                {!runner && !error && (
                     <div style={{ color: '#94a3b8', fontSize: 12, fontWeight: 600, textAlign: 'center', marginTop: 4, lineHeight: 1.6 }}>
-                        {isPrivileged
-                            ? <>กรอกเลข BIB แล้วกดพิมพ์<br />ระบบจะพิมพ์ใบเสร็จ E-Slip ออกทางเครื่องพิมพ์ 58 มม. อัตโนมัติ</>
-                            : <>กรอกเลข BIB แล้วกดค้นหา<br />เพื่อรับลิงก์และ QR Code ของนักกีฬาคนนั้น</>}
+                        กรอกเลข BIB แล้วกดค้นหา<br />เพื่อรับลิงก์และ QR Code ของนักกีฬาคนนั้น
                     </div>
                 )}
             </main>
