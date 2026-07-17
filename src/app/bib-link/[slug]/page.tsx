@@ -56,6 +56,12 @@ const IconExternal = ({ size = 16 }: { size?: number }) => (
 const IconDownload = ({ size = 16 }: { size?: number }) => (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
 );
+const IconEye = ({ size = 18 }: { size?: number }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" /><circle cx="12" cy="12" r="3" /></svg>
+);
+const IconHistory = ({ size = 15 }: { size?: number }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8" /><path d="M3 3v5h5" /><path d="M12 7v5l3 3" /></svg>
+);
 const IconPrinter = ({ size = 18 }: { size?: number }) => (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 6 2 18 2 18 9" /><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" /><rect x="6" y="14" width="12" height="8" /></svg>
 );
@@ -81,6 +87,9 @@ export default function BibLinkPage() {
     const [slipAward, setSlipAward] = useState<string | null>(null);
     const [slipTarget, setSlipTarget] = useState<string | null>(null);
     const [pendingPrint, setPendingPrint] = useState(false);
+    const [showPreview, setShowPreview] = useState(false);
+    const [printed, setPrinted] = useState(false);
+    const [printHistory, setPrintHistory] = useState<{ bib: string; time: string }[]>([]);
 
     const [origin, setOrigin] = useState('');
     const qrWrapRef = useRef<HTMLDivElement>(null);
@@ -90,7 +99,15 @@ export default function BibLinkPage() {
         if (typeof window !== 'undefined') setOrigin(window.location.origin);
     }, []);
 
-    // Auto-open the browser print dialog once the receipt has rendered.
+    const recordPrint = useCallback((printedBib: string) => {
+        setPrinted(true);
+        setPrintHistory(h => [
+            { bib: printedBib, time: new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }) },
+            ...h,
+        ].slice(0, 5));
+    }, []);
+
+    // Auto-open the browser print dialog once the (off-screen) receipt has rendered.
     useEffect(() => {
         if (!slip || !pendingPrint) return;
         setPendingPrint(false);
@@ -98,12 +115,13 @@ export default function BibLinkPage() {
             window.print();
             // window.print() blocks until the dialog closes on most desktop browsers —
             // clear the BIB box right after so the next number can be typed immediately.
+            recordPrint(slip.runner.bib);
             setBib('');
             setError('');
             inputRef.current?.focus();
-        }, 300);
+        }, 100);
         return () => clearTimeout(id);
-    }, [slip, pendingPrint]);
+    }, [slip, pendingPrint, recordPrint]);
 
     // Safety net for browsers where window.print() returns before the dialog closes
     // (mobile Safari/Chrome): reset + refocus once the print dialog is dismissed,
@@ -147,15 +165,17 @@ export default function BibLinkPage() {
             || '-')
         : '';
 
-    // Admin/organizer flow: resolve the runner, build a full E-Slip and auto-print
-    // it to a 58mm thermal receipt printer.
-    const handlePrintSearch = useCallback(async (term: string) => {
+    // Admin/organizer flow: resolve the runner, build a full E-Slip and either
+    // auto-print it to the 58mm thermal printer (autoPrint) or show a preview.
+    const handlePrintSearch = useCallback(async (term: string, autoPrint = true) => {
         if (!campaign?._id) return;
         setSearching(true);
         setError('');
         setSlip(null);
         setSlipAward(null);
         setSlipTarget(null);
+        setShowPreview(false);
+        setPrinted(false);
         try {
             const lookupRes = await fetch(
                 `/api/runners/lookup?campaignId=${campaign._id}&code=${encodeURIComponent(term)}`,
@@ -208,7 +228,8 @@ export default function BibLinkPage() {
             setSlipAward(award);
             setSlipTarget(computeTargetBandLabel(r, c));
             setSlip({ runner: r, timings, campaign: c });
-            setPendingPrint(true);
+            if (autoPrint) setPendingPrint(true);
+            else setShowPreview(true);
         } catch {
             setError('เกิดข้อผิดพลาด ลองใหม่อีกครั้ง');
         } finally {
@@ -249,6 +270,13 @@ export default function BibLinkPage() {
             setSearching(false);
         }
     }, [bib, campaign, isPrivileged, handlePrintSearch]);
+
+    // Preview-only: fetch the slip but show it on screen instead of printing.
+    const handlePreview = useCallback(async () => {
+        const term = bib.trim();
+        if (!term || searching) return;
+        await handlePrintSearch(term, false);
+    }, [bib, searching, handlePrintSearch]);
 
     const handleCopy = async () => {
         if (!runnerUrl) return;
@@ -301,6 +329,7 @@ export default function BibLinkPage() {
         setSlip(null);
         setSlipAward(null);
         setSlipTarget(null);
+        setShowPreview(false);
         setBib('');
         setError('');
         setCopied(false);
@@ -343,10 +372,13 @@ export default function BibLinkPage() {
                 .bl-card { animation: fadeUp 0.28s ease both; }
                 .bl-input:focus { border-color: #22c55e !important; box-shadow: 0 0 0 4px rgba(34,197,94,0.12); }
                 .bl-btn-primary:not(:disabled):active { transform: translateY(1px); }
+                /* Receipt kept rendered but off-screen so window.print() works without an on-page preview */
+                .bl-print-wrap { position: absolute; left: -9999px; top: 0; }
                 @media print {
                     @page { size: 58mm auto; margin: 0; }
                     html, body { margin: 0 !important; padding: 0 !important; background: #fff !important; }
                     body * { visibility: hidden !important; }
+                    .bl-print-wrap { position: static !important; }
                     [data-thermal-receipt], [data-thermal-receipt] * { visibility: visible !important; }
                     [data-thermal-receipt] { position: absolute !important; left: 0 !important; top: 0 !important; }
                 }
@@ -435,6 +467,34 @@ export default function BibLinkPage() {
                             ? <><span style={{ width: 16, height: 16, border: '2.5px solid rgba(255,255,255,0.4)', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />{isPrivileged ? 'กำลังเตรียมใบเสร็จ...' : 'กำลังค้นหา...'}</>
                             : isPrivileged ? <><IconPrinter />พิมพ์ใบเสร็จ E-Slip</> : <><IconSearch />ค้นหา</>}
                     </button>
+                    {isPrivileged && (
+                        <button
+                            type="button"
+                            onClick={handlePreview}
+                            disabled={searching || !bib.trim()}
+                            style={{
+                                width: '100%',
+                                marginTop: 10,
+                                padding: '13px',
+                                borderRadius: 14,
+                                border: '2px solid',
+                                borderColor: searching || !bib.trim() ? '#e2e8f0' : '#22c55e',
+                                background: '#fff',
+                                color: searching || !bib.trim() ? '#cbd5e1' : '#16a34a',
+                                fontWeight: 800,
+                                fontSize: 15,
+                                cursor: searching || !bib.trim() ? 'not-allowed' : 'pointer',
+                                fontFamily: 'inherit',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: 8,
+                                transition: 'border-color 0.15s, color 0.15s',
+                            }}
+                        >
+                            <IconEye size={17} />ดูตัวอย่างก่อนพิมพ์
+                        </button>
+                    )}
                 </form>
 
                 {/* Error */}
@@ -444,12 +504,29 @@ export default function BibLinkPage() {
                     </div>
                 )}
 
-                {/* Admin/organizer E-Slip receipt (58mm) — auto-printed on search */}
-                {isPrivileged && slip && slip.runner.status === 'finished' && (
+                {/* Admin/organizer: receipt rendered OFF-SCREEN so window.print() works with no on-page preview */}
+                {isPrivileged && slip && !showPreview && (
+                    <div className="bl-print-wrap" aria-hidden="true">
+                        <ThermalReceipt
+                            runner={slip.runner}
+                            timings={slip.timings}
+                            campaign={slip.campaign}
+                            awardLabel={slipAward}
+                            targetBandLabel={slipTarget}
+                        />
+                    </div>
+                )}
+
+                {/* Sent-to-printer confirmation */}
+                {isPrivileged && printed && !showPreview && (
+                    <div className="bl-card" style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', color: '#16a34a', padding: '12px 14px', borderRadius: 12, fontSize: 13.5, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                        <IconCheck size={16} />ส่งข้อมูลไปยังเครื่องพิมพ์แล้ว — พร้อมรับ BIB ถัดไป
+                    </div>
+                )}
+
+                {/* On-demand preview (shown only after pressing "ดูตัวอย่างก่อนพิมพ์") */}
+                {isPrivileged && slip && showPreview && (
                     <div className="bl-card" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>
-                        <div style={{ fontSize: 13, color: '#16a34a', fontWeight: 800, display: 'flex', alignItems: 'center', gap: 6 }}>
-                            <IconPrinter size={16} />ส่งใบเสร็จไปยังเครื่องพิมพ์แล้ว — พิมพ์ BIB ถัดไปได้เลย
-                        </div>
                         {/* Paper preview — matches what prints on the 58mm roll */}
                         <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, boxShadow: '0 6px 24px rgba(0,0,0,0.12)', padding: 4 }}>
                             <ThermalReceipt
@@ -462,26 +539,49 @@ export default function BibLinkPage() {
                         </div>
                         <div style={{ display: 'flex', gap: 10, width: '100%', maxWidth: 320 }}>
                             <button
-                                onClick={() => window.print()}
+                                onClick={() => {
+                                    window.print();
+                                    recordPrint(slip.runner.bib);
+                                    setShowPreview(false);
+                                    setBib('');
+                                    inputRef.current?.focus();
+                                }}
                                 style={{
                                     flex: 1, padding: '13px', borderRadius: 12, border: 'none',
-                                    background: '#0f172a', color: '#fff', fontWeight: 700, fontSize: 14,
+                                    background: '#22c55e', color: '#fff', fontWeight: 700, fontSize: 14,
                                     cursor: 'pointer', fontFamily: 'inherit',
                                     display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7,
                                 }}
                             >
-                                <IconPrinter size={16} />พิมพ์อีกครั้ง
+                                <IconPrinter size={16} />พิมพ์ใบเสร็จ
                             </button>
                             <button
                                 onClick={resetSearch}
                                 style={{
                                     flex: 1, padding: '13px', borderRadius: 12,
-                                    border: '2px solid #22c55e', background: '#f0fdf4', color: '#16a34a',
+                                    border: '2px solid #e2e8f0', background: '#fff', color: '#64748b',
                                     fontWeight: 700, fontSize: 14, cursor: 'pointer', fontFamily: 'inherit',
                                 }}
                             >
-                                BIB ถัดไป
+                                ปิดตัวอย่าง
                             </button>
+                        </div>
+                    </div>
+                )}
+
+                {/* Recent print history */}
+                {isPrivileged && printHistory.length > 0 && (
+                    <div className="bl-card" style={{ borderTop: '1px solid #e2e8f0', paddingTop: 14 }}>
+                        <div style={{ fontSize: 12, fontWeight: 800, color: '#475569', marginBottom: 8 }}>ประวัติการพิมพ์ล่าสุด</div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                            {printHistory.map((h, i) => (
+                                <div key={`${h.bib}-${i}`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: i === 0 ? '#f1f5f9' : '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 10, padding: '10px 12px' }}>
+                                    <span style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13.5, fontWeight: i === 0 ? 800 : 600, color: i === 0 ? '#0f172a' : '#64748b' }}>
+                                        <IconHistory />BIB {h.bib}
+                                    </span>
+                                    <span style={{ fontSize: 12.5, fontWeight: 600, color: '#94a3b8' }}>{h.time}</span>
+                                </div>
+                            ))}
                         </div>
                     </div>
                 )}
