@@ -4,9 +4,10 @@ import Image from 'next/image';
 import Link from 'next/link';
 import type { CSSProperties } from 'react';
 import { useEffect, useState, useMemo, useRef, useCallback } from 'react';
-import { downloadAllDistances, triggerCombinedDownload } from '@/lib/combined-winners-download';
+import { downloadSelectedDistance, triggerSingleDistanceDownload } from '@/lib/combined-winners-download';
 import NameLangToggle from '@/components/NameLangToggle';
 import { useLanguage } from '@/lib/language-context';
+import { useAuth } from '@/lib/auth-context';
 import { matchesProvince, provinceEnName } from '@/lib/thai-provinces';
 import { useParams, useSearchParams } from 'next/navigation';
 
@@ -78,6 +79,7 @@ const runnerTimeMs = (r: Runner) => r.netTime || r.gunTime || r.elapsedTime || I
 // disabled, no board is shown.
 export default function BestOfWinnersBySlugPage() {
     const { language, setLanguage } = useLanguage();
+    const { isAuthenticated } = useAuth();
     const params = useParams();
     const slug = params.slug as string;
     const searchParams = useSearchParams();
@@ -238,21 +240,20 @@ export default function BestOfWinnersBySlugPage() {
         });
     }, [provinceEnabled, provincesConfig, displayedRunners]);
 
-    // Combines every distance into one Excel file for a single province — each distance
-    // prints on its own page. Scoped to the given province + gender.
+    // Exports only the currently-selected distance for a single province + gender
+    // (not every distance in the campaign).
     const downloadProvince = useCallback(async (cfg: BestOfProvince, gender: 'male' | 'female' | 'both') => {
         if (!campaign?._id) return;
         setDownloading(`${cfg.province}-${gender}`);
         try {
-            const blob = await downloadAllDistances<Runner>({
-                campaignId: campaign._id,
+            const distance = campaign.categories?.find(c => c.name === selectedCategory)?.distance;
+            const blob = await downloadSelectedDistance<Runner>({
                 campaignName: `${campaign.name || ''} - ${cfg.province}`,
-                categories: campaign.categories || [],
                 selectedCategory,
+                distance,
                 currentRunners: displayedRunners,
                 gender,
                 nameLang: language,
-                filePartLabel: `BestOf-${provinceEnName(cfg.province)}`,
                 computeWinners: (runners) => {
                     const finished = runners
                         .filter(r => r.status === 'finished' && (r.netTime || r.gunTime || r.elapsedTime) && matchesProvince(cfg.province, r.province, r.address))
@@ -263,7 +264,7 @@ export default function BestOfWinnersBySlugPage() {
                     };
                 },
             });
-            triggerCombinedDownload(blob, `${campaign.name || ''} - ${cfg.province}`, 'BestOf', gender);
+            triggerSingleDistanceDownload(blob, `${campaign.name || ''} - ${cfg.province}`, `BestOf-${provinceEnName(cfg.province)}`, selectedCategory, distance, gender);
         } catch (e) { console.error(e); } finally {
             setDownloading(null);
         }
@@ -368,6 +369,8 @@ export default function BestOfWinnersBySlugPage() {
     return (
         <div style={{ fontFamily: "'Prompt', 'Inter', sans-serif", background: '#0f172a', minHeight: '100vh', display: 'flex', flexDirection: 'column', padding: isMobile ? '8px' : '10px 16px' }}>
             <style>{`@keyframes pulse { 0%,100% { opacity:1 } 50% { opacity:0.3 } }`}</style>
+            {/* On mobile, hide the control header for public viewers who are not logged in. */}
+            {!(isMobile && !isAuthenticated) && (
             <header style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', justifyContent: 'space-between', alignItems: isMobile ? 'stretch' : 'center', padding: isMobile ? '10px 12px' : '8px 20px', background: '#1e293b', borderRadius: 10, marginBottom: isMobile ? 8 : 10, flexShrink: 0, border: '1px solid #334155', gap: isMobile ? 8 : 0 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <Link href="/" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -421,6 +424,7 @@ export default function BestOfWinnersBySlugPage() {
                     )}
                 </div>
             </header>
+            )}
 
             {campaign && selectedCategory && (
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: isMobile ? 4 : 10, padding: isMobile ? '8px 12px' : '8px 20px', background: '#1e293b', borderRadius: 10, marginBottom: isMobile ? 8 : 10, border: '1px solid #334155', flexShrink: 0, textAlign: 'center' }}>

@@ -4,9 +4,10 @@ import Image from 'next/image';
 import Link from 'next/link';
 import type { CSSProperties } from 'react';
 import { useEffect, useState, useMemo, useRef, useCallback } from 'react';
-import { downloadAllDistances, triggerCombinedDownload } from '@/lib/combined-winners-download';
+import { downloadSelectedDistance, triggerSingleDistanceDownload } from '@/lib/combined-winners-download';
 import NameLangToggle from '@/components/NameLangToggle';
 import { useLanguage } from '@/lib/language-context';
+import { useAuth } from '@/lib/auth-context';
 import { isThaiNationality, isNationalitySplitCategory } from '@/lib/nationality';
 import { useParams, useSearchParams } from 'next/navigation';
 
@@ -59,6 +60,7 @@ function formatTime(ms: number | undefined | null): string {
 
 export default function OverallWinnersBySlugPage() {
     const { language, setLanguage } = useLanguage();
+    const { isAuthenticated } = useAuth();
     const params = useParams();
     const slug = params.slug as string;
     const searchParams = useSearchParams();
@@ -224,8 +226,8 @@ export default function OverallWinnersBySlugPage() {
         };
     }, [displayedRunners, topN, thaiTopN, separateNat]);
 
-    // Combines every distance into one Excel file — each distance prints on its own page.
-    // Nationality-split status is re-evaluated per distance since it's configured per category.
+    // Exports only the currently-selected distance (not every distance in the campaign).
+    // Nationality-split status is evaluated for the selected category since it's configured per category.
     const downloadGroup = useCallback(async (
         _males: Runner[],
         _females: Runner[],
@@ -235,15 +237,14 @@ export default function OverallWinnersBySlugPage() {
         if (!campaign?._id) return;
         setDownloading('landscape');
         try {
-            const blob = await downloadAllDistances<Runner>({
-                campaignId: campaign._id,
+            const distance = campaign.categories?.find(c => c.name === selectedCategory)?.distance;
+            const blob = await downloadSelectedDistance<Runner>({
                 campaignName: campaign.name || '',
-                categories: campaign.categories || [],
                 selectedCategory,
+                distance,
                 currentRunners: displayedRunners,
                 gender,
                 nameLang: language,
-                filePartLabel: `Overall${namePart}`,
                 computeWinners: (runners, categoryName) => {
                     const topNForCat = Math.max(1, campaign.overallDisplayCount || 5);
                     const thaiTopNForCat = Math.max(1, Number(campaign.excludeOverallThaiFromAgeGroup ?? campaign.overallDisplayCount) || 5);
@@ -265,7 +266,7 @@ export default function OverallWinnersBySlugPage() {
                     };
                 },
             });
-            triggerCombinedDownload(blob, campaign.name || '', `Overall${namePart}`, gender);
+            triggerSingleDistanceDownload(blob, campaign.name || '', `Overall${namePart}`, selectedCategory, distance, gender);
         } catch (e) { console.error(e); } finally {
             setDownloading(null);
         }
@@ -357,6 +358,8 @@ export default function OverallWinnersBySlugPage() {
     return (
         <div style={{ fontFamily: "'Prompt', 'Inter', sans-serif", background: '#0f172a', height: isMobile ? 'auto' : '100vh', minHeight: '100vh', overflow: isMobile ? 'auto' : 'hidden', display: 'flex', flexDirection: 'column', padding: isMobile ? '8px' : '0.8vh 1vw' }}>
             <style>{`@keyframes pulse { 0%,100% { opacity:1 } 50% { opacity:0.3 } }`}</style>
+            {/* On mobile, hide the control header for public viewers who are not logged in. */}
+            {!(isMobile && !isAuthenticated) && (
             <header style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', justifyContent: 'space-between', alignItems: isMobile ? 'stretch' : 'center', padding: isMobile ? '10px 12px' : '0.6vh 1.5vw', background: '#1e293b', borderRadius: 10, marginBottom: isMobile ? 8 : '0.8vh', flexShrink: 0, border: '1px solid #334155', gap: isMobile ? 8 : 0 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <Link href="/" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -419,6 +422,7 @@ export default function OverallWinnersBySlugPage() {
                     )}
                 </div>
             </header>
+            )}
 
             {campaign && (
                 <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', alignItems: 'center', justifyContent: 'center', gap: isMobile ? 4 : '0.8vw', padding: isMobile ? '8px 12px' : '0.5vh 1.5vw', background: '#1e293b', borderRadius: 10, marginBottom: isMobile ? 8 : '0.8vh', border: '1px solid #334155', flexShrink: 0, textAlign: 'center' }}>

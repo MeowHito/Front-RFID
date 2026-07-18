@@ -51,3 +51,37 @@ export function triggerCombinedDownload(blob: Blob | null, campaignName: string,
     const suffix = gender === 'male' ? '-Male' : gender === 'female' ? '-Female' : '';
     triggerExcelDownload(blob, `${campaignName || 'winners'}-${filePartLabel}-AllDistances${suffix}`);
 }
+
+// Per-board / per-column download: exports ONLY the currently-selected distance,
+// not every distance in the campaign. Reuses the runners already loaded on the
+// page for the selected category, so it never fetches — and never mixes in other
+// distances (e.g. a 21K download must not include 10K rows).
+export async function downloadSelectedDistance<T extends ExcelRunner>(params: {
+    campaignName: string;
+    selectedCategory: string;
+    distance?: string;
+    currentRunners: T[];
+    gender: 'male' | 'female' | 'both';
+    nameLang: 'th' | 'en';
+    computeWinners: (runners: T[], categoryName: string) => { maleRunners: T[]; femaleRunners: T[] };
+}): Promise<Blob | null> {
+    const { campaignName, selectedCategory, distance, currentRunners, gender, nameLang, computeWinners } = params;
+    const { maleRunners, femaleRunners } = computeWinners(currentRunners, selectedCategory);
+    const distanceSuffix = distance ? ` (${distance})` : '';
+    const sections: ExcelSection[] = [{ categoryLabel: `${selectedCategory}${distanceSuffix}`, maleRunners, femaleRunners }];
+    return buildWinnersExcel(campaignName, '', sections, gender, { nameLang });
+}
+
+export function triggerSingleDistanceDownload(
+    blob: Blob | null,
+    campaignName: string,
+    filePartLabel: string,
+    selectedCategory: string,
+    distance: string | undefined,
+    gender: 'male' | 'female' | 'both',
+) {
+    if (!blob) return;
+    const suffix = gender === 'male' ? '-Male' : gender === 'female' ? '-Female' : '';
+    const distPart = distance ? `-${distance}` : (selectedCategory ? `-${selectedCategory}` : '');
+    triggerExcelDownload(blob, `${campaignName || 'winners'}-${filePartLabel}${distPart}${suffix}`);
+}

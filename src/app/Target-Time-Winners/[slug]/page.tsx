@@ -4,6 +4,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { useParams } from 'next/navigation';
+import { useAuth } from '@/lib/auth-context';
 
 interface Runner {
     _id: string;
@@ -60,6 +61,7 @@ function formatMinutes(min: number): string {
 const REFRESH_INTERVAL = 10;
 
 export default function TargetTimeWinnersBySlugPage() {
+    const { isAuthenticated } = useAuth();
     const params = useParams();
     const slug = params.slug as string;
 
@@ -207,6 +209,8 @@ export default function TargetTimeWinnersBySlugPage() {
         <div style={{ fontFamily: "'Prompt', 'Inter', sans-serif", background: '#0f172a', minHeight: '100vh', display: 'flex', flexDirection: 'column', padding: isMobile ? '8px' : '0.8vh 1vw' }}>
             <style>{`@keyframes pulse { 0%,100% { opacity:1 } 50% { opacity:0.3 } }`}</style>
 
+            {/* On mobile, hide the control header for public viewers who are not logged in. */}
+            {!(isMobile && !isAuthenticated) && (
             <header style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', justifyContent: 'space-between', alignItems: isMobile ? 'stretch' : 'center', padding: isMobile ? '10px 12px' : '0.6vh 1.5vw', background: '#1e293b', borderRadius: 10, marginBottom: isMobile ? 8 : '0.8vh', border: '1px solid #334155', gap: isMobile ? 8 : 0 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <Link href="/" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -253,6 +257,7 @@ export default function TargetTimeWinnersBySlugPage() {
                     )}
                 </div>
             </header>
+            )}
 
             {campaign && (
                 <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', alignItems: 'center', justifyContent: 'center', gap: isMobile ? 6 : '1.2vw', padding: isMobile ? '10px 16px' : '0.7vh 1.5vw', background: '#1e293b', borderRadius: 10, marginBottom: isMobile ? 8 : '0.8vh', border: '1px solid #334155', textAlign: 'center' }}>
