@@ -332,6 +332,8 @@ export default function EventLivePage() {
     const [campaign, setCampaign] = useState<Campaign | null>(null);
     // ... (rest of the code remains the same)
     const [runners, setRunners] = useState<Runner[]>([]);
+    // How many people have saved/downloaded their e-slip (aggregated across all distances)
+    const [eslipStats, setEslipStats] = useState<{ totalDownloads: number; uniqueRunners: number } | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
@@ -596,6 +598,27 @@ export default function EventLivePage() {
     }, []);
 
     useEffect(() => { if (eventKey) fetchEventData(); }, [eventKey]);
+
+    // Load e-slip download stats once the campaign id is known (refreshed every 60s).
+    useEffect(() => {
+        const slug = campaign?.slug || campaign?._id;
+        if (!slug) return;
+        let cancelled = false;
+        const load = async () => {
+            try {
+                const res = await fetch(`/api/eslip-stats/${slug}`, { cache: 'no-store' });
+                if (!res.ok) return;
+                const json = await res.json().catch(() => ({}));
+                const data = json?.data ?? json;
+                if (!cancelled && data && typeof data.totalDownloads === 'number') {
+                    setEslipStats({ totalDownloads: data.totalDownloads, uniqueRunners: data.uniqueRunners ?? 0 });
+                }
+            } catch { /* ignore */ }
+        };
+        load();
+        const t = setInterval(load, 60000);
+        return () => { cancelled = true; clearInterval(t); };
+    }, [campaign?.slug, campaign?._id]);
 
     // Choose API endpoint based on raceFinished flag
     const isRaceFinished = campaign?.raceFinished ?? false;
@@ -1747,6 +1770,28 @@ export default function EventLivePage() {
                         </div>
                     </div>
 
+                    {/* E-Slip download counter — how many runners saved their e-slip */}
+                    {eslipStats && eslipStats.totalDownloads > 0 && (
+                        <div
+                            title={language === 'th'
+                                ? `บันทึก E-Slip ${eslipStats.totalDownloads.toLocaleString()} ครั้ง จาก ${eslipStats.uniqueRunners.toLocaleString()} คน`
+                                : `E-Slip saved ${eslipStats.totalDownloads.toLocaleString()} times by ${eslipStats.uniqueRunners.toLocaleString()} runners`}
+                            className="mr-1 flex shrink-0 items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--card-solid)] px-2.5 py-1"
+                        >
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><path d="M7 10l5 5 5-5" /><path d="M12 15V3" />
+                            </svg>
+                            <span className="whitespace-nowrap text-[11px] font-extrabold text-[var(--foreground)]">
+                                {eslipStats.uniqueRunners.toLocaleString()}
+                            </span>
+                            {!isMobile && (
+                                <span className="whitespace-nowrap text-[9px] font-bold uppercase tracking-[0.05em] text-[var(--muted-foreground)]">
+                                    E-Slip
+                                </span>
+                            )}
+                        </div>
+                    )}
+
                     {!isMobile && isAuthenticated && (
                         <div className="flex items-center gap-1.5">
                             <span className="whitespace-nowrap text-[9px] font-bold uppercase tracking-[0.05em] text-[var(--muted-foreground)]">
@@ -1872,15 +1917,21 @@ export default function EventLivePage() {
             </div>
 
             {/* ===== TABLE ===== */}
-            <main className="px-4">
-                <div className={`table-scroll border border-x-[var(--border)] border-y-0 bg-[var(--card-solid)] pb-10 ${isMobile && showAllColumns ? 'overflow-x-auto' : 'overflow-x-hidden'} overflow-y-auto`} style={{ height: 'calc(100vh - 100px)' }}>
+            {/* Full-bleed on mobile (no side gutters) so the results table uses the entire screen width */}
+            <main className={isMobile ? 'px-0' : 'px-4'}>
+                <div className={`table-scroll ${isMobile ? '' : 'border border-x-[var(--border)]'} border-y-0 bg-[var(--card-solid)] pb-10 ${isMobile && showAllColumns ? 'overflow-x-auto' : 'overflow-x-hidden'} overflow-y-auto`} style={{ height: 'calc(100vh - 100px)' }}>
                     <table className="table-fixed border-collapse text-left" style={{ width: isMobile && showAllColumns ? Math.max(760, visibleColumns.length * 86) : '100%' }}>
                         <thead>
                             <tr className="sticky top-0 z-20 border-b-2 border-[var(--border)] bg-[var(--card-solid)] text-[10px] font-bold uppercase tracking-[-0.02em] text-[var(--muted-foreground)]">
                                 {visibleColumns.map(key => {
                                     const def = activeColDefs.find(c => c.key === key)!;
+                                    // On collapsed mobile only a handful of columns show, so stretch them to
+                                    // fill the full screen width (and give GUN TIME room so it stops clipping).
+                                    const collapsedMobile = isMobile && !showAllColumns;
+                                    const collapsedW: Record<string, string> = { rank: '13%', runner: '46%', status: '22%', gunTime: '19%', laps: '30%' };
+                                    const thWidth = collapsedMobile ? (collapsedW[key] || def.mw) : (isMobile ? def.mw : def.w);
                                     return (
-                                        <th key={key} className={isMobile ? 'overflow-hidden text-ellipsis whitespace-nowrap' : ''} style={{ padding: isMobile && key === 'status' ? '6px 4px' : isMobile && key === 'gunTime' ? '6px 1px' : !isMobile && key === 'status' ? '8px 6px' : isMobile ? '6px 4px' : '8px 6px', textAlign: key === 'status' ? 'center' : def.align, width: isMobile ? def.mw : def.w }}>
+                                        <th key={key} className={isMobile ? 'overflow-hidden text-ellipsis whitespace-nowrap' : ''} style={{ padding: isMobile && key === 'status' ? '6px 4px' : isMobile && key === 'gunTime' ? '6px 1px' : !isMobile && key === 'status' ? '8px 6px' : isMobile ? '6px 4px' : '8px 6px', textAlign: key === 'status' ? 'center' : def.align, width: thWidth }}>
                                             {def.label}
                                         </th>
                                     );

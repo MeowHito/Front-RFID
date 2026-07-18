@@ -180,6 +180,14 @@ export default function ESlipView({ apiUrl }: { apiUrl: string }) {
 
     const [previewImage, setPreviewImage] = useState<string | null>(null);
 
+    // Fire-and-forget: tell the backend this runner's e-slip was saved/shared so the
+    // /event page can show how many people downloaded their slip. Never blocks the UI.
+    const recordDownload = () => {
+        const runnerId = runner?._id;
+        if (!runnerId) return;
+        fetch(`/api/runner/${runnerId}/eslip-download`, { method: 'POST' }).catch(() => {});
+    };
+
     const handleDownload = async () => {
         if (!slipRef.current) return;
         setDownloading(true);
@@ -206,6 +214,7 @@ export default function ESlipView({ apiUrl }: { apiUrl: string }) {
                     const shareData: ShareData = { files: [imageFile] };
                     if (navigator.canShare?.(shareData)) {
                         await navigator.share(shareData);
+                        recordDownload();
                         return;
                     }
                 } catch (shareErr: any) {
@@ -216,6 +225,7 @@ export default function ESlipView({ apiUrl }: { apiUrl: string }) {
 
             if (isMobile) {
                 setPreviewImage(dataUrl);
+                recordDownload();
                 return;
             }
 
@@ -223,6 +233,7 @@ export default function ESlipView({ apiUrl }: { apiUrl: string }) {
             link.download = fileName;
             link.href = dataUrl;
             link.click();
+            recordDownload();
         } catch (err) {
             console.error('E-Slip download error:', err);
         } finally {
@@ -247,6 +258,7 @@ export default function ESlipView({ apiUrl }: { apiUrl: string }) {
             await toJpeg(slipRef.current, opts).catch(() => {});
             const dataUrl = await toJpeg(slipRef.current, opts);
             setPreviewImage(dataUrl);
+            recordDownload();
         } catch (err) {
             console.error('Long-press save error:', err);
         } finally {
