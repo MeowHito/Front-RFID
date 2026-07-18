@@ -599,8 +599,9 @@ export default function EventLivePage() {
 
     useEffect(() => { if (eventKey) fetchEventData(); }, [eventKey]);
 
-    // Load e-slip download stats once the campaign id is known (refreshed every 60s).
+    // Load e-slip download stats once the campaign id is known (admin-only, refreshed every 60s).
     useEffect(() => {
+        if (!isAdmin) { setEslipStats(null); return; }
         const slug = campaign?.slug || campaign?._id;
         if (!slug) return;
         let cancelled = false;
@@ -618,7 +619,7 @@ export default function EventLivePage() {
         load();
         const t = setInterval(load, 60000);
         return () => { cancelled = true; clearInterval(t); };
-    }, [campaign?.slug, campaign?._id]);
+    }, [isAdmin, campaign?.slug, campaign?._id]);
 
     // Choose API endpoint based on raceFinished flag
     const isRaceFinished = campaign?.raceFinished ?? false;
@@ -1770,8 +1771,8 @@ export default function EventLivePage() {
                         </div>
                     </div>
 
-                    {/* E-Slip download counter — how many runners saved their e-slip */}
-                    {eslipStats && eslipStats.totalDownloads > 0 && (
+                    {/* E-Slip download counter — how many runners saved their e-slip (admin-only) */}
+                    {isAdmin && eslipStats && eslipStats.totalDownloads > 0 && (
                         <div
                             title={language === 'th'
                                 ? `บันทึก E-Slip ${eslipStats.totalDownloads.toLocaleString()} ครั้ง จาก ${eslipStats.uniqueRunners.toLocaleString()} คน`

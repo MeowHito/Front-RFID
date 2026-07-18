@@ -53,6 +53,7 @@ export default function AdminESlipPage() {
     const [saving, setSaving] = useState(false);
     const [saved, setSaved] = useState(false);
     const [loading, setLoading] = useState(true);
+    const [eslipStats, setEslipStats] = useState<{ totalDownloads: number; uniqueRunners: number } | null>(null);
 
     useEffect(() => {
         (async () => {
@@ -74,6 +75,26 @@ export default function AdminESlipPage() {
             }
         })();
     }, []);
+
+    // Load how many people have downloaded/saved their e-slip for this campaign.
+    useEffect(() => {
+        if (!campaign?._id) return;
+        let cancelled = false;
+        const load = async () => {
+            try {
+                const res = await fetch(`/api/eslip-stats/${campaign._id}`, { cache: 'no-store' });
+                if (!res.ok) return;
+                const json = await res.json().catch(() => ({}));
+                const data = json?.data ?? json;
+                if (!cancelled && data && typeof data.totalDownloads === 'number') {
+                    setEslipStats({ totalDownloads: data.totalDownloads, uniqueRunners: data.uniqueRunners ?? 0 });
+                }
+            } catch { /* ignore */ }
+        };
+        load();
+        const t = setInterval(load, 30000);
+        return () => { cancelled = true; clearInterval(t); };
+    }, [campaign?._id]);
 
     const toggleTemplate = (id: string) => {
         setSelectedTemplates(prev => {
@@ -143,6 +164,39 @@ export default function AdminESlipPage() {
                     </div>
                 ) : (
                     <>
+                        {/* E-Slip download stats */}
+                        <div style={{ marginBottom: 32 }}>
+                            <h2 style={{ fontSize: 18, fontWeight: 700, color: '#0f172a', margin: '0 0 14px' }}>
+                                <i className="fas fa-download" style={{ marginRight: 8, color: '#22c55e' }} />
+                                ยอดดาวน์โหลด E-Slip
+                            </h2>
+                            <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+                                <div style={{ flex: 1, minWidth: 200, maxWidth: 260, borderRadius: 16, padding: '20px 24px', border: '2px solid #dcfce7', background: '#f0fdf4' }}>
+                                    <div style={{ fontSize: 13, fontWeight: 600, color: '#16a34a', marginBottom: 6 }}>
+                                        <i className="fas fa-users" style={{ marginRight: 6 }} />
+                                        จำนวนคนที่บันทึกสลิป
+                                    </div>
+                                    <div style={{ fontSize: 34, fontWeight: 800, color: '#15803d', lineHeight: 1 }}>
+                                        {(eslipStats?.uniqueRunners ?? 0).toLocaleString()}
+                                        <span style={{ fontSize: 15, fontWeight: 600, color: '#16a34a', marginLeft: 6 }}>คน</span>
+                                    </div>
+                                </div>
+                                <div style={{ flex: 1, minWidth: 200, maxWidth: 260, borderRadius: 16, padding: '20px 24px', border: '2px solid #e0f2fe', background: '#f0f9ff' }}>
+                                    <div style={{ fontSize: 13, fontWeight: 600, color: '#0284c7', marginBottom: 6 }}>
+                                        <i className="fas fa-redo" style={{ marginRight: 6 }} />
+                                        จำนวนครั้งที่ดาวน์โหลด
+                                    </div>
+                                    <div style={{ fontSize: 34, fontWeight: 800, color: '#0369a1', lineHeight: 1 }}>
+                                        {(eslipStats?.totalDownloads ?? 0).toLocaleString()}
+                                        <span style={{ fontSize: 15, fontWeight: 600, color: '#0284c7', marginLeft: 6 }}>ครั้ง</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <p style={{ fontSize: 12, color: '#94a3b8', margin: '10px 2px 0' }}>
+                                นับจากตอนที่นักวิ่งกด “บันทึกภาพ” หรือแชร์ E-Slip · อัปเดตอัตโนมัติทุก 30 วินาที
+                            </p>
+                        </div>
+
                         {/* Version Toggle */}
                         <div style={{ marginBottom: 32 }}>
                             <h2 style={{ fontSize: 18, fontWeight: 700, color: '#0f172a', margin: '0 0 14px' }}>
