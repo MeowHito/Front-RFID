@@ -6,6 +6,7 @@ import { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { buildWinnersExcel, triggerExcelDownload, ExcelSection } from '@/lib/winner-excel';
 import NameLangToggle from '@/components/NameLangToggle';
 import { useLanguage } from '@/lib/language-context';
+import { useAuth } from '@/lib/auth-context';
 import { useParams, useSearchParams } from 'next/navigation';
 import { type AgeGroupBucket, buildCanonicalAgeGroups } from '@/lib/age-groups';
 import { computeAgeGroupWinners } from '@/lib/age-group-winners';
@@ -81,6 +82,7 @@ const REFRESH_INTERVAL = 10;
 
 export default function ResultWinnersBySlugPage() {
     const { language, setLanguage } = useLanguage();
+    const { isAuthenticated } = useAuth();
     const params = useParams();
     const slug = params.slug as string;
     const searchParams = useSearchParams();
@@ -340,6 +342,30 @@ export default function ResultWinnersBySlugPage() {
         }
     }, [campaign, selectedCategory, maleWinners, femaleWinners, language]);
 
+    // Per-column download (the ⬇ on the MALE/FEMALE WINNERS header): exports
+    // ONLY the currently-selected distance, every age group of it — not the whole
+    // campaign. Uses the already-computed winners for the selected category so the
+    // file never mixes in other distances (e.g. 21K download must not include 10K).
+    const downloadCurrentCategory = useCallback(async (gender: 'male' | 'female' | 'both' = 'both') => {
+        setDownloading(gender === 'both' ? 'cat' : `cat-${gender}`);
+        try {
+            const distance = campaign?.categories?.find(c => c.name === selectedCategory)?.distance;
+            const distanceSuffix = distance ? ` (${distance})` : '';
+            const sections: ExcelSection[] = activeAgeGroups.map((g, i) => ({
+                label: g.label,
+                categoryLabel: i === 0 ? `${selectedCategory}${distanceSuffix}` : undefined,
+                maleRunners: maleWinners[g.label] || [],
+                femaleRunners: femaleWinners[g.label] || [],
+            }));
+            const suffix = gender === 'male' ? '-Male' : gender === 'female' ? '-Female' : '';
+            const distPart = distance ? `-${distance}` : '';
+            const blob = await buildWinnersExcel(campaign?.name || '', selectedCategory, sections, gender, { nameLang: language });
+            if (blob) triggerExcelDownload(blob, `${campaign?.name || 'winners'}${distPart}-AgeGroup${suffix}`);
+        } catch (e) { console.error(e); } finally {
+            setDownloading(null);
+        }
+    }, [campaign, selectedCategory, activeAgeGroups, maleWinners, femaleWinners, language]);
+
     // "Download All" combines every distance in the campaign into one Excel
     // file — each age group prints on its own page, with a distance banner
     // above the first age group of each new category.
@@ -445,7 +471,7 @@ export default function ResultWinnersBySlugPage() {
         <div ref={el => { colRef.current = el; }} style={{ display: 'flex', flexDirection: 'column', gap: isMobile ? 8 : '0.6vh', minHeight: 0, flex: 1, overflowY: isMobile ? 'visible' : 'auto', paddingRight: isMobile ? 0 : 4 }}>
             <div style={{ padding: isMobile ? '8px 0' : '0.7vh 0', fontWeight: 900, fontSize: isMobile ? 16 : '2vh', textTransform: 'uppercase', borderRadius: 8, color: 'white', letterSpacing: 2, background: bgHeader, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
                 <span>{title}</span>
-                <button data-no-capture onClick={onDownloadAll} disabled={!!downloading} title="Download all age groups as one A4 image" style={{ position: 'absolute', right: 8, background: 'rgba(255,255,255,0.18)', border: 'none', borderRadius: 5, cursor: 'pointer', padding: '3px 8px', color: 'white', fontSize: isMobile ? 11 : 12, display: 'flex', alignItems: 'center', gap: 4, fontWeight: 700, opacity: downloading ? 0.5 : 1, transition: 'opacity 0.15s' }}>
+                <button data-no-capture onClick={onDownloadAll} disabled={!!downloading} title="Download all age groups of this distance (Excel)" style={{ position: 'absolute', right: 8, background: 'rgba(255,255,255,0.18)', border: 'none', borderRadius: 5, cursor: 'pointer', padding: '3px 8px', color: 'white', fontSize: isMobile ? 11 : 12, display: 'flex', alignItems: 'center', gap: 4, fontWeight: 700, opacity: downloading ? 0.5 : 1, transition: 'opacity 0.15s' }}>
                     {dlIcon(11)}{!isMobile && <span>All</span>}
                 </button>
             </div>
@@ -478,6 +504,10 @@ export default function ResultWinnersBySlugPage() {
     return (
         <div style={{ fontFamily: "'Prompt', 'Inter', sans-serif", background: '#0f172a', height: isMobile ? 'auto' : '100vh', minHeight: '100vh', overflow: isMobile ? 'auto' : 'hidden', display: 'flex', flexDirection: 'column', padding: isMobile ? '8px' : '0.8vh 1vw' }}>
             <style>{`@keyframes pulse { 0%,100% { opacity:1 } 50% { opacity:0.3 } }`}</style>
+            {/* On mobile, the control header (logo, language toggle, Download All, distance
+                picker, AUTO) is hidden for public viewers who are not logged in — they get a
+                clean results-only view. The distance is still shown in the banner below. */}
+            {!(isMobile && !isAuthenticated) && (
             <header style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', justifyContent: 'space-between', alignItems: isMobile ? 'stretch' : 'center', padding: isMobile ? '10px 12px' : '0.6vh 1.5vw', background: '#1e293b', borderRadius: 10, marginBottom: isMobile ? 8 : '0.8vh', flexShrink: 0, border: '1px solid #334155', gap: isMobile ? 8 : 0 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <Link href="/" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -566,6 +596,7 @@ export default function ResultWinnersBySlugPage() {
                     )}
                 </div>
             </header>
+            )}
 
             {campaign && (
                 <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', alignItems: 'center', justifyContent: 'center', gap: isMobile ? 6 : '1.2vw', padding: isMobile ? '10px 16px' : '0.7vh 1.5vw', background: '#1e293b', borderRadius: 10, marginBottom: isMobile ? 8 : '0.8vh', border: '1px solid #334155', flexShrink: 0, textAlign: 'center' }}>
@@ -592,12 +623,12 @@ export default function ResultWinnersBySlugPage() {
                 <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: isMobile ? 12 : '1vw', flex: isMobile ? undefined : 1, minHeight: 0, paddingBottom: isMobile ? 16 : 0 }}>
                     {renderColumn(
                         disableAgeGroupRanking ? '♂ MALE RANKING' : '♂ MALE WINNERS', '#2563eb', '#1e3a5f', maleWinners, maleColRef, maleAgeGroupRefs,
-                        () => downloadAll('male'),
+                        () => downloadCurrentCategory('male'),
                         (label) => downloadSection(label, 'male')
                     )}
                     {renderColumn(
                         disableAgeGroupRanking ? '♀ FEMALE RANKING' : '♀ FEMALE WINNERS', '#db2777', '#831843', femaleWinners, femaleColRef, femaleAgeGroupRefs,
-                        () => downloadAll('female'),
+                        () => downloadCurrentCategory('female'),
                         (label) => downloadSection(label, 'female')
                     )}
                 </div>
