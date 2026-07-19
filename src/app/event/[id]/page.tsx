@@ -1726,8 +1726,8 @@ export default function EventLivePage() {
                 .runner-row:hover { background-color: ${themeStyles.hoverBg} !important; border-left-color: #22c55e !important; }
                 .runner-row.runner-row-danger,
                 .runner-row.runner-row-danger:hover { background-color: ${isDark ? 'rgba(254,226,226,0.12)' : '#fee2e2'} !important; border-left-color: #dc2626 !important; }
-                .table-scroll::-webkit-scrollbar { display: none; }
-                .table-scroll { scrollbar-width: none; }
+                ${isMobile ? `.table-scroll::-webkit-scrollbar { display: none; }
+                .table-scroll { scrollbar-width: none; }` : ''}
             `}</style>
 
             {/* ===== HEADER ===== */}
@@ -2170,7 +2170,8 @@ export default function EventLivePage() {
                                                                 {inlineStatusCheckpoint ? (
                                                                     <span className={`${showCheckpointChip ? 'inline-block' : 'block'} min-w-0 max-w-full ${showCheckpointChip ? 'shrink-0 grow-0 basis-auto' : 'flex-1'} whitespace-nowrap font-bold leading-[1.15] ${showCheckpointChip ? 'overflow-visible text-clip rounded-full' : 'overflow-hidden text-ellipsis'} ${isMobile ? 'text-[9px]' : 'text-[11px]'}`} style={{ color: statusNameColor, background: showFinishCheckpointBadge ? '#dcfce7' : showInProgressCheckpointBadge ? '#fef3c7' : showDnfChip ? '#dc2626' : 'transparent', border: 'none', padding: showCheckpointChip ? (isMobile ? '2px 7px' : '3px 10px') : 0 }}>
                                                                         {inlineStatusCheckpoint}
-                                                                        {!showDnfChip && runner.statusNote ? ` · ${runner.statusNote}` : ''}
+                                                                        {/* Full note (e.g. the "finished without a START record" reason) is admin-only; public viewers see just the short label like "Auto DQ". */}
+                                                                        {!showDnfChip && runner.statusNote ? ` · ${isAdmin ? runner.statusNote : runner.statusNote.split(':')[0].trim()}` : ''}
                                                                     </span>
                                                                 ) : null}
                                                                 {isFollowedRunner && (
