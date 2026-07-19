@@ -1931,9 +1931,21 @@ export default function EventLivePage() {
                                     const collapsedMobile = isMobile && !showAllColumns;
                                     const collapsedW: Record<string, string> = { rank: '13%', runner: '46%', status: '22%', gunTime: '19%', laps: '30%' };
                                     const thWidth = collapsedMobile ? (collapsedW[key] || def.mw) : (isMobile ? def.mw : def.w);
+                                    // On the collapsed mobile view the RANK / GUN TIME headers switch to match
+                                    // the value shown in the slot: gender filter → GEN rank, age-group filter →
+                                    // AGE rank + NET TIME (age-group placings are decided by net/chip time).
+                                    const collapsedGenderFilter = collapsedMobile && (filterGender === 'M' || filterGender === 'F');
+                                    const collapsedAgeFilter = collapsedMobile && !collapsedGenderFilter && !!filterAgeGroup;
+                                    let thLabel = def.label;
+                                    if (key === 'rank') {
+                                        if (collapsedGenderFilter) thLabel = 'Gen';
+                                        else if (collapsedAgeFilter) thLabel = 'Age';
+                                    } else if (key === 'gunTime' && collapsedAgeFilter) {
+                                        thLabel = 'Net Time';
+                                    }
                                     return (
                                         <th key={key} className={isMobile ? 'overflow-hidden text-ellipsis whitespace-nowrap' : ''} style={{ padding: isMobile && key === 'status' ? '6px 4px' : isMobile && key === 'gunTime' ? '6px 1px' : !isMobile && key === 'status' ? '8px 6px' : isMobile ? '6px 4px' : '8px 6px', textAlign: key === 'status' ? 'center' : def.align, width: thWidth }}>
-                                            {def.label}
+                                            {thLabel}
                                         </th>
                                     );
                                 })}
@@ -2204,14 +2216,21 @@ export default function EventLivePage() {
                                                     </td>
                                                 );
                                             }
-                                            case 'gunTime':
+                                            case 'gunTime': {
+                                                // When an age-group filter is active on collapsed mobile the header
+                                                // switches to NET TIME, so this slot must show the net (chip) time.
+                                                const showNetInGunSlot = isMobile && !showAllColumns
+                                                    && !(filterGender === 'M' || filterGender === 'F') && !!filterAgeGroup;
                                                 return (
                                                     <td key={key} className={isMobile ? 'px-0 py-1 text-center' : 'px-1.5 py-1.5 text-left'}>
                                                         <span className={`${isMobile ? 'text-[11px]' : 'text-xs'} font-bold font-mono`} style={{ color: themeStyles.text }}>
-                                                            {formatDisplayTimeString(runner.gunTimeStr, isAdmin) || formatTime(runner.gunTime || runner.elapsedTime)}
+                                                            {showNetInGunSlot
+                                                                ? (formatDisplayTimeString(runner.netTimeStr, isAdmin) || formatTime(runner.netTime) || '-')
+                                                                : (formatDisplayTimeString(runner.gunTimeStr, isAdmin) || formatTime(runner.gunTime || runner.elapsedTime))}
                                                         </span>
                                                     </td>
                                                 );
+                                            }
                                             case 'netTime':
                                                 return (
                                                     <td key={key} className="px-1.5 py-1.5 text-center">
