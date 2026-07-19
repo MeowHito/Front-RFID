@@ -1934,8 +1934,8 @@ export default function EventLivePage() {
                                     // On the collapsed mobile view the RANK / GUN TIME headers switch to match
                                     // the value shown in the slot: gender filter → GEN rank, age-group filter →
                                     // AGE rank + NET TIME (age-group placings are decided by net/chip time).
-                                    const collapsedGenderFilter = collapsedMobile && (filterGender === 'M' || filterGender === 'F');
-                                    const collapsedAgeFilter = collapsedMobile && !collapsedGenderFilter && !!filterAgeGroup;
+                                    const collapsedAgeFilter = collapsedMobile && !!filterAgeGroup;
+                                    const collapsedGenderFilter = collapsedMobile && !collapsedAgeFilter && (filterGender === 'M' || filterGender === 'F');
                                     let thLabel = def.label;
                                     if (key === 'rank') {
                                         if (collapsedGenderFilter) thLabel = 'Gen';
@@ -2055,10 +2055,10 @@ export default function EventLivePage() {
                                                 // On the collapsed mobile view, when the list is filtered to a single
                                                 // gender, show that gender's rank in the RANK slot (matches the GEN column).
                                                 // The expanded "More" view keeps the overall rank — it shows GEN separately.
-                                                const useGenderRank = isMobile && !showAllColumns && (filterGender === 'M' || filterGender === 'F');
-                                                // When an age-group filter is active on collapsed mobile, show the
-                                                // age-group (net-time) rank in the RANK slot instead of the overall rank.
-                                                const useCatRank = isMobile && !showAllColumns && !useGenderRank && !!filterAgeGroup;
+                                                // Age-group filter takes priority: when it's active (even alongside a
+                                                // gender filter) show the age-group (net-time) rank in the RANK slot.
+                                                const useCatRank = isMobile && !showAllColumns && !!filterAgeGroup;
+                                                const useGenderRank = isMobile && !showAllColumns && !useCatRank && (filterGender === 'M' || filterGender === 'F');
                                                 const displayRank = useGenderRank
                                                     ? (liveRank?.genRank || runner.genderRank || rank)
                                                     : useCatRank
@@ -2219,8 +2219,7 @@ export default function EventLivePage() {
                                             case 'gunTime': {
                                                 // When an age-group filter is active on collapsed mobile the header
                                                 // switches to NET TIME, so this slot must show the net (chip) time.
-                                                const showNetInGunSlot = isMobile && !showAllColumns
-                                                    && !(filterGender === 'M' || filterGender === 'F') && !!filterAgeGroup;
+                                                const showNetInGunSlot = isMobile && !showAllColumns && !!filterAgeGroup;
                                                 return (
                                                     <td key={key} className={isMobile ? 'px-0 py-1 text-center' : 'px-1.5 py-1.5 text-left'}>
                                                         <span className={`${isMobile ? 'text-[11px]' : 'text-xs'} font-bold font-mono`} style={{ color: themeStyles.text }}>
