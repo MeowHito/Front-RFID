@@ -1197,8 +1197,15 @@ export default function EventLivePage() {
             const bt = getRunnerNetTimeMs(b);
             return (at > 0 ? at : Infinity) - (bt > 0 ? bt : Infinity);
         });
+        // Only count runners that will actually display an age-group rank. DNF/DNS/DQ/
+        // not_started rows render '-' for AGE (see `hideCatRank`), yet a DNF-with-progress
+        // runner can carry a bogus small net time (a partial leg time, not a real finish),
+        // which sorts it to the front of its bucket and pushes every finisher +1. Skipping
+        // those non-finishers keeps the age-group rank starting at 1 for the true winner.
+        const hidesCatRank = (status: string) => ['dnf', 'dns', 'dq', 'not_started'].includes(status);
         const categoryCounters: Record<string, number> = {};
         for (const runner of byNet) {
+            if (hidesCatRank(runner.status)) continue;
             const eventKey = runner.eventId || '_';
             const catKey = `${eventKey}::${runner.gender || '_'}::${canonicalAgeGroupOf(runner) || '_'}`;
             categoryCounters[catKey] = (categoryCounters[catKey] || 0) + 1;
