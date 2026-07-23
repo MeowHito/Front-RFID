@@ -1611,8 +1611,8 @@ export default function ParticipantsPage() {
                     <div
                         onClick={e => e.stopPropagation()}
                         style={{
-                            background: '#fff', borderRadius: 8, width: '95%', maxWidth: 700,
-                            maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 8px 30px rgba(0,0,0,0.25)',
+                            background: '#fff', borderRadius: 8, width: '96%', maxWidth: 1080,
+                            maxHeight: '92vh', overflowY: 'auto', boxShadow: '0 8px 30px rgba(0,0,0,0.25)',
                         }}
                     >
                         {/* Modal header */}
@@ -1640,121 +1640,167 @@ export default function ParticipantsPage() {
                                 const labelStyle: React.CSSProperties = {
                                     fontSize: 12, fontWeight: 600, color: '#555', marginBottom: 4, display: 'block',
                                 };
-                                const cellStyle: React.CSSProperties = { marginBottom: 12 };
+                                const cellStyle: React.CSSProperties = { marginBottom: 0 };
 
-                                const fields: { key: string; label: string; labelEn: string; type?: string; options?: { v: string; l: string }[]; colSpan?: number }[] = [
-                                    { key: 'bib', label: 'BIB', labelEn: 'BIB' },
-                                    { key: 'firstName', label: 'ชื่อ (EN)', labelEn: 'First Name' },
-                                    { key: 'lastName', label: 'นามสกุล (EN)', labelEn: 'Last Name' },
-                                    { key: 'firstNameTh', label: 'ชื่อ (TH)', labelEn: 'First Name (TH)' },
-                                    { key: 'lastNameTh', label: 'นามสกุล (TH)', labelEn: 'Last Name (TH)' },
-                                    { key: 'gender', label: 'เพศ', labelEn: 'Gender', type: 'select', options: [{ v: 'M', l: language === 'th' ? 'ชาย' : 'Male' }, { v: 'F', l: language === 'th' ? 'หญิง' : 'Female' }] },
-                                    { key: 'category', label: 'ระยะทาง', labelEn: 'Category' },
-                                    { key: 'ageGroup', label: 'กลุ่มอายุ', labelEn: 'Age Group' },
-                                    { key: 'birthDate', label: 'วันเกิด', labelEn: 'Birth Date', type: 'date' },
-                                    { key: 'nationality', label: 'สัญชาติ', labelEn: 'Nationality' },
-                                    { key: 'chipCode', label: 'Chip Code', labelEn: 'Chip Code' },
-                                    { key: 'printingCode', label: 'Printing Code', labelEn: 'Printing Code' },
-                                    { key: 'rfidTag', label: 'RFID Tag', labelEn: 'RFID Tag' },
-                                    { key: 'idNo', label: 'เลขบัตรประชาชน', labelEn: 'ID No.' },
+                                type Field = { key: string; label: string; labelEn: string; type?: string; options?: { v: string; l: string }[]; colSpan?: number };
+                                // Fields grouped into logical sections so the form scans top-to-bottom
+                                // instead of one long undifferentiated column of inputs.
+                                const groups: { title: string; titleEn: string; icon: string; fields: Field[] }[] = [
                                     {
-                                        key: 'status', label: 'สถานะ', labelEn: 'Status', type: 'select', options: [
-                                            { v: 'not_started', l: language === 'th' ? 'ยังไม่เริ่ม' : 'Not Started' },
-                                            { v: 'in_progress', l: language === 'th' ? 'กำลังแข่ง' : 'In Progress' },
-                                            { v: 'finished', l: language === 'th' ? 'เข้าเส้นชัย' : 'Finished' },
-                                            { v: 'dnf', l: 'DNF' },
-                                            { v: 'dns', l: 'DNS' },
-                                        ]
+                                        title: 'ข้อมูลนักกีฬา', titleEn: 'Runner Info', icon: '🏃',
+                                        fields: [
+                                            { key: 'bib', label: 'BIB', labelEn: 'BIB' },
+                                            { key: 'gender', label: 'เพศ', labelEn: 'Gender', type: 'select', options: [{ v: 'M', l: language === 'th' ? 'ชาย' : 'Male' }, { v: 'F', l: language === 'th' ? 'หญิง' : 'Female' }] },
+                                            {
+                                                key: 'status', label: 'สถานะ', labelEn: 'Status', type: 'select', options: [
+                                                    { v: 'not_started', l: language === 'th' ? 'ยังไม่เริ่ม' : 'Not Started' },
+                                                    { v: 'in_progress', l: language === 'th' ? 'กำลังแข่ง' : 'In Progress' },
+                                                    { v: 'finished', l: language === 'th' ? 'เข้าเส้นชัย' : 'Finished' },
+                                                    { v: 'dnf', l: 'DNF' },
+                                                    { v: 'dns', l: 'DNS' },
+                                                ]
+                                            },
+                                            { key: 'firstNameTh', label: 'ชื่อ (TH)', labelEn: 'First Name (TH)' },
+                                            { key: 'lastNameTh', label: 'นามสกุล (TH)', labelEn: 'Last Name (TH)' },
+                                            { key: 'nationality', label: 'สัญชาติ', labelEn: 'Nationality' },
+                                            { key: 'firstName', label: 'ชื่อ (EN)', labelEn: 'First Name' },
+                                            { key: 'lastName', label: 'นามสกุล (EN)', labelEn: 'Last Name' },
+                                            { key: 'idNo', label: 'เลขบัตรประชาชน', labelEn: 'ID No.' },
+                                            { key: 'category', label: 'ระยะทาง', labelEn: 'Category' },
+                                            { key: 'ageGroup', label: 'กลุ่มอายุ', labelEn: 'Age Group' },
+                                            { key: 'birthDate', label: 'วันเกิด', labelEn: 'Birth Date', type: 'date' },
+                                        ],
                                     },
-                                    { key: 'team', label: 'ทีม', labelEn: 'Team' },
-                                    { key: 'teamName', label: 'ชื่อทีม', labelEn: 'Team Name' },
-                                    { key: 'box', label: 'บ็อกซ์', labelEn: 'Box' },
-                                    { key: 'shirtSize', label: 'ไซส์เสื้อ', labelEn: 'Shirt Size' },
-                                    { key: 'email', label: 'อีเมล', labelEn: 'Email' },
-                                    { key: 'phone', label: 'เบอร์โทร', labelEn: 'Phone' },
-                                    { key: 'bloodType', label: 'กรุ๊ปเลือด', labelEn: 'Blood Type' },
-                                    { key: 'emergencyContact', label: 'ผู้ติดต่อฉุกเฉิน', labelEn: 'Emergency Contact' },
-                                    { key: 'emergencyPhone', label: 'เบอร์ฉุกเฉิน', labelEn: 'Emergency Phone' },
-                                    { key: 'chronicDiseases', label: 'โรคประจำตัว', labelEn: 'Chronic Diseases', colSpan: 2 },
-                                    { key: 'medicalInfo', label: 'ข้อมูลสุขภาพ', labelEn: 'Medical Info', colSpan: 2 },
-                                    { key: 'address', label: 'ที่อยู่', labelEn: 'Address', colSpan: 2 },
+                                    {
+                                        title: 'ชิป & RFID', titleEn: 'Chip & RFID', icon: '📟',
+                                        fields: [
+                                            { key: 'chipCode', label: 'Chip Code', labelEn: 'Chip Code' },
+                                            { key: 'printingCode', label: 'Printing Code', labelEn: 'Printing Code' },
+                                            { key: 'rfidTag', label: 'RFID Tag', labelEn: 'RFID Tag' },
+                                        ],
+                                    },
+                                    {
+                                        title: 'ทีม & เสื้อ', titleEn: 'Team & Kit', icon: '👕',
+                                        fields: [
+                                            { key: 'team', label: 'ทีม', labelEn: 'Team' },
+                                            { key: 'teamName', label: 'ชื่อทีม', labelEn: 'Team Name' },
+                                            { key: 'box', label: 'บ็อกซ์', labelEn: 'Box' },
+                                            { key: 'shirtSize', label: 'ไซส์เสื้อ', labelEn: 'Shirt Size' },
+                                        ],
+                                    },
+                                    {
+                                        title: 'ติดต่อ', titleEn: 'Contact', icon: '📞',
+                                        fields: [
+                                            { key: 'email', label: 'อีเมล', labelEn: 'Email' },
+                                            { key: 'phone', label: 'เบอร์โทร', labelEn: 'Phone' },
+                                            { key: 'address', label: 'ที่อยู่', labelEn: 'Address', colSpan: 2 },
+                                        ],
+                                    },
+                                    {
+                                        title: 'ข้อมูลการแพทย์', titleEn: 'Medical', icon: '🩺',
+                                        fields: [
+                                            { key: 'bloodType', label: 'กรุ๊ปเลือด', labelEn: 'Blood Type' },
+                                            { key: 'emergencyContact', label: 'ผู้ติดต่อฉุกเฉิน', labelEn: 'Emergency Contact' },
+                                            { key: 'emergencyPhone', label: 'เบอร์ฉุกเฉิน', labelEn: 'Emergency Phone' },
+                                            { key: 'chronicDiseases', label: 'โรคประจำตัว', labelEn: 'Chronic Diseases', colSpan: 2 },
+                                            { key: 'medicalInfo', label: 'ข้อมูลสุขภาพ', labelEn: 'Medical Info', colSpan: 2 },
+                                        ],
+                                    },
                                 ];
 
-                                return (
-                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
-                                        {fields.map(f => {
-                                            const isProtected = (editingRunner?.manuallyEditedFields || []).includes(f.key);
-                                            return (
-                                            <div key={f.key} style={{ ...cellStyle, gridColumn: f.colSpan === 2 ? '1 / -1' : undefined }}>
-                                                <label style={labelStyle}>
-                                                    {language === 'th' ? f.label : f.labelEn}
-                                                    {isProtected && (
-                                                        <span
-                                                            title={language === 'th' ? 'แก้ไขเองแล้ว — จะไม่ถูก Sync จาก RaceTiger ทับ' : 'Manually edited — protected from RaceTiger sync overwrite'}
-                                                            style={{ marginLeft: 5, color: '#d97706', fontSize: 11, cursor: 'help' }}
-                                                        >🔒</span>
-                                                    )}
-                                                </label>
-                                                {f.type === 'select' ? (
-                                                    <select
-                                                        value={editForm[f.key] || ''}
-                                                        onChange={e => {
-                                                            const value = e.target.value;
-                                                            // Gender no longer affects the age-group band, so
-                                                            // switching it never touches ageGroup.
-                                                            setEditForm(prev => ({ ...prev, [f.key]: value }));
-                                                        }}
-                                                        style={{ ...inputStyle, border: '1px solid #ccc', borderRadius: 4 }}
-                                                    >
-                                                        {f.options?.map(o => (
-                                                            <option key={o.v} value={o.v}>{o.l}</option>
-                                                        ))}
-                                                    </select>
-                                                ) : f.key === 'ageGroup' ? (
-                                                    <div style={{ display: 'flex', gap: 6, alignItems: 'stretch' }}>
-                                                        <input
-                                                            type="text"
-                                                            value={editForm.ageGroup || ''}
-                                                            onChange={e => {
-                                                                const value = e.target.value;
-                                                                setEditForm(prev => ({ ...prev, ageGroup: value }));
-                                                            }}
-                                                            placeholder={language === 'th' ? 'เช่น 20-24 (ตาม RaceTiger)' : 'e.g. 20-24'}
-                                                            title={language === 'th' ? 'พิมพ์กลุ่มอายุได้เอง — กด ↻ เพื่อคำนวณจากวันเกิด' : 'Editable — click ↻ to recalculate from birth date'}
-                                                            style={{ ...inputStyle, border: '1px solid #ccc', borderRadius: 4, flex: 1 }}
-                                                        />
-                                                        <button
-                                                            type="button"
-                                                            title={language === 'th' ? 'คำนวณจากอายุ/วันเกิด (band 5 ปี เช่น 20-24)' : 'Recalculate from age / birth date (5-year band, e.g. 20-24)'}
-                                                            onClick={() => setEditForm(prev => ({ ...prev, ageGroup: calculateAgeGroup(prev.birthDate || '', editingRunner?.age) }))}
-                                                            style={{ padding: '0 12px', border: '1px solid #ccc', borderRadius: 4, background: '#f9fafb', color: '#374151', cursor: 'pointer', fontSize: 15, fontWeight: 700 }}
-                                                        >↻</button>
-                                                    </div>
-                                                ) : (
-                                                    <input
-                                                        type={f.type || 'text'}
-                                                        value={editForm[f.key] || ''}
-                                                        onChange={e => {
-                                                            const value = e.target.value;
-                                                            setEditForm(prev => {
-                                                                const next = { ...prev, [f.key]: value };
-                                                                // Only auto-fill age group when it's still empty — never
-                                                                // overwrite an existing value on a birth-date edit.
-                                                                if (f.key === 'birthDate' && !(prev.ageGroup || '').trim()) {
-                                                                    next.ageGroup = calculateAgeGroup(value, editingRunner?.age);
-                                                                }
-                                                                return next;
-                                                            });
-                                                        }}
-                                                        style={{
-                                                            ...inputStyle,
-                                                            fontFamily: (f.key === 'chipCode' || f.key === 'rfidTag') ? 'monospace' : 'inherit',
-                                                        }}
-                                                    />
+                                const groupTitleStyle: React.CSSProperties = {
+                                    fontSize: 12, fontWeight: 800, color: '#0f172a', textTransform: 'uppercase',
+                                    letterSpacing: 0.6, margin: '0 0 12px', paddingBottom: 8,
+                                    borderBottom: '2px solid #eef2f7', display: 'flex', alignItems: 'center', gap: 7,
+                                };
+
+                                const renderField = (f: Field) => {
+                                    const isProtected = (editingRunner?.manuallyEditedFields || []).includes(f.key);
+                                    return (
+                                        <div key={f.key} style={{ ...cellStyle, gridColumn: f.colSpan === 2 ? '1 / -1' : undefined }}>
+                                            <label style={labelStyle}>
+                                                {language === 'th' ? f.label : f.labelEn}
+                                                {isProtected && (
+                                                    <span
+                                                        title={language === 'th' ? 'แก้ไขเองแล้ว — จะไม่ถูก Sync จาก RaceTiger ทับ' : 'Manually edited — protected from RaceTiger sync overwrite'}
+                                                        style={{ marginLeft: 5, color: '#d97706', fontSize: 11, cursor: 'help' }}
+                                                    >🔒</span>
                                                 )}
+                                            </label>
+                                            {f.type === 'select' ? (
+                                                <select
+                                                    value={editForm[f.key] || ''}
+                                                    onChange={e => {
+                                                        const value = e.target.value;
+                                                        // Gender no longer affects the age-group band, so
+                                                        // switching it never touches ageGroup.
+                                                        setEditForm(prev => ({ ...prev, [f.key]: value }));
+                                                    }}
+                                                    style={{ ...inputStyle, border: '1px solid #ccc', borderRadius: 4 }}
+                                                >
+                                                    {f.options?.map(o => (
+                                                        <option key={o.v} value={o.v}>{o.l}</option>
+                                                    ))}
+                                                </select>
+                                            ) : f.key === 'ageGroup' ? (
+                                                <div style={{ display: 'flex', gap: 6, alignItems: 'stretch' }}>
+                                                    <input
+                                                        type="text"
+                                                        value={editForm.ageGroup || ''}
+                                                        onChange={e => {
+                                                            const value = e.target.value;
+                                                            setEditForm(prev => ({ ...prev, ageGroup: value }));
+                                                        }}
+                                                        placeholder={language === 'th' ? 'เช่น 20-24 (ตาม RaceTiger)' : 'e.g. 20-24'}
+                                                        title={language === 'th' ? 'พิมพ์กลุ่มอายุได้เอง — กด ↻ เพื่อคำนวณจากวันเกิด' : 'Editable — click ↻ to recalculate from birth date'}
+                                                        style={{ ...inputStyle, border: '1px solid #ccc', borderRadius: 4, flex: 1 }}
+                                                    />
+                                                    <button
+                                                        type="button"
+                                                        title={language === 'th' ? 'คำนวณจากอายุ/วันเกิด (band 5 ปี เช่น 20-24)' : 'Recalculate from age / birth date (5-year band, e.g. 20-24)'}
+                                                        onClick={() => setEditForm(prev => ({ ...prev, ageGroup: calculateAgeGroup(prev.birthDate || '', editingRunner?.age) }))}
+                                                        style={{ padding: '0 12px', border: '1px solid #ccc', borderRadius: 4, background: '#f9fafb', color: '#374151', cursor: 'pointer', fontSize: 15, fontWeight: 700 }}
+                                                    >↻</button>
+                                                </div>
+                                            ) : (
+                                                <input
+                                                    type={f.type || 'text'}
+                                                    value={editForm[f.key] || ''}
+                                                    onChange={e => {
+                                                        const value = e.target.value;
+                                                        setEditForm(prev => {
+                                                            const next = { ...prev, [f.key]: value };
+                                                            // Only auto-fill age group when it's still empty — never
+                                                            // overwrite an existing value on a birth-date edit.
+                                                            if (f.key === 'birthDate' && !(prev.ageGroup || '').trim()) {
+                                                                next.ageGroup = calculateAgeGroup(value, editingRunner?.age);
+                                                            }
+                                                            return next;
+                                                        });
+                                                    }}
+                                                    style={{
+                                                        ...inputStyle,
+                                                        fontFamily: (f.key === 'chipCode' || f.key === 'rfidTag') ? 'monospace' : 'inherit',
+                                                    }}
+                                                />
+                                            )}
+                                        </div>
+                                    );
+                                };
+
+                                return (
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 22 }}>
+                                        {groups.map(g => (
+                                            <div key={g.title}>
+                                                <div style={groupTitleStyle}>
+                                                    <span style={{ fontSize: 14 }}>{g.icon}</span>
+                                                    {language === 'th' ? g.title : g.titleEn}
+                                                </div>
+                                                <div className="edit-runner-grid">
+                                                    {g.fields.map(renderField)}
+                                                </div>
                                             </div>
-                                            );
-                                        })}
+                                        ))}
                                     </div>
                                 );
                             })()}

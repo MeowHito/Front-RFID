@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
@@ -8,6 +8,7 @@ import { useLanguage } from '@/lib/language-context';
 import { ROUTE_TO_MODULE, isAdminRole } from '@/lib/permissions';
 
 const SIDEBAR_SCROLL_KEY = 'admin_sidebar_scroll_top';
+const SIDEBAR_COLLAPSED_KEY = 'admin_sidebar_collapsed_sections';
 
 interface MenuItem {
     href: string;
@@ -179,6 +180,32 @@ export default function AdminSidebar() {
 
     const isActive = (href: string) => href.split('?')[0] === bestPartialMatchHref;
 
+    // ── Collapsible sections ──
+    // Persist which section headers are collapsed so the user's choice sticks
+    // across navigation and reloads. The section holding the active page is
+    // always forced open so the current location never gets hidden.
+    const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
+        try {
+            const saved = window.localStorage.getItem(SIDEBAR_COLLAPSED_KEY);
+            if (saved) setCollapsed(JSON.parse(saved));
+        } catch { /* ignore malformed */ }
+    }, []);
+
+    const toggleSection = (key: string) => {
+        setCollapsed(prev => {
+            const next = { ...prev, [key]: !prev[key] };
+            try { window.localStorage.setItem(SIDEBAR_COLLAPSED_KEY, JSON.stringify(next)); } catch { /* ignore */ }
+            return next;
+        });
+    };
+
+    const activeSectionKey = sections.find(section =>
+        section.items.some(item => isActive(item.href))
+    )?.header;
+
     useEffect(() => {
         if (typeof window === 'undefined') return;
 
@@ -213,12 +240,24 @@ export default function AdminSidebar() {
             className="main-sidebar"
         >
             <ul className="sidebar-menu">
-                {sections.map((section, sIdx) => (
+                {sections.map((section, sIdx) => {
+                    const isSectionOpen = section.header === activeSectionKey || !collapsed[section.header];
+                    return (
                     <div key={sIdx} className="sidebar-section">
-                        <span className="sidebar-header">
-                            {language === 'th' ? section.header : section.headerEn}
-                        </span>
-                        {section.items.map((item) => (
+                        <button
+                            type="button"
+                            className={`sidebar-header${isSectionOpen ? '' : ' collapsed'}`}
+                            onClick={() => toggleSection(section.header)}
+                            aria-expanded={isSectionOpen}
+                        >
+                            <span className="sidebar-header-label">
+                                {language === 'th' ? section.header : section.headerEn}
+                            </span>
+                            <svg className="sidebar-header-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                                <polyline points="6 9 12 15 18 9" />
+                            </svg>
+                        </button>
+                        {isSectionOpen && section.items.map((item) => (
                             <li key={item.href} className={isActive(item.href) ? 'active' : ''}>
                                 <Link
                                     href={item.href}
@@ -239,7 +278,8 @@ export default function AdminSidebar() {
                             </li>
                         ))}
                     </div>
-                ))}
+                    );
+                })}
             </ul>
         </aside>
     );

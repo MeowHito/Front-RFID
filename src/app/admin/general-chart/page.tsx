@@ -338,6 +338,137 @@ function ChartTooltip({ active, payload, label, th }: any) {
     );
 }
 
+// ─── Status Tooltip (for the by-status remaining chart) ──────────────────────
+function StatusTooltip({ active, payload, label, th }: any) {
+    if (!active || !payload?.length) return null;
+    const d = payload[0]?.payload as SegmentDatum;
+    if (!d) return null;
+    return (
+        <div style={{
+            background: '#fff', borderRadius: 10, padding: '10px 14px',
+            boxShadow: '0 4px 20px rgba(0,0,0,0.12)', border: '1px solid #e2e8f0', minWidth: 150,
+        }}>
+            <div style={{ fontWeight: 800, color: '#0f172a', fontSize: 13, marginBottom: 6 }}>{label}</div>
+            {(['active', 'dnf', 'dq', 'other'] as StatusBucket[]).map(b => (
+                d[b] > 0 ? (
+                    <div key={b} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#475569', marginTop: 2 }}>
+                        <span style={{ ...styles.legendDot(STATUS_META[b].color), marginRight: 4 }} />
+                        <span style={{ flex: 1 }}>{th ? STATUS_META[b].th : STATUS_META[b].en}:</span>
+                        <span style={{ fontWeight: 800, color: '#0f172a' }}>{d[b]}</span>
+                    </div>
+                ) : null
+            ))}
+            <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 6, paddingTop: 6, borderTop: '1px solid #f1f5f9', fontWeight: 700 }}>
+                {th ? 'รวมเหลืออยู่' : 'Total remaining'}: {d.count}
+            </div>
+        </div>
+    );
+}
+
+// ─── Course Strip: horizontal route map ──────────────────────────────────────
+// Renders checkpoints as nodes along a horizontal line; between each pair the
+// number of runners still on that segment (colour-split by status) is drawn as a
+// "pill" so operations can eyeball where people are along the course.
+function CourseStrip({ cat, data, th, onPick }: {
+    cat: string;
+    data: SegmentDatum[];
+    th: boolean;
+    onPick: (cpName: string, runners: SegmentRunner[]) => void;
+}) {
+    if (!data.length) return null;
+    // Segments = the gap AFTER each checkpoint (last node has no outgoing segment).
+    const segments = data.slice(0, -1);
+    const maxSeg = Math.max(...segments.map(s => s.count), 1);
+    const totalOnCourse = segments.reduce((sum, s) => sum + s.count, 0);
+
+    return (
+        <div style={{ borderTop: '1px solid #f1f5f9', padding: '16px 18px 20px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, flexWrap: 'wrap', gap: 8 }}>
+                <div style={{ fontSize: 12, fontWeight: 800, color: '#0f172a', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                    🗺️ {th ? 'จำลองตำแหน่งบนเส้นทาง' : 'Runners along the course'}
+                </div>
+                <div style={{ fontSize: 11, color: '#64748b', fontWeight: 700 }}>
+                    {th ? 'ยังอยู่บนเส้นทางรวม' : 'Still on course'}: <span style={{ color: '#f59e0b', fontWeight: 900 }}>{totalOnCourse}</span>
+                </div>
+            </div>
+
+            <div style={{ overflowX: 'auto', paddingBottom: 6 }}>
+                <div style={{ display: 'flex', alignItems: 'stretch', minWidth: Math.max(segments.length * 130 + 90, 320) }}>
+                    {data.map((node, i) => {
+                        const isFinish = node.cpName.toLowerCase() === 'finish' || i === data.length - 1;
+                        const isStart = i === 0;
+                        const seg = i < data.length - 1 ? data[i] : null; // outgoing segment
+                        return (
+                            <React.Fragment key={node.cpName + i}>
+                                {/* Node */}
+                                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flexShrink: 0, width: 66 }}>
+                                    <div style={{
+                                        width: 18, height: 18, borderRadius: '50%',
+                                        background: isStart ? '#3b82f6' : isFinish ? '#22c55e' : '#fff',
+                                        border: `3px solid ${isStart ? '#3b82f6' : isFinish ? '#22c55e' : '#cbd5e1'}`,
+                                        boxShadow: '0 1px 3px rgba(0,0,0,0.12)', zIndex: 2,
+                                    }} />
+                                    <div style={{ fontSize: 10, fontWeight: 800, color: '#334155', marginTop: 6, textAlign: 'center', lineHeight: 1.15, maxWidth: 66, wordBreak: 'break-word' }}>
+                                        {node.cpName}
+                                    </div>
+                                    {node.distance && (
+                                        <div style={{ fontSize: 9, color: '#94a3b8', marginTop: 1 }}>{node.distance}</div>
+                                    )}
+                                </div>
+
+                                {/* Segment (connector) between this node and the next */}
+                                {seg && i < data.length - 1 && (
+                                    <div style={{ flex: 1, minWidth: 70, display: 'flex', flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'center', position: 'relative', paddingTop: 5 }}>
+                                        {/* connecting line */}
+                                        <div style={{ position: 'absolute', top: 8, left: 0, right: 0, height: 3, background: '#e2e8f0', borderRadius: 2 }} />
+                                        {/* count pill */}
+                                        <button
+                                            type="button"
+                                            onClick={() => seg.count > 0 && onPick(seg.cpName, seg.runners)}
+                                            disabled={seg.count === 0}
+                                            title={th ? `${seg.count} คนในช่วงนี้ — คลิกดูรายชื่อ` : `${seg.count} runners in this segment — click for names`}
+                                            style={{
+                                                zIndex: 2, marginTop: 12, cursor: seg.count > 0 ? 'pointer' : 'default',
+                                                border: '1px solid #e2e8f0', background: '#fff', borderRadius: 20,
+                                                padding: '3px 4px 4px', minWidth: 46, boxShadow: '0 1px 4px rgba(0,0,0,0.08)',
+                                                display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3,
+                                                opacity: seg.count === 0 ? 0.5 : 1,
+                                            }}
+                                        >
+                                            <span style={{
+                                                fontSize: 14, fontWeight: 900,
+                                                color: seg.count > 0 ? '#0f172a' : '#94a3b8', lineHeight: 1,
+                                                padding: '2px 6px',
+                                            }}>{seg.count}</span>
+                                            {/* status mini-bar */}
+                                            {seg.count > 0 && (
+                                                <span style={{ display: 'flex', width: 40, height: 5, borderRadius: 3, overflow: 'hidden', background: '#f1f5f9' }}>
+                                                    {(['active', 'dnf', 'dq', 'other'] as StatusBucket[]).map(b => (
+                                                        seg[b] > 0 ? <span key={b} style={{ flex: seg[b], background: STATUS_META[b].color }} /> : null
+                                                    ))}
+                                                </span>
+                                            )}
+                                        </button>
+                                        {/* relative volume bar under the line */}
+                                        <div style={{ width: '70%', height: 4, marginTop: 6, background: '#f1f5f9', borderRadius: 2, overflow: 'hidden' }}>
+                                            <div style={{ width: `${(seg.count / maxSeg) * 100}%`, height: '100%', background: '#f59e0b', borderRadius: 2 }} />
+                                        </div>
+                                    </div>
+                                )}
+                            </React.Fragment>
+                        );
+                    })}
+                </div>
+            </div>
+            <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 10, textAlign: 'center' }}>
+                {th
+                    ? '💡 ตัวเลขบนเส้น = จำนวนคนที่ผ่านจุดก่อนหน้าแล้วแต่ยังไม่ถึงจุดถัดไป (คลิกเพื่อดูรายชื่อ)'
+                    : '💡 Number on each link = runners past the previous point but not yet at the next (click for names)'}
+            </div>
+        </div>
+    );
+}
+
 // ─── Age Group Status Label ──────────────────────────────────────────────────
 function getAgeGroupStatus(count: number, avgCount: number): { label: string; bg: string; color: string } {
     const ratio = avgCount > 0 ? count / avgCount : 0;
@@ -369,6 +500,38 @@ function formatCount(n: number): string {
     return n.toString();
 }
 
+// ─── Status buckets for "remaining at checkpoint" colour-coding ────────────────
+// Runners sitting between a checkpoint and the next one are split by their status
+// so operations can tell who is genuinely still on course vs already DNF / DQ.
+type StatusBucket = 'active' | 'dnf' | 'dq' | 'other';
+const STATUS_META: Record<StatusBucket, { th: string; en: string; color: string }> = {
+    active: { th: 'ยังอยู่ในเส้นทาง', en: 'On course', color: '#22c55e' },
+    dnf: { th: 'DNF (ไม่จบ)', en: 'DNF', color: '#f59e0b' },
+    dq: { th: 'DQ (ตัดสิทธิ์)', en: 'DQ', color: '#ef4444' },
+    other: { th: 'อื่นๆ (DNS ฯลฯ)', en: 'Other', color: '#94a3b8' },
+};
+function statusBucketOf(status: string): StatusBucket {
+    const s = (status || '').toLowerCase();
+    if (s === 'dnf') return 'dnf';
+    if (s === 'dq') return 'dq';
+    if (s === 'dns') return 'other';
+    // in_progress / not_started / finished / blank → still counts as "on course"
+    return 'active';
+}
+
+interface SegmentRunner { bib: string; name: string; status: string; gender: string; bucket: StatusBucket; }
+interface SegmentDatum {
+    cpName: string;
+    count: number;
+    total: number;
+    active: number;
+    dnf: number;
+    dq: number;
+    other: number;
+    runners: SegmentRunner[];
+    distance?: string;
+}
+
 // ─── Component ───────────────────────────────────────────────────────────────
 export default function GeneralChartPage() {
     const { language } = useLanguage();
@@ -383,6 +546,9 @@ export default function GeneralChartPage() {
     const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
     const [autoRefresh, setAutoRefresh] = useState(true);
     const refreshRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+    // Which checkpoint segment's runner list is open in the drill-down modal
+    const [cpDetail, setCpDetail] = useState<{ cat: string; cpName: string; runners: SegmentRunner[] } | null>(null);
 
     // ── Load campaign ──
     useEffect(() => {
@@ -487,9 +653,9 @@ export default function GeneralChartPage() {
         return { total, started, finished, inProgress, dnf, dns, dq, finishRate, avgFinishTime, bestFinishTime, maleTotal, femaleTotal, maleFinished, femaleFinished };
     }, [runners, cpTimingMap]);
 
-    // ── Chart data per category ──
+    // ── Chart data per category (with per-status breakdown + runner lists) ──
     const chartDataByCategory = useMemo(() => {
-        const result: Record<string, { cpName: string; count: number; total: number }[]> = {};
+        const result: Record<string, SegmentDatum[]> = {};
         for (const cat of categories) {
             const catRunners = runners.filter(r => r.category === cat);
             const catCps = checkpoints.filter(cp => {
@@ -497,22 +663,40 @@ export default function GeneralChartPage() {
                 return cp.distanceMappings.includes(cat);
             });
             if (catCps.length === 0) continue;
-            const data: { cpName: string; count: number; total: number }[] = [];
+            const data: SegmentDatum[] = [];
             for (let i = 0; i < catCps.length; i++) {
                 const cp = catCps[i];
                 const nextCp = i < catCps.length - 1 ? catCps[i + 1] : null;
                 const cpBibs = cpTimingMap[cp.name] || new Set<string>();
                 const catBibsAtCp = catRunners.filter(r => cpBibs.has(r.bib));
-                let count: number;
+                let remaining: Runner[];
                 if (cp.type === 'finish' || cp.name.toLowerCase() === 'finish') {
-                    count = catBibsAtCp.length;
+                    remaining = catBibsAtCp;
                 } else if (nextCp) {
                     const nextBibs = cpTimingMap[nextCp.name] || new Set<string>();
-                    count = catBibsAtCp.filter(r => !nextBibs.has(r.bib)).length;
+                    remaining = catBibsAtCp.filter(r => !nextBibs.has(r.bib));
                 } else {
-                    count = catBibsAtCp.length;
+                    remaining = catBibsAtCp;
                 }
-                data.push({ cpName: cp.name, count, total: catRunners.length });
+                const segRunners: SegmentRunner[] = remaining.map(r => ({
+                    bib: r.bib,
+                    name: `${r.firstName || ''} ${r.lastName || ''}`.trim() || r.bib,
+                    status: r.status,
+                    gender: r.gender,
+                    bucket: statusBucketOf(r.status),
+                })).sort((a, b) => (a.bib || '').localeCompare(b.bib || '', undefined, { numeric: true }));
+                const by = (b: StatusBucket) => segRunners.filter(r => r.bucket === b).length;
+                data.push({
+                    cpName: cp.name,
+                    count: segRunners.length,
+                    total: catRunners.length,
+                    active: by('active'),
+                    dnf: by('dnf'),
+                    dq: by('dq'),
+                    other: by('other'),
+                    runners: segRunners,
+                    distance: (cp as any).distance || (cp as any).distanceKm || undefined,
+                });
             }
             result[cat] = data;
         }
@@ -775,32 +959,58 @@ export default function GeneralChartPage() {
                                         </ResponsiveContainer>
                                     </div>
                                 </div>
-                                {/* RIGHT: Currently At */}
+                                {/* RIGHT: Currently At — split by status, click a bar for the name list */}
                                 <div>
-                                    <div style={{ padding: '12px 16px 4px', fontSize: 12, fontWeight: 800, color: '#f59e0b', textTransform: 'uppercase', letterSpacing: 0.5 }}>
-                                        {th ? '📌 เหลืออยู่ที่จุดนี้' : '📌 Currently At (Remaining)'}
+                                    <div style={{ padding: '12px 16px 4px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
+                                        <span style={{ fontSize: 12, fontWeight: 800, color: '#f59e0b', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                                            {th ? '📌 เหลืออยู่ที่จุดนี้ (แยกสถานะ)' : '📌 Currently At (by status)'}
+                                        </span>
+                                        <span style={{ display: 'flex', gap: 10, fontSize: 10, fontWeight: 700, color: '#64748b', flexWrap: 'wrap' }}>
+                                            {(['active', 'dnf', 'dq', 'other'] as StatusBucket[]).map(b => (
+                                                <span key={b} style={{ display: 'inline-flex', alignItems: 'center' }}>
+                                                    <span style={styles.legendDot(STATUS_META[b].color)} />{th ? STATUS_META[b].th.split(' ')[0] : STATUS_META[b].en}
+                                                </span>
+                                            ))}
+                                        </span>
                                     </div>
-                                    <div style={{ padding: '4px 0 12px 0' }}>
+                                    <div style={{ padding: '4px 0 4px 0' }}>
                                         <ResponsiveContainer width="100%" height={220}>
                                             <BarChart data={dataCurrently || []} margin={{ top: 20, right: 16, left: 4, bottom: 5 }} barCategoryGap="25%">
                                                 <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
                                                 <XAxis dataKey="cpName" tick={{ fill: '#94a3b8', fontSize: 10, fontWeight: 700 }} axisLine={{ stroke: '#e2e8f0' }} tickLine={false} interval={0} angle={(dataCurrently?.length || 0) > 6 ? -35 : 0} textAnchor={(dataCurrently?.length || 0) > 6 ? 'end' : 'middle'} height={(dataCurrently?.length || 0) > 6 ? 50 : 30} />
                                                 <YAxis domain={[0, Math.ceil(maxValCurrent * 1.3) || 10]} tick={{ fill: '#cbd5e1', fontSize: 10 }} axisLine={false} tickLine={false} width={35} />
-                                                <Tooltip content={<ChartTooltip th={th} />} cursor={{ fill: 'rgba(59,130,246,0.04)' }} />
-                                                <Bar dataKey="count" name={th ? 'เหลืออยู่' : 'Remaining'} radius={[4, 4, 0, 0]} maxBarSize={48}>
-                                                    <LabelList dataKey="count" position="top" style={{ fill: '#475569', fontWeight: 800, fontSize: 11 }} />
-                                                    {(dataCurrently || []).map((entry, idx) => {
-                                                        const isFinish = entry.cpName.toLowerCase() === 'finish';
-                                                        if (entry.count === 0) return <Cell key={idx} fill="#e2e8f0" />;
-                                                        if (isFinish) return <Cell key={idx} fill="#22c55e" />;
-                                                        return <Cell key={idx} fill="#f59e0b" />;
-                                                    })}
-                                                </Bar>
+                                                <Tooltip content={<StatusTooltip th={th} />} cursor={{ fill: 'rgba(59,130,246,0.04)' }} />
+                                                {(['active', 'dnf', 'dq', 'other'] as StatusBucket[]).map((b, bi) => (
+                                                    <Bar
+                                                        key={b}
+                                                        dataKey={b}
+                                                        name={th ? STATUS_META[b].th : STATUS_META[b].en}
+                                                        stackId="status"
+                                                        fill={STATUS_META[b].color}
+                                                        radius={bi === 3 ? [4, 4, 0, 0] : [0, 0, 0, 0]}
+                                                        maxBarSize={48}
+                                                        cursor="pointer"
+                                                        onClick={(d: any) => {
+                                                            const seg = d?.payload as SegmentDatum;
+                                                            if (seg && seg.count > 0) setCpDetail({ cat, cpName: seg.cpName, runners: seg.runners });
+                                                        }}
+                                                    >
+                                                        {bi === 3 && (
+                                                            <LabelList dataKey="count" position="top" style={{ fill: '#475569', fontWeight: 800, fontSize: 11 }} formatter={(v: any) => v > 0 ? v : ''} />
+                                                        )}
+                                                    </Bar>
+                                                ))}
                                             </BarChart>
                                         </ResponsiveContainer>
                                     </div>
+                                    <div style={{ textAlign: 'center', fontSize: 10, color: '#94a3b8', paddingBottom: 10 }}>
+                                        {th ? '💡 คลิกที่แท่งเพื่อดูรายชื่อคนที่เหลือในจุดนั้น' : '💡 Click a bar to see who is still at that point'}
+                                    </div>
                                 </div>
                             </div>
+
+                            {/* ─── Course Strip: horizontal route map with runners per segment ─── */}
+                            <CourseStrip cat={cat} data={dataCurrently || []} th={th} onPick={(cpName, segRunners) => setCpDetail({ cat, cpName, runners: segRunners })} />
                             {/* Mini summary row */}
                             <div style={{ display: 'flex', gap: 0, borderTop: '1px solid #f1f5f9' }}>
                                 {[
@@ -957,6 +1167,81 @@ export default function GeneralChartPage() {
                     }
                 }
             `}</style>
+
+            {/* ─── Runners-remaining-at-checkpoint drill-down modal ─── */}
+            {cpDetail && (
+                <div
+                    onClick={() => setCpDetail(null)}
+                    style={{
+                        position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', zIndex: 10000,
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
+                    }}
+                >
+                    <div
+                        onClick={e => e.stopPropagation()}
+                        style={{
+                            background: '#fff', borderRadius: 14, width: '100%', maxWidth: 560,
+                            maxHeight: '86vh', display: 'flex', flexDirection: 'column',
+                            boxShadow: '0 20px 60px rgba(0,0,0,0.3)', overflow: 'hidden',
+                        }}
+                    >
+                        {/* header */}
+                        <div style={{ padding: '18px 22px', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+                            <div>
+                                <h3 style={{ margin: 0, fontSize: 16, fontWeight: 900, color: '#0f172a' }}>
+                                    {cpDetail.cat} — {cpDetail.cpName}
+                                </h3>
+                                <p style={{ margin: '3px 0 0', fontSize: 12, color: '#94a3b8' }}>
+                                    {th ? 'คนที่ยังเหลืออยู่ในช่วงนี้' : 'Runners still in this segment'}: <strong style={{ color: '#f59e0b' }}>{cpDetail.runners.length}</strong>
+                                </p>
+                            </div>
+                            <button onClick={() => setCpDetail(null)} style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: '#94a3b8', lineHeight: 1 }}>✕</button>
+                        </div>
+                        {/* status summary chips */}
+                        <div style={{ display: 'flex', gap: 8, padding: '12px 22px', borderBottom: '1px solid #f8fafc', flexWrap: 'wrap' }}>
+                            {(['active', 'dnf', 'dq', 'other'] as StatusBucket[]).map(b => {
+                                const n = cpDetail.runners.filter(r => r.bucket === b).length;
+                                if (n === 0) return null;
+                                return (
+                                    <span key={b} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 700, color: '#334155', background: '#f8fafc', border: '1px solid #eef2f7', borderRadius: 8, padding: '4px 10px' }}>
+                                        <span style={styles.legendDot(STATUS_META[b].color)} />
+                                        {th ? STATUS_META[b].th : STATUS_META[b].en}: {n}
+                                    </span>
+                                );
+                            })}
+                        </div>
+                        {/* list */}
+                        <div style={{ overflowY: 'auto', padding: '6px 0' }}>
+                            {cpDetail.runners.length === 0 ? (
+                                <div style={{ padding: 30, textAlign: 'center', color: '#94a3b8', fontSize: 13 }}>
+                                    {th ? 'ไม่มีคนเหลือในจุดนี้' : 'No runners remaining here'}
+                                </div>
+                            ) : (
+                                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                                    <tbody>
+                                        {cpDetail.runners.map((r, i) => (
+                                            <tr key={r.bib + i} style={{ borderBottom: '1px solid #f8fafc' }}>
+                                                <td style={{ padding: '9px 22px', width: 4 }}>
+                                                    <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: STATUS_META[r.bucket].color }} />
+                                                </td>
+                                                <td style={{ padding: '9px 8px', fontWeight: 800, color: '#0f172a', fontFamily: 'monospace', width: 70 }}>{r.bib}</td>
+                                                <td style={{ padding: '9px 8px', color: '#334155' }}>
+                                                    {r.gender === 'F' ? '♀ ' : r.gender === 'M' ? '♂ ' : ''}{r.name}
+                                                </td>
+                                                <td style={{ padding: '9px 22px', textAlign: 'right' }}>
+                                                    <span style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', color: STATUS_META[r.bucket].color }}>
+                                                        {r.status || (th ? '—' : '—')}
+                                                    </span>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Loading indicator */}
             {runnersLoading && (
