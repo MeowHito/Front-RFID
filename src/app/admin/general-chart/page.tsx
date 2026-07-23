@@ -720,7 +720,7 @@ export default function GeneralChartPage() {
 
     // ── Per-category summary ──
     const catSummary = useMemo(() => {
-        const result: Record<string, { total: number; started: number; finished: number; mF: number; fF: number }> = {};
+        const result: Record<string, { total: number; started: number; finished: number; dns: number; dnf: number; dq: number; mF: number; fF: number }> = {};
         const startBibs = cpTimingMap['START'] || cpTimingMap['Start'] || new Set<string>();
         for (const cat of categories) {
             const cr = runners.filter(r => r.category === cat);
@@ -728,6 +728,9 @@ export default function GeneralChartPage() {
                 total: cr.length,
                 started: cr.filter(r => startBibs.has(r.bib) || r.status === 'in_progress' || r.status === 'finished').length,
                 finished: cr.filter(r => r.status === 'finished').length,
+                dns: cr.filter(r => r.status === 'dns').length,
+                dnf: cr.filter(r => r.status === 'dnf').length,
+                dq: cr.filter(r => r.status === 'dq').length,
                 mF: cr.filter(r => r.gender === 'M' && r.status === 'finished').length,
                 fF: cr.filter(r => r.gender === 'F' && r.status === 'finished').length,
             };
@@ -1036,23 +1039,31 @@ export default function GeneralChartPage() {
                             {/* ─── Course Strip: horizontal route map with runners per segment ─── */}
                             <CourseStrip cat={cat} data={dataCurrently || []} th={th} onPick={(cpName, segRunners) => setCpDetail({ cat, cpName, runners: segRunners })} />
                             {/* Mini summary row */}
-                            <div style={{ display: 'flex', gap: 0, borderTop: '1px solid #f1f5f9' }}>
-                                {[
+                            {(() => {
+                                const cells = [
                                     { label: th ? 'สมัคร' : 'Registered', value: cs?.total || 0, color: '#64748b' },
                                     { label: th ? 'ปล่อยตัว' : 'Started', value: cs?.started || 0, color: '#f59e0b' },
+                                    { label: 'DNS', value: cs?.dns || 0, color: '#94a3b8' },
                                     { label: th ? 'จบ' : 'Finished', value: cs?.finished || 0, color: '#22c55e' },
+                                    { label: 'DNF', value: cs?.dnf || 0, color: '#f59e0b' },
+                                    { label: 'DQ', value: cs?.dq || 0, color: '#ef4444' },
                                     { label: '♂', value: cs?.mF || 0, color: '#3b82f6' },
                                     { label: '♀', value: cs?.fF || 0, color: '#ec4899' },
-                                ].map((s, i) => (
-                                    <div key={i} style={{
-                                        flex: 1, textAlign: 'center', padding: '10px 6px',
-                                        borderRight: i < 4 ? '1px solid #f1f5f9' : undefined,
-                                    }}>
-                                        <div style={{ fontSize: 9, color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>{s.label}</div>
-                                        <div style={{ fontSize: 16, fontWeight: 900, color: s.color, marginTop: 2 }}>{s.value}</div>
+                                ];
+                                return (
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 0, borderTop: '1px solid #f1f5f9' }}>
+                                        {cells.map((s, i) => (
+                                            <div key={i} style={{
+                                                flex: '1 1 12.5%', minWidth: 70, textAlign: 'center', padding: '10px 6px',
+                                                borderRight: i < cells.length - 1 ? '1px solid #f1f5f9' : undefined,
+                                            }}>
+                                                <div style={{ fontSize: 9, color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>{s.label}</div>
+                                                <div style={{ fontSize: 16, fontWeight: 900, color: s.color, marginTop: 2 }}>{s.value}</div>
+                                            </div>
+                                        ))}
                                     </div>
-                                ))}
-                            </div>
+                                );
+                            })()}
                         </div>
                     );
                 })}
