@@ -573,7 +573,7 @@
 .edit-runner-grid {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
-    gap: 12px 18px;
+    gap: 10px 12px;
 }
 @media (max-width: 820px) {
     .edit-runner-grid {
@@ -584,6 +584,36 @@
     .edit-runner-grid {
         grid-template-columns: 1fr;
     }
+}
+
+/* Each field sits in its own bordered box so the form is easy to scan */
+.edit-runner-field {
+    display: flex;
+    flex-direction: column;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    padding: 7px 11px 8px;
+    background: #fff;
+    transition: border-color 0.12s ease, box-shadow 0.12s ease;
+}
+.edit-runner-field:focus-within {
+    border-color: #3c8dbc;
+    box-shadow: 0 0 0 3px rgba(60, 141, 188, 0.12);
+}
+.edit-runner-field input,
+.edit-runner-field select {
+    border: none;
+    background: transparent;
+    padding: 2px 0;
+    font-size: 13.5px;
+    font-family: inherit;
+    color: #111827;
+    width: 100%;
+    outline: none;
+}
+.edit-runner-field select {
+    cursor: pointer;
+    margin-left: -2px;
 }
 
 .sidebar-menu li a {

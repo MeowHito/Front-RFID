@@ -6,6 +6,7 @@ import AdminLayout from '../AdminLayout';
 import '../admin.css';
 import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, LabelList, Legend,
+    AreaChart, Area,
 } from 'recharts';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -365,10 +366,10 @@ function StatusTooltip({ active, payload, label, th }: any) {
     );
 }
 
-// ─── Course Strip: horizontal route map ──────────────────────────────────────
-// Renders checkpoints as nodes along a horizontal line; between each pair the
-// number of runners still on that segment (colour-split by status) is drawn as a
-// "pill" so operations can eyeball where people are along the course.
+// ─── Course density curve ────────────────────────────────────────────────────
+// A smooth area chart: X = the route (each checkpoint stretch), Y = how many
+// runners are currently on that stretch. Lets ops see at a glance where the pack
+// is densest along the course. Click a point to see who is on that stretch.
 function CourseStrip({ cat, data, th, onPick }: {
     cat: string;
     data: SegmentDatum[];
@@ -376,94 +377,100 @@ function CourseStrip({ cat, data, th, onPick }: {
     onPick: (cpName: string, runners: SegmentRunner[]) => void;
 }) {
     if (!data.length) return null;
-    // Segments = the gap AFTER each checkpoint (last node has no outgoing segment).
-    const segments = data.slice(0, -1);
-    const maxSeg = Math.max(...segments.map(s => s.count), 1);
+    // Segments = the stretch AFTER each checkpoint (last node has no outgoing stretch),
+    // so the curve spans only the parts of the course runners can still be on.
+    const segments = data.slice(0, -1).map((s, i) => ({
+        ...s,
+        // "CP1 → CP2" reads as the stretch between two points
+        segLabel: data[i + 1] ? `${s.cpName} → ${data[i + 1].cpName}` : s.cpName,
+    }));
+    if (segments.length === 0) return null;
     const totalOnCourse = segments.reduce((sum, s) => sum + s.count, 0);
+    const peak = segments.reduce((m, s) => (s.count > m.count ? s : m), segments[0]);
+    const maxVal = Math.max(...segments.map(s => s.count), 1);
+    const many = segments.length > 6;
+    const gid = `courseGrad-${cat.replace(/[^a-zA-Z0-9]/g, '')}`;
 
     return (
-        <div style={{ borderTop: '1px solid #f1f5f9', padding: '16px 18px 20px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, flexWrap: 'wrap', gap: 8 }}>
-                <div style={{ fontSize: 12, fontWeight: 800, color: '#0f172a', textTransform: 'uppercase', letterSpacing: 0.5 }}>
-                    🗺️ {th ? 'จำลองตำแหน่งบนเส้นทาง' : 'Runners along the course'}
+        <div style={{ borderTop: '1px solid #f1f5f9', padding: '16px 12px 18px 4px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6, flexWrap: 'wrap', gap: 8, paddingLeft: 12 }}>
+                <div>
+                    <div style={{ fontSize: 12, fontWeight: 800, color: '#0f172a', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                        🗺️ {th ? 'ความหนาแน่นนักวิ่งบนเส้นทาง' : 'Runner density along the course'}
+                    </div>
+                    <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>
+                        {th ? 'จำลองว่านักวิ่งกระจุกอยู่ช่วงไหนของเส้นทาง' : 'Where runners are currently bunched up along the route'}
+                    </div>
                 </div>
-                <div style={{ fontSize: 11, color: '#64748b', fontWeight: 700 }}>
-                    {th ? 'ยังอยู่บนเส้นทางรวม' : 'Still on course'}: <span style={{ color: '#f59e0b', fontWeight: 900 }}>{totalOnCourse}</span>
+                <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                    <div style={{ textAlign: 'right' }}>
+                        <div style={{ fontSize: 9, color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>{th ? 'บนเส้นทาง' : 'On course'}</div>
+                        <div style={{ fontSize: 16, fontWeight: 900, color: '#7c3aed' }}>{totalOnCourse}</div>
+                    </div>
+                    {peak.count > 0 && (
+                        <div style={{ textAlign: 'right', borderLeft: '1px solid #eef2f7', paddingLeft: 10 }}>
+                            <div style={{ fontSize: 9, color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>{th ? 'หนาแน่นสุด' : 'Peak'}</div>
+                            <div style={{ fontSize: 12, fontWeight: 800, color: '#f59e0b' }}>{peak.cpName} · {peak.count}</div>
+                        </div>
+                    )}
                 </div>
             </div>
 
-            <div style={{ overflowX: 'auto', paddingBottom: 6 }}>
-                <div style={{ display: 'flex', alignItems: 'stretch', minWidth: Math.max(segments.length * 130 + 90, 320) }}>
-                    {data.map((node, i) => {
-                        const isFinish = node.cpName.toLowerCase() === 'finish' || i === data.length - 1;
-                        const isStart = i === 0;
-                        const seg = i < data.length - 1 ? data[i] : null; // outgoing segment
-                        return (
-                            <React.Fragment key={node.cpName + i}>
-                                {/* Node */}
-                                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flexShrink: 0, width: 66 }}>
-                                    <div style={{
-                                        width: 18, height: 18, borderRadius: '50%',
-                                        background: isStart ? '#3b82f6' : isFinish ? '#22c55e' : '#fff',
-                                        border: `3px solid ${isStart ? '#3b82f6' : isFinish ? '#22c55e' : '#cbd5e1'}`,
-                                        boxShadow: '0 1px 3px rgba(0,0,0,0.12)', zIndex: 2,
-                                    }} />
-                                    <div style={{ fontSize: 10, fontWeight: 800, color: '#334155', marginTop: 6, textAlign: 'center', lineHeight: 1.15, maxWidth: 66, wordBreak: 'break-word' }}>
-                                        {node.cpName}
-                                    </div>
-                                    {node.distance && (
-                                        <div style={{ fontSize: 9, color: '#94a3b8', marginTop: 1 }}>{node.distance}</div>
-                                    )}
-                                </div>
+            <ResponsiveContainer width="100%" height={230}>
+                <AreaChart
+                    data={segments}
+                    margin={{ top: 24, right: 20, left: 0, bottom: many ? 28 : 5 }}
+                    onClick={(e: any) => {
+                        const p = e?.activePayload?.[0]?.payload as SegmentDatum | undefined;
+                        if (p && p.count > 0) onPick(p.cpName, p.runners);
+                    }}
+                >
+                    <defs>
+                        <linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor="#8b5cf6" stopOpacity={0.38} />
+                            <stop offset="100%" stopColor="#8b5cf6" stopOpacity={0.02} />
+                        </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                    <XAxis
+                        dataKey="cpName"
+                        tick={{ fill: '#64748b', fontSize: 10, fontWeight: 700 }}
+                        axisLine={{ stroke: '#e2e8f0' }}
+                        tickLine={false}
+                        interval={0}
+                        angle={many ? -30 : 0}
+                        textAnchor={many ? 'end' : 'middle'}
+                        height={many ? 50 : 24}
+                    />
+                    <YAxis
+                        allowDecimals={false}
+                        domain={[0, Math.ceil(maxVal * 1.25) || 5]}
+                        tick={{ fill: '#94a3b8', fontSize: 10 }}
+                        axisLine={false}
+                        tickLine={false}
+                        width={40}
+                    />
+                    <Tooltip content={<StatusTooltip th={th} />} cursor={{ stroke: '#c4b5fd', strokeWidth: 1.5 }} />
+                    <Area
+                        type="monotone"
+                        dataKey="count"
+                        name={th ? 'อยู่บนเส้นทาง' : 'On course'}
+                        stroke="#7c3aed"
+                        strokeWidth={3}
+                        fill={`url(#${gid})`}
+                        dot={{ r: 4, fill: '#7c3aed', strokeWidth: 2, stroke: '#fff', cursor: 'pointer' }}
+                        activeDot={{ r: 6, fill: '#7c3aed', strokeWidth: 2, stroke: '#fff', cursor: 'pointer' }}
+                        isAnimationActive={false}
+                    >
+                        <LabelList dataKey="count" position="top" style={{ fill: '#7c3aed', fontWeight: 800, fontSize: 11 }} formatter={(v: any) => v > 0 ? v : ''} />
+                    </Area>
+                </AreaChart>
+            </ResponsiveContainer>
 
-                                {/* Segment (connector) between this node and the next */}
-                                {seg && i < data.length - 1 && (
-                                    <div style={{ flex: 1, minWidth: 70, display: 'flex', flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'center', position: 'relative', paddingTop: 5 }}>
-                                        {/* connecting line */}
-                                        <div style={{ position: 'absolute', top: 8, left: 0, right: 0, height: 3, background: '#e2e8f0', borderRadius: 2 }} />
-                                        {/* count pill */}
-                                        <button
-                                            type="button"
-                                            onClick={() => seg.count > 0 && onPick(seg.cpName, seg.runners)}
-                                            disabled={seg.count === 0}
-                                            title={th ? `${seg.count} คนในช่วงนี้ — คลิกดูรายชื่อ` : `${seg.count} runners in this segment — click for names`}
-                                            style={{
-                                                zIndex: 2, marginTop: 12, cursor: seg.count > 0 ? 'pointer' : 'default',
-                                                border: '1px solid #e2e8f0', background: '#fff', borderRadius: 20,
-                                                padding: '3px 4px 4px', minWidth: 46, boxShadow: '0 1px 4px rgba(0,0,0,0.08)',
-                                                display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3,
-                                                opacity: seg.count === 0 ? 0.5 : 1,
-                                            }}
-                                        >
-                                            <span style={{
-                                                fontSize: 14, fontWeight: 900,
-                                                color: seg.count > 0 ? '#0f172a' : '#94a3b8', lineHeight: 1,
-                                                padding: '2px 6px',
-                                            }}>{seg.count}</span>
-                                            {/* status mini-bar */}
-                                            {seg.count > 0 && (
-                                                <span style={{ display: 'flex', width: 40, height: 5, borderRadius: 3, overflow: 'hidden', background: '#f1f5f9' }}>
-                                                    {(['active', 'dnf', 'dq', 'other'] as StatusBucket[]).map(b => (
-                                                        seg[b] > 0 ? <span key={b} style={{ flex: seg[b], background: STATUS_META[b].color }} /> : null
-                                                    ))}
-                                                </span>
-                                            )}
-                                        </button>
-                                        {/* relative volume bar under the line */}
-                                        <div style={{ width: '70%', height: 4, marginTop: 6, background: '#f1f5f9', borderRadius: 2, overflow: 'hidden' }}>
-                                            <div style={{ width: `${(seg.count / maxSeg) * 100}%`, height: '100%', background: '#f59e0b', borderRadius: 2 }} />
-                                        </div>
-                                    </div>
-                                )}
-                            </React.Fragment>
-                        );
-                    })}
-                </div>
-            </div>
-            <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 10, textAlign: 'center' }}>
+            <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 8, textAlign: 'center' }}>
                 {th
-                    ? '💡 ตัวเลขบนเส้น = จำนวนคนที่ผ่านจุดก่อนหน้าแล้วแต่ยังไม่ถึงจุดถัดไป (คลิกเพื่อดูรายชื่อ)'
-                    : '💡 Number on each link = runners past the previous point but not yet at the next (click for names)'}
+                    ? '💡 แกนล่าง = ช่วงเส้นทาง (จากจุดนั้นไปจุดถัดไป) · แกนซ้าย = จำนวนคนที่อยู่ในช่วงนั้น · คลิกที่จุดเพื่อดูรายชื่อ'
+                    : '💡 X = course stretch (from each point onward) · Y = runners on that stretch · click a point for names'}
             </div>
         </div>
     );
@@ -517,6 +524,14 @@ function statusBucketOf(status: string): StatusBucket {
     if (s === 'dns') return 'other';
     // in_progress / not_started / finished / blank → still counts as "on course"
     return 'active';
+}
+// The visually top-most non-zero segment of a stacked bar (bottom→top order),
+// so the total label can sit on a bar that actually gets rendered.
+function topBucketOf(d: { active: number; dnf: number; dq: number; other: number }): StatusBucket | null {
+    const order: StatusBucket[] = ['active', 'dnf', 'dq', 'other'];
+    let top: StatusBucket | null = null;
+    for (const b of order) if (d[b] > 0) top = b;
+    return top;
 }
 
 interface SegmentRunner { bib: string; name: string; status: string; gender: string; bucket: StatusBucket; }
@@ -868,10 +883,10 @@ export default function GeneralChartPage() {
                                     <YAxis tick={{ fill: '#cbd5e1', fontSize: 10 }} axisLine={false} tickLine={false} width={40} />
                                     <Tooltip content={<ChartTooltip th={th} />} cursor={{ fill: 'rgba(59,130,246,0.04)' }} />
                                     <Legend wrapperStyle={{ fontSize: 11, fontWeight: 700 }} />
-                                    <Bar dataKey="male" name={th ? 'ชาย (MALE)' : 'MALE'} stackId="a" fill="#3b82f6" radius={[0, 0, 0, 0]}>
+                                    <Bar dataKey="male" name={th ? 'ชาย (MALE)' : 'MALE'} stackId="a" fill="#3b82f6" radius={[0, 0, 0, 0]} isAnimationActive={false}>
                                         <LabelList dataKey="male" position="inside" style={{ fill: '#fff', fontWeight: 800, fontSize: 11 }} formatter={(v: any) => v > 0 ? v : ''} />
                                     </Bar>
-                                    <Bar dataKey="female" name={th ? 'หญิง (FEMALE)' : 'FEMALE'} stackId="a" fill="#22c55e" radius={[4, 4, 0, 0]}>
+                                    <Bar dataKey="female" name={th ? 'หญิง (FEMALE)' : 'FEMALE'} stackId="a" fill="#22c55e" radius={[4, 4, 0, 0]} isAnimationActive={false}>
                                         <LabelList dataKey="total" position="top" style={{ fill: '#0f172a', fontWeight: 900, fontSize: 12 }} />
                                         <LabelList dataKey="female" position="inside" style={{ fill: '#fff', fontWeight: 800, fontSize: 11 }} formatter={(v: any) => v > 0 ? v : ''} />
                                     </Bar>
@@ -896,10 +911,10 @@ export default function GeneralChartPage() {
                                     <YAxis tick={{ fill: '#cbd5e1', fontSize: 10 }} axisLine={false} tickLine={false} width={40} />
                                     <Tooltip content={<ChartTooltip th={th} />} cursor={{ fill: 'rgba(59,130,246,0.04)' }} />
                                     <Legend wrapperStyle={{ fontSize: 11, fontWeight: 700 }} />
-                                    <Bar dataKey="male" name={th ? 'ชาย (MALE)' : 'MALE'} stackId="a" fill="#3b82f6" radius={[0, 0, 0, 0]}>
+                                    <Bar dataKey="male" name={th ? 'ชาย (MALE)' : 'MALE'} stackId="a" fill="#3b82f6" radius={[0, 0, 0, 0]} isAnimationActive={false}>
                                         <LabelList dataKey="male" position="inside" style={{ fill: '#fff', fontWeight: 800, fontSize: 10 }} formatter={(v: any) => v > 0 ? v : ''} />
                                     </Bar>
-                                    <Bar dataKey="female" name={th ? 'หญิง (FEMALE)' : 'FEMALE'} stackId="a" fill="#22c55e" radius={[4, 4, 0, 0]}>
+                                    <Bar dataKey="female" name={th ? 'หญิง (FEMALE)' : 'FEMALE'} stackId="a" fill="#22c55e" radius={[4, 4, 0, 0]} isAnimationActive={false}>
                                         <LabelList dataKey="total" position="top" style={{ fill: '#0f172a', fontWeight: 900, fontSize: 11 }} />
                                         <LabelList dataKey="female" position="inside" style={{ fill: '#fff', fontWeight: 800, fontSize: 10 }} formatter={(v: any) => v > 0 ? v : ''} />
                                     </Bar>
@@ -946,7 +961,7 @@ export default function GeneralChartPage() {
                                                 <XAxis dataKey="cpName" tick={{ fill: '#94a3b8', fontSize: 10, fontWeight: 700 }} axisLine={{ stroke: '#e2e8f0' }} tickLine={false} interval={0} angle={(dataPassed?.length || 0) > 6 ? -35 : 0} textAnchor={(dataPassed?.length || 0) > 6 ? 'end' : 'middle'} height={(dataPassed?.length || 0) > 6 ? 50 : 30} />
                                                 <YAxis domain={[0, Math.ceil(maxValPassed * 1.3) || 10]} tick={{ fill: '#cbd5e1', fontSize: 10 }} axisLine={false} tickLine={false} width={35} />
                                                 <Tooltip content={<ChartTooltip th={th} />} cursor={{ fill: 'rgba(59,130,246,0.04)' }} />
-                                                <Bar dataKey="count" name={th ? 'ผ่านเข้าจุด' : 'Passed Through'} radius={[4, 4, 0, 0]} maxBarSize={48}>
+                                                <Bar dataKey="count" name={th ? 'ผ่านเข้าจุด' : 'Passed Through'} radius={[4, 4, 0, 0]} maxBarSize={48} isAnimationActive={false}>
                                                     <LabelList dataKey="count" position="top" style={{ fill: '#475569', fontWeight: 800, fontSize: 11 }} />
                                                     {(dataPassed || []).map((entry, idx) => {
                                                         const isFinish = entry.cpName.toLowerCase() === 'finish';
@@ -990,14 +1005,23 @@ export default function GeneralChartPage() {
                                                         radius={bi === 3 ? [4, 4, 0, 0] : [0, 0, 0, 0]}
                                                         maxBarSize={48}
                                                         cursor="pointer"
+                                                        isAnimationActive={false}
                                                         onClick={(d: any) => {
                                                             const seg = d?.payload as SegmentDatum;
                                                             if (seg && seg.count > 0) setCpDetail({ cat, cpName: seg.cpName, runners: seg.runners });
                                                         }}
                                                     >
-                                                        {bi === 3 && (
-                                                            <LabelList dataKey="count" position="top" style={{ fill: '#475569', fontWeight: 800, fontSize: 11 }} formatter={(v: any) => v > 0 ? v : ''} />
-                                                        )}
+                                                        {/* Total label sits on whichever segment is the top-most
+                                                            non-zero one, so it always renders on a visible bar. */}
+                                                        <LabelList content={(props: any) => {
+                                                            const seg = (dataCurrently || [])[props.index] as SegmentDatum | undefined;
+                                                            if (!seg || seg.count <= 0 || topBucketOf(seg) !== b) return null;
+                                                            return (
+                                                                <text x={props.x + props.width / 2} y={props.y - 6} textAnchor="middle" fill="#475569" fontWeight={800} fontSize={11}>
+                                                                    {seg.count}
+                                                                </text>
+                                                            );
+                                                        }} />
                                                     </Bar>
                                                 ))}
                                             </BarChart>
@@ -1058,10 +1082,10 @@ export default function GeneralChartPage() {
                                     <XAxis dataKey="ageGroup" tick={{ fill: '#64748b', fontSize: 11, fontWeight: 700 }} axisLine={{ stroke: '#e2e8f0' }} tickLine={false} />
                                     <YAxis tick={{ fill: '#cbd5e1', fontSize: 11 }} axisLine={false} tickLine={false} />
                                     <Tooltip content={<ChartTooltip th={th} />} cursor={{ fill: 'rgba(59,130,246,0.04)' }} />
-                                    <Bar dataKey="male" name={th ? 'ชาย' : 'Male'} fill="#3b82f6" radius={[4, 4, 0, 0]} maxBarSize={36}>
+                                    <Bar dataKey="male" name={th ? 'ชาย' : 'Male'} fill="#3b82f6" radius={[4, 4, 0, 0]} maxBarSize={36} isAnimationActive={false}>
                                         <LabelList dataKey="male" position="top" style={{ fill: '#3b82f6', fontWeight: 800, fontSize: 10 }} />
                                     </Bar>
-                                    <Bar dataKey="female" name={th ? 'หญิง' : 'Female'} fill="#ec4899" radius={[4, 4, 0, 0]} maxBarSize={36}>
+                                    <Bar dataKey="female" name={th ? 'หญิง' : 'Female'} fill="#ec4899" radius={[4, 4, 0, 0]} maxBarSize={36} isAnimationActive={false}>
                                         <LabelList dataKey="female" position="top" style={{ fill: '#ec4899', fontWeight: 800, fontSize: 10 }} />
                                     </Bar>
                                 </BarChart>

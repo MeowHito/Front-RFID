@@ -244,6 +244,9 @@ export default function ParticipantsPage() {
     // Edit modal state
     const [editingRunner, setEditingRunner] = useState<Runner | null>(null);
     const [editForm, setEditForm] = useState<Record<string, string>>({});
+    // Birth-date picker draft (day / month / year in Buddhist Era) — kept separate
+    // so a half-finished pick survives re-renders without writing a broken ISO date.
+    const [dobParts, setDobParts] = useState<{ d: string; m: string; y: string }>({ d: '', m: '', y: '' });
     const [savingRunner, setSavingRunner] = useState(false);
     const [showEditLogs, setShowEditLogs] = useState(false);
     const [editLogs, setEditLogs] = useState<RunnerEditLog[]>([]);
@@ -584,6 +587,9 @@ export default function ParticipantsPage() {
             address: runner.address || '',
             status: runner.status || 'not_started',
         });
+        const iso = runner.birthDate ? runner.birthDate.substring(0, 10) : '';
+        const [iy, im, id] = iso ? iso.split('-') : ['', '', ''];
+        setDobParts({ d: id || '', m: im || '', y: iy || '' });
         setShowEditLogs(false);
         setEditLogs([]);
     }, []);
@@ -1633,14 +1639,16 @@ export default function ParticipantsPage() {
                         {/* Modal body */}
                         <div style={{ padding: '16px 20px' }}>
                             {(() => {
+                                // Borders/background come from the `.edit-runner-field` CSS box, so
+                                // inputs stay borderless — the surrounding card is the field's frame.
                                 const inputStyle: React.CSSProperties = {
-                                    width: '100%', padding: '7px 10px', border: '1px solid #ddd',
-                                    borderRadius: 4, fontSize: 13, fontFamily: 'inherit',
+                                    width: '100%', border: 'none', background: 'transparent',
+                                    padding: '2px 0', fontSize: 13.5, fontFamily: 'inherit', outline: 'none',
                                 };
                                 const labelStyle: React.CSSProperties = {
-                                    fontSize: 12, fontWeight: 600, color: '#555', marginBottom: 4, display: 'block',
+                                    fontSize: 11, fontWeight: 700, color: '#6b7280', marginBottom: 3,
+                                    display: 'block', letterSpacing: 0.2,
                                 };
-                                const cellStyle: React.CSSProperties = { marginBottom: 0 };
 
                                 type Field = { key: string; label: string; labelEn: string; type?: string; options?: { v: string; l: string }[]; colSpan?: number };
                                 // Fields grouped into logical sections so the form scans top-to-bottom
@@ -1675,8 +1683,8 @@ export default function ParticipantsPage() {
                                         title: 'ชิป & RFID', titleEn: 'Chip & RFID', icon: '📟',
                                         fields: [
                                             { key: 'chipCode', label: 'Chip Code', labelEn: 'Chip Code' },
-                                            { key: 'printingCode', label: 'Printing Code', labelEn: 'Printing Code' },
                                             { key: 'rfidTag', label: 'RFID Tag', labelEn: 'RFID Tag' },
+                                            { key: 'printingCode', label: 'Printing Code', labelEn: 'Printing Code' },
                                         ],
                                     },
                                     {
@@ -1714,10 +1722,39 @@ export default function ParticipantsPage() {
                                     borderBottom: '2px solid #eef2f7', display: 'flex', alignItems: 'center', gap: 7,
                                 };
 
+                                // Buddhist-Era birth-date picker helpers. Runner birthDate is stored
+                                // as a Gregorian ISO string (YYYY-MM-DD); we display the year as พ.ศ.
+                                // (= Gregorian + 543) and drive it with plain dropdowns so picking an
+                                // old year is a quick select instead of scrubbing a native date spinner.
+                                const monthsTh = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'];
+                                const monthsEn = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+                                const dobYears: number[] = [];
+                                for (let y = new Date().getFullYear(); y >= 1920; y--) dobYears.push(y);
+                                const dobSelectStyle: React.CSSProperties = {
+                                    ...inputStyle, border: '1px solid #d1d5db', borderRadius: 6,
+                                    padding: '6px 6px', background: '#fff', cursor: 'pointer', fontSize: 13,
+                                };
+                                const commitDob = (parts: { d: string; m: string; y: string }) => {
+                                    setDobParts(parts);
+                                    setEditForm(prev => {
+                                        const next = { ...prev };
+                                        if (parts.d && parts.m && parts.y) {
+                                            const iso = `${parts.y}-${parts.m}-${parts.d}`;
+                                            next.birthDate = iso;
+                                            // Only auto-fill age group when it's still empty.
+                                            if (!(prev.ageGroup || '').trim()) next.ageGroup = calculateAgeGroup(iso, editingRunner?.age);
+                                        } else {
+                                            // Incomplete pick — don't emit a broken ISO date.
+                                            next.birthDate = '';
+                                        }
+                                        return next;
+                                    });
+                                };
+
                                 const renderField = (f: Field) => {
                                     const isProtected = (editingRunner?.manuallyEditedFields || []).includes(f.key);
                                     return (
-                                        <div key={f.key} style={{ ...cellStyle, gridColumn: f.colSpan === 2 ? '1 / -1' : undefined }}>
+                                        <div key={f.key} className="edit-runner-field" style={{ gridColumn: f.colSpan === 2 ? '1 / -1' : undefined }}>
                                             <label style={labelStyle}>
                                                 {language === 'th' ? f.label : f.labelEn}
                                                 {isProtected && (
@@ -1727,7 +1764,45 @@ export default function ParticipantsPage() {
                                                     >🔒</span>
                                                 )}
                                             </label>
-                                            {f.type === 'select' ? (
+                                            {f.type === 'date' ? (
+                                                <div style={{ display: 'flex', gap: 6 }}>
+                                                    <select
+                                                        value={dobParts.d}
+                                                        onChange={e => commitDob({ ...dobParts, d: e.target.value })}
+                                                        style={{ ...dobSelectStyle, flex: '0 0 58px' }}
+                                                        aria-label={language === 'th' ? 'วัน' : 'Day'}
+                                                    >
+                                                        <option value="">{language === 'th' ? 'วัน' : 'Day'}</option>
+                                                        {Array.from({ length: 31 }, (_, i) => String(i + 1).padStart(2, '0')).map(d => (
+                                                            <option key={d} value={d}>{Number(d)}</option>
+                                                        ))}
+                                                    </select>
+                                                    <select
+                                                        value={dobParts.m}
+                                                        onChange={e => commitDob({ ...dobParts, m: e.target.value })}
+                                                        style={{ ...dobSelectStyle, flex: 1 }}
+                                                        aria-label={language === 'th' ? 'เดือน' : 'Month'}
+                                                    >
+                                                        <option value="">{language === 'th' ? 'เดือน' : 'Month'}</option>
+                                                        {(language === 'th' ? monthsTh : monthsEn).map((name, i) => (
+                                                            <option key={i} value={String(i + 1).padStart(2, '0')}>{name}</option>
+                                                        ))}
+                                                    </select>
+                                                    <select
+                                                        value={dobParts.y}
+                                                        onChange={e => commitDob({ ...dobParts, y: e.target.value })}
+                                                        style={{ ...dobSelectStyle, flex: '0 0 78px' }}
+                                                        aria-label={language === 'th' ? 'ปี พ.ศ.' : 'Year'}
+                                                    >
+                                                        <option value="">{language === 'th' ? 'พ.ศ.' : 'Year'}</option>
+                                                        {dobYears.map(gy => (
+                                                            <option key={gy} value={String(gy)}>
+                                                                {language === 'th' ? gy + 543 : gy}
+                                                            </option>
+                                                        ))}
+                                                    </select>
+                                                </div>
+                                            ) : f.type === 'select' ? (
                                                 <select
                                                     value={editForm[f.key] || ''}
                                                     onChange={e => {
@@ -1736,14 +1811,14 @@ export default function ParticipantsPage() {
                                                         // switching it never touches ageGroup.
                                                         setEditForm(prev => ({ ...prev, [f.key]: value }));
                                                     }}
-                                                    style={{ ...inputStyle, border: '1px solid #ccc', borderRadius: 4 }}
+                                                    style={inputStyle}
                                                 >
                                                     {f.options?.map(o => (
                                                         <option key={o.v} value={o.v}>{o.l}</option>
                                                     ))}
                                                 </select>
                                             ) : f.key === 'ageGroup' ? (
-                                                <div style={{ display: 'flex', gap: 6, alignItems: 'stretch' }}>
+                                                <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                                                     <input
                                                         type="text"
                                                         value={editForm.ageGroup || ''}
@@ -1753,13 +1828,13 @@ export default function ParticipantsPage() {
                                                         }}
                                                         placeholder={language === 'th' ? 'เช่น 20-24 (ตาม RaceTiger)' : 'e.g. 20-24'}
                                                         title={language === 'th' ? 'พิมพ์กลุ่มอายุได้เอง — กด ↻ เพื่อคำนวณจากวันเกิด' : 'Editable — click ↻ to recalculate from birth date'}
-                                                        style={{ ...inputStyle, border: '1px solid #ccc', borderRadius: 4, flex: 1 }}
+                                                        style={{ ...inputStyle, flex: 1 }}
                                                     />
                                                     <button
                                                         type="button"
                                                         title={language === 'th' ? 'คำนวณจากอายุ/วันเกิด (band 5 ปี เช่น 20-24)' : 'Recalculate from age / birth date (5-year band, e.g. 20-24)'}
                                                         onClick={() => setEditForm(prev => ({ ...prev, ageGroup: calculateAgeGroup(prev.birthDate || '', editingRunner?.age) }))}
-                                                        style={{ padding: '0 12px', border: '1px solid #ccc', borderRadius: 4, background: '#f9fafb', color: '#374151', cursor: 'pointer', fontSize: 15, fontWeight: 700 }}
+                                                        style={{ padding: '2px 9px', border: '1px solid #d1d5db', borderRadius: 5, background: '#f9fafb', color: '#374151', cursor: 'pointer', fontSize: 14, fontWeight: 700, lineHeight: 1.4 }}
                                                     >↻</button>
                                                 </div>
                                             ) : (
