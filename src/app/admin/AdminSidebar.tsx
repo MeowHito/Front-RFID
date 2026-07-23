@@ -257,26 +257,31 @@ export default function AdminSidebar() {
                                 <polyline points="6 9 12 15 18 9" />
                             </svg>
                         </button>
-                        {isSectionOpen && section.items.map((item) => (
-                            <li key={item.href} className={isActive(item.href) ? 'active' : ''}>
-                                <Link
-                                    href={item.href}
-                                    onClick={() => {
-                                        if (typeof window !== 'undefined' && sidebarRef.current) {
-                                            window.sessionStorage.setItem(SIDEBAR_SCROLL_KEY, String(sidebarRef.current.scrollTop));
-                                        }
-                                    }}
-                                >
-                                    <span className="sidebar-icon">
-                                        <SidebarIcon name={item.icon} color={item.iconColor} />
-                                    </span>
-                                    <span className="sidebar-label">{language === 'th' ? item.label : item.labelEn}</span>
-                                    {item.badge && (
-                                        <span className="menu-badge">{item.badge}</span>
-                                    )}
-                                </Link>
-                            </li>
-                        ))}
+                        <div className={`sidebar-items${isSectionOpen ? '' : ' collapsed'}`}>
+                            <ul className="sidebar-items-inner">
+                                {section.items.map((item) => (
+                                    <li key={item.href} className={isActive(item.href) ? 'active' : ''}>
+                                        <Link
+                                            href={item.href}
+                                            tabIndex={isSectionOpen ? 0 : -1}
+                                            onClick={() => {
+                                                if (typeof window !== 'undefined' && sidebarRef.current) {
+                                                    window.sessionStorage.setItem(SIDEBAR_SCROLL_KEY, String(sidebarRef.current.scrollTop));
+                                                }
+                                            }}
+                                        >
+                                            <span className="sidebar-icon">
+                                                <SidebarIcon name={item.icon} color={item.iconColor} />
+                                            </span>
+                                            <span className="sidebar-label">{language === 'th' ? item.label : item.labelEn}</span>
+                                            {item.badge && (
+                                                <span className="menu-badge">{item.badge}</span>
+                                            )}
+                                        </Link>
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
                     </div>
                     );
                 })}

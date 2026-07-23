@@ -530,6 +530,39 @@
     transform: rotate(-90deg);
 }
 
+/* Collapse/expand animation: animate the row track from 1fr → 0fr so the
+   items slide open/closed smoothly. Kept short (~0.22s) — just a hint. */
+.sidebar-items {
+    display: grid;
+    grid-template-rows: 1fr;
+    transition: grid-template-rows 0.22s ease;
+}
+
+.sidebar-items.collapsed {
+    grid-template-rows: 0fr;
+}
+
+.sidebar-items-inner {
+    overflow: hidden;
+    min-height: 0;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    transition: opacity 0.2s ease;
+}
+
+.sidebar-items.collapsed .sidebar-items-inner {
+    opacity: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .sidebar-items,
+    .sidebar-items-inner,
+    .sidebar-header-chevron {
+        transition: none;
+    }
+}
+
 .sidebar-menu {
     list-style: none;
     padding: 0;
