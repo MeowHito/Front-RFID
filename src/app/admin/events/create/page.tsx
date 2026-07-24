@@ -1,9 +1,10 @@
 'use client';
 
-import { useState, useEffect, Suspense } from 'react';
+import { useState, useEffect, useCallback, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useLanguage } from '@/lib/language-context';
 import { authHeaders } from '@/lib/authHeaders';
+import { parseGpx, GpxParseError } from '@/lib/gpx';
 import ImageCropModal from '@/components/ImageCropModal';
 import AdminLayout from '../../AdminLayout';
 
@@ -114,6 +115,338 @@ const slugifyPreview = (value: string): string =>
 
 // Public host where the e-slip pages are served.
 const ESLIP_HOST = 'live.action.in.th';
+
+// ─── GPX route upload (one course line per race category) ────────────────────
+
+interface RouteMeta {
+    category: string;
+    fileName?: string;
+    distanceKm: number;
+    elevationGainM?: number;
+    pointCount?: number;
+    rawPointCount?: number;
+    checkpointMarks?: { name: string; km: number }[];
+}
+
+interface CampaignCheckpoint {
+    _id: string;
+    name: string;
+    orderNum?: number;
+    distanceMappings?: string[];
+}
+
+/**
+ * Per-category GPX upload + the km position of each checkpoint along that line.
+ * The statistics page (/admin/general-chart) uses both to paint runner density
+ * onto the real course map.
+ */
+function GpxRoutesCard({ campaignId, categories, th, notify }: {
+    campaignId: string | null;
+    categories: RaceCategory[];
+    th: boolean;
+    notify: (msg: string) => void;
+}) {
+    const [routes, setRoutes] = useState<Record<string, RouteMeta>>({});
+    const [checkpoints, setCheckpoints] = useState<CampaignCheckpoint[]>([]);
+    const [busy, setBusy] = useState<string | null>(null);
+    const [expanded, setExpanded] = useState<string | null>(null);
+    // Per category → per checkpoint name → km typed by the admin (kept as text
+    // so a half-typed "12." doesn't get clobbered while editing).
+    const [marks, setMarks] = useState<Record<string, Record<string, string>>>({});
+
+    const catNames = categories.map(c => (c.name || '').trim()).filter(Boolean);
+
+    const loadRoutes = useCallback(async () => {
+        if (!campaignId) return;
+        try {
+            const res = await fetch(`/api/routes?campaignId=${campaignId}&meta=true`, { cache: 'no-store' });
+            if (!res.ok) return;
+            const data = await res.json();
+            if (!Array.isArray(data)) return;
+            const byCat: Record<string, RouteMeta> = {};
+            const nextMarks: Record<string, Record<string, string>> = {};
+            for (const r of data as RouteMeta[]) {
+                if (!r?.category) continue;
+                byCat[r.category] = r;
+                nextMarks[r.category] = Object.fromEntries(
+                    (r.checkpointMarks || []).map(m => [m.name, String(m.km)]),
+                );
+            }
+            setRoutes(byCat);
+            setMarks(prev => ({ ...nextMarks, ...prev }));
+        } catch { /* leave the list empty; the card just shows "no route yet" */ }
+    }, [campaignId]);
+
+    useEffect(() => { loadRoutes(); }, [loadRoutes]);
+
+    useEffect(() => {
+        if (!campaignId) return;
+        (async () => {
+            try {
+                const res = await fetch(`/api/checkpoints/campaign/${campaignId}`, { cache: 'no-store' });
+                if (!res.ok) return;
+                const data: CampaignCheckpoint[] = await res.json();
+                if (Array.isArray(data)) {
+                    setCheckpoints([...data].sort((a, b) => (a.orderNum ?? 999) - (b.orderNum ?? 999)));
+                }
+            } catch { setCheckpoints([]); }
+        })();
+    }, [campaignId]);
+
+    const cpsFor = (cat: string) =>
+        checkpoints.filter(cp => !cp.distanceMappings?.length || cp.distanceMappings.includes(cat));
+
+    const handleFile = async (cat: string, file: File) => {
+        if (!campaignId) return;
+        setBusy(cat);
+        try {
+            const text = await file.text();
+            const parsed = parseGpx(text);
+            const res = await fetch('/api/routes', {
+                method: 'POST',
+                headers: authHeaders(),
+                body: JSON.stringify({
+                    campaignId,
+                    category: cat,
+                    fileName: file.name,
+                    coords: parsed.coords,
+                    distanceKm: parsed.distanceKm,
+                    elevationGainM: parsed.elevationGainM,
+                    rawPointCount: parsed.rawPointCount,
+                    bounds: parsed.bounds,
+                }),
+            });
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            notify(th ? `อัปโหลดเส้นทาง ${cat} สำเร็จ (${parsed.distanceKm.toFixed(1)} กม.)` : `Route for ${cat} uploaded (${parsed.distanceKm.toFixed(1)} km)`);
+            setMarks(prev => ({ ...prev, [cat]: {} })); // a new line invalidates old km marks
+            await loadRoutes();
+            setExpanded(cat);
+        } catch (err) {
+            const msg = err instanceof GpxParseError
+                ? err.message
+                : (th ? 'อัปโหลดไม่สำเร็จ' : 'Upload failed');
+            notify(msg);
+        } finally {
+            setBusy(null);
+        }
+    };
+
+    const handleDelete = async (cat: string) => {
+        if (!campaignId) return;
+        setBusy(cat);
+        try {
+            const res = await fetch(`/api/routes?campaignId=${campaignId}&category=${encodeURIComponent(cat)}`, {
+                method: 'DELETE',
+                headers: authHeaders(),
+            });
+            if (!res.ok) throw new Error();
+            notify(th ? `ลบเส้นทาง ${cat} แล้ว` : `Route for ${cat} removed`);
+            setRoutes(prev => { const n = { ...prev }; delete n[cat]; return n; });
+        } catch {
+            notify(th ? 'ลบไม่สำเร็จ' : 'Delete failed');
+        } finally {
+            setBusy(null);
+        }
+    };
+
+    const saveMarks = async (cat: string) => {
+        if (!campaignId) return;
+        setBusy(cat);
+        try {
+            const entries = Object.entries(marks[cat] || {})
+                .map(([name, v]) => ({ name, km: parseFloat(v) }))
+                .filter(m => Number.isFinite(m.km));
+            const res = await fetch('/api/routes', {
+                method: 'PUT',
+                headers: authHeaders(),
+                body: JSON.stringify({ campaignId, category: cat, checkpointMarks: entries }),
+            });
+            if (!res.ok) throw new Error();
+            notify(th ? `บันทึกตำแหน่ง CP ของ ${cat} แล้ว` : `Checkpoint positions saved for ${cat}`);
+            await loadRoutes();
+        } catch {
+            notify(th ? 'บันทึกไม่สำเร็จ' : 'Save failed');
+        } finally {
+            setBusy(null);
+        }
+    };
+
+    return (
+        <div className="ce-card" style={{ borderTop: '3px solid #7c3aed' }}>
+            <div className="ce-card-header">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" strokeWidth="2">
+                    <polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6" />
+                    <line x1="8" y1="2" x2="8" y2="18" />
+                    <line x1="16" y1="6" x2="16" y2="22" />
+                </svg>
+                <span>{th ? 'เส้นทางวิ่ง GPX (แยกตามระยะ)' : 'Course GPX (per distance)'}</span>
+            </div>
+
+            <div style={{ fontSize: 12.5, color: '#64748b', lineHeight: 1.7, marginBottom: 14 }}>
+                {th
+                    ? 'อัปโหลดไฟล์ .gpx ของแต่ละระยะ เพื่อให้หน้าสถิติแสดง "แผนที่ความหนาแน่นนักวิ่ง" บนเส้นทางจริงได้ (ปุ่ม MAP ในหน้า /admin/general-chart)'
+                    : 'Upload a .gpx per distance so the statistics page can paint runner density onto the real course (the MAP button on /admin/general-chart).'}
+            </div>
+
+            {!campaignId ? (
+                <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8, padding: '12px 14px', fontSize: 12.5, color: '#92400e' }}>
+                    {th
+                        ? '⚠️ กด "บันทึกกิจกรรม" ก่อน แล้วเปิดหน้านี้ในโหมดแก้ไข จึงจะอัปโหลด GPX ได้ (ต้องมีรหัสกิจกรรมก่อน)'
+                        : '⚠️ Save the event first, then reopen it in edit mode to upload GPX files.'}
+                </div>
+            ) : catNames.length === 0 ? (
+                <div style={{ background: '#f8fafc', border: '1px dashed #cbd5e1', borderRadius: 8, padding: '12px 14px', fontSize: 12.5, color: '#64748b' }}>
+                    {th
+                        ? 'ยังไม่มีระยะในตาราง "ข้อมูลตารางระยะทาง" — เพิ่มระยะก่อนแล้วบันทึก จึงจะอัปโหลด GPX ได้'
+                        : 'No distances defined yet — add them in the table above and save first.'}
+                </div>
+            ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    {catNames.map(cat => {
+                        const r = routes[cat];
+                        const isBusy = busy === cat;
+                        const cps = cpsFor(cat);
+                        const isOpen = expanded === cat;
+                        return (
+                            <div key={cat} style={{ border: '1px solid #e2e8f0', borderRadius: 10, overflow: 'hidden' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 14px', background: r ? '#faf5ff' : '#fff', flexWrap: 'wrap' }}>
+                                    <span style={{
+                                        background: r ? '#7c3aed' : '#94a3b8', color: '#fff', fontWeight: 800,
+                                        fontSize: 12, padding: '3px 10px', borderRadius: 6, minWidth: 54, textAlign: 'center',
+                                    }}>{cat}</span>
+
+                                    <div style={{ flex: 1, minWidth: 180, fontSize: 12, color: '#475569' }}>
+                                        {r ? (
+                                            <>
+                                                <div style={{ fontWeight: 700, color: '#0f172a' }}>
+                                                    📄 {r.fileName || 'route.gpx'}
+                                                </div>
+                                                <div style={{ color: '#94a3b8', marginTop: 2 }}>
+                                                    {r.distanceKm.toFixed(2)} km
+                                                    {r.elevationGainM ? ` · ▲ ${r.elevationGainM.toLocaleString()} m` : ''}
+                                                    {r.pointCount ? ` · ${r.pointCount.toLocaleString()} ${th ? 'จุด' : 'pts'}` : ''}
+                                                    {r.rawPointCount && r.pointCount && r.rawPointCount > r.pointCount
+                                                        ? ` (${th ? 'ย่อจาก' : 'from'} ${r.rawPointCount.toLocaleString()})` : ''}
+                                                </div>
+                                            </>
+                                        ) : (
+                                            <span style={{ color: '#94a3b8' }}>{th ? 'ยังไม่มีเส้นทาง' : 'No route uploaded'}</span>
+                                        )}
+                                    </div>
+
+                                    <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                                        {r && (
+                                            <button
+                                                type="button"
+                                                onClick={() => setExpanded(isOpen ? null : cat)}
+                                                style={{
+                                                    fontSize: 11.5, fontWeight: 700, fontFamily: 'inherit', cursor: 'pointer',
+                                                    border: '1px solid #cbd5e1', background: '#fff', color: '#475569',
+                                                    borderRadius: 6, padding: '5px 10px',
+                                                }}
+                                            >
+                                                📍 {th ? 'ตำแหน่ง CP' : 'CP positions'} {isOpen ? '▲' : '▼'}
+                                            </button>
+                                        )}
+                                        <label style={{
+                                            fontSize: 11.5, fontWeight: 700, cursor: isBusy ? 'wait' : 'pointer',
+                                            border: '1px solid #7c3aed', background: r ? '#fff' : '#7c3aed',
+                                            color: r ? '#7c3aed' : '#fff', borderRadius: 6, padding: '5px 12px',
+                                            opacity: isBusy ? 0.6 : 1, whiteSpace: 'nowrap',
+                                        }}>
+                                            {isBusy
+                                                ? (th ? 'กำลังอ่านไฟล์...' : 'Reading...')
+                                                : r ? (th ? 'เปลี่ยนไฟล์' : 'Replace') : (th ? '⬆ อัปโหลด GPX' : '⬆ Upload GPX')}
+                                            <input
+                                                type="file"
+                                                accept=".gpx,application/gpx+xml,text/xml"
+                                                style={{ display: 'none' }}
+                                                disabled={isBusy}
+                                                onChange={(e) => {
+                                                    const f = e.target.files?.[0];
+                                                    if (f) handleFile(cat, f);
+                                                    e.target.value = '';
+                                                }}
+                                            />
+                                        </label>
+                                        {r && (
+                                            <button
+                                                type="button"
+                                                onClick={() => handleDelete(cat)}
+                                                disabled={isBusy}
+                                                title={th ? 'ลบเส้นทางนี้' : 'Delete this route'}
+                                                style={{
+                                                    fontSize: 11.5, fontWeight: 700, fontFamily: 'inherit', cursor: 'pointer',
+                                                    border: '1px solid #fecaca', background: '#fff', color: '#dc2626',
+                                                    borderRadius: 6, padding: '5px 10px',
+                                                }}
+                                            >
+                                                {th ? 'ลบ' : 'Delete'}
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
+
+                                {r && isOpen && (
+                                    <div style={{ borderTop: '1px solid #e2e8f0', padding: '12px 14px', background: '#fff' }}>
+                                        <div style={{ fontSize: 12, color: '#64748b', marginBottom: 10, lineHeight: 1.6 }}>
+                                            {th
+                                                ? `ระบุว่าแต่ละ checkpoint อยู่กิโลเมตรที่เท่าไรของเส้นทาง (0 – ${r.distanceKm.toFixed(1)}) เว้นว่างไว้ได้ ระบบจะกระจายให้เท่าๆ กันแทน`
+                                                : `Set each checkpoint's km along the route (0 – ${r.distanceKm.toFixed(1)}). Leave blank to spread them evenly.`}
+                                        </div>
+                                        {cps.length === 0 ? (
+                                            <div style={{ fontSize: 12, color: '#94a3b8' }}>
+                                                {th ? 'ยังไม่มี checkpoint สำหรับระยะนี้' : 'No checkpoints for this distance yet'}
+                                            </div>
+                                        ) : (
+                                            <>
+                                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 10 }}>
+                                                    {cps.map(cp => (
+                                                        <div key={cp._id}>
+                                                            <label className="ce-label" style={{ fontSize: 11 }}>{cp.name}</label>
+                                                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                                                <input
+                                                                    type="number"
+                                                                    step="0.1"
+                                                                    min={0}
+                                                                    max={r.distanceKm}
+                                                                    className="ce-input ce-input-sm"
+                                                                    placeholder="—"
+                                                                    value={marks[cat]?.[cp.name] ?? ''}
+                                                                    onChange={(e) => setMarks(prev => ({
+                                                                        ...prev,
+                                                                        [cat]: { ...(prev[cat] || {}), [cp.name]: e.target.value },
+                                                                    }))}
+                                                                />
+                                                                <span style={{ fontSize: 11, color: '#94a3b8' }}>km</span>
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => saveMarks(cat)}
+                                                    disabled={isBusy}
+                                                    style={{
+                                                        marginTop: 12, fontSize: 12, fontWeight: 700, fontFamily: 'inherit',
+                                                        cursor: 'pointer', border: 'none', background: '#7c3aed', color: '#fff',
+                                                        borderRadius: 6, padding: '7px 16px', opacity: isBusy ? 0.6 : 1,
+                                                    }}
+                                                >
+                                                    {th ? 'บันทึกตำแหน่ง CP' : 'Save CP positions'}
+                                                </button>
+                                            </>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                        );
+                    })}
+                </div>
+            )}
+        </div>
+    );
+}
 
 function CreateEventForm() {
     const { language } = useLanguage();
@@ -811,6 +1144,17 @@ function CreateEventForm() {
                         </table>
                     </div>
                 </div>
+
+                {/* Card 3b: Course GPX per distance */}
+                <GpxRoutesCard
+                    campaignId={editId}
+                    categories={form.categories}
+                    th={language === 'th'}
+                    notify={(msg) => {
+                        setToastMessage(msg);
+                        setTimeout(() => setToastMessage(null), 3000);
+                    }}
+                />
 
                 {/* Card 4: Organizer (Danger/Red) */}
                 <div className="ce-card ce-card-danger">

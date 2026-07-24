@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
+import dynamic from 'next/dynamic';
 import { useLanguage } from '@/lib/language-context';
 import AdminLayout from '../AdminLayout';
 import '../admin.css';
@@ -48,6 +49,26 @@ interface TimingRecord {
     scanTime?: string;
     elapsedTime?: number;
 }
+
+/** A GPX course line uploaded for one race category (see /admin/events/create). */
+interface RouteTrack {
+    category: string;
+    coords: number[][];        // [[lat, lng, cumulativeKm], ...]
+    distanceKm: number;
+    elevationGainM?: number;
+    fileName?: string;
+    checkpointMarks?: { name: string; km: number }[];
+}
+
+// Leaflet touches the DOM on load, so the map is client-only.
+const RouteDensityMap = dynamic(() => import('@/components/RouteDensityMap'), {
+    ssr: false,
+    loading: () => (
+        <div style={{ height: 380, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', fontSize: 13, background: '#f8fafc', borderRadius: 10 }}>
+            กำลังโหลดแผนที่...
+        </div>
+    ),
+});
 
 // ─── Styles ──────────────────────────────────────────────────────────────────
 const styles = {
@@ -370,13 +391,16 @@ function StatusTooltip({ active, payload, label, th }: any) {
 // A smooth area chart: X = the route (each checkpoint stretch), Y = how many
 // runners are currently on that stretch. Lets ops see at a glance where the pack
 // is densest along the course. Click a point to see who is on that stretch.
-function CourseStrip({ cat, data, th, onPick }: {
+function CourseStrip({ cat, data, th, route, onPick }: {
     cat: string;
     data: SegmentDatum[];
     th: boolean;
+    /** GPX line for this category, if the organiser uploaded one. */
+    route?: RouteTrack;
     onPick: (cpName: string, runners: SegmentRunner[]) => void;
 }) {
-    if (!data.length) return null;
+    const [view, setView] = useState<'graph' | 'map'>('graph');
+
     // Segments = the stretch AFTER each checkpoint (last node has no outgoing stretch),
     // so the curve spans only the parts of the course runners can still be on.
     const segments = data.slice(0, -1).map((s, i) => ({
@@ -384,12 +408,38 @@ function CourseStrip({ cat, data, th, onPick }: {
         // "CP1 → CP2" reads as the stretch between two points
         segLabel: data[i + 1] ? `${s.cpName} → ${data[i + 1].cpName}` : s.cpName,
     }));
-    if (segments.length === 0) return null;
+
+    const hasRoute = !!route && Array.isArray(route.coords) && route.coords.length > 1;
+    // Fall back to the graph if the GPX for this category is later removed.
+    const activeView = view === 'map' && hasRoute ? 'map' : 'graph';
+
+    if (!data.length || segments.length === 0) return null;
     const totalOnCourse = segments.reduce((sum, s) => sum + s.count, 0);
     const peak = segments.reduce((m, s) => (s.count > m.count ? s : m), segments[0]);
     const maxVal = Math.max(...segments.map(s => s.count), 1);
     const many = segments.length > 6;
     const gid = `courseGrad-${cat.replace(/[^a-zA-Z0-9]/g, '')}`;
+
+    const toggleBtn = (mode: 'map' | 'graph', label: string, disabled = false) => (
+        <button
+            type="button"
+            disabled={disabled}
+            onClick={() => setView(mode)}
+            title={disabled ? (th ? 'ยังไม่ได้อัปโหลดไฟล์ GPX ของระยะนี้ (ตั้งค่าที่หน้าแก้ไขกิจกรรม)' : 'No GPX uploaded for this category') : undefined}
+            style={{
+                padding: '5px 14px', fontSize: 11, fontWeight: 800, letterSpacing: 0.5,
+                borderRadius: 7, fontFamily: 'inherit', textTransform: 'uppercase',
+                cursor: disabled ? 'not-allowed' : 'pointer',
+                border: `1px solid ${activeView === mode ? '#7c3aed' : '#e2e8f0'}`,
+                background: activeView === mode ? '#7c3aed' : '#fff',
+                color: disabled ? '#cbd5e1' : activeView === mode ? '#fff' : '#64748b',
+                opacity: disabled ? 0.6 : 1,
+                transition: 'all 0.15s',
+            }}
+        >
+            {label}
+        </button>
+    );
 
     return (
         <div style={{ borderTop: '1px solid #f1f5f9', padding: '16px 12px 18px 4px' }}>
@@ -402,7 +452,11 @@ function CourseStrip({ cat, data, th, onPick }: {
                         {th ? 'จำลองว่านักวิ่งกระจุกอยู่ช่วงไหนของเส้นทาง' : 'Where runners are currently bunched up along the route'}
                     </div>
                 </div>
-                <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                        {toggleBtn('map', 'Map', !hasRoute)}
+                        {toggleBtn('graph', th ? 'กราฟ' : 'Graph')}
+                    </div>
                     <div style={{ textAlign: 'right' }}>
                         <div style={{ fontSize: 9, color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>{th ? 'บนเส้นทาง' : 'On course'}</div>
                         <div style={{ fontSize: 16, fontWeight: 900, color: '#7c3aed' }}>{totalOnCourse}</div>
@@ -416,6 +470,33 @@ function CourseStrip({ cat, data, th, onPick }: {
                 </div>
             </div>
 
+            {activeView === 'map' && route ? (
+                <div style={{ padding: '0 8px 0 12px' }}>
+                    <RouteDensityMap
+                        coords={route.coords}
+                        distanceKm={route.distanceKm}
+                        cpNames={data.map(d => d.cpName)}
+                        segments={segments.map((s, i) => ({
+                            from: s.cpName,
+                            to: data[i + 1]?.cpName || s.cpName,
+                            count: s.count,
+                        }))}
+                        checkpointMarks={route.checkpointMarks}
+                        th={th}
+                        height={400}
+                        onPickSegment={(i) => {
+                            const seg = segments[i];
+                            if (seg && seg.count > 0) onPick(seg.cpName, seg.runners);
+                        }}
+                    />
+                    <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 8, textAlign: 'center' }}>
+                        {th
+                            ? `💡 สีบนเส้นทาง = ความหนาแน่นนักวิ่ง · คลิกที่เส้นเพื่อดูรายชื่อ · ระยะรวม ${route.distanceKm.toFixed(1)} กม.`
+                            : `💡 Line colour = runner density · click a stretch for names · total ${route.distanceKm.toFixed(1)} km`}
+                    </div>
+                </div>
+            ) : (
+            <>
             <ResponsiveContainer width="100%" height={230}>
                 <AreaChart
                     data={segments}
@@ -471,7 +552,16 @@ function CourseStrip({ cat, data, th, onPick }: {
                 {th
                     ? '💡 แกนล่าง = ช่วงเส้นทาง (จากจุดนั้นไปจุดถัดไป) · แกนซ้าย = จำนวนคนที่อยู่ในช่วงนั้น · คลิกที่จุดเพื่อดูรายชื่อ'
                     : '💡 X = course stretch (from each point onward) · Y = runners on that stretch · click a point for names'}
+                {!hasRoute && (
+                    <div style={{ marginTop: 3, color: '#cbd5e1' }}>
+                        {th
+                            ? 'อยากดูแบบแผนที่จริง? อัปโหลดไฟล์ GPX ของระยะนี้ที่หน้าแก้ไขกิจกรรม'
+                            : 'Want the real map view? Upload this category\'s GPX on the event edit page.'}
+                    </div>
+                )}
             </div>
+            </>
+            )}
         </div>
     );
 }
@@ -555,6 +645,8 @@ export default function GeneralChartPage() {
     const [campaign, setCampaign] = useState<Campaign | null>(null);
     const [loading, setLoading] = useState(true);
     const [checkpoints, setCheckpoints] = useState<Checkpoint[]>([]);
+    /** GPX course lines keyed by race category — powers the MAP view. */
+    const [routes, setRoutes] = useState<Record<string, RouteTrack>>({});
     const [runners, setRunners] = useState<Runner[]>([]);
     const [cpTimingMap, setCpTimingMap] = useState<Record<string, Set<string>>>({});
     const [runnersLoading, setRunnersLoading] = useState(false);
@@ -588,6 +680,24 @@ export default function GeneralChartPage() {
                 const data: Checkpoint[] = await res.json();
                 setCheckpoints([...data].sort((a, b) => (a.orderNum ?? 999) - (b.orderNum ?? 999)));
             } catch { setCheckpoints([]); }
+        })();
+    }, [campaign?._id]);
+
+    // ── Load GPX course lines (one per category, optional) ──
+    useEffect(() => {
+        if (!campaign?._id) return;
+        (async () => {
+            try {
+                const res = await fetch(`/api/routes?campaignId=${campaign._id}`, { cache: 'no-store' });
+                if (!res.ok) return;
+                const data = await res.json();
+                if (!Array.isArray(data)) return;
+                const byCat: Record<string, RouteTrack> = {};
+                for (const r of data as RouteTrack[]) {
+                    if (r?.category && Array.isArray(r.coords) && r.coords.length > 1) byCat[r.category] = r;
+                }
+                setRoutes(byCat);
+            } catch { setRoutes({}); }
         })();
     }, [campaign?._id]);
 
@@ -1037,7 +1147,7 @@ export default function GeneralChartPage() {
                             </div>
 
                             {/* ─── Course Strip: horizontal route map with runners per segment ─── */}
-                            <CourseStrip cat={cat} data={dataCurrently || []} th={th} onPick={(cpName, segRunners) => setCpDetail({ cat, cpName, runners: segRunners })} />
+                            <CourseStrip cat={cat} data={dataCurrently || []} th={th} route={routes[cat]} onPick={(cpName, segRunners) => setCpDetail({ cat, cpName, runners: segRunners })} />
                             {/* Mini summary row */}
                             {(() => {
                                 const cells = [
