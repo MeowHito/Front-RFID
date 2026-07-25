@@ -338,15 +338,14 @@ export default function TopOverallWinnersBySlugPage() {
     );
 
     return (
-        <div style={{ fontFamily: "'Prompt', 'Inter', sans-serif", background: '#0f172a', height: isMobile ? 'auto' : '100vh', minHeight: '100vh', overflow: isMobile ? 'auto' : 'hidden', display: 'flex', flexDirection: 'column', padding: isMobile ? '8px' : '0.8vh 1vw' }}>
+        <div style={{ fontFamily: "'Prompt', 'Inter', sans-serif", background: '#f1f5f9', height: isMobile ? 'auto' : '100vh', minHeight: '100vh', overflow: isMobile ? 'auto' : 'hidden', display: 'flex', flexDirection: 'column', padding: isMobile ? '8px' : '0.8vh 1vw' }}>
             <style>{`@keyframes pulse { 0%,100% { opacity:1 } 50% { opacity:0.3 } }`}</style>
-            {/* On mobile, hide the control header for public viewers who are not logged in. */}
-            {!(isMobile && !isAuthenticated) && (
+            {/* Full control header (refresh status, download, language) is admin/organizer-only. */}
+            {isAuthenticated && (
             <header style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', justifyContent: 'space-between', alignItems: isMobile ? 'stretch' : 'center', padding: isMobile ? '10px 12px' : '0.6vh 1.5vw', background: '#1e293b', borderRadius: 10, marginBottom: isMobile ? 8 : '0.8vh', flexShrink: 0, border: '1px solid #334155', gap: isMobile ? 8 : 0 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <Link href="/" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                         <Image src="/logo-white.png" alt="ACTION" width={120} height={40} style={{ height: isMobile ? 28 : '3.5vh', width: 'auto' }} />
-                        <span style={{ color: '#818cf8', fontWeight: 900, fontSize: isMobile ? 14 : '2vh', letterSpacing: 2, textTransform: 'uppercase' }}>Top Overall {topN}</span>
                     </Link>
 
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -357,36 +356,51 @@ export default function TopOverallWinnersBySlugPage() {
                     </div>
                 </div>
 
-                <div style={{ display: 'flex', alignItems: isMobile ? 'stretch' : 'center', gap: isMobile ? 6 : '1vw', flexDirection: isMobile ? 'column' : 'row' }}>
-                    {campaign && (
-                        <span style={{ fontSize: isMobile ? 11 : '1.3vh', fontWeight: 700, color: '#94a3b8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: isMobile ? '100%' : '20vw' }}>
+                {campaign && !initialLoading && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0, justifyContent: isMobile ? 'flex-end' : undefined }}>
+                        <NameLangToggle value={language} onChange={setLanguage} isMobile={isMobile} />
+                        <button
+                            onClick={() => downloadGroup(maleWinners, femaleWinners, 'both')}
+                            disabled={!!downloading}
+                            title="Download Top Overall Winners (Excel)"
+                            style={{ display: 'flex', alignItems: 'center', gap: 5, padding: isMobile ? '5px 10px' : '0.35vh 0.7vw', background: '#4f46e5', border: '1px solid #4338ca', borderRadius: 7, color: 'white', fontSize: isMobile ? 11 : '1.15vh', fontWeight: 800, cursor: 'pointer', whiteSpace: 'nowrap', opacity: downloading ? 0.6 : 1, transition: 'opacity 0.15s', fontFamily: "'Prompt','Inter',sans-serif" }}
+                        >
+                            {dlIcon(11)}
+                            Download
+                        </button>
+                    </div>
+                )}
+            </header>
+            )}
+
+            {/* Public info + distance-selector bar — visible to everyone, white theme. */}
+            {campaign && (
+                <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', alignItems: 'center', justifyContent: 'space-between', gap: isMobile ? 10 : '1vw', padding: isMobile ? '10px 12px' : '0.7vh 1.5vw', background: '#ffffff', borderRadius: 10, marginBottom: isMobile ? 8 : '0.8vh', border: '1px solid #e2e8f0', boxShadow: '0 1px 3px rgba(15,23,42,0.06)', flexShrink: 0 }}>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: isMobile ? 'center' : 'flex-start', gap: isMobile ? 6 : '0.7vw', textAlign: isMobile ? 'center' : 'left' }}>
+                        <span style={{ fontSize: isMobile ? 15 : '2.1vh', fontWeight: 900, color: '#1e293b', letterSpacing: 1, textTransform: 'uppercase', whiteSpace: 'nowrap' }}>
+                            Top Overall {topN}
+                        </span>
+                        <span style={{ fontSize: isMobile ? 13 : '1.7vh', fontWeight: 700, color: '#475569', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: isMobile ? '100%' : '28vw' }}>
                             {campaign.name}
                         </span>
-                    )}
+                        {selectedCategory && (
+                            <span style={{ display: 'inline-flex', alignItems: 'center', padding: isMobile ? '3px 14px' : '0.2vh 1.1vw', background: '#4f46e5', color: '#fff', borderRadius: 999, fontWeight: 900, fontSize: isMobile ? 12 : '1.6vh', letterSpacing: 0.5, whiteSpace: 'nowrap', flexShrink: 0 }}>
+                                {selectedCategory}
+                                {campaign.categories?.find(c => c.name === selectedCategory)?.distance
+                                    ? ` · ${campaign.categories!.find(c => c.name === selectedCategory)!.distance}`
+                                    : ''}
+                            </span>
+                        )}
+                    </div>
 
-                    {campaign && !initialLoading && (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-                            <NameLangToggle value={language} onChange={setLanguage} isMobile={isMobile} />
-                            <button
-                                onClick={() => downloadGroup(maleWinners, femaleWinners, 'both')}
-                                disabled={!!downloading}
-                                title="Download Top Overall Winners (Excel)"
-                                style={{ display: 'flex', alignItems: 'center', gap: 5, padding: isMobile ? '5px 10px' : '0.35vh 0.7vw', background: '#4f46e5', border: '1px solid #4338ca', borderRadius: 7, color: 'white', fontSize: isMobile ? 11 : '1.15vh', fontWeight: 800, cursor: 'pointer', whiteSpace: 'nowrap', opacity: downloading ? 0.6 : 1, transition: 'opacity 0.15s', fontFamily: "'Prompt','Inter',sans-serif" }}
-                            >
-                                {dlIcon(11)}
-                                Download
-                            </button>
-                        </div>
-                    )}
-
-                    {campaign?.categories && campaign.categories.length > 0 && (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 6 : '0.4vw', flexWrap: 'wrap' }}>
+                    {campaign.categories && campaign.categories.length > 0 && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 6 : '0.4vw', flexWrap: 'wrap', justifyContent: 'center' }}>
                             <div style={{ display: 'flex', gap: isMobile ? 6 : '0.4vw', overflowX: 'auto', WebkitOverflowScrolling: 'touch', paddingBottom: isMobile ? 2 : 0 }}>
                                 {campaign.categories.map(cat => (
                                     <button
                                         key={cat.name}
                                         onClick={() => { setSelectedCategory(cat.name); setAutoMode(false); }}
-                                        style={{ padding: isMobile ? '6px 12px' : '0.4vh 1vw', borderRadius: 6, fontSize: isMobile ? 12 : '1.3vh', fontWeight: 700, border: selectedCategory === cat.name ? '2px solid #818cf8' : '1px solid #475569', background: selectedCategory === cat.name ? '#818cf8' : 'transparent', color: selectedCategory === cat.name ? '#1e1b4b' : '#cbd5e1', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }}
+                                        style={{ padding: isMobile ? '6px 12px' : '0.4vh 1vw', borderRadius: 6, fontSize: isMobile ? 12 : '1.3vh', fontWeight: 700, border: selectedCategory === cat.name ? '2px solid #4f46e5' : '1px solid #cbd5e1', background: selectedCategory === cat.name ? '#4f46e5' : '#f8fafc', color: selectedCategory === cat.name ? '#ffffff' : '#94a3b8', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0, transition: 'background 0.15s, color 0.15s, border-color 0.15s' }}
                                     >
                                         {cat.name}{cat.distance ? ` (${cat.distance})` : ''}
                                     </button>
@@ -395,7 +409,7 @@ export default function TopOverallWinnersBySlugPage() {
                             {campaign.categories.length > 1 && (
                                 <button
                                     onClick={() => setAutoMode(m => !m)}
-                                    style={{ display: 'flex', alignItems: 'center', gap: 6, padding: isMobile ? '6px 12px' : '0.4vh 0.8vw', background: autoMode ? '#818cf8' : 'transparent', border: `1px solid ${autoMode ? '#818cf8' : '#475569'}`, borderRadius: 6, color: autoMode ? '#1e1b4b' : '#94a3b8', fontSize: isMobile ? 12 : '1.3vh', fontWeight: 800, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0, minWidth: isMobile ? 80 : 72, justifyContent: 'center', transition: 'background 0.2s, color 0.2s, border-color 0.2s' }}
+                                    style={{ display: 'flex', alignItems: 'center', gap: 6, padding: isMobile ? '6px 12px' : '0.4vh 0.8vw', background: autoMode ? '#4f46e5' : '#f8fafc', border: `1px solid ${autoMode ? '#4f46e5' : '#cbd5e1'}`, borderRadius: 6, color: autoMode ? '#ffffff' : '#94a3b8', fontSize: isMobile ? 12 : '1.3vh', fontWeight: 800, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0, minWidth: isMobile ? 80 : 72, justifyContent: 'center', transition: 'background 0.2s, color 0.2s, border-color 0.2s' }}
                                 >
                                     {autoMode ? `⏸ ${autoCountdown}s` : '▶ AUTO'}
                                 </button>
@@ -403,27 +417,10 @@ export default function TopOverallWinnersBySlugPage() {
                         </div>
                     )}
                 </div>
-            </header>
-            )}
-
-            {campaign && (
-                <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', alignItems: 'center', justifyContent: 'center', gap: isMobile ? 4 : '0.8vw', padding: isMobile ? '8px 12px' : '0.5vh 1.5vw', background: '#1e293b', borderRadius: 10, marginBottom: isMobile ? 8 : '0.8vh', border: '1px solid #334155', flexShrink: 0, textAlign: 'center' }}>
-                    <span style={{ fontSize: isMobile ? 15 : '2.2vh', fontWeight: 900, color: '#f1f5f9', letterSpacing: 0.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: isMobile ? '100%' : '55vw' }}>
-                        {campaign.name}
-                    </span>
-                    {selectedCategory && (
-                        <span style={{ display: 'inline-flex', alignItems: 'center', padding: isMobile ? '3px 14px' : '0.2vh 1.2vw', background: '#818cf8', color: '#1e1b4b', borderRadius: 999, fontWeight: 900, fontSize: isMobile ? 13 : '1.8vh', letterSpacing: 1, whiteSpace: 'nowrap', flexShrink: 0 }}>
-                            {selectedCategory}
-                            {campaign.categories?.find(c => c.name === selectedCategory)?.distance
-                                ? ` · ${campaign.categories!.find(c => c.name === selectedCategory)!.distance}`
-                                : ''}
-                        </span>
-                    )}
-                </div>
             )}
 
             {initialLoading && displayedRunners.length === 0 ? (
-                <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', fontSize: isMobile ? 16 : '2vh' }}>
+                <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b', fontSize: isMobile ? 16 : '2vh' }}>
                     Loading...
                 </div>
             ) : (

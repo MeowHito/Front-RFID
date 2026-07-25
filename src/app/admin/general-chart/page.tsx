@@ -10,6 +10,7 @@ import {
     AreaChart, Area,
 } from 'recharts';
 import { resolveCpKm, elevationRange } from '@/lib/routeGeometry';
+import { buildEffortProfile, paceFrom, projectPosition } from '@/lib/routeProgress';
 import type { ProfileMarker } from '@/components/ElevationProfile2D';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -432,20 +433,79 @@ function CourseStrip({ cat, data, th, route, onPick }: {
     // Fall back to the graph if the GPX for this category is later removed.
     const activeView = (view === 'map' || view === '2d') && hasRoute ? view : 'graph';
 
+    // The estimate moves with the clock, so tick while the 2D view is open.
+    // 5s is far finer than the figures visibly move and costs one cheap re-render.
+    const [now, setNow] = useState(() => Date.now());
+    useEffect(() => {
+        if (activeView !== '2d') return;
+        setNow(Date.now());
+        const id = setInterval(() => setNow(Date.now()), 5000);
+        return () => clearInterval(id);
+    }, [activeView]);
+
     // ── Where every runner currently is, in km along the uploaded line ──
-    // A runner sits at the last checkpoint they scanned, so the km of that
-    // checkpoint is their position. Ordering: further along wins, then the faster
-    // split at that same checkpoint.
+    // A scan only says where someone *was*, so each runner is carried forward from
+    // their last checkpoint at the speed of the leg they just ran (climb included),
+    // and never past the checkpoint ahead of them. Ordering: further along wins,
+    // then the faster split at that same checkpoint.
     const cpNames = data.map(d => d.cpName);
     const cpKm = hasRoute ? resolveCpKm(cpNames, route!.distanceKm, route!.checkpointMarks) : [];
-    const onCourse = hasRoute
+    const effort = useMemo(
+        () => (hasRoute ? buildEffortProfile(route!.coords) : null),
+        // The track only changes when a new GPX is uploaded.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        [hasRoute, route?.coords],
+    );
+
+    const onCourse = hasRoute && effort
         ? data.flatMap((d, i) => d.runners
             .filter(r => r.bucket === 'active')
-            .map(r => ({ ...r, cpIndex: i, cpName: d.cpName, km: cpKm[i] ?? 0 })))
-            .sort((a, b) => (b.cpIndex - a.cpIndex)
+            .map(r => {
+                const lastKm = cpKm[i] ?? 0;
+                const isFinish = i === data.length - 1 || r.status === 'finished';
+                const speed = isFinish ? 0 : paceFrom(
+                    effort,
+                    r.prevScanMs && r.lastScanMs && i > 0
+                        ? { from: cpKm[i - 1] ?? 0, to: lastKm }
+                        : null,
+                    r.prevScanMs && r.lastScanMs ? r.lastScanMs - r.prevScanMs : undefined,
+                    lastKm,
+                    r.elapsedMs,
+                );
+                const moved = isFinish || !r.lastScanMs
+                    ? { km: lastKm, speed: 0, capped: false }
+                    : projectPosition(effort, lastKm, cpKm[i + 1], speed, (now - r.lastScanMs) / 3600000);
+                return {
+                    ...r,
+                    cpIndex: i,
+                    cpName: d.cpName,
+                    cpKm: lastKm,
+                    nextCpName: data[i + 1]?.cpName,
+                    km: moved.km,
+                    speed: moved.speed,
+                    capped: moved.capped,
+                    movingSinceMs: r.lastScanMs,
+                };
+            }))
+            // A projected runner is genuinely ahead of one still standing on the
+            // same checkpoint, so rank on the estimate first.
+            .sort((a, b) => (b.km - a.km)
+                || (b.cpIndex - a.cpIndex)
                 || ((a.elapsedMs ?? Infinity) - (b.elapsedMs ?? Infinity))
                 || (a.bib || '').localeCompare(b.bib || '', undefined, { numeric: true }))
         : [];
+
+    /** "4.2 กม./ชม. · ออกจาก CP2 มา 12 นาที" — the why behind a figure's position. */
+    const moveNote = (r: typeof onCourse[number]) => {
+        if (!r.speed || !r.movingSinceMs) return th ? 'อยู่ที่จุดสแกน' : 'at the scan point';
+        const mins = Math.max(0, Math.round((now - r.movingSinceMs) / 60000));
+        const since = mins >= 60 ? `${Math.floor(mins / 60)} ชม. ${mins % 60} น.` : `${mins} ${th ? 'นาที' : 'min'}`;
+        const head = `${r.speed.toFixed(1)} ${th ? 'กม./ชม.' : 'km/h'}`;
+        const tail = th ? `ออกจาก ${r.cpName} มา ${since}` : `${since} since ${r.cpName}`;
+        return r.capped
+            ? `${head} · ${th ? `ถึงคิว ${r.nextCpName} แล้ว ยังไม่สแกน` : `due at ${r.nextCpName}`}`
+            : `${head} · ${tail}`;
+    };
 
     const profileMarkers: ProfileMarker[] = (() => {
         if (!hasRoute) return [];
@@ -459,7 +519,13 @@ function CourseStrip({ cat, data, th, route, onPick }: {
                         gender: g,
                         label: `#${i + 1}`,
                         sublabel: r.bib,
-                        tooltip: `${i + 1}. ${r.name}\nBIB ${r.bib} · ${g === 'M' ? (th ? 'ชาย' : 'Male') : (th ? 'หญิง' : 'Female')}\n${r.cpName} · ${r.km.toFixed(1)} ${th ? 'กม.' : 'km'}`,
+                        moving: r.speed > 0 && !r.capped,
+                        tooltip: [
+                            `${i + 1}. ${r.name}`,
+                            `BIB ${r.bib} · ${g === 'M' ? (th ? 'ชาย' : 'Male') : (th ? 'หญิง' : 'Female')}`,
+                            `${th ? 'ประมาณ' : 'approx.'} ${r.km.toFixed(2)} ${th ? 'กม.' : 'km'} (${r.cpName}${r.nextCpName ? ` → ${r.nextCpName}` : ''})`,
+                            moveNote(r),
+                        ].join('\n'),
                         onClick: () => onPick(r.cpName, data[r.cpIndex]?.runners || []),
                     });
                 });
@@ -475,16 +541,26 @@ function CourseStrip({ cat, data, th, route, onPick }: {
             // Sit the group where its middle runner is, so a group spread over two
             // checkpoints does not pretend everyone is at the front of it.
             const avgKm = chunk.reduce((s, r) => s + r.km, 0) / chunk.length;
-            const spread = chunk[0].km === chunk[chunk.length - 1].km
-                ? `${chunk[0].km.toFixed(1)} ${th ? 'กม.' : 'km'}`
-                : `${Math.min(...chunk.map(r => r.km)).toFixed(1)}–${Math.max(...chunk.map(r => r.km)).toFixed(1)} ${th ? 'กม.' : 'km'}`;
+            const lo = Math.min(...chunk.map(r => r.km));
+            const hi = Math.max(...chunk.map(r => r.km));
+            const spread = hi - lo < 0.05
+                ? `${avgKm.toFixed(1)} ${th ? 'กม.' : 'km'}`
+                : `${lo.toFixed(1)}–${hi.toFixed(1)} ${th ? 'กม.' : 'km'}`;
+            const speeds = chunk.map(r => r.speed).filter(s => s > 0);
+            const avgSpeed = speeds.length ? speeds.reduce((s, v) => s + v, 0) / speeds.length : 0;
             out.push({
                 key: `g${start}`,
                 km: avgKm,
                 gender: males === females ? 'MIX' : males > females ? 'M' : 'F',
                 label: `${start + 1}–${start + chunk.length}`,
                 sublabel: `${chunk.length}`,
-                tooltip: `${th ? 'กลุ่มที่' : 'Group'} ${Math.floor(start / size) + 1} (${th ? 'อันดับ' : 'rank'} ${start + 1}–${start + chunk.length})\n${chunk.length} ${th ? 'คน' : 'runners'} · ♂ ${males} / ♀ ${females}\n${spread}`,
+                moving: avgSpeed > 0,
+                tooltip: [
+                    `${th ? 'กลุ่มที่' : 'Group'} ${Math.floor(start / size) + 1} (${th ? 'อันดับ' : 'rank'} ${start + 1}–${start + chunk.length})`,
+                    `${chunk.length} ${th ? 'คน' : 'runners'} · ♂ ${males} / ♀ ${females}`,
+                    spread,
+                    avgSpeed > 0 ? `${th ? 'ความเร็วเฉลี่ย' : 'avg speed'} ${avgSpeed.toFixed(1)} ${th ? 'กม./ชม.' : 'km/h'}` : (th ? 'อยู่ที่จุดสแกน' : 'at the scan point'),
+                ].join('\n'),
                 onClick: () => onPick(chunk[0].cpName, chunk.map(({ bib, name, status, gender, bucket }) => ({ bib, name, status, gender, bucket }))),
             });
         }
@@ -625,11 +701,16 @@ function CourseStrip({ cat, data, th, route, onPick }: {
                     <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 6, textAlign: 'center' }}>
                         {profileMode === 'leaders'
                             ? (th
-                                ? '💡 ตุ๊กตา = ผู้นำ 3 คนแรกของแต่ละเพศ ยืนอยู่ที่จุดเช็คพอยต์ล่าสุดที่สแกนผ่าน · คลิกเพื่อดูรายชื่อคนในช่วงนั้น'
-                                : '💡 Each figure is a gender leader at their latest checkpoint · click for the names on that stretch')
+                                ? '💡 ตุ๊กตา = ผู้นำ 3 คนแรกของแต่ละเพศ · คลิกเพื่อดูรายชื่อคนในช่วงนั้น'
+                                : '💡 Each figure is a gender leader · click for the names on that stretch')
                             : (th
                                 ? `💡 แบ่งนักวิ่งที่ยังอยู่บนเส้นทางเป็นกลุ่มละ ${groupSize} คนตามลำดับการวิ่ง · ตัวเลขบนป้าย = อันดับที่อยู่ในกลุ่ม · คลิกเพื่อดูรายชื่อ`
                                 : `💡 Runners still on course, cut into groups of ${groupSize} by position · the badge shows the ranks in that group · click for names`)}
+                        <div style={{ marginTop: 3 }}>
+                            {th
+                                ? '🚶 ตำแหน่งเป็นค่าประมาณ — คำนวณต่อจากจุดสแกนล่าสุดด้วยความเร็วช่วงที่เพิ่งวิ่งมา (คิดความชันด้วย: ขึ้นเขา 100 ม. ≈ วิ่งเพิ่ม 1 กม.) ตุ๊กตาจะค่อยๆ ขยับไปจุดถัดไปเอง และหยุดรอที่จุดนั้นถ้ายังไม่มีการสแกน'
+                                : '🚶 Positions are estimates — carried forward from the last scan at the speed of the leg just run, with climb counted (100 m of ascent ≈ 1 extra km). Figures creep toward the next checkpoint and wait there until it scans.'}
+                        </div>
                         {!elevationRange(route.coords) && (
                             <div style={{ marginTop: 3, color: '#f59e0b' }}>
                                 {/* A recorded climb with no per-point elevation means the file
@@ -807,6 +888,10 @@ interface SegmentRunner {
     bucket: StatusBucket;
     /** Time on course at the last scan, used to order runners on the same stretch. */
     elapsedMs?: number;
+    /** Epoch ms of the scan at the checkpoint they are standing on. */
+    lastScanMs?: number;
+    /** Epoch ms of the scan at the checkpoint before it, when they passed one. */
+    prevScanMs?: number;
 }
 interface SegmentDatum {
     cpName: string;
@@ -831,7 +916,8 @@ export default function GeneralChartPage() {
     /** GPX course lines keyed by race category — powers the MAP view. */
     const [routes, setRoutes] = useState<Record<string, RouteTrack>>({});
     const [runners, setRunners] = useState<Runner[]>([]);
-    const [cpTimingMap, setCpTimingMap] = useState<Record<string, Set<string>>>({});
+    /** checkpoint name → bib → scan time (ms). The times drive the 2D dead reckoning. */
+    const [cpTimingMap, setCpTimingMap] = useState<Record<string, Map<string, number>>>({});
     const [runnersLoading, setRunnersLoading] = useState(false);
     const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
     const [autoRefresh, setAutoRefresh] = useState(true);
@@ -904,13 +990,25 @@ export default function GeneralChartPage() {
                         try {
                             const res = await fetch(`/api/timing/checkpoint-by-campaign/${campaign._id}?cp=${encodeURIComponent(cp.name)}`, { cache: 'no-store' });
                             const records: TimingRecord[] = await res.json();
-                            return { cpName: cp.name, bibs: new Set(records.filter(r => r.bib && r.scanTime).map(r => r.bib)) };
+                            // Keep the scan time, not just the bib: the 2D view needs to know
+                            // how long ago someone left this checkpoint.
+                            const bibs = new Map<string, number>();
+                            for (const r of records) {
+                                if (!r.bib || !r.scanTime) continue;
+                                const t = new Date(r.scanTime).getTime();
+                                if (!Number.isFinite(t)) continue;
+                                // A checkpoint can be scanned twice (in/out) — the first
+                                // scan is the arrival, which is what a position is based on.
+                                const prev = bibs.get(r.bib);
+                                if (prev === undefined || t < prev) bibs.set(r.bib, t);
+                            }
+                            return { cpName: cp.name, bibs };
                         } catch {
-                            return { cpName: cp.name, bibs: new Set<string>() };
+                            return { cpName: cp.name, bibs: new Map<string, number>() };
                         }
                     })
                 );
-                const m: Record<string, Set<string>> = {};
+                const m: Record<string, Map<string, number>> = {};
                 for (const { cpName, bibs } of cpResults) m[cpName] = bibs;
                 setCpTimingMap(m);
             }
@@ -937,7 +1035,7 @@ export default function GeneralChartPage() {
     // ── Summary stats ──
     const summary = useMemo(() => {
         const total = runners.length;
-        const startBibs = cpTimingMap['START'] || cpTimingMap['Start'] || new Set<string>();
+        const startBibs = cpTimingMap['START'] || cpTimingMap['Start'] || new Map<string, number>();
         const started = runners.filter(r => startBibs.has(r.bib) || r.status === 'in_progress' || r.status === 'finished').length;
         const finished = runners.filter(r => r.status === 'finished').length;
         const inProgress = runners.filter(r => r.status === 'in_progress').length;
@@ -975,17 +1073,18 @@ export default function GeneralChartPage() {
             for (let i = 0; i < catCps.length; i++) {
                 const cp = catCps[i];
                 const nextCp = i < catCps.length - 1 ? catCps[i + 1] : null;
-                const cpBibs = cpTimingMap[cp.name] || new Set<string>();
+                const cpBibs = cpTimingMap[cp.name] || new Map<string, number>();
                 const catBibsAtCp = catRunners.filter(r => cpBibs.has(r.bib));
                 let remaining: Runner[];
                 if (cp.type === 'finish' || cp.name.toLowerCase() === 'finish') {
                     remaining = catBibsAtCp;
                 } else if (nextCp) {
-                    const nextBibs = cpTimingMap[nextCp.name] || new Set<string>();
+                    const nextBibs = cpTimingMap[nextCp.name] || new Map<string, number>();
                     remaining = catBibsAtCp.filter(r => !nextBibs.has(r.bib));
                 } else {
                     remaining = catBibsAtCp;
                 }
+                const prevBibs = i > 0 ? cpTimingMap[catCps[i - 1].name] : undefined;
                 const segRunners: SegmentRunner[] = remaining.map(r => ({
                     bib: r.bib,
                     name: `${r.firstName || ''} ${r.lastName || ''}`.trim() || r.bib,
@@ -993,6 +1092,10 @@ export default function GeneralChartPage() {
                     gender: r.gender,
                     bucket: statusBucketOf(r.status),
                     elapsedMs: r.elapsedTime || r.netTime || r.gunTime || undefined,
+                    // The last two scans give the speed of the leg they just ran,
+                    // which is what the 2D view carries forward.
+                    lastScanMs: cpBibs.get(r.bib),
+                    prevScanMs: prevBibs?.get(r.bib),
                 })).sort((a, b) => (a.bib || '').localeCompare(b.bib || '', undefined, { numeric: true }));
                 const by = (b: StatusBucket) => segRunners.filter(r => r.bucket === b).length;
                 data.push({
@@ -1015,7 +1118,7 @@ export default function GeneralChartPage() {
     // ── Per-category summary ──
     const catSummary = useMemo(() => {
         const result: Record<string, { total: number; started: number; finished: number; dns: number; dnf: number; dq: number; mF: number; fF: number }> = {};
-        const startBibs = cpTimingMap['START'] || cpTimingMap['Start'] || new Set<string>();
+        const startBibs = cpTimingMap['START'] || cpTimingMap['Start'] || new Map<string, number>();
         for (const cat of categories) {
             const cr = runners.filter(r => r.category === cat);
             result[cat] = {
@@ -1081,7 +1184,7 @@ export default function GeneralChartPage() {
 
     // ── Runner count by status (Starters / Finishers / DNF / DNS / DQ) ──
     const statusChartData = useMemo(() => {
-        const startBibs = cpTimingMap['START'] || cpTimingMap['Start'] || new Set<string>();
+        const startBibs = cpTimingMap['START'] || cpTimingMap['Start'] || new Map<string, number>();
         const starters = runners.filter(r => startBibs.has(r.bib) || r.status === 'in_progress' || r.status === 'finished' || r.status === 'dnf');
         const finishers = runners.filter(r => r.status === 'finished');
         const dnfRunners = runners.filter(r => r.status === 'dnf');
@@ -1098,7 +1201,7 @@ export default function GeneralChartPage() {
 
     // ── Starters by age group ──
     const startersByAgeData = useMemo(() => {
-        const startBibs = cpTimingMap['START'] || cpTimingMap['Start'] || new Set<string>();
+        const startBibs = cpTimingMap['START'] || cpTimingMap['Start'] || new Map<string, number>();
         const starters = runners.filter(r => startBibs.has(r.bib) || r.status === 'in_progress' || r.status === 'finished' || r.status === 'dnf');
         const groups: Record<string, { male: number; female: number }> = {};
         starters.forEach(r => {
@@ -1126,7 +1229,7 @@ export default function GeneralChartPage() {
             if (catCps.length === 0) continue;
             const data: { cpName: string; count: number; total: number }[] = [];
             for (const cp of catCps) {
-                const cpBibs = cpTimingMap[cp.name] || new Set<string>();
+                const cpBibs = cpTimingMap[cp.name] || new Map<string, number>();
                 const count = catRunners.filter(r => cpBibs.has(r.bib)).length;
                 data.push({ cpName: cp.name, count, total: catRunners.length });
             }

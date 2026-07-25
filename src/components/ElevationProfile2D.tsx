@@ -21,6 +21,8 @@ export interface ProfileMarker {
     label: string;
     /** Runner name or "10 คน", drawn under the label. */
     sublabel?: string;
+    /** True while the position is a moving estimate rather than a scan point. */
+    moving?: boolean;
     tooltip?: string;
     onClick?: () => void;
 }
@@ -48,13 +50,29 @@ const FIGURE_LIFT = 34;
 /** Markers closer than this on X are stacked upwards instead of overlapping. */
 const STACK_GAP_PX = 26;
 
-/** A small stick figure — head plus body — centred on (0, 0) at its feet. */
-function Figure({ color, dark }: { color: string; dark: string }) {
+/**
+ * A small stick figure — head plus body — centred on (0, 0) at its feet.
+ * `moving` leans it forward and swings the legs, so a figure being carried
+ * forward by the estimate reads differently from one parked on a scan point.
+ */
+function Figure({ color, dark, moving }: { color: string; dark: string; moving?: boolean }) {
     return (
         <g>
+            {moving && (
+                <animateTransform
+                    attributeName="transform"
+                    type="rotate"
+                    values="-4 0 0; 4 0 0; -4 0 0"
+                    dur="1.1s"
+                    repeatCount="indefinite"
+                />
+            )}
             <circle cx={0} cy={-15.5} r={3.6} fill={color} stroke={dark} strokeWidth={0.8} />
             <path
-                d="M0 -11.6 L0 -5 M0 -11.6 L-4 -8.4 M0 -11.6 L4 -8.4 M0 -5 L-3.4 0 M0 -5 L3.4 0"
+                d={moving
+                    // arms and legs opened up mid-stride
+                    ? 'M0 -11.6 L0 -5 M0 -11.6 L-4.6 -9.6 M0 -11.6 L4.6 -7.4 M0 -5 L-4.6 0 M0 -5 L4.2 0'
+                    : 'M0 -11.6 L0 -5 M0 -11.6 L-4 -8.4 M0 -11.6 L4 -8.4 M0 -5 L-3.4 0 M0 -5 L3.4 0'}
                 stroke={color}
                 strokeWidth={2.4}
                 strokeLinecap="round"
@@ -261,7 +279,13 @@ export default function ElevationProfile2D({
                         <g
                             key={marker.key}
                             transform={`translate(${px}, ${top})`}
-                            style={{ cursor: marker.onClick ? 'pointer' : 'default' }}
+                            style={{
+                                cursor: marker.onClick ? 'pointer' : 'default',
+                                // Positions are recomputed every 5s; easing over the
+                                // same 5s turns those steps into continuous motion
+                                // (and softens the jump when a new scan lands).
+                                transition: 'transform 5s linear',
+                            }}
                             onClick={marker.onClick}
                             onMouseEnter={() => marker.tooltip && setHover({ x: px, y: top, text: marker.tooltip })}
                             onMouseLeave={() => setHover(null)}
@@ -270,7 +294,7 @@ export default function ElevationProfile2D({
                                 <line x1={0} y1={0} x2={0} y2={lift * FIGURE_LIFT} stroke={c.fill} strokeWidth={1} strokeDasharray="2 3" opacity={0.5} />
                             )}
                             <circle cx={0} cy={0} r={2.6} fill={c.dark} />
-                            <Figure color={c.fill} dark={c.dark} />
+                            <Figure color={c.fill} dark={c.dark} moving={marker.moving} />
                             <g transform={`translate(${chipX}, -20)`}>
                                 <rect x={0} y={-8} width={chipW} height={13} rx={6.5} fill={c.fill} />
                                 <text x={chipW / 2} y={1.5} textAnchor="middle" fontSize={9} fontWeight={800} fill="#fff">
