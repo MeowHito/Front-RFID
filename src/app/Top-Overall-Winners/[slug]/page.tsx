@@ -307,11 +307,11 @@ export default function TopOverallWinnersBySlugPage() {
 
     const renderColumn = (title: string, bgHeader: string, list: Runner[], colRef: { current: HTMLDivElement | null }, onDownload: () => void) => (
         <div ref={el => { colRef.current = el; }} style={{ display: 'flex', flexDirection: 'column', gap: isMobile ? 8 : '0.8vh', minHeight: 0, flex: 1, overflowY: isMobile ? 'visible' : 'auto', paddingRight: isMobile ? 0 : 4 }}>
-            <div style={{ padding: isMobile ? '8px 10px' : '0.9vh 10px', fontWeight: 900, fontSize: isMobile ? 16 : '2vh', textTransform: 'uppercase', borderRadius: 8, color: 'white', letterSpacing: 2, background: bgHeader, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
+            <div style={{ padding: isMobile ? '8px 10px' : '0.9vh 10px', fontWeight: 900, fontSize: isMobile ? 'clamp(10px, 4vw, 16px)' : 'clamp(10px, 1.7vw, 2vh)', textTransform: 'uppercase', borderRadius: 8, color: 'white', letterSpacing: 1, background: bgHeader, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
                 <span style={{ visibility: 'hidden', padding: isMobile ? '3px 6px' : '3px 8px', fontSize: isMobile ? 11 : 12 }} aria-hidden="true">
                     {dlIcon(11)}{!isMobile && <span>Download</span>}
                 </span>
-                <span style={{ flex: 1, textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{title}</span>
+                <span style={{ flex: 1, minWidth: 0, textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{title}</span>
                 <button
                     data-no-capture
                     onClick={onDownload}
