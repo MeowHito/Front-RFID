@@ -7,14 +7,11 @@
  * can show, and keeps the stored document small.
  */
 
-export interface RouteCoord extends Array<number> {
-    0: number; // lat
-    1: number; // lng
-    2: number; // cumulative km from start
-}
+/** [lat, lng, cumulative km from start, elevation in metres (optional)] */
+export type RouteCoord = number[];
 
 export interface ParsedRoute {
-    coords: number[][];        // [[lat, lng, cumKm], ...]
+    coords: number[][];        // [[lat, lng, cumKm, ele?], ...]
     distanceKm: number;
     elevationGainM: number;
     pointCount: number;        // after downsampling
@@ -101,16 +98,18 @@ export function parseGpx(text: string, maxPoints = MAX_POINTS): ParsedRoute {
     }
 
     // Even-stride downsample, always keeping the first and last point so the
-    // line still starts and ends where the race does.
+    // line still starts and ends where the race does. Elevation rides along as a
+    // 4th slot so the course profile can be drawn without re-reading the file.
     const stride = Math.max(1, Math.ceil(pts.length / maxPoints));
+    const at = (i: number): number[] => {
+        const p = [pts[i].lat, pts[i].lng, +cum[i].toFixed(4)];
+        if (pts[i].ele !== null) p.push(+(pts[i].ele as number).toFixed(1));
+        return p;
+    };
     const coords: number[][] = [];
-    for (let i = 0; i < pts.length; i += stride) {
-        coords.push([pts[i].lat, pts[i].lng, +cum[i].toFixed(4)]);
-    }
+    for (let i = 0; i < pts.length; i += stride) coords.push(at(i));
     const lastIdx = pts.length - 1;
-    if (lastIdx % stride !== 0) {
-        coords.push([pts[lastIdx].lat, pts[lastIdx].lng, +cum[lastIdx].toFixed(4)]);
-    }
+    if (lastIdx % stride !== 0) coords.push(at(lastIdx));
 
     const lats = coords.map(c => c[0]);
     const lngs = coords.map(c => c[1]);

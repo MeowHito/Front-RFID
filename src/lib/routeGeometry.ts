@@ -3,7 +3,9 @@
  * uploaded GPX line. Kept free of Leaflet/React so they can be reasoned about
  * (and tested) on their own.
  *
- * `coords` is always [[lat, lng, cumulativeKm], ...] with a non-decreasing km.
+ * `coords` is always [[lat, lng, cumulativeKm, elevationM?], ...] with a
+ * non-decreasing km. The 4th slot is missing on files without elevation and on
+ * routes uploaded before it was stored.
  */
 
 /** Interpolate the lat/lng sitting exactly `km` along the track. */
@@ -34,6 +36,40 @@ export function sliceByKm(coords: number[][], fromKm: number, toKm: number): [nu
     }
     out.push(pointAtKm(coords, toKm));
     return out;
+}
+
+/** Lowest/highest point of the track, or null when the file carried no elevation. */
+export function elevationRange(coords: number[][]): { min: number; max: number } | null {
+    let min = Infinity;
+    let max = -Infinity;
+    for (const c of coords) {
+        const e = c[3];
+        if (typeof e !== 'number' || !Number.isFinite(e)) continue;
+        if (e < min) min = e;
+        if (e > max) max = e;
+    }
+    return min === Infinity ? null : { min, max };
+}
+
+/** Elevation interpolated at `km`, or null where the track has no elevation. */
+export function elevationAtKm(coords: number[][], km: number): number | null {
+    if (coords.length === 0) return null;
+    const eleOf = (c: number[]) => (typeof c[3] === 'number' && Number.isFinite(c[3]) ? c[3] : null);
+    if (km <= coords[0][2]) return eleOf(coords[0]);
+    const last = coords[coords.length - 1];
+    if (km >= last[2]) return eleOf(last);
+    for (let i = 1; i < coords.length; i++) {
+        if (coords[i][2] >= km) {
+            const a = eleOf(coords[i - 1]);
+            const b = eleOf(coords[i]);
+            if (a === null) return b;
+            if (b === null) return a;
+            const span = coords[i][2] - coords[i - 1][2];
+            const t = span > 0 ? (km - coords[i - 1][2]) / span : 0;
+            return a + (b - a) * t;
+        }
+    }
+    return eleOf(last);
 }
 
 /** Heat colour for a stretch, relative to the busiest stretch on the course. */

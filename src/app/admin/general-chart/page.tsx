@@ -9,6 +9,8 @@ import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, LabelList, Legend,
     AreaChart, Area,
 } from 'recharts';
+import { resolveCpKm, elevationRange } from '@/lib/routeGeometry';
+import type { ProfileMarker } from '@/components/ElevationProfile2D';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 interface Campaign {
@@ -42,6 +44,9 @@ interface Runner {
     netTime?: number;
     netTimeStr?: string;
     gunTimeStr?: string;
+    /** Time on course at the last scan — orders runners sitting on the same stretch. */
+    elapsedTime?: number;
+    overallRank?: number;
 }
 
 interface TimingRecord {
@@ -59,6 +64,16 @@ interface RouteTrack {
     fileName?: string;
     checkpointMarks?: { name: string; km: number }[];
 }
+
+// Measures its own container, so keep it off the server render.
+const ElevationProfile2D = dynamic(() => import('@/components/ElevationProfile2D'), {
+    ssr: false,
+    loading: () => (
+        <div style={{ height: 340, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', fontSize: 13, background: '#f8fafc', borderRadius: 10 }}>
+            ...
+        </div>
+    ),
+});
 
 // Leaflet touches the DOM on load, so the map is client-only.
 const RouteDensityMap = dynamic(() => import('@/components/RouteDensityMap'), {
@@ -399,7 +414,11 @@ function CourseStrip({ cat, data, th, route, onPick }: {
     route?: RouteTrack;
     onPick: (cpName: string, runners: SegmentRunner[]) => void;
 }) {
-    const [view, setView] = useState<'graph' | 'map'>('graph');
+    const [view, setView] = useState<'graph' | 'map' | '2d'>('graph');
+    // 2D view: show the leading three of each gender, or the whole field cut into
+    // equal-sized groups (the admin picks the size).
+    const [profileMode, setProfileMode] = useState<'leaders' | 'group'>('leaders');
+    const [groupSize, setGroupSize] = useState(10);
 
     // Segments = the stretch AFTER each checkpoint (last node has no outgoing stretch),
     // so the curve spans only the parts of the course runners can still be on.
@@ -411,7 +430,66 @@ function CourseStrip({ cat, data, th, route, onPick }: {
 
     const hasRoute = !!route && Array.isArray(route.coords) && route.coords.length > 1;
     // Fall back to the graph if the GPX for this category is later removed.
-    const activeView = view === 'map' && hasRoute ? 'map' : 'graph';
+    const activeView = (view === 'map' || view === '2d') && hasRoute ? view : 'graph';
+
+    // ── Where every runner currently is, in km along the uploaded line ──
+    // A runner sits at the last checkpoint they scanned, so the km of that
+    // checkpoint is their position. Ordering: further along wins, then the faster
+    // split at that same checkpoint.
+    const cpNames = data.map(d => d.cpName);
+    const cpKm = hasRoute ? resolveCpKm(cpNames, route!.distanceKm, route!.checkpointMarks) : [];
+    const onCourse = hasRoute
+        ? data.flatMap((d, i) => d.runners
+            .filter(r => r.bucket === 'active')
+            .map(r => ({ ...r, cpIndex: i, cpName: d.cpName, km: cpKm[i] ?? 0 })))
+            .sort((a, b) => (b.cpIndex - a.cpIndex)
+                || ((a.elapsedMs ?? Infinity) - (b.elapsedMs ?? Infinity))
+                || (a.bib || '').localeCompare(b.bib || '', undefined, { numeric: true }))
+        : [];
+
+    const profileMarkers: ProfileMarker[] = (() => {
+        if (!hasRoute) return [];
+        if (profileMode === 'leaders') {
+            const out: ProfileMarker[] = [];
+            for (const g of ['M', 'F'] as const) {
+                onCourse.filter(r => r.gender === g).slice(0, 3).forEach((r, i) => {
+                    out.push({
+                        key: `${g}-${r.bib}`,
+                        km: r.km,
+                        gender: g,
+                        label: `#${i + 1}`,
+                        sublabel: r.bib,
+                        tooltip: `${i + 1}. ${r.name}\nBIB ${r.bib} · ${g === 'M' ? (th ? 'ชาย' : 'Male') : (th ? 'หญิง' : 'Female')}\n${r.cpName} · ${r.km.toFixed(1)} ${th ? 'กม.' : 'km'}`,
+                        onClick: () => onPick(r.cpName, data[r.cpIndex]?.runners || []),
+                    });
+                });
+            }
+            return out;
+        }
+        const size = Math.max(1, Math.min(500, groupSize || 1));
+        const out: ProfileMarker[] = [];
+        for (let start = 0; start < onCourse.length; start += size) {
+            const chunk = onCourse.slice(start, start + size);
+            const males = chunk.filter(r => r.gender === 'M').length;
+            const females = chunk.filter(r => r.gender === 'F').length;
+            // Sit the group where its middle runner is, so a group spread over two
+            // checkpoints does not pretend everyone is at the front of it.
+            const avgKm = chunk.reduce((s, r) => s + r.km, 0) / chunk.length;
+            const spread = chunk[0].km === chunk[chunk.length - 1].km
+                ? `${chunk[0].km.toFixed(1)} ${th ? 'กม.' : 'km'}`
+                : `${Math.min(...chunk.map(r => r.km)).toFixed(1)}–${Math.max(...chunk.map(r => r.km)).toFixed(1)} ${th ? 'กม.' : 'km'}`;
+            out.push({
+                key: `g${start}`,
+                km: avgKm,
+                gender: males === females ? 'MIX' : males > females ? 'M' : 'F',
+                label: `${start + 1}–${start + chunk.length}`,
+                sublabel: `${chunk.length}`,
+                tooltip: `${th ? 'กลุ่มที่' : 'Group'} ${Math.floor(start / size) + 1} (${th ? 'อันดับ' : 'rank'} ${start + 1}–${start + chunk.length})\n${chunk.length} ${th ? 'คน' : 'runners'} · ♂ ${males} / ♀ ${females}\n${spread}`,
+                onClick: () => onPick(chunk[0].cpName, chunk.map(({ bib, name, status, gender, bucket }) => ({ bib, name, status, gender, bucket }))),
+            });
+        }
+        return out;
+    })();
 
     if (!data.length || segments.length === 0) return null;
     const totalOnCourse = segments.reduce((sum, s) => sum + s.count, 0);
@@ -420,7 +498,7 @@ function CourseStrip({ cat, data, th, route, onPick }: {
     const many = segments.length > 6;
     const gid = `courseGrad-${cat.replace(/[^a-zA-Z0-9]/g, '')}`;
 
-    const toggleBtn = (mode: 'map' | 'graph', label: string, disabled = false) => (
+    const toggleBtn = (mode: 'map' | 'graph' | '2d', label: string, disabled = false) => (
         <button
             type="button"
             disabled={disabled}
@@ -454,6 +532,7 @@ function CourseStrip({ cat, data, th, route, onPick }: {
                 </div>
                 <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
                     <div style={{ display: 'flex', gap: 6 }}>
+                        {toggleBtn('2d', '2D', !hasRoute)}
                         {toggleBtn('map', 'Map', !hasRoute)}
                         {toggleBtn('graph', th ? 'กราฟ' : 'Graph')}
                     </div>
@@ -470,7 +549,103 @@ function CourseStrip({ cat, data, th, route, onPick }: {
                 </div>
             </div>
 
-            {activeView === 'map' && route ? (
+            {activeView === '2d' && route ? (
+                <div style={{ padding: '0 8px 0 12px' }}>
+                    {/* Mode switch: three leaders per gender, or the field in groups */}
+                    <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 8 }}>
+                        <div style={{ display: 'flex', gap: 6 }}>
+                            {(['leaders', 'group'] as const).map(m => (
+                                <button
+                                    key={m}
+                                    type="button"
+                                    onClick={() => setProfileMode(m)}
+                                    style={{
+                                        padding: '4px 12px', fontSize: 11, fontWeight: 800, borderRadius: 7,
+                                        fontFamily: 'inherit', cursor: 'pointer',
+                                        border: `1px solid ${profileMode === m ? '#7c3aed' : '#e2e8f0'}`,
+                                        background: profileMode === m ? '#f5f3ff' : '#fff',
+                                        color: profileMode === m ? '#7c3aed' : '#64748b',
+                                    }}
+                                >
+                                    {m === 'leaders'
+                                        ? (th ? '🏅 อันดับ 1-2-3 ชาย/หญิง' : '🏅 Top 3 male / female')
+                                        : (th ? '👥 แบ่งกลุ่ม' : '👥 Groups')}
+                                </button>
+                            ))}
+                        </div>
+                        {profileMode === 'group' && (
+                            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#64748b', fontWeight: 700 }}>
+                                {th ? 'กลุ่มละ' : 'Group size'}
+                                <input
+                                    type="number"
+                                    min={1}
+                                    max={500}
+                                    value={groupSize}
+                                    onChange={(e) => setGroupSize(Math.max(1, Math.min(500, parseInt(e.target.value) || 1)))}
+                                    style={{
+                                        width: 64, padding: '4px 8px', border: '1px solid #e2e8f0', borderRadius: 6,
+                                        fontFamily: 'inherit', fontSize: 12, fontWeight: 700, textAlign: 'center', color: '#0f172a',
+                                    }}
+                                />
+                                {th ? 'คน' : 'runners'}
+                            </label>
+                        )}
+                        <div style={{ display: 'flex', gap: 12, marginLeft: 'auto', fontSize: 10.5, color: '#64748b', fontWeight: 700 }}>
+                            <span><span style={{ ...styles.legendDot('#3b82f6') }} />{th ? 'ชาย' : 'Male'}</span>
+                            <span><span style={{ ...styles.legendDot('#ec4899') }} />{th ? 'หญิง' : 'Female'}</span>
+                            {profileMode === 'group' && (
+                                <span><span style={{ ...styles.legendDot('#8b5cf6') }} />{th ? 'ชาย-หญิงเท่ากัน' : 'Even split'}</span>
+                            )}
+                        </div>
+                    </div>
+
+                    <ElevationProfile2D
+                        coords={route.coords}
+                        distanceKm={route.distanceKm}
+                        checkpoints={cpNames.map((name, i) => ({ name, km: cpKm[i] ?? 0 }))}
+                        markers={profileMarkers}
+                        th={th}
+                        height={360}
+                    />
+
+                    <div style={{ display: 'flex', gap: 18, justifyContent: 'center', flexWrap: 'wrap', fontSize: 10.5, color: '#94a3b8', marginTop: 8 }}>
+                        <span>{th ? 'ระยะทาง' : 'Distance'}: <b style={{ color: '#475569' }}>{route.distanceKm.toFixed(2)} {th ? 'กม.' : 'km'}</b></span>
+                        {!!route.elevationGainM && (
+                            <span>{th ? 'สะสมขึ้น' : 'Elevation gain'}: <b style={{ color: '#475569' }}>▲ {route.elevationGainM.toLocaleString()} m</b></span>
+                        )}
+                        {(() => {
+                            const ele = elevationRange(route.coords);
+                            return ele ? (
+                                <span>{th ? 'ความสูง' : 'Elevation'}: <b style={{ color: '#475569' }}>{Math.round(ele.min)} – {Math.round(ele.max)} m</b></span>
+                            ) : null;
+                        })()}
+                        <span>{th ? 'อยู่บนเส้นทาง' : 'On course'}: <b style={{ color: '#475569' }}>{onCourse.length}</b></span>
+                    </div>
+
+                    <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 6, textAlign: 'center' }}>
+                        {profileMode === 'leaders'
+                            ? (th
+                                ? '💡 ตุ๊กตา = ผู้นำ 3 คนแรกของแต่ละเพศ ยืนอยู่ที่จุดเช็คพอยต์ล่าสุดที่สแกนผ่าน · คลิกเพื่อดูรายชื่อคนในช่วงนั้น'
+                                : '💡 Each figure is a gender leader at their latest checkpoint · click for the names on that stretch')
+                            : (th
+                                ? `💡 แบ่งนักวิ่งที่ยังอยู่บนเส้นทางเป็นกลุ่มละ ${groupSize} คนตามลำดับการวิ่ง · ตัวเลขบนป้าย = อันดับที่อยู่ในกลุ่ม · คลิกเพื่อดูรายชื่อ`
+                                : `💡 Runners still on course, cut into groups of ${groupSize} by position · the badge shows the ranks in that group · click for names`)}
+                        {!elevationRange(route.coords) && (
+                            <div style={{ marginTop: 3, color: '#f59e0b' }}>
+                                {/* A recorded climb with no per-point elevation means the file
+                                    had one but the route was saved before elevation was stored. */}
+                                {route.elevationGainM
+                                    ? (th
+                                        ? `⚠️ ไฟล์ GPX นี้มีข้อมูลความสูง (สะสมขึ้น ${route.elevationGainM.toLocaleString()} m) แต่เส้นทางถูกบันทึกไว้ก่อนระบบจะเก็บความสูงรายจุด — อัปโหลดไฟล์เดิมซ้ำอีกครั้งที่หน้าแก้ไขกิจกรรม แล้วเส้นความสูงจะขึ้นทันที`
+                                        : `⚠️ This GPX does carry elevation (${route.elevationGainM.toLocaleString()} m of climb) but the route was saved before per-point elevation was stored — re-upload the same file on the event edit page.`)
+                                    : (th
+                                        ? '⚠️ ไฟล์ GPX นี้ไม่มีข้อมูลความสูงเลย (ไม่มีแท็ก <ele>) — กราฟจึงแสดงเป็นเส้นแบน'
+                                        : '⚠️ This GPX carries no elevation at all (no <ele> tags), so the profile stays flat.')}
+                            </div>
+                        )}
+                    </div>
+                </div>
+            ) : activeView === 'map' && route ? (
                 <div style={{ padding: '0 8px 0 12px' }}>
                     <RouteDensityMap
                         coords={route.coords}
@@ -624,7 +799,15 @@ function topBucketOf(d: { active: number; dnf: number; dq: number; other: number
     return top;
 }
 
-interface SegmentRunner { bib: string; name: string; status: string; gender: string; bucket: StatusBucket; }
+interface SegmentRunner {
+    bib: string;
+    name: string;
+    status: string;
+    gender: string;
+    bucket: StatusBucket;
+    /** Time on course at the last scan, used to order runners on the same stretch. */
+    elapsedMs?: number;
+}
 interface SegmentDatum {
     cpName: string;
     count: number;
@@ -809,6 +992,7 @@ export default function GeneralChartPage() {
                     status: r.status,
                     gender: r.gender,
                     bucket: statusBucketOf(r.status),
+                    elapsedMs: r.elapsedTime || r.netTime || r.gunTime || undefined,
                 })).sort((a, b) => (a.bib || '').localeCompare(b.bib || '', undefined, { numeric: true }));
                 const by = (b: StatusBucket) => segRunners.filter(r => r.bucket === b).length;
                 data.push({

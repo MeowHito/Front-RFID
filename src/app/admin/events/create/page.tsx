@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, Suspense } from 'react';
+import { useState, useEffect, useCallback, useRef, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useLanguage } from '@/lib/language-context';
 import { authHeaders } from '@/lib/authHeaders';
@@ -133,12 +133,48 @@ interface CampaignCheckpoint {
     name: string;
     orderNum?: number;
     distanceMappings?: string[];
+    kmCumulative?: number;
 }
+
+/** One checkpoint's km along a single distance, as already stored per event. */
+interface AutoCpKm {
+    name: string;
+    km: number;
+}
+
+interface CampaignEventLite {
+    _id: string;
+    name?: string;
+    distance?: number;
+}
+
+interface CpMappingLite {
+    orderNum?: number;
+    distanceFromStart?: number;
+    checkpointId?: { _id?: string; name?: string; orderNum?: number; kmCumulative?: number } | string;
+}
+
+/** "42 K" / "42k" → "42K", so category names and event names line up. */
+const normCat = (s: string) => (s || '').trim().toUpperCase().replace(/\s+/g, '');
+
+/**
+ * How far the GPX length may differ from the distance recorded in the checkpoint
+ * table before we stop rescaling. Inside this band the gap is normal GPS drift
+ * or a re-measured course, so stretching the marks to fit is right; outside it,
+ * the file probably belongs to another distance and we leave the numbers alone.
+ */
+const AUTO_SCALE_MIN = 0.75;
+const AUTO_SCALE_MAX = 1.33;
 
 /**
  * Per-category GPX upload + the km position of each checkpoint along that line.
  * The statistics page (/admin/general-chart) uses both to paint runner density
  * onto the real course map.
+ *
+ * The km of every checkpoint is already known per distance (the "ระยะทาง" column
+ * on /admin/events/[eventId]/categories, kept as CheckpointMapping.distanceFromStart),
+ * so an upload fills the markers from there instead of asking the admin to retype
+ * them. The inputs stay editable for courses where the GPX disagrees.
  */
 function GpxRoutesCard({ campaignId, categories, th, notify }: {
     campaignId: string | null;
@@ -150,6 +186,11 @@ function GpxRoutesCard({ campaignId, categories, th, notify }: {
     const [checkpoints, setCheckpoints] = useState<CampaignCheckpoint[]>([]);
     const [busy, setBusy] = useState<string | null>(null);
     const [expanded, setExpanded] = useState<string | null>(null);
+    // Checkpoint km per distance, pulled from the event's checkpoint mappings.
+    // Keyed by normalised category name.
+    const [autoKm, setAutoKm] = useState<Record<string, AutoCpKm[]>>({});
+    // Categories whose markers were already backfilled this session.
+    const backfilled = useRef<Set<string>>(new Set());
     // Per category → per checkpoint name → km typed by the admin (kept as text
     // so a half-typed "12." doesn't get clobbered while editing).
     const [marks, setMarks] = useState<Record<string, Record<string, string>>>({});
@@ -193,8 +234,105 @@ function GpxRoutesCard({ campaignId, categories, th, notify }: {
         })();
     }, [campaignId]);
 
-    const cpsFor = (cat: string) =>
-        checkpoints.filter(cp => !cp.distanceMappings?.length || cp.distanceMappings.includes(cat));
+    // Each distance is one Event, and its checkpoint mappings already carry
+    // distanceFromStart — the km of that checkpoint *for that distance*. That is
+    // exactly what a route marker needs, so read it instead of asking again.
+    useEffect(() => {
+        if (!campaignId) return;
+        let cancelled = false;
+        (async () => {
+            try {
+                const evRes = await fetch(`/api/events/by-campaign/${campaignId}`, { cache: 'no-store' });
+                if (!evRes.ok) return;
+                const events: CampaignEventLite[] = await evRes.json();
+                if (!Array.isArray(events)) return;
+
+                const perEvent = await Promise.all(events.map(async (ev) => {
+                    try {
+                        const res = await fetch(`/api/checkpoints/mapping/event/${ev._id}`, { cache: 'no-store' });
+                        if (!res.ok) return null;
+                        const maps: CpMappingLite[] = await res.json();
+                        if (!Array.isArray(maps)) return null;
+
+                        const list: (AutoCpKm & { order: number })[] = [];
+                        for (const m of maps) {
+                            const cp = typeof m.checkpointId === 'object' && m.checkpointId ? m.checkpointId : null;
+                            const name = (cp?.name || '').trim();
+                            if (!name) continue;
+                            const km = Number.isFinite(m.distanceFromStart)
+                                ? Number(m.distanceFromStart)
+                                : Number(cp?.kmCumulative);
+                            if (!Number.isFinite(km)) continue;
+                            list.push({ name, km, order: m.orderNum ?? cp?.orderNum ?? 999 });
+                        }
+                        if (!list.length) return null;
+                        list.sort((a, b) => a.order - b.order);
+                        return { ev, list: list.map(({ name, km }) => ({ name, km })) };
+                    } catch { return null; }
+                }));
+
+                if (cancelled) return;
+                const next: Record<string, AutoCpKm[]> = {};
+                for (const entry of perEvent) {
+                    if (!entry) continue;
+                    const keys = [entry.ev.name, entry.ev.distance ? `${entry.ev.distance}K` : ''];
+                    for (const k of keys) {
+                        const key = normCat(k || '');
+                        if (key && !next[key]) next[key] = entry.list;
+                    }
+                }
+                setAutoKm(next);
+            } catch { /* auto-fill just stays unavailable; manual entry still works */ }
+        })();
+        return () => { cancelled = true; };
+    }, [campaignId]);
+
+    const cpsFor = useCallback((cat: string) =>
+        checkpoints.filter(cp => !cp.distanceMappings?.length || cp.distanceMappings.includes(cat)),
+        [checkpoints]);
+
+    /**
+     * Known km of this distance's checkpoints. Prefers the per-distance mapping;
+     * falls back to the campaign-wide kmCumulative when a distance has no event
+     * mappings yet (that value is shared across distances, so it is only a hint).
+     */
+    const autoSourceFor = useCallback((cat: string): { list: AutoCpKm[]; perDistance: boolean } => {
+        const fromEvent = autoKm[normCat(cat)];
+        if (fromEvent?.length) return { list: fromEvent, perDistance: true };
+        return {
+            list: cpsFor(cat)
+                .filter(cp => Number.isFinite(cp.kmCumulative))
+                .map(cp => ({ name: cp.name, km: Number(cp.kmCumulative) })),
+            perDistance: false,
+        };
+    }, [autoKm, cpsFor]);
+
+    /**
+     * Turn the recorded km into markers on an uploaded track. When the track is
+     * a little shorter/longer than the measured course, every marker is stretched
+     * by the same factor so the finish still lands at the end of the line.
+     */
+    const buildAutoMarks = useCallback((cat: string, routeKm: number) => {
+        const empty = { marks: [] as AutoCpKm[], scale: 1, declaredKm: 0 };
+        const { list, perDistance } = autoSourceFor(cat);
+        if (!list.length) return empty;
+        const declaredKm = Math.max(...list.map(s => s.km));
+        const ratio = declaredKm > 0 && routeKm > 0 ? routeKm / declaredKm : 1;
+        const inBand = ratio >= AUTO_SCALE_MIN && ratio <= AUTO_SCALE_MAX;
+        // The campaign-wide fallback is measured along the longest distance, so
+        // when it clearly does not describe this course it is not usable at all.
+        if (!perDistance && !inBand) return empty;
+        const scale = inBand ? ratio : 1;
+        const limit = routeKm > 0 ? routeKm : Infinity;
+        const marks = list.map(s => ({
+            name: s.name,
+            km: +Math.max(0, Math.min(limit, s.km * scale)).toFixed(3),
+        }));
+        return { marks, scale, declaredKm };
+    }, [autoSourceFor]);
+
+    const marksToText = (marks: AutoCpKm[]): Record<string, string> =>
+        Object.fromEntries(marks.map(m => [m.name, String(m.km)]));
 
     const handleFile = async (cat: string, file: File) => {
         if (!campaignId) return;
@@ -202,6 +340,9 @@ function GpxRoutesCard({ campaignId, categories, th, notify }: {
         try {
             const text = await file.text();
             const parsed = parseGpx(text);
+            // The km of each checkpoint is already recorded per distance, so fill
+            // the markers here — the admin should not have to retype them.
+            const { marks: autoMarks } = buildAutoMarks(cat, parsed.distanceKm);
             const res = await fetch('/api/routes', {
                 method: 'POST',
                 headers: authHeaders(),
@@ -214,11 +355,22 @@ function GpxRoutesCard({ campaignId, categories, th, notify }: {
                     elevationGainM: parsed.elevationGainM,
                     rawPointCount: parsed.rawPointCount,
                     bounds: parsed.bounds,
+                    checkpointMarks: autoMarks,
                 }),
             });
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
-            notify(th ? `อัปโหลดเส้นทาง ${cat} สำเร็จ (${parsed.distanceKm.toFixed(1)} กม.)` : `Route for ${cat} uploaded (${parsed.distanceKm.toFixed(1)} km)`);
-            setMarks(prev => ({ ...prev, [cat]: {} })); // a new line invalidates old km marks
+            const km = parsed.distanceKm.toFixed(1);
+            notify(
+                autoMarks.length
+                    ? (th
+                        ? `อัปโหลดเส้นทาง ${cat} สำเร็จ (${km} กม.) · เติมตำแหน่ง CP อัตโนมัติ ${autoMarks.length} จุด`
+                        : `Route for ${cat} uploaded (${km} km) · ${autoMarks.length} checkpoint positions filled automatically`)
+                    : (th
+                        ? `อัปโหลดเส้นทาง ${cat} สำเร็จ (${km} กม.)`
+                        : `Route for ${cat} uploaded (${km} km)`),
+            );
+            // A new line invalidates any km the admin typed for the old one.
+            setMarks(prev => ({ ...prev, [cat]: marksToText(autoMarks) }));
             await loadRoutes();
             setExpanded(cat);
         } catch (err) {
@@ -249,6 +401,16 @@ function GpxRoutesCard({ campaignId, categories, th, notify }: {
         }
     };
 
+    /** PUT the km markers of one category. Returns false when the request failed. */
+    const putMarks = async (cat: string, entries: AutoCpKm[]) => {
+        const res = await fetch('/api/routes', {
+            method: 'PUT',
+            headers: authHeaders(),
+            body: JSON.stringify({ campaignId, category: cat, checkpointMarks: entries }),
+        });
+        return res.ok;
+    };
+
     const saveMarks = async (cat: string) => {
         if (!campaignId) return;
         setBusy(cat);
@@ -256,12 +418,7 @@ function GpxRoutesCard({ campaignId, categories, th, notify }: {
             const entries = Object.entries(marks[cat] || {})
                 .map(([name, v]) => ({ name, km: parseFloat(v) }))
                 .filter(m => Number.isFinite(m.km));
-            const res = await fetch('/api/routes', {
-                method: 'PUT',
-                headers: authHeaders(),
-                body: JSON.stringify({ campaignId, category: cat, checkpointMarks: entries }),
-            });
-            if (!res.ok) throw new Error();
+            if (!await putMarks(cat, entries)) throw new Error();
             notify(th ? `บันทึกตำแหน่ง CP ของ ${cat} แล้ว` : `Checkpoint positions saved for ${cat}`);
             await loadRoutes();
         } catch {
@@ -270,6 +427,101 @@ function GpxRoutesCard({ campaignId, categories, th, notify }: {
             setBusy(null);
         }
     };
+
+    /** Refill one category's markers from the checkpoint table and save them. */
+    const applyAuto = async (cat: string) => {
+        if (!campaignId) return;
+        const route = routes[cat];
+        if (!route) return;
+        const { marks: autoMarks } = buildAutoMarks(cat, route.distanceKm);
+        if (!autoMarks.length) {
+            notify(th
+                ? `ไม่พบระยะทางของ checkpoint สำหรับ ${cat} — กรอกในหน้า "ระยะทาง/Checkpoint" ก่อน`
+                : `No checkpoint distances recorded for ${cat} yet`);
+            return;
+        }
+        setBusy(cat);
+        try {
+            if (!await putMarks(cat, autoMarks)) throw new Error();
+            setMarks(prev => ({ ...prev, [cat]: marksToText(autoMarks) }));
+            notify(th
+                ? `เติมตำแหน่ง CP ของ ${cat} อัตโนมัติ ${autoMarks.length} จุดแล้ว`
+                : `Filled ${autoMarks.length} checkpoint positions for ${cat}`);
+            await loadRoutes();
+        } catch {
+            notify(th ? 'บันทึกไม่สำเร็จ' : 'Save failed');
+        } finally {
+            setBusy(null);
+        }
+    };
+
+    /** Same, for every category that already has a route — one click for old events. */
+    const applyAutoAll = async () => {
+        if (!campaignId) return;
+        const targets = catNames
+            .map(cat => ({ cat, route: routes[cat] }))
+            .filter((t): t is { cat: string; route: RouteMeta } => !!t.route);
+        if (!targets.length) return;
+        setBusy('__all__');
+        let filled = 0;
+        let failed = 0;
+        const nextMarks: Record<string, Record<string, string>> = {};
+        for (const { cat, route } of targets) {
+            const { marks: autoMarks } = buildAutoMarks(cat, route.distanceKm);
+            if (!autoMarks.length) continue;
+            try {
+                if (!await putMarks(cat, autoMarks)) throw new Error();
+                nextMarks[cat] = marksToText(autoMarks);
+                filled++;
+            } catch { failed++; }
+        }
+        setMarks(prev => ({ ...prev, ...nextMarks }));
+        setBusy(null);
+        await loadRoutes();
+        if (!filled && !failed) {
+            notify(th
+                ? 'ไม่พบระยะทางของ checkpoint — กรอกในหน้า "ระยะทาง/Checkpoint" ของแต่ละระยะก่อน'
+                : 'No checkpoint distances recorded yet');
+        } else {
+            notify(th
+                ? `เติมตำแหน่ง CP อัตโนมัติแล้ว ${filled} ระยะ${failed ? ` (ล้มเหลว ${failed})` : ''}`
+                : `Auto-filled ${filled} distance(s)${failed ? `, ${failed} failed` : ''}`);
+        }
+    };
+
+    // Routes uploaded before the km were auto-filled still have no markers, and
+    // an empty marker list makes the map spread checkpoints evenly — which is
+    // wrong whenever the real km are known. Backfill those once, in the
+    // background, so old events stop needing a manual pass.
+    const catKey = catNames.join('|');
+    useEffect(() => {
+        if (!campaignId) return;
+        const pending = catKey.split('|').filter(cat => {
+            const r = cat && routes[cat];
+            return r && !r.checkpointMarks?.length && !backfilled.current.has(cat);
+        });
+        if (!pending.length) return;
+        let cancelled = false;
+        (async () => {
+            let wrote = false;
+            for (const cat of pending) {
+                const r = routes[cat];
+                const { marks: autoMarks } = buildAutoMarks(cat, r.distanceKm);
+                if (!autoMarks.length) continue;
+                backfilled.current.add(cat);
+                try {
+                    if (!await putMarks(cat, autoMarks)) continue;
+                    if (cancelled) return;
+                    setMarks(prev => ({ ...prev, [cat]: marksToText(autoMarks) }));
+                    wrote = true;
+                } catch { /* leave it to the manual button */ }
+            }
+            if (wrote && !cancelled) await loadRoutes();
+        })();
+        return () => { cancelled = true; };
+        // putMarks/loadRoutes are stable enough for this one-shot backfill.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [campaignId, catKey, routes, autoKm, checkpoints, buildAutoMarks]);
 
     return (
         <div className="ce-card" style={{ borderTop: '3px solid #7c3aed' }}>
@@ -284,8 +536,8 @@ function GpxRoutesCard({ campaignId, categories, th, notify }: {
 
             <div style={{ fontSize: 12.5, color: '#64748b', lineHeight: 1.7, marginBottom: 14 }}>
                 {th
-                    ? 'อัปโหลดไฟล์ .gpx ของแต่ละระยะ เพื่อให้หน้าสถิติแสดง "แผนที่ความหนาแน่นนักวิ่ง" บนเส้นทางจริงได้ (ปุ่ม MAP ในหน้า /admin/general-chart)'
-                    : 'Upload a .gpx per distance so the statistics page can paint runner density onto the real course (the MAP button on /admin/general-chart).'}
+                    ? 'อัปโหลดไฟล์ .gpx ของแต่ละระยะ เพื่อให้หน้าสถิติแสดง "แผนที่ความหนาแน่นนักวิ่ง" บนเส้นทางจริงได้ (ปุ่ม MAP ในหน้า /admin/general-chart) — ตำแหน่ง CP บนเส้นทางจะถูกเติมให้อัตโนมัติจากระยะทางของ checkpoint ที่บันทึกไว้ในแต่ละระยะ ไม่ต้องกรอกเอง'
+                    : 'Upload a .gpx per distance so the statistics page can paint runner density onto the real course (the MAP button on /admin/general-chart). Checkpoint positions are filled automatically from the km already recorded for each distance — no retyping.'}
             </div>
 
             {!campaignId ? (
@@ -302,11 +554,32 @@ function GpxRoutesCard({ campaignId, categories, th, notify }: {
                 </div>
             ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    {catNames.some(cat => routes[cat]) && (
+                        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                            <button
+                                type="button"
+                                onClick={applyAutoAll}
+                                disabled={busy !== null}
+                                style={{
+                                    fontSize: 11.5, fontWeight: 700, fontFamily: 'inherit',
+                                    cursor: busy ? 'wait' : 'pointer', border: '1px solid #7c3aed',
+                                    background: '#f5f3ff', color: '#7c3aed', borderRadius: 6,
+                                    padding: '6px 12px', opacity: busy ? 0.6 : 1,
+                                }}
+                            >
+                                {busy === '__all__'
+                                    ? (th ? 'กำลังเติม...' : 'Filling...')
+                                    : (th ? '⟳ เติมตำแหน่ง CP อัตโนมัติ (ทุกระยะ)' : '⟳ Auto-fill CP positions (all distances)')}
+                            </button>
+                        </div>
+                    )}
                     {catNames.map(cat => {
                         const r = routes[cat];
-                        const isBusy = busy === cat;
+                        const isBusy = busy === cat || busy === '__all__';
                         const cps = cpsFor(cat);
                         const isOpen = expanded === cat;
+                        const auto = r ? buildAutoMarks(cat, r.distanceKm) : null;
+                        const autoByName = new Map((auto?.marks || []).map(m => [m.name, m.km]));
                         return (
                             <div key={cat} style={{ border: '1px solid #e2e8f0', borderRadius: 10, overflow: 'hidden' }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 14px', background: r ? '#faf5ff' : '#fff', flexWrap: 'wrap' }}>
@@ -391,9 +664,23 @@ function GpxRoutesCard({ campaignId, categories, th, notify }: {
                                     <div style={{ borderTop: '1px solid #e2e8f0', padding: '12px 14px', background: '#fff' }}>
                                         <div style={{ fontSize: 12, color: '#64748b', marginBottom: 10, lineHeight: 1.6 }}>
                                             {th
-                                                ? `ระบุว่าแต่ละ checkpoint อยู่กิโลเมตรที่เท่าไรของเส้นทาง (0 – ${r.distanceKm.toFixed(1)}) เว้นว่างไว้ได้ ระบบจะกระจายให้เท่าๆ กันแทน`
-                                                : `Set each checkpoint's km along the route (0 – ${r.distanceKm.toFixed(1)}). Leave blank to spread them evenly.`}
+                                                ? `กิโลเมตรของแต่ละ checkpoint บนเส้นทาง (0 – ${r.distanceKm.toFixed(1)}) เติมอัตโนมัติจากระยะทางที่บันทึกไว้ของระยะนี้ แก้ไขได้ถ้าไม่ตรง`
+                                                : `Each checkpoint's km along the route (0 – ${r.distanceKm.toFixed(1)}), filled automatically from the km recorded for this distance. Edit if it does not match.`}
                                         </div>
+                                        {auto && auto.marks.length > 0 && Math.abs(auto.scale - 1) > 0.001 && (
+                                            <div style={{ fontSize: 11.5, color: '#7c3aed', background: '#f5f3ff', border: '1px solid #ddd6fe', borderRadius: 6, padding: '7px 10px', marginBottom: 10, lineHeight: 1.6 }}>
+                                                {th
+                                                    ? `ตารางระยะบอกว่าระยะนี้ยาว ${auto.declaredKm.toFixed(2)} กม. แต่ไฟล์ GPX วัดได้ ${r.distanceKm.toFixed(2)} กม. — ปรับสเกลตำแหน่ง CP ตามสัดส่วน (×${auto.scale.toFixed(3)}) ให้เส้นชัยตรงปลายเส้นทาง`
+                                                    : `The checkpoint table says ${auto.declaredKm.toFixed(2)} km but the GPX measures ${r.distanceKm.toFixed(2)} km — positions were scaled proportionally (×${auto.scale.toFixed(3)}) so the finish lands at the end of the line.`}
+                                            </div>
+                                        )}
+                                        {auto && auto.marks.length === 0 && cps.length > 0 && (
+                                            <div style={{ fontSize: 11.5, color: '#92400e', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 6, padding: '7px 10px', marginBottom: 10, lineHeight: 1.6 }}>
+                                                {th
+                                                    ? 'ยังไม่มีระยะทางของ checkpoint สำหรับระยะนี้ — ใส่ค่าในช่อง "ระยะทาง" ของหน้าจัดการ Checkpoint แล้วกดเติมอัตโนมัติอีกครั้ง'
+                                                    : 'No checkpoint distances recorded for this distance yet — fill the "Distance" column on the checkpoint page, then auto-fill again.'}
+                                            </div>
+                                        )}
                                         {cps.length === 0 ? (
                                             <div style={{ fontSize: 12, color: '#94a3b8' }}>
                                                 {th ? 'ยังไม่มี checkpoint สำหรับระยะนี้' : 'No checkpoints for this distance yet'}
@@ -401,40 +688,67 @@ function GpxRoutesCard({ campaignId, categories, th, notify }: {
                                         ) : (
                                             <>
                                                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 10 }}>
-                                                    {cps.map(cp => (
-                                                        <div key={cp._id}>
-                                                            <label className="ce-label" style={{ fontSize: 11 }}>{cp.name}</label>
-                                                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                                                <input
-                                                                    type="number"
-                                                                    step="0.1"
-                                                                    min={0}
-                                                                    max={r.distanceKm}
-                                                                    className="ce-input ce-input-sm"
-                                                                    placeholder="—"
-                                                                    value={marks[cat]?.[cp.name] ?? ''}
-                                                                    onChange={(e) => setMarks(prev => ({
-                                                                        ...prev,
-                                                                        [cat]: { ...(prev[cat] || {}), [cp.name]: e.target.value },
-                                                                    }))}
-                                                                />
-                                                                <span style={{ fontSize: 11, color: '#94a3b8' }}>km</span>
+                                                    {cps.map(cp => {
+                                                        const autoValue = autoByName.get(cp.name);
+                                                        const typed = marks[cat]?.[cp.name] ?? '';
+                                                        const differs = autoValue !== undefined && typed !== ''
+                                                            && Math.abs(parseFloat(typed) - autoValue) > 0.01;
+                                                        return (
+                                                            <div key={cp._id}>
+                                                                <label className="ce-label" style={{ fontSize: 11 }}>{cp.name}</label>
+                                                                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                                                    <input
+                                                                        type="number"
+                                                                        step="0.1"
+                                                                        min={0}
+                                                                        max={r.distanceKm}
+                                                                        className="ce-input ce-input-sm"
+                                                                        placeholder={autoValue !== undefined ? String(autoValue) : '—'}
+                                                                        value={typed}
+                                                                        onChange={(e) => setMarks(prev => ({
+                                                                            ...prev,
+                                                                            [cat]: { ...(prev[cat] || {}), [cp.name]: e.target.value },
+                                                                        }))}
+                                                                    />
+                                                                    <span style={{ fontSize: 11, color: '#94a3b8' }}>km</span>
+                                                                </div>
+                                                                {differs && (
+                                                                    <div style={{ fontSize: 10.5, color: '#94a3b8', marginTop: 2 }}>
+                                                                        {th ? `จากตาราง: ${autoValue}` : `From table: ${autoValue}`}
+                                                                    </div>
+                                                                )}
                                                             </div>
-                                                        </div>
-                                                    ))}
+                                                        );
+                                                    })}
                                                 </div>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => saveMarks(cat)}
-                                                    disabled={isBusy}
-                                                    style={{
-                                                        marginTop: 12, fontSize: 12, fontWeight: 700, fontFamily: 'inherit',
-                                                        cursor: 'pointer', border: 'none', background: '#7c3aed', color: '#fff',
-                                                        borderRadius: 6, padding: '7px 16px', opacity: isBusy ? 0.6 : 1,
-                                                    }}
-                                                >
-                                                    {th ? 'บันทึกตำแหน่ง CP' : 'Save CP positions'}
-                                                </button>
+                                                <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => saveMarks(cat)}
+                                                        disabled={isBusy}
+                                                        style={{
+                                                            fontSize: 12, fontWeight: 700, fontFamily: 'inherit',
+                                                            cursor: 'pointer', border: 'none', background: '#7c3aed', color: '#fff',
+                                                            borderRadius: 6, padding: '7px 16px', opacity: isBusy ? 0.6 : 1,
+                                                        }}
+                                                    >
+                                                        {th ? 'บันทึกตำแหน่ง CP' : 'Save CP positions'}
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => applyAuto(cat)}
+                                                        disabled={isBusy}
+                                                        title={th ? 'ดึงระยะทางของ checkpoint ในระยะนี้มาใส่ใหม่' : 'Re-read the km recorded for this distance'}
+                                                        style={{
+                                                            fontSize: 12, fontWeight: 700, fontFamily: 'inherit',
+                                                            cursor: 'pointer', border: '1px solid #cbd5e1', background: '#fff',
+                                                            color: '#475569', borderRadius: 6, padding: '7px 14px',
+                                                            opacity: isBusy ? 0.6 : 1,
+                                                        }}
+                                                    >
+                                                        {th ? '⟳ เติมอัตโนมัติ' : '⟳ Auto-fill'}
+                                                    </button>
+                                                </div>
                                             </>
                                         )}
                                     </div>
