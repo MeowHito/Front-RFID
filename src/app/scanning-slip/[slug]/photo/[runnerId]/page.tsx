@@ -103,6 +103,8 @@ export default function ScanningSlipPhotoPage() {
                 const pool = Array.isArray(data?.data) ? data.data : [];
                 const awards = computeAwardsForCategory(pool, {
                     overallDisplayCount: campaign.overallDisplayCount,
+                    overallDisplayCountByCategory: campaign.overallDisplayCountByCategory,
+                    category: runner.category,
                     ageGroupDisplayCount: campaign.ageGroupDisplayCount,
                     excludeOverallFromAgeGroup: campaign.excludeOverallFromAgeGroup,
                     excludeOverallThaiFromAgeGroup: campaign.excludeOverallThaiFromAgeGroup,

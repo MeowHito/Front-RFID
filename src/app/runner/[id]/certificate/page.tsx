@@ -99,6 +99,8 @@ interface CampaignData {
     certBgOpacity?: number | null;
     certBgColor?: string | null;
     overallDisplayCount?: number;
+    /** Per-distance overrides of the Overall rank count (admin/top-overall). */
+    overallDisplayCountByCategory?: { category: string; count: number }[];
     ageGroupDisplayCount?: number;
     excludeOverallFromAgeGroup?: number;
     excludeOverallThaiFromAgeGroup?: number | null;
@@ -471,6 +473,8 @@ export default function CertificatePage() {
                 const natSplit = isNationalitySplitCategory(campaign.separateOverallNationalityCategories, category);
                 const awardMap = computeAwardsForCategory(pool, {
                     overallDisplayCount: campaign.overallDisplayCount,
+                    overallDisplayCountByCategory: campaign.overallDisplayCountByCategory,
+                    category: category,
                     ageGroupDisplayCount: campaign.ageGroupDisplayCount,
                     excludeOverallFromAgeGroup: campaign.excludeOverallFromAgeGroup,
                     excludeOverallThaiFromAgeGroup: campaign.excludeOverallThaiFromAgeGroup ?? undefined,
@@ -495,7 +499,7 @@ export default function CertificatePage() {
             } catch { if (!cancelled) { setAwards(EMPTY_AWARDS); setGunOverallRank(null); } }
         })();
         return () => { cancelled = true; };
-    }, [runner, campaign?._id, campaign?.overallDisplayCount, campaign?.ageGroupDisplayCount, campaign?.excludeOverallFromAgeGroup, campaign?.excludeOverallThaiFromAgeGroup, campaign?.excludeOverallForeignFromAgeGroup, campaign?.separateOverallNationalityCategories, campaign?.bestOfProvinceEnabled, campaign?.bestOfProvinces]);
+    }, [runner, campaign?._id, campaign?.overallDisplayCount, campaign?.overallDisplayCountByCategory, campaign?.ageGroupDisplayCount, campaign?.excludeOverallFromAgeGroup, campaign?.excludeOverallThaiFromAgeGroup, campaign?.excludeOverallForeignFromAgeGroup, campaign?.separateOverallNationalityCategories, campaign?.bestOfProvinceEnabled, campaign?.bestOfProvinces]);
 
     // Runner with the gun-time overall rank applied, used for token substitution so
     // the certificate's Overall rank matches the /event RANK column.

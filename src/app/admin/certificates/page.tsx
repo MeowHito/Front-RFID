@@ -103,6 +103,8 @@ interface Campaign {
     certBackgroundImage?: string; certLayout?: CertElement[];
     certPaperSize?: PaperSize;
     overallDisplayCount?: number;
+    /** Per-distance overrides of the Overall rank count (admin/top-overall). */
+    overallDisplayCountByCategory?: { category: string; count: number }[];
     ageGroupDisplayCount?: number;
     excludeOverallFromAgeGroup?: number;
     excludeOverallThaiFromAgeGroup?: number | null;
@@ -803,6 +805,8 @@ export default function CertificatesPage() {
                 const pool = Array.isArray(data?.data) ? data.data : [];
                 const awardMap = computeAwardsForCategory(pool, {
                     overallDisplayCount: campaign.overallDisplayCount,
+                    overallDisplayCountByCategory: campaign.overallDisplayCountByCategory,
+                    category: selectedRunner.category,
                     ageGroupDisplayCount: campaign.ageGroupDisplayCount,
                     excludeOverallFromAgeGroup: campaign.excludeOverallFromAgeGroup,
                     excludeOverallThaiFromAgeGroup: campaign.excludeOverallThaiFromAgeGroup ?? undefined,
@@ -825,7 +829,7 @@ export default function CertificatesPage() {
             } catch { if (!cancelled) setAwards(EMPTY_AWARDS); }
         })();
         return () => { cancelled = true; };
-    }, [selectedRunner, campaign?._id, campaign?.overallDisplayCount, campaign?.ageGroupDisplayCount, campaign?.excludeOverallFromAgeGroup, campaign?.excludeOverallThaiFromAgeGroup, campaign?.excludeOverallForeignFromAgeGroup, campaign?.separateOverallNationalityCategories, campaign?.bestOfProvinceEnabled, campaign?.bestOfProvinces]);
+    }, [selectedRunner, campaign?._id, campaign?.overallDisplayCount, campaign?.overallDisplayCountByCategory, campaign?.ageGroupDisplayCount, campaign?.excludeOverallFromAgeGroup, campaign?.excludeOverallThaiFromAgeGroup, campaign?.excludeOverallForeignFromAgeGroup, campaign?.separateOverallNationalityCategories, campaign?.bestOfProvinceEnabled, campaign?.bestOfProvinces]);
 
     useEffect(() => {
         const handler = (e: KeyboardEvent) => {

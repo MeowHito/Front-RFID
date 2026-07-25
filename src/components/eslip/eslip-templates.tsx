@@ -66,6 +66,8 @@ export interface CampaignData {
     eslipV2Layout?: ESlipV2Layout;
     slipScanTemplate?: string;
     overallDisplayCount?: number;
+    /** Per-distance overrides of the Overall rank count (admin/top-overall). */
+    overallDisplayCountByCategory?: { category: string; count: number }[];
     ageGroupDisplayCount?: number;
     bestOfDisplayCount?: number;
     bestOfProvinceEnabled?: boolean;

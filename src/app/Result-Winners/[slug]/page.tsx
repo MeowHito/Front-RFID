@@ -47,6 +47,8 @@ interface Campaign {
     categories?: { name: string; distance?: string }[];
     ageGroupDisplayCount?: number;
     overallDisplayCount?: number;
+    /** Per-distance overrides of the Overall rank count (admin/top-overall). */
+    overallDisplayCountByCategory?: { category: string; count: number }[];
     excludeOverallFromAgeGroup?: number;
     excludeOverallThaiFromAgeGroup?: number;
     excludeOverallForeignFromAgeGroup?: number;

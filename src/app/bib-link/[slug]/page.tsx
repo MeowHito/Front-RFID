@@ -217,6 +217,8 @@ export default function BibLinkPage() {
                         const pool = Array.isArray(poolData?.data) ? poolData.data : [];
                         const awards = computeAwardsForCategory(pool, {
                             overallDisplayCount: c.overallDisplayCount,
+                            overallDisplayCountByCategory: c.overallDisplayCountByCategory,
+                            category: r.category,
                             ageGroupDisplayCount: c.ageGroupDisplayCount,
                             excludeOverallFromAgeGroup: c.excludeOverallFromAgeGroup,
                             excludeOverallThaiFromAgeGroup: c.excludeOverallThaiFromAgeGroup,

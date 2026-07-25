@@ -9,6 +9,7 @@ import NameLangToggle from '@/components/NameLangToggle';
 import { useLanguage } from '@/lib/language-context';
 import { useAuth } from '@/lib/auth-context';
 import { isThaiNationality, isNationalitySplitCategory } from '@/lib/nationality';
+import { resolveOverallDisplayCount, type OverallCountByCategoryEntry } from '@/lib/overall-display-count';
 import { useParams, useSearchParams } from 'next/navigation';
 
 interface Runner {
@@ -44,6 +45,7 @@ interface Campaign {
     uuid?: string;
     categories?: CampaignCategory[];
     overallDisplayCount?: number;
+    overallDisplayCountByCategory?: OverallCountByCategoryEntry[];
     excludeOverallThaiFromAgeGroup?: number;
     separateOverallNationalityCategories?: string[];
 }
@@ -197,11 +199,15 @@ export default function OverallWinnersBySlugPage() {
         };
     }, [autoMode]);
 
-    const topN = Math.max(1, campaign?.overallDisplayCount || 5);
+    // Rank count is configured per distance (admin/top-overall), falling back to the
+    // campaign-wide count for distances with no override.
+    const topN = resolveOverallDisplayCount(campaign, selectedCategory);
     // Nationality-split categories use the Thai count (set via admin/age-group-ranking's
-    // "คนไทย" input), falling back to overallDisplayCount. Foreign/international runners
-    // are excluded from this page entirely — see /Nationality-Winners for those.
-    const thaiTopN = Math.max(1, Number(campaign?.excludeOverallThaiFromAgeGroup ?? campaign?.overallDisplayCount) || 5);
+    // "คนไทย" input), falling back to the distance's overall count. Foreign/international
+    // runners are excluded from this page entirely — see /Nationality-Winners for those.
+    const thaiTopN = campaign?.excludeOverallThaiFromAgeGroup != null
+        ? Math.max(1, Number(campaign.excludeOverallThaiFromAgeGroup) || 5)
+        : topN;
     // Nationality split applies per race category — only when the selected category is in the list
     const separateNat = isNationalitySplitCategory(campaign?.separateOverallNationalityCategories, selectedCategory);
 
@@ -246,8 +252,10 @@ export default function OverallWinnersBySlugPage() {
                 gender,
                 nameLang: language,
                 computeWinners: (runners, categoryName) => {
-                    const topNForCat = Math.max(1, campaign.overallDisplayCount || 5);
-                    const thaiTopNForCat = Math.max(1, Number(campaign.excludeOverallThaiFromAgeGroup ?? campaign.overallDisplayCount) || 5);
+                    const topNForCat = resolveOverallDisplayCount(campaign, categoryName);
+                    const thaiTopNForCat = campaign.excludeOverallThaiFromAgeGroup != null
+                        ? Math.max(1, Number(campaign.excludeOverallThaiFromAgeGroup) || 5)
+                        : topNForCat;
                     const separateNatForCat = isNationalitySplitCategory(campaign.separateOverallNationalityCategories, categoryName);
                     const finished = runners.filter(r => r.status === 'finished' && (r.netTime || r.gunTime || r.elapsedTime));
                     const sorted = [...finished].sort((a, b) => {

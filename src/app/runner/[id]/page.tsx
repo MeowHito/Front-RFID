@@ -74,6 +74,8 @@ interface CampaignData {
     isApproveCertificate?: boolean;
     certLayout?: any;
     overallDisplayCount?: number;
+    /** Per-distance overrides of the Overall rank count (admin/top-overall). */
+    overallDisplayCountByCategory?: { category: string; count: number }[];
     ageGroupDisplayCount?: number;
     bestOfDisplayCount?: number;
     bestOfProvinceEnabled?: boolean;
@@ -438,6 +440,8 @@ export default function RunnerProfilePage() {
                 const natSplit = isNationalitySplitCategory(campaign.separateOverallNationalityCategories, runner.category);
                 const awards = computeAwardsForCategory(pool, {
                     overallDisplayCount: campaign.overallDisplayCount,
+                    overallDisplayCountByCategory: campaign.overallDisplayCountByCategory,
+                    category: runner.category,
                     ageGroupDisplayCount: campaign.ageGroupDisplayCount,
                     excludeOverallFromAgeGroup: campaign.excludeOverallFromAgeGroup,
                     excludeOverallThaiFromAgeGroup: campaign.excludeOverallThaiFromAgeGroup,
@@ -458,7 +462,7 @@ export default function RunnerProfilePage() {
             } catch { if (!cancelled) { setAward(null); setBestOfProvince(null); setGunOverallRank(null); setGunGenderRank(null); setGunAgeGroupRank(null); } }
         })();
         return () => { cancelled = true; };
-    }, [runner, campaign?._id, campaign?.overallDisplayCount, campaign?.ageGroupDisplayCount, campaign?.bestOfProvinceEnabled, campaign?.bestOfProvinces, campaign?.excludeOverallFromAgeGroup, campaign?.excludeOverallThaiFromAgeGroup, campaign?.excludeOverallForeignFromAgeGroup, campaign?.separateOverallNationalityCategories]);
+    }, [runner, campaign?._id, campaign?.overallDisplayCount, campaign?.overallDisplayCountByCategory, campaign?.ageGroupDisplayCount, campaign?.bestOfProvinceEnabled, campaign?.bestOfProvinces, campaign?.excludeOverallFromAgeGroup, campaign?.excludeOverallThaiFromAgeGroup, campaign?.excludeOverallForeignFromAgeGroup, campaign?.separateOverallNationalityCategories]);
 
     useEffect(() => {
         setFollowedRunners(loadFollowedRunners());

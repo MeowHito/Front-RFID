@@ -6,6 +6,7 @@
 
 import { isThaiNationality, isNationalitySplitCategory } from './nationality';
 import { buildCanonicalAgeGroups, canonicalizeAgeGroup, type AgeGroupBucket } from './age-groups';
+import { resolveOverallDisplayCount, type OverallCountByCategoryEntry } from './overall-display-count';
 
 export interface AgeGroupWinnerRunner {
     _id: string;
@@ -23,6 +24,8 @@ export interface AgeGroupWinnerRunner {
 export interface AgeGroupWinnerConfig {
     ageGroupDisplayCount?: number;
     overallDisplayCount?: number;
+    /** Per-category overrides of `overallDisplayCount` (campaign setting). */
+    overallDisplayCountByCategory?: OverallCountByCategoryEntry[];
     excludeOverallFromAgeGroup?: number;
     excludeOverallThaiFromAgeGroup?: number;
     excludeOverallForeignFromAgeGroup?: number;
@@ -62,7 +65,7 @@ export function computeAgeGroupWinners<T extends AgeGroupWinnerRunner>(
 
     const natSplit = isNationalitySplitCategory(cfg.separateOverallNationalityCategories, selectedCategory);
     if (natSplit) {
-        const overallTopN = Math.max(1, Number(cfg.overallDisplayCount) || 5);
+        const overallTopN = resolveOverallDisplayCount(cfg, selectedCategory);
         const excludeNatCount: Record<'thai' | 'foreign', number> = {
             thai: cfg.excludeOverallThaiFromAgeGroup != null ? Math.max(0, Number(cfg.excludeOverallThaiFromAgeGroup)) : overallTopN,
             foreign: cfg.excludeOverallForeignFromAgeGroup != null ? Math.max(0, Number(cfg.excludeOverallForeignFromAgeGroup)) : overallTopN,

@@ -35,6 +35,8 @@ interface Campaign {
     raceFinished?: boolean;
     // Award config (shared with /admin/age-group-ranking + winner pages)
     overallDisplayCount?: number;
+    /** Per-distance overrides of the Overall rank count (admin/top-overall). */
+    overallDisplayCountByCategory?: { category: string; count: number }[];
     ageGroupDisplayCount?: number;
     bestOfDisplayCount?: number;
     excludeOverallFromAgeGroup?: number;
@@ -742,6 +744,8 @@ export default function EventLivePage() {
         return date.toLocaleDateString(language === 'th' ? 'th-TH' : 'en-US', { day: '2-digit', month: 'short', year: 'numeric' });
     }
 
+    // Takes a DISPLAY status (see getDisplayStatus): 'wait' = distance not released yet,
+    // 'dns' = released but the runner never passed START.
     function getStatusLabel(status: string) {
         switch (status) {
             case 'finished': return 'FINISH';
@@ -749,6 +753,7 @@ export default function EventLivePage() {
             case 'dnf': return 'DNF';
             case 'dns': return 'DNS';
             case 'dq': return 'DQ';
+            case 'wait': return 'Wait';
             case 'not_started': return 'DNS';
             default: return status?.toUpperCase() || '-';
         }
@@ -914,12 +919,12 @@ export default function EventLivePage() {
         }
     }, [ageGroupOptions, filterAgeGroup]);
 
-    const getRunnerCategoryStartDate = useCallback((runner: Runner): Date | null => {
-        if (!campaign?.eventDate) return null;
-        const categoryList = Array.isArray(campaign.categories) ? campaign.categories : [];
+    // The campaign category a runner belongs to (matched by name, then by distance).
+    const getRunnerCampaignCategory = useCallback((runner: Runner): RaceCategory | undefined => {
+        const categoryList = Array.isArray(campaign?.categories) ? campaign.categories : [];
         const runnerCategoryText = normalizeComparableText(runner.category);
         const runnerDistance = parseDistanceValue(runner.category);
-        const matchedCategory = categoryList.find((cat) => {
+        return categoryList.find((cat) => {
             const normalizedName = normalizeComparableText(cat.name);
             const normalizedDistance = normalizeComparableText(cat.distance);
             const categoryDistance = parseDistanceValue(cat.distance || cat.name);
@@ -927,7 +932,12 @@ export default function EventLivePage() {
             if (runnerDistance !== null && categoryDistance !== null && Math.abs(runnerDistance - categoryDistance) < 0.001) return true;
             return false;
         }) || categoryList[0];
-        const startTime = String(matchedCategory?.startTime || '').trim();
+    }, [campaign?.categories]);
+
+    // Gun-start datetime of a category ("HH:mm:ss" on the event date), or null when unset.
+    const getCategoryStartDate = useCallback((category?: RaceCategory | null): Date | null => {
+        if (!campaign?.eventDate) return null;
+        const startTime = String(category?.startTime || '').trim();
         if (!startTime) return null;
         const baseDate = new Date(campaign.eventDate);
         if (Number.isNaN(baseDate.getTime())) return null;
@@ -935,7 +945,67 @@ export default function EventLivePage() {
         const startDate = new Date(baseDate);
         startDate.setHours(Number(hours) || 0, Number(minutes) || 0, Number(seconds) || 0, 0);
         return Number.isNaN(startDate.getTime()) ? null : startDate;
-    }, [campaign?.eventDate, campaign?.categories]);
+    }, [campaign?.eventDate]);
+
+    const getRunnerCategoryStartDate = useCallback((runner: Runner): Date | null => {
+        return getCategoryStartDate(getRunnerCampaignCategory(runner));
+    }, [getRunnerCampaignCategory, getCategoryStartDate]);
+
+    // Distances that already have at least one runner on course. Most events leave
+    // the category startTime blank, so "somebody in this distance has passed START"
+    // is the practical signal that the gun has fired. DQ is excluded — an auto-DQ can
+    // be handed to a runner who never started.
+    const categoriesWithStartersSignature = useMemo(() => {
+        const started = new Set<string>();
+        for (const runner of runners) {
+            const hasEvidence = ['in_progress', 'finished', 'dnf'].includes(runner.status)
+                || (runner.gunTime ?? 0) > 0 || !!runner.gunTimeStr
+                || (runner.netTime ?? 0) > 0 || !!runner.netTimeStr
+                || (runner.elapsedTime ?? 0) > 0
+                || (runner.passedCount ?? 0) > 0
+                || !!runner.latestCheckpoint
+                || runner.isStarted === true;
+            if (!hasEvidence) continue;
+            const category = getRunnerCampaignCategory(runner);
+            if (category) started.add(normalizeComparableText(category.name));
+        }
+        return Array.from(started).sort().join('|');
+    }, [runners, getRunnerCampaignCategory]);
+
+    // Distances whose gun has already fired. Recomputed on the 1s clock tick, but the
+    // Set identity only changes when a distance is actually released — so the runner
+    // lists below don't re-filter every second.
+    const releasedCategorySignature = useMemo(() => {
+        const categoryList = Array.isArray(campaign?.categories) ? campaign.categories : [];
+        const now = currentTime.getTime();
+        const withStarters = new Set(categoriesWithStartersSignature.split('|').filter(Boolean));
+        const raceOver = !!campaign?.raceFinished || campaign?.status === 'finished';
+        return categoryList
+            .filter(cat => {
+                // A configured gun time is authoritative when present.
+                const start = getCategoryStartDate(cat);
+                if (start) return now >= start.getTime();
+                if (withStarters.has(normalizeComparableText(cat.name))) return true;
+                return raceOver;
+            })
+            .map(cat => normalizeComparableText(cat.name))
+            .join('|');
+    }, [campaign?.categories, campaign?.raceFinished, campaign?.status, getCategoryStartDate, categoriesWithStartersSignature, currentTime]);
+
+    const releasedCategories = useMemo(
+        () => new Set(releasedCategorySignature.split('|').filter(Boolean)),
+        [releasedCategorySignature],
+    );
+
+    // A runner who never passed START reads as "Wait" while their distance is still
+    // waiting for the gun, and as DNS once it has been released (= did not show up).
+    // Every other status passes through unchanged.
+    const getDisplayStatus = useCallback((runner: Runner): string => {
+        if (runner.status !== 'dns' && runner.status !== 'not_started') return runner.status;
+        const category = getRunnerCampaignCategory(runner);
+        if (!category) return 'dns';
+        return releasedCategories.has(normalizeComparableText(category.name)) ? 'dns' : 'wait';
+    }, [getRunnerCampaignCategory, releasedCategories]);
 
     // Determine active display mode and column set
     const isLabMode = campaign?.displayMode === 'lab';
@@ -971,6 +1041,10 @@ export default function EventLivePage() {
         for (const [key, pool] of byCategory) {
             const cfg = {
                 overallDisplayCount: campaign?.overallDisplayCount,
+                overallDisplayCountByCategory: campaign?.overallDisplayCountByCategory,
+                // Overall count is per distance — resolve the pool's campaign category name
+                // (the pool key is the derived UI key, not the stored category name).
+                category: categories.find(c => c.key === key)?.categoryName || key,
                 ageGroupDisplayCount: campaign?.ageGroupDisplayCount,
                 excludeOverallFromAgeGroup: campaign?.excludeOverallFromAgeGroup,
                 excludeOverallThaiFromAgeGroup: campaign?.excludeOverallThaiFromAgeGroup,
@@ -981,7 +1055,7 @@ export default function EventLivePage() {
             for (const [id, award] of computeAwardsForCategory(pool, cfg)) map.set(id, award);
         }
         return map;
-    }, [runners, resolveRunnerCategoryKey, campaign?.overallDisplayCount, campaign?.ageGroupDisplayCount, campaign?.excludeOverallFromAgeGroup, campaign?.excludeOverallThaiFromAgeGroup, campaign?.excludeOverallForeignFromAgeGroup, campaign?.excludeAgeGroupTop, natSplitAwardKeys]);
+    }, [runners, resolveRunnerCategoryKey, categories, campaign?.overallDisplayCount, campaign?.overallDisplayCountByCategory, campaign?.ageGroupDisplayCount, campaign?.excludeOverallFromAgeGroup, campaign?.excludeOverallThaiFromAgeGroup, campaign?.excludeOverallForeignFromAgeGroup, campaign?.excludeAgeGroupTop, natSplitAwardKeys]);
 
     // Build ordered list of visible columns based on admin displayColumns + mobile
     const visibleColumns = useMemo(() => {
@@ -1060,17 +1134,19 @@ export default function EventLivePage() {
         return medians;
     }, [runners]);
 
-    // Status counts for filter badges
+    // Status counts for filter badges — keyed by DISPLAY status, so "Wait" counts the
+    // runners whose distance has not been released yet and DNS the ones who missed it.
     const statusCounts = useMemo(() => {
-        const counts: Record<string, number> = { ALL: 0, finished: 0, in_progress: 0, not_started: 0, dnf: 0, dns: 0 };
+        const counts: Record<string, number> = { ALL: 0, finished: 0, in_progress: 0, wait: 0, dnf: 0, dns: 0, dq: 0 };
         runners
             .filter(r => !filterCategory || resolveRunnerCategoryKey(r) === filterCategory)
             .forEach(r => {
                 counts.ALL++;
-                counts[r.status] = (counts[r.status] || 0) + 1;
+                const key = getDisplayStatus(r);
+                counts[key] = (counts[key] || 0) + 1;
             });
         return counts;
-    }, [runners, filterCategory, resolveRunnerCategoryKey]);
+    }, [runners, filterCategory, resolveRunnerCategoryKey, getDisplayStatus]);
 
     // Runners shown in Manual Status modal — filtered by current category + modal search
     const manualModalRunners = useMemo(() => {
@@ -1129,7 +1205,7 @@ export default function EventLivePage() {
                 const matchesGender = filterGender === 'ALL' || filterGender === 'FOLLOWED' || runner.gender === filterGender;
                 const matchesFollowed = filterGender !== 'FOLLOWED' || followedRunnerIds.has(runner._id);
                 const matchesCategory = !filterCategory || resolveRunnerCategoryKey(runner) === filterCategory;
-                const matchesStatus = filterStatus === 'ALL' || runner.status === filterStatus;
+                const matchesStatus = filterStatus === 'ALL' || getDisplayStatus(runner) === filterStatus;
                 const matchesAgeGroup = !filterAgeGroup || canonicalAgeGroupOf(runner) === filterAgeGroup;
                 return matchesSearch && matchesGender && matchesFollowed && matchesCategory && matchesStatus && matchesAgeGroup;
             });
@@ -1155,7 +1231,7 @@ export default function EventLivePage() {
             .map((runner, i) => ({ runner, i, alert: runnerHasProgressAlert(runner) }))
             .sort((a, b) => (a.alert === b.alert ? a.i - b.i : a.alert ? -1 : 1))
             .map(x => x.runner);
-    }, [allRankedRunners, searchQuery, filterGender, followedRunnerIds, filterCategory, filterStatus, filterAgeGroup, resolveRunnerCategoryKey, canonicalAgeGroupOf, sortAlertsFirst, cpDistanceLookup, isMobile, showAllColumns]); // eslint-disable-line react-hooks/exhaustive-deps
+    }, [allRankedRunners, searchQuery, filterGender, followedRunnerIds, filterCategory, filterStatus, filterAgeGroup, resolveRunnerCategoryKey, canonicalAgeGroupOf, getDisplayStatus, sortAlertsFirst, cpDistanceLookup, isMobile, showAllColumns]); // eslint-disable-line react-hooks/exhaustive-deps
 
     // Compute live overall + gender + category ranks.
     // Ranking convention: Overall (RANK) and Gender (GEN) are decided by GUN time, while
@@ -1696,6 +1772,7 @@ export default function EventLivePage() {
             campaignName={campaign.name}
             categoryName={currentCategoryName}
             overallDisplayCount={campaign.overallDisplayCount}
+            overallDisplayCountByCategory={campaign.overallDisplayCountByCategory}
             excludeOverallThaiFromAgeGroup={campaign.excludeOverallThaiFromAgeGroup}
             excludeOverallForeignFromAgeGroup={campaign.excludeOverallForeignFromAgeGroup}
             ageGroupDisplayCount={campaign.ageGroupDisplayCount}
@@ -1811,8 +1888,11 @@ export default function EventLivePage() {
                                     { key: 'finished', label: 'Finish', color: '#22c55e' },
                                     { key: 'in_progress', label: 'Racing', color: '#f97316' },
                                     { key: 'dnf', label: 'DNF', color: '#ef4444' },
+                                    // DNS = the gun has fired but the runner never passed START.
                                     { key: 'dns', label: 'DNS', color: '#ef4444' },
-                                    { key: 'not_started', label: 'Wait', color: '#94a3b8' },
+                                    { key: 'dq', label: 'DQ', color: '#7c2d12' },
+                                    // Wait = the distance has not been released yet.
+                                    { key: 'wait', label: 'Wait', color: '#94a3b8' },
                                 ] as const).map(s => (
                                     <button
                                         key={s.key}
@@ -2159,6 +2239,8 @@ export default function EventLivePage() {
                                                 );
                                             case 'status': {
                                                 const isDnfStatus = runner.status === 'dnf';
+                                                // Non-starters read as "Wait" before their distance is released, DNS after.
+                                                const displayStatus = getDisplayStatus(runner);
                                                 const showStatusBadge = !['finished', 'in_progress', 'dnf'].includes(runner.status);
                                                 const showFinishCheckpointBadge = !!statusCheckpointName && isFinishCp;
                                                 const showInProgressCheckpointBadge = !!statusCheckpointName && runner.status === 'in_progress' && !isFinishCp;
@@ -2182,8 +2264,8 @@ export default function EventLivePage() {
                                                         <div className={`${isMobile ? 'min-h-7' : 'min-h-8'} relative grid min-w-0 justify-items-center gap-y-[3px]`} style={{ gridTemplateRows: showCheckpointBelow ? (statusScanTimeLabel ? 'auto auto auto' : 'auto auto') : (statusScanTimeLabel ? 'auto auto' : 'auto') }}>
                                                             <div className="relative flex w-full min-w-0 items-center justify-center gap-1">
                                                                 {showStatusBadge && (
-                                                                    <span className={`${isMobile ? 'px-1 py-px text-[8px]' : 'px-2 py-0.5 text-[10px]'} inline-block shrink-0 rounded-[3px] font-bold leading-[1.3] text-white`} style={{ background: getStatusBgColor(runner.status) }}>
-                                                                        {getStatusLabel(runner.status)}
+                                                                    <span className={`${isMobile ? 'px-1 py-px text-[8px]' : 'px-2 py-0.5 text-[10px]'} inline-block shrink-0 rounded-[3px] font-bold leading-[1.3] text-white`} style={{ background: getStatusBgColor(displayStatus) }}>
+                                                                        {getStatusLabel(displayStatus)}
                                                                     </span>
                                                                 )}
                                                                 {inlineStatusCheckpoint ? (
@@ -3363,6 +3445,7 @@ export default function EventLivePage() {
                                                     const stStopped = ['dns', 'dnf', 'dq', 'not_started'].includes(runner.status);
                                                     const isFinish2 = cpMeta2.isFinishLike && !stStopped;
                                                     const showBadge = !['finished', 'in_progress', 'dnf'].includes(runner.status);
+                                                    const displaySt = getDisplayStatus(runner);
                                                     const showFinishChip = !!stCpName && isFinish2;
                                                     const showInProgChip = !!stCpName && runner.status === 'in_progress' && !isFinish2;
                                                     const chipBg = showFinishChip ? '#dcfce7' : showInProgChip ? '#fef3c7' : isDnfSt ? '#dc2626' : 'transparent';
@@ -3374,8 +3457,8 @@ export default function EventLivePage() {
                                                         <div className="w-24 shrink-0 flex flex-col items-center justify-center gap-0.5 text-center">
                                                             <div className="flex flex-wrap items-center justify-center gap-1">
                                                                 {showBadge && (
-                                                                    <span className="inline-block shrink-0 rounded-[3px] px-1.5 py-px text-[10px] font-bold leading-[1.3] text-white" style={{ background: getStatusBgColor(runner.status) }}>
-                                                                        {getStatusLabel(runner.status)}
+                                                                    <span className="inline-block shrink-0 rounded-[3px] px-1.5 py-px text-[10px] font-bold leading-[1.3] text-white" style={{ background: getStatusBgColor(displaySt) }}>
+                                                                        {getStatusLabel(displaySt)}
                                                                     </span>
                                                                 )}
                                                                 {chipLabel ? (

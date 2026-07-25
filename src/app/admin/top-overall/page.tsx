@@ -5,6 +5,15 @@ import AdminLayout from '@/app/admin/AdminLayout';
 import { useLanguage } from '@/lib/language-context';
 import { authHeaders } from '@/lib/authHeaders';
 import { isThaiNationality, isNationalitySplitCategory } from '@/lib/nationality';
+import {
+    DEFAULT_OVERALL_DISPLAY_COUNT,
+    MAX_OVERALL_DISPLAY_COUNT,
+    MIN_OVERALL_DISPLAY_COUNT,
+    clampOverallDisplayCount,
+    overallCountMapFromConfig,
+    overallCountMapToEntries,
+    type OverallCountByCategoryEntry,
+} from '@/lib/overall-display-count';
 import { LinkIcon, ArrowTopRightOnSquareIcon } from '@heroicons/react/24/outline';
 
 interface Runner {
@@ -26,14 +35,15 @@ interface FeaturedCampaignSettings {
     name: string;
     slug?: string;
     overallDisplayCount?: number;
+    overallDisplayCountByCategory?: OverallCountByCategoryEntry[];
     bestOfDisplayCount?: number;
     separateOverallNationalityCategories?: string[];
     categories?: { name: string; distance?: string }[];
 }
 
-const DEFAULT_TOP_N = 5;
-const MIN_TOP_N = 1;
-const MAX_TOP_N = 1000;
+const DEFAULT_TOP_N = DEFAULT_OVERALL_DISPLAY_COUNT;
+const MIN_TOP_N = MIN_OVERALL_DISPLAY_COUNT;
+const MAX_TOP_N = MAX_OVERALL_DISPLAY_COUNT;
 
 function formatTime(ms: number | undefined | null): string {
     if (ms === undefined || ms === null || ms <= 0) return '-';
@@ -48,7 +58,8 @@ export default function TopOverallPage() {
     const [campaign, setCampaign] = useState<FeaturedCampaignSettings | null>(null);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
-    const [overallDisplayCount, setOverallDisplayCount] = useState<number>(DEFAULT_TOP_N);
+    // Overall rank count is configured per race distance ("42K top 3, 21K top 5").
+    const [overallCountByCategory, setOverallCountByCategory] = useState<Record<string, number>>({});
     const [bestOfDisplayCount, setBestOfDisplayCount] = useState<number>(1);
     const [natSplitCategories, setNatSplitCategories] = useState<string[]>([]);
     const [selectedCategory, setSelectedCategory] = useState('');
@@ -67,7 +78,10 @@ export default function TopOverallPage() {
             if (res.ok) {
                 const data = await res.json();
                 setCampaign(data);
-                setOverallDisplayCount(Math.min(MAX_TOP_N, Math.max(MIN_TOP_N, Number(data?.overallDisplayCount) || DEFAULT_TOP_N)));
+                const categoryNames: string[] = Array.isArray(data?.categories)
+                    ? data.categories.map((c: { name: string }) => c?.name).filter(Boolean)
+                    : [];
+                setOverallCountByCategory(overallCountMapFromConfig(data, categoryNames));
                 setBestOfDisplayCount(Math.max(1, Number(data?.bestOfDisplayCount) || 1));
                 setNatSplitCategories(Array.isArray(data?.separateOverallNationalityCategories) ? data.separateOverallNationalityCategories : []);
                 setSelectedCategory(data?.categories?.[0]?.name || '');
@@ -122,6 +136,11 @@ export default function TopOverallPage() {
 
     // Whether the currently selected category splits Overall by nationality
     const selectedCategorySplit = isNationalitySplitCategory(natSplitCategories, selectedCategory);
+
+    // Rank count of the distance currently being previewed/edited.
+    const overallDisplayCount = clampOverallDisplayCount(
+        overallCountByCategory[selectedCategory] ?? campaign?.overallDisplayCount,
+    );
 
     const toggleNatSplitForSelected = () => {
         if (!selectedCategory) return;
@@ -211,6 +230,13 @@ export default function TopOverallPage() {
                         style={selectedCategory === category.name ? { color: '#ffffff' } : undefined}
                     >
                         {category.name}{category.distance ? ` (${category.distance})` : ''}
+                        {/* Each distance carries its own Overall rank count */}
+                        <span
+                            className={`ml-1.5 rounded-full px-1.5 py-px text-[10px] font-extrabold ${selectedCategory === category.name ? 'bg-white/25' : 'bg-sky-100'}`}
+                            style={selectedCategory === category.name ? { color: '#ffffff' } : { color: '#0369a1' }}
+                        >
+                            {clampOverallDisplayCount(overallCountByCategory[category.name] ?? campaign?.overallDisplayCount)}
+                        </span>
                     </button>
                 ))}
             </div>
@@ -237,9 +263,11 @@ export default function TopOverallPage() {
         showToast(language === 'th' ? 'คัดลอกลิงก์แล้ว' : 'Link copied', 'success');
     };
 
+    // Only the selected distance's count changes — other distances keep theirs.
     const updateOverallDisplayCount = (value: number) => {
-        const normalized = Number.isFinite(value) ? Math.min(MAX_TOP_N, Math.max(MIN_TOP_N, Math.floor(value))) : DEFAULT_TOP_N;
-        setOverallDisplayCount(normalized);
+        if (!selectedCategory) return;
+        const normalized = clampOverallDisplayCount(value);
+        setOverallCountByCategory(prev => ({ ...prev, [selectedCategory]: normalized }));
     };
 
     const updateBestOfDisplayCount = (value: number) => {
@@ -255,7 +283,10 @@ export default function TopOverallPage() {
                 method: 'PUT',
                 headers: authHeaders(),
                 body: JSON.stringify({
-                    overallDisplayCount: overallDisplayCount,
+                    // Per-distance counts; the campaign-wide value stays the fallback
+                    // for any distance without its own entry.
+                    overallDisplayCountByCategory: overallCountMapToEntries(overallCountByCategory),
+                    overallDisplayCount: clampOverallDisplayCount(campaign.overallDisplayCount),
                     bestOfDisplayCount: bestOfDisplayCount,
                     separateOverallNationalityCategories: natSplitCategories,
                 }),
@@ -356,15 +387,21 @@ export default function TopOverallPage() {
                                 <div className="justify-self-start">{renderCategoryTabs()}</div>
                                 <div className="justify-self-center flex items-center gap-1.5 rounded-lg border border-sky-200 bg-sky-50 px-2 py-1.5">
                                     <span className="text-[11px] font-bold" style={{ color: '#0369a1' }}>
-                                        {language === 'th' ? 'จำนวน Overall:' : 'Overall count:'}
+                                        {language === 'th'
+                                            ? `จำนวน Overall${selectedCategory ? ` (${selectedCategory})` : ''}:`
+                                            : `Overall count${selectedCategory ? ` (${selectedCategory})` : ''}:`}
                                     </span>
                                     <input
                                         type="number"
                                         min={MIN_TOP_N}
                                         max={MAX_TOP_N}
                                         value={overallDisplayCount}
+                                        disabled={!selectedCategory}
                                         onChange={(e) => updateOverallDisplayCount(e.target.value === '' ? DEFAULT_TOP_N : Number(e.target.value))}
-                                        className="h-9 w-20 rounded-lg border-2 border-sky-400 bg-white text-center font-semibold outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
+                                        title={language === 'th'
+                                            ? 'จำนวนอันดับ Overall ของระยะที่เลือก — แต่ละระยะตั้งค่าแยกกันได้'
+                                            : 'Overall rank count for the selected distance — each distance is configured separately'}
+                                        className="h-9 w-20 rounded-lg border-2 border-sky-400 bg-white text-center font-semibold outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-100 disabled:opacity-50"
                                         style={{ color: '#0369a1', fontSize: '15px' }}
                                     />
                                     <span className="text-[11px] font-bold" style={{ color: '#0369a1' }}>

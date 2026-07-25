@@ -10,6 +10,7 @@ import {
     type RankingMenuItemKey,
     type RankingMenuVisibility,
 } from '@/lib/rankingMenu';
+import { resolveOverallDisplayCount, type OverallCountByCategoryEntry } from '@/lib/overall-display-count';
 
 interface RankingMenuDropdownProps {
     campaignId: string;
@@ -20,6 +21,8 @@ interface RankingMenuDropdownProps {
     /** Raw category name (matches campaign.categories[].name), NOT the derived UI key */
     categoryName: string;
     overallDisplayCount?: number;
+    /** Per-distance overrides of the Overall rank count (admin/top-overall). */
+    overallDisplayCountByCategory?: OverallCountByCategoryEntry[];
     /** Top N Thai overall ranks (admin/age-group-ranking "คนไทย"). Falls back to overallDisplayCount. */
     excludeOverallThaiFromAgeGroup?: number;
     /** Top N foreign overall ranks (admin/age-group-ranking "ต่างชาติ"). Falls back to overallDisplayCount. */
@@ -43,6 +46,7 @@ export default function RankingMenuDropdown({
     campaignName,
     categoryName,
     overallDisplayCount,
+    overallDisplayCountByCategory,
     excludeOverallThaiFromAgeGroup,
     excludeOverallForeignFromAgeGroup,
     ageGroupDisplayCount,
@@ -74,9 +78,10 @@ export default function RankingMenuDropdown({
         return () => document.removeEventListener('mousedown', handler);
     }, []);
 
-    const overallN = Math.max(1, Number(overallDisplayCount) || 5);
-    const overallThaiN = Math.max(1, Number(excludeOverallThaiFromAgeGroup ?? overallDisplayCount) || 5);
-    const overallForeignN = Math.max(1, Number(excludeOverallForeignFromAgeGroup ?? overallDisplayCount) || 5);
+    // The Overall rank count is per distance, so the menu labels follow the selected one.
+    const overallN = resolveOverallDisplayCount({ overallDisplayCount, overallDisplayCountByCategory }, categoryName);
+    const overallThaiN = excludeOverallThaiFromAgeGroup != null ? Math.max(1, Number(excludeOverallThaiFromAgeGroup) || 5) : overallN;
+    const overallForeignN = excludeOverallForeignFromAgeGroup != null ? Math.max(1, Number(excludeOverallForeignFromAgeGroup) || 5) : overallN;
     const ageGroupN = Math.max(1, Number(ageGroupDisplayCount) || 5);
     const bestOfN = Math.max(1, Number(bestOfDisplayCount) || 1);
     const catQuery = `?category=${encodeURIComponent(categoryName)}`;

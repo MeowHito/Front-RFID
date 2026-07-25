@@ -14,9 +14,15 @@
 
 import { isThaiNationality } from './nationality';
 import { buildCanonicalAgeGroups, canonicalizeAgeGroup } from './age-groups';
+import { resolveOverallDisplayCount, type OverallCountByCategoryEntry } from './overall-display-count';
 
 export interface AwardConfig {
     overallDisplayCount?: number;
+    /** Per-category overrides of `overallDisplayCount` (campaign setting). Resolved
+     *  against `category` below; falls back to `overallDisplayCount` when absent. */
+    overallDisplayCountByCategory?: OverallCountByCategoryEntry[];
+    /** Category name of this pool — needed to resolve the per-category overall count. */
+    category?: string;
     ageGroupDisplayCount?: number;
     excludeOverallFromAgeGroup?: number;
     /** When true, the Overall placing is scoped to the runner's nationality group
@@ -138,7 +144,7 @@ export function computeAwardsForCategory(
     cfg: AwardConfig,
 ): Map<string, AwardResult> {
     const map = new Map<string, AwardResult>();
-    const overallDisplayCount = Math.max(1, Number(cfg.overallDisplayCount) || 5);
+    const overallDisplayCount = resolveOverallDisplayCount(cfg, cfg.category);
     const ageGroupDisplayCount = Math.max(1, Number(cfg.ageGroupDisplayCount) || 5);
     const excludeOv = Math.max(0, Number(cfg.excludeOverallFromAgeGroup) || 0);
     const separateNat = !!cfg.separateOverallByNationality;

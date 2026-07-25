@@ -8,6 +8,7 @@ import NameLangToggle from '@/components/NameLangToggle';
 import { useLanguage } from '@/lib/language-context';
 import { useAuth } from '@/lib/auth-context';
 import { useParams, useSearchParams } from 'next/navigation';
+import { resolveOverallDisplayCount, type OverallCountByCategoryEntry } from '@/lib/overall-display-count';
 
 interface Runner {
     _id: string;
@@ -41,6 +42,7 @@ interface Campaign {
     uuid?: string;
     categories?: CampaignCategory[];
     overallDisplayCount?: number;
+    overallDisplayCountByCategory?: OverallCountByCategoryEntry[];
 }
 
 const REFRESH_INTERVAL = 10;
@@ -194,7 +196,9 @@ export default function TopOverallWinnersBySlugPage() {
         };
     }, [autoMode]);
 
-    const topN = Math.max(1, campaign?.overallDisplayCount || 5);
+    // Rank count is configured per distance (admin/top-overall), falling back to the
+    // campaign-wide count for distances with no override.
+    const topN = resolveOverallDisplayCount(campaign, selectedCategory);
 
     // Top N finishers per gender — same admin-configured count as the combined board used to show.
     const { maleWinners, femaleWinners } = useMemo(() => {
@@ -227,8 +231,8 @@ export default function TopOverallWinnersBySlugPage() {
                 currentRunners: displayedRunners,
                 gender,
                 nameLang: language,
-                computeWinners: (runners) => {
-                    const topNForCat = Math.max(1, campaign.overallDisplayCount || 5);
+                computeWinners: (runners, categoryName) => {
+                    const topNForCat = resolveOverallDisplayCount(campaign, categoryName);
                     const finished = runners.filter(r => r.status === 'finished' && (r.netTime || r.gunTime || r.elapsedTime));
                     const sorted = [...finished].sort((a, b) => {
                         const at = a.gunTime || a.netTime || a.elapsedTime || Infinity; // Overall = gun time

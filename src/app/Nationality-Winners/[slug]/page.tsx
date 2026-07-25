@@ -8,6 +8,7 @@ import NameLangToggle from '@/components/NameLangToggle';
 import { useLanguage } from '@/lib/language-context';
 import { useAuth } from '@/lib/auth-context';
 import { isThaiNationality } from '@/lib/nationality';
+import { resolveOverallDisplayCount, type OverallCountByCategoryEntry } from '@/lib/overall-display-count';
 import { useParams, useSearchParams } from 'next/navigation';
 
 interface Runner {
@@ -43,6 +44,7 @@ interface Campaign {
     uuid?: string;
     categories?: CampaignCategory[];
     overallDisplayCount?: number;
+    overallDisplayCountByCategory?: OverallCountByCategoryEntry[];
     excludeOverallForeignFromAgeGroup?: number;
 }
 
@@ -199,7 +201,11 @@ export default function NationalityWinnersBySlugPage() {
         };
     }, [autoMode]);
 
-    const topN = Math.max(1, Number(campaign?.excludeOverallForeignFromAgeGroup ?? campaign?.overallDisplayCount) || 5);
+    // Falls back to the distance's own Overall count (admin/top-overall) when the
+    // foreign exclusion count is unset.
+    const topN = campaign?.excludeOverallForeignFromAgeGroup != null
+        ? Math.max(1, Number(campaign.excludeOverallForeignFromAgeGroup) || 5)
+        : resolveOverallDisplayCount(campaign, selectedCategory);
 
     const { maleWinners, femaleWinners } = useMemo(() => {
         const finished = displayedRunners.filter(r => r.status === 'finished' && (r.netTime || r.gunTime || r.elapsedTime) && !isThaiNationality(r.nationality));
@@ -227,8 +233,10 @@ export default function NationalityWinnersBySlugPage() {
                 currentRunners: displayedRunners,
                 gender,
                 nameLang: language,
-                computeWinners: (runners) => {
-                    const topNForCat = Math.max(1, Number(campaign.excludeOverallForeignFromAgeGroup ?? campaign.overallDisplayCount) || 5);
+                computeWinners: (runners, categoryName) => {
+                    const topNForCat = campaign.excludeOverallForeignFromAgeGroup != null
+                        ? Math.max(1, Number(campaign.excludeOverallForeignFromAgeGroup) || 5)
+                        : resolveOverallDisplayCount(campaign, categoryName);
                     const finished = runners.filter(r => r.status === 'finished' && (r.netTime || r.gunTime || r.elapsedTime) && !isThaiNationality(r.nationality));
                     const sorted = [...finished].sort((a, b) => {
                         const at = a.gunTime || a.netTime || a.elapsedTime || Infinity; // Overall = gun time
