@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
+import React, { useEffect, useState, useCallback, useMemo, useRef, useLayoutEffect } from 'react';
 import dynamic from 'next/dynamic';
 import { useLanguage } from '@/lib/language-context';
 import AdminLayout from '../AdminLayout';
@@ -10,7 +10,7 @@ import {
     AreaChart, Area,
 } from 'recharts';
 import { resolveCpKm, elevationRange } from '@/lib/routeGeometry';
-import { buildEffortProfile, paceFrom, projectPosition } from '@/lib/routeProgress';
+import { arriveByEta, buildEffortProfile, effortAtKm, estimateLegMs, formatCountdown } from '@/lib/routeProgress';
 import type { ProfileMarker } from '@/components/ElevationProfile2D';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -403,23 +403,168 @@ function StatusTooltip({ active, payload, label, th }: any) {
     );
 }
 
+// ─── Which panel a monitor window is showing ─────────────────────────────────
+export type MonitorPanel = 'passed' | 'current' | 'course';
+
+export interface MonitorRequest {
+    panel: MonitorPanel;
+    cat: string;
+    /**
+     * Campaign to show. The monitor screen is public (a display should not have
+     * to log in), and "featured campaign" is per-account — so the id travels in
+     * the link instead of being looked up again on the other side.
+     */
+    campaignId?: string;
+    /** Course panel only — which of its three views to open on. */
+    view?: 'graph' | 'map' | '2d';
+}
+
+/** Opens a panel in its own window, sized for whatever monitor it lands on. */
+function openMonitor(req: MonitorRequest) {
+    const qs = new URLSearchParams({ panel: req.panel, cat: req.cat });
+    if (req.campaignId) qs.set('campaign', req.campaignId);
+    if (req.view) qs.set('view', req.view);
+    window.open(`/monitor/general-chart?${qs.toString()}`, '_blank', 'noopener');
+}
+
+/** The little "send this panel to a monitor" button shown on each panel header. */
+function MonitorButton({ th, onClick, label }: { th: boolean; onClick: () => void; label?: string }) {
+    return (
+        <button
+            type="button"
+            onClick={onClick}
+            title={th ? 'เปิดกราฟนี้เต็มจอในหน้าต่างใหม่ (สำหรับจอมอนิเตอร์)' : 'Open this chart full-screen in a new window'}
+            style={{
+                display: 'inline-flex', alignItems: 'center', gap: 5,
+                padding: '3px 9px', fontSize: 10, fontWeight: 800, letterSpacing: 0.3,
+                borderRadius: 6, fontFamily: 'inherit', cursor: 'pointer',
+                border: '1px solid #e2e8f0', background: '#fff', color: '#64748b',
+                whiteSpace: 'nowrap',
+            }}
+        >
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                <path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3" />
+            </svg>
+            {label ?? (th ? 'ขึ้นจอ' : 'Monitor')}
+        </button>
+    );
+}
+
+// ─── Checkpoint bar charts ───────────────────────────────────────────────────
+// Pulled out of the page body so the monitor window can render exactly the same
+// chart at whatever height the screen gives it.
+
+/** The cumulative chart only needs the count per checkpoint. */
+interface PassedDatum { cpName: string; count: number; total: number }
+
+function PassedThroughChart({ data, th, height }: { data: PassedDatum[]; th: boolean; height: number }) {
+    const maxVal = data.length ? Math.max(...data.map(d => d.count), 1) : 1;
+    const many = data.length > 6;
+    return (
+        <ResponsiveContainer width="100%" height={height}>
+            <BarChart data={data} margin={{ top: 20, right: 16, left: 4, bottom: 5 }} barCategoryGap="25%">
+                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                <XAxis dataKey="cpName" tick={{ fill: '#94a3b8', fontSize: 10, fontWeight: 700 }} axisLine={{ stroke: '#e2e8f0' }} tickLine={false} interval={0} angle={many ? -35 : 0} textAnchor={many ? 'end' : 'middle'} height={many ? 50 : 30} />
+                <YAxis domain={[0, Math.ceil(maxVal * 1.3) || 10]} tick={{ fill: '#cbd5e1', fontSize: 10 }} axisLine={false} tickLine={false} width={35} />
+                <Tooltip content={<ChartTooltip th={th} />} cursor={{ fill: 'rgba(59,130,246,0.04)' }} />
+                <Bar dataKey="count" name={th ? 'ผ่านเข้าจุด' : 'Passed Through'} radius={[4, 4, 0, 0]} maxBarSize={48} isAnimationActive={false}>
+                    <LabelList dataKey="count" position="top" style={{ fill: '#475569', fontWeight: 800, fontSize: 11 }} />
+                    {data.map((entry, idx) => {
+                        const isFinish = entry.cpName.toLowerCase() === 'finish';
+                        if (entry.count === 0) return <Cell key={idx} fill="#e2e8f0" />;
+                        if (isFinish) return <Cell key={idx} fill="#22c55e" />;
+                        return <Cell key={idx} fill="#60a5fa" />;
+                    })}
+                </Bar>
+            </BarChart>
+        </ResponsiveContainer>
+    );
+}
+
+function CurrentlyAtChart({ data, th, height, onPick }: {
+    data: SegmentDatum[];
+    th: boolean;
+    height: number;
+    onPick: (seg: SegmentDatum) => void;
+}) {
+    const maxVal = data.length ? Math.max(...data.map(d => d.count), 1) : 1;
+    const many = data.length > 6;
+    return (
+        <ResponsiveContainer width="100%" height={height}>
+            <BarChart data={data} margin={{ top: 20, right: 16, left: 4, bottom: 5 }} barCategoryGap="25%">
+                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                <XAxis dataKey="cpName" tick={{ fill: '#94a3b8', fontSize: 10, fontWeight: 700 }} axisLine={{ stroke: '#e2e8f0' }} tickLine={false} interval={0} angle={many ? -35 : 0} textAnchor={many ? 'end' : 'middle'} height={many ? 50 : 30} />
+                <YAxis domain={[0, Math.ceil(maxVal * 1.3) || 10]} tick={{ fill: '#cbd5e1', fontSize: 10 }} axisLine={false} tickLine={false} width={35} />
+                <Tooltip content={<StatusTooltip th={th} />} cursor={{ fill: 'rgba(59,130,246,0.04)' }} />
+                {(['active', 'dnf', 'dq', 'other'] as StatusBucket[]).map((b, bi) => (
+                    <Bar
+                        key={b}
+                        dataKey={b}
+                        name={th ? STATUS_META[b].th : STATUS_META[b].en}
+                        stackId="status"
+                        fill={STATUS_META[b].color}
+                        radius={bi === 3 ? [4, 4, 0, 0] : [0, 0, 0, 0]}
+                        maxBarSize={48}
+                        cursor="pointer"
+                        isAnimationActive={false}
+                        onClick={(d: any) => {
+                            const seg = d?.payload as SegmentDatum;
+                            if (seg && seg.count > 0) onPick(seg);
+                        }}
+                    >
+                        {/* Total label sits on whichever segment is the top-most
+                            non-zero one, so it always renders on a visible bar. */}
+                        <LabelList content={(props: any) => {
+                            const seg = data[props.index] as SegmentDatum | undefined;
+                            if (!seg || seg.count <= 0 || topBucketOf(seg) !== b) return null;
+                            return (
+                                <text x={props.x + props.width / 2} y={props.y - 6} textAnchor="middle" fill="#475569" fontWeight={800} fontSize={11}>
+                                    {seg.count}
+                                </text>
+                            );
+                        }} />
+                    </Bar>
+                ))}
+            </BarChart>
+        </ResponsiveContainer>
+    );
+}
+
+/** Status colour key shown above the "currently at" chart. */
+function StatusLegend({ th }: { th: boolean }) {
+    return (
+        <span style={{ display: 'flex', gap: 10, fontSize: 10, fontWeight: 700, color: '#64748b', flexWrap: 'wrap' }}>
+            {(['active', 'dnf', 'dq', 'other'] as StatusBucket[]).map(b => (
+                <span key={b} style={{ display: 'inline-flex', alignItems: 'center' }}>
+                    <span style={styles.legendDot(STATUS_META[b].color)} />{th ? STATUS_META[b].th.split(' ')[0] : STATUS_META[b].en}
+                </span>
+            ))}
+        </span>
+    );
+}
+
 // ─── Course density curve ────────────────────────────────────────────────────
 // A smooth area chart: X = the route (each checkpoint stretch), Y = how many
 // runners are currently on that stretch. Lets ops see at a glance where the pack
 // is densest along the course. Click a point to see who is on that stretch.
-function CourseStrip({ cat, data, th, route, onPick }: {
+function CourseStrip({ cat, data, th, route, onPick, legMedianMs, initial, chartHeight, onOpenMonitor }: {
     cat: string;
     data: SegmentDatum[];
     th: boolean;
     /** GPX line for this category, if the organiser uploaded one. */
     route?: RouteTrack;
+    /** Median time the field took on each leg, index-aligned with `data`. */
+    legMedianMs?: (number | null)[];
     onPick: (cpName: string, runners: SegmentRunner[]) => void;
+    /** View to open on — a monitor window inherits what the admin was looking at. */
+    initial?: { view?: 'graph' | 'map' | '2d' };
+    /** Fixed drawing height; defaults to the sizes used inside the admin page. */
+    chartHeight?: number;
+    onOpenMonitor?: (state: { view: 'graph' | 'map' | '2d' }) => void;
 }) {
-    const [view, setView] = useState<'graph' | 'map' | '2d'>('graph');
+    const [view, setView] = useState<'graph' | 'map' | '2d'>(initial?.view ?? 'graph');
     // 2D view: show the leading three of each gender, or the whole field cut into
     // equal-sized groups (the admin picks the size).
-    const [profileMode, setProfileMode] = useState<'leaders' | 'group'>('leaders');
-    const [groupSize, setGroupSize] = useState(10);
 
     // Segments = the stretch AFTER each checkpoint (last node has no outgoing stretch),
     // so the curve spans only the parts of the course runners can still be on.
@@ -434,20 +579,22 @@ function CourseStrip({ cat, data, th, route, onPick }: {
     const activeView = (view === 'map' || view === '2d') && hasRoute ? view : 'graph';
 
     // The estimate moves with the clock, so tick while the 2D view is open.
-    // 5s is far finer than the figures visibly move and costs one cheap re-render.
+    // Once a second: at running speed that is a fraction of a pixel, which is
+    // exactly what makes the figures creep rather than hop.
     const [now, setNow] = useState(() => Date.now());
     useEffect(() => {
         if (activeView !== '2d') return;
         setNow(Date.now());
-        const id = setInterval(() => setNow(Date.now()), 5000);
+        const id = setInterval(() => setNow(Date.now()), 1000);
         return () => clearInterval(id);
     }, [activeView]);
 
     // ── Where every runner currently is, in km along the uploaded line ──
-    // A scan only says where someone *was*, so each runner is carried forward from
-    // their last checkpoint at the speed of the leg they just ran (climb included),
-    // and never past the checkpoint ahead of them. Ordering: further along wins,
-    // then the faster split at that same checkpoint.
+    // A scan only says where someone *was*. From the last scan we work out how
+    // long the leg ahead should take them — from the field's median for that leg,
+    // adjusted by how they compare with it — and walk them along that timetable,
+    // so a figure moves even at the start line where there is no leg behind them
+    // to measure a speed from.
     const cpNames = data.map(d => d.cpName);
     const cpKm = hasRoute ? resolveCpKm(cpNames, route!.distanceKm, route!.checkpointMarks) : [];
     const effort = useMemo(
@@ -462,19 +609,25 @@ function CourseStrip({ cat, data, th, route, onPick }: {
             .filter(r => r.bucket === 'active')
             .map(r => {
                 const lastKm = cpKm[i] ?? 0;
-                const isFinish = i === data.length - 1 || r.status === 'finished';
-                const speed = isFinish ? 0 : paceFrom(
-                    effort,
-                    r.prevScanMs && r.lastScanMs && i > 0
-                        ? { from: cpKm[i - 1] ?? 0, to: lastKm }
-                        : null,
-                    r.prevScanMs && r.lastScanMs ? r.lastScanMs - r.prevScanMs : undefined,
-                    lastKm,
-                    r.elapsedMs,
-                );
-                const moved = isFinish || !r.lastScanMs
-                    ? { km: lastKm, speed: 0, capped: false }
-                    : projectPosition(effort, lastKm, cpKm[i + 1], speed, (now - r.lastScanMs) / 3600000);
+                const nextKm = cpKm[i + 1];
+                const atEnd = i === data.length - 1 || nextKm === undefined || r.status === 'finished';
+                const legEffort = atEnd ? 0 : effortAtKm(effort, nextKm) - effortAtKm(effort, lastKm);
+                const ownPrevLegMs = i > 0 && r.prevScanMs && r.lastScanMs
+                    ? r.lastScanMs - r.prevScanMs
+                    : undefined;
+                const etaMs = atEnd ? 0 : estimateLegMs({
+                    profile: effort,
+                    legEffort,
+                    fieldMedianMs: legMedianMs?.[i],
+                    prevFieldMedianMs: i > 0 ? legMedianMs?.[i - 1] : null,
+                    ownPrevLegMs,
+                    ownPrevLegEffort: i > 0
+                        ? effortAtKm(effort, lastKm) - effortAtKm(effort, cpKm[i - 1] ?? 0)
+                        : undefined,
+                });
+                const moved = atEnd || !r.lastScanMs
+                    ? { km: lastKm, progress: 0, etaMs: 0, remainingMs: 0, overdue: false }
+                    : arriveByEta(effort, lastKm, nextKm, etaMs, now - r.lastScanMs);
                 return {
                     ...r,
                     cpIndex: i,
@@ -482,88 +635,119 @@ function CourseStrip({ cat, data, th, route, onPick }: {
                     cpKm: lastKm,
                     nextCpName: data[i + 1]?.cpName,
                     km: moved.km,
-                    speed: moved.speed,
-                    capped: moved.capped,
+                    progress: moved.progress,
+                    etaMs: moved.etaMs,
+                    remainingMs: moved.remainingMs,
+                    overdue: moved.overdue,
+                    moving: !atEnd && !!r.lastScanMs,
+                    speed: moved.etaMs > 0 ? legEffort / (moved.etaMs / 3600000) : 0,
                     movingSinceMs: r.lastScanMs,
                 };
             }))
-            // A projected runner is genuinely ahead of one still standing on the
-            // same checkpoint, so rank on the estimate first.
+            // A runner further along the leg is genuinely ahead of one who only
+            // just left the same checkpoint, so rank on the estimate first.
             .sort((a, b) => (b.km - a.km)
                 || (b.cpIndex - a.cpIndex)
                 || ((a.elapsedMs ?? Infinity) - (b.elapsedMs ?? Infinity))
                 || (a.bib || '').localeCompare(b.bib || '', undefined, { numeric: true }))
         : [];
 
-    /** "4.2 กม./ชม. · ออกจาก CP2 มา 12 นาที" — the why behind a figure's position. */
-    const moveNote = (r: typeof onCourse[number]) => {
-        if (!r.speed || !r.movingSinceMs) return th ? 'อยู่ที่จุดสแกน' : 'at the scan point';
-        const mins = Math.max(0, Math.round((now - r.movingSinceMs) / 60000));
-        const since = mins >= 60 ? `${Math.floor(mins / 60)} ชม. ${mins % 60} น.` : `${mins} ${th ? 'นาที' : 'min'}`;
-        const head = `${r.speed.toFixed(1)} ${th ? 'กม./ชม.' : 'km/h'}`;
-        const tail = th ? `ออกจาก ${r.cpName} มา ${since}` : `${since} since ${r.cpName}`;
-        return r.capped
-            ? `${head} · ${th ? `ถึงคิว ${r.nextCpName} แล้ว ยังไม่สแกน` : `due at ${r.nextCpName}`}`
-            : `${head} · ${tail}`;
+    type OnCourseRunner = typeof onCourse[number];
+
+    /** "ถึง A2 ในอีก 12:07" — the countdown driving where the figure stands. */
+    const etaNote = (r: OnCourseRunner) => {
+        if (!r.moving) return th ? 'อยู่ที่จุดสแกน' : 'at the scan point';
+        if (r.overdue) {
+            return th
+                ? `เลยเวลาที่ควรถึง ${r.nextCpName} มา ${formatCountdown(-r.remainingMs)} — รอสแกน`
+                : `${formatCountdown(-r.remainingMs)} overdue at ${r.nextCpName}`;
+        }
+        return th
+            ? `ถึง ${r.nextCpName} ในอีก ${formatCountdown(r.remainingMs)} (${Math.round(r.progress * 100)}% ของช่วง)`
+            : `${formatCountdown(r.remainingMs)} to ${r.nextCpName} (${Math.round(r.progress * 100)}% of the leg)`;
     };
 
+    /**
+     * Leaders get their own figure; everyone else is bundled into amber clumps.
+     * A clump covers a stretch of course rather than a fixed head count, so the
+     * marker answers "roughly how many are around here" — which is all a
+     * position estimated between two checkpoints can honestly claim.
+     */
+    const CLUSTER_SPAN_RATIO = 0.03;   // of the course length
     const profileMarkers: ProfileMarker[] = (() => {
         if (!hasRoute) return [];
-        if (profileMode === 'leaders') {
-            const out: ProfileMarker[] = [];
-            for (const g of ['M', 'F'] as const) {
-                onCourse.filter(r => r.gender === g).slice(0, 3).forEach((r, i) => {
-                    out.push({
-                        key: `${g}-${r.bib}`,
-                        km: r.km,
-                        gender: g,
-                        label: `#${i + 1}`,
-                        sublabel: r.bib,
-                        moving: r.speed > 0 && !r.capped,
-                        tooltip: [
-                            `${i + 1}. ${r.name}`,
-                            `BIB ${r.bib} · ${g === 'M' ? (th ? 'ชาย' : 'Male') : (th ? 'หญิง' : 'Female')}`,
-                            `${th ? 'ประมาณ' : 'approx.'} ${r.km.toFixed(2)} ${th ? 'กม.' : 'km'} (${r.cpName}${r.nextCpName ? ` → ${r.nextCpName}` : ''})`,
-                            moveNote(r),
-                        ].join('\n'),
-                        onClick: () => onPick(r.cpName, data[r.cpIndex]?.runners || []),
-                    });
-                });
-            }
-            return out;
-        }
-        const size = Math.max(1, Math.min(500, groupSize || 1));
         const out: ProfileMarker[] = [];
-        for (let start = 0; start < onCourse.length; start += size) {
-            const chunk = onCourse.slice(start, start + size);
-            const males = chunk.filter(r => r.gender === 'M').length;
-            const females = chunk.filter(r => r.gender === 'F').length;
-            // Sit the group where its middle runner is, so a group spread over two
-            // checkpoints does not pretend everyone is at the front of it.
-            const avgKm = chunk.reduce((s, r) => s + r.km, 0) / chunk.length;
-            const lo = Math.min(...chunk.map(r => r.km));
-            const hi = Math.max(...chunk.map(r => r.km));
-            const spread = hi - lo < 0.05
-                ? `${avgKm.toFixed(1)} ${th ? 'กม.' : 'km'}`
-                : `${lo.toFixed(1)}–${hi.toFixed(1)} ${th ? 'กม.' : 'km'}`;
-            const speeds = chunk.map(r => r.speed).filter(s => s > 0);
-            const avgSpeed = speeds.length ? speeds.reduce((s, v) => s + v, 0) / speeds.length : 0;
-            out.push({
-                key: `g${start}`,
-                km: avgKm,
-                gender: males === females ? 'MIX' : males > females ? 'M' : 'F',
-                label: `${start + 1}–${start + chunk.length}`,
-                sublabel: `${chunk.length}`,
-                moving: avgSpeed > 0,
-                tooltip: [
-                    `${th ? 'กลุ่มที่' : 'Group'} ${Math.floor(start / size) + 1} (${th ? 'อันดับ' : 'rank'} ${start + 1}–${start + chunk.length})`,
-                    `${chunk.length} ${th ? 'คน' : 'runners'} · ♂ ${males} / ♀ ${females}`,
-                    spread,
-                    avgSpeed > 0 ? `${th ? 'ความเร็วเฉลี่ย' : 'avg speed'} ${avgSpeed.toFixed(1)} ${th ? 'กม./ชม.' : 'km/h'}` : (th ? 'อยู่ที่จุดสแกน' : 'at the scan point'),
-                ].join('\n'),
-                onClick: () => onPick(chunk[0].cpName, chunk.map(({ bib, name, status, gender, bucket }) => ({ bib, name, status, gender, bucket }))),
+        const named = new Set<string>();
+
+        for (const g of ['M', 'F'] as const) {
+            onCourse.filter(r => r.gender === g).slice(0, 3).forEach((r, i) => {
+                named.add(r.bib);
+                out.push({
+                    key: `${g}-${r.bib}`,
+                    km: r.km,
+                    tone: g,
+                    label: `#${i + 1}`,
+                    sublabel: r.bib,
+                    // The countdown to the next checkpoint, under the bib.
+                    note: r.moving && !r.overdue ? `⏱ ${formatCountdown(r.remainingMs)}` : undefined,
+                    moving: r.moving && !r.overdue,
+                    tooltip: [
+                        `${i + 1}. ${r.name}`,
+                        `BIB ${r.bib} · ${g === 'M' ? (th ? 'ชาย' : 'Male') : (th ? 'หญิง' : 'Female')}`,
+                        `${th ? 'ประมาณ' : 'approx.'} ${r.km.toFixed(2)} ${th ? 'กม.' : 'km'} (${r.cpName}${r.nextCpName ? ` → ${r.nextCpName}` : ''})`,
+                        etaNote(r),
+                    ].join('\n'),
+                    onClick: () => onPick(r.cpName, data[r.cpIndex]?.runners || []),
+                });
             });
         }
+
+        // Sweep the rest of the field along the course, closing a clump as soon
+        // as the next runner is more than a clump's width further on.
+        const rest = onCourse.filter(r => !named.has(r.bib)).slice().sort((a, b) => a.km - b.km);
+        const span = Math.max(0.2, (route?.distanceKm || 0) * CLUSTER_SPAN_RATIO);
+        let group: typeof rest = [];
+        const flush = () => {
+            if (!group.length) return;
+            const chunk = group;
+            group = [];
+            const males = chunk.filter(r => r.gender === 'M').length;
+            const females = chunk.filter(r => r.gender === 'F').length;
+            const avgKm = chunk.reduce((sum, r) => sum + r.km, 0) / chunk.length;
+            const lo = chunk[0].km;
+            const hi = chunk[chunk.length - 1].km;
+            const soon = chunk.filter(r => r.moving && !r.overdue).map(r => r.remainingMs);
+            const cpNamesHere = Array.from(new Set(chunk.map(r => r.cpName)));
+            out.push({
+                key: `c${chunk[0].bib}-${chunk.length}`,
+                km: avgKm,
+                tone: 'GROUP',
+                label: `≈${chunk.length} ${th ? 'คน' : ''}`.trim(),
+                note: soon.length ? `⏱ ${formatCountdown(Math.min(...soon))}` : undefined,
+                moving: chunk.some(r => r.moving && !r.overdue),
+                cluster: true,
+                tooltip: [
+                    `${th ? 'ประมาณ' : 'about'} ${chunk.length} ${th ? 'คนอยู่ช่วงนี้' : 'runners here'}`,
+                    `♂ ${males} / ♀ ${females}`,
+                    hi - lo < 0.05
+                        ? `${avgKm.toFixed(1)} ${th ? 'กม.' : 'km'}`
+                        : `${lo.toFixed(1)}–${hi.toFixed(1)} ${th ? 'กม.' : 'km'}`,
+                    `${th ? 'ออกจาก' : 'left'} ${cpNamesHere.join(' / ')}`,
+                    soon.length
+                        ? `${th ? 'คนแรกถึงจุดหน้าในอีก' : 'first due in'} ${formatCountdown(Math.min(...soon))}`
+                        : (th ? 'อยู่ที่จุดสแกน' : 'at the scan point'),
+                ].join('\n'),
+                onClick: () => onPick(
+                    chunk[0].cpName,
+                    chunk.map(({ bib, name, status, gender, bucket }) => ({ bib, name, status, gender, bucket })),
+                ),
+            });
+        };
+        for (const r of rest) {
+            if (group.length && r.km - group[0].km > span) flush();
+            group.push(r);
+        }
+        flush();
         return out;
     })();
 
@@ -612,6 +796,9 @@ function CourseStrip({ cat, data, th, route, onPick }: {
                         {toggleBtn('map', 'Map', !hasRoute)}
                         {toggleBtn('graph', th ? 'กราฟ' : 'Graph')}
                     </div>
+                    {onOpenMonitor && (
+                        <MonitorButton th={th} onClick={() => onOpenMonitor({ view: activeView })} />
+                    )}
                     <div style={{ textAlign: 'right' }}>
                         <div style={{ fontSize: 9, color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>{th ? 'บนเส้นทาง' : 'On course'}</div>
                         <div style={{ fontSize: 16, fontWeight: 900, color: '#7c3aed' }}>{totalOnCourse}</div>
@@ -627,52 +814,11 @@ function CourseStrip({ cat, data, th, route, onPick }: {
 
             {activeView === '2d' && route ? (
                 <div style={{ padding: '0 8px 0 12px' }}>
-                    {/* Mode switch: three leaders per gender, or the field in groups */}
-                    <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 8 }}>
-                        <div style={{ display: 'flex', gap: 6 }}>
-                            {(['leaders', 'group'] as const).map(m => (
-                                <button
-                                    key={m}
-                                    type="button"
-                                    onClick={() => setProfileMode(m)}
-                                    style={{
-                                        padding: '4px 12px', fontSize: 11, fontWeight: 800, borderRadius: 7,
-                                        fontFamily: 'inherit', cursor: 'pointer',
-                                        border: `1px solid ${profileMode === m ? '#7c3aed' : '#e2e8f0'}`,
-                                        background: profileMode === m ? '#f5f3ff' : '#fff',
-                                        color: profileMode === m ? '#7c3aed' : '#64748b',
-                                    }}
-                                >
-                                    {m === 'leaders'
-                                        ? (th ? '🏅 อันดับ 1-2-3 ชาย/หญิง' : '🏅 Top 3 male / female')
-                                        : (th ? '👥 แบ่งกลุ่ม' : '👥 Groups')}
-                                </button>
-                            ))}
-                        </div>
-                        {profileMode === 'group' && (
-                            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#64748b', fontWeight: 700 }}>
-                                {th ? 'กลุ่มละ' : 'Group size'}
-                                <input
-                                    type="number"
-                                    min={1}
-                                    max={500}
-                                    value={groupSize}
-                                    onChange={(e) => setGroupSize(Math.max(1, Math.min(500, parseInt(e.target.value) || 1)))}
-                                    style={{
-                                        width: 64, padding: '4px 8px', border: '1px solid #e2e8f0', borderRadius: 6,
-                                        fontFamily: 'inherit', fontSize: 12, fontWeight: 700, textAlign: 'center', color: '#0f172a',
-                                    }}
-                                />
-                                {th ? 'คน' : 'runners'}
-                            </label>
-                        )}
-                        <div style={{ display: 'flex', gap: 12, marginLeft: 'auto', fontSize: 10.5, color: '#64748b', fontWeight: 700 }}>
-                            <span><span style={{ ...styles.legendDot('#3b82f6') }} />{th ? 'ชาย' : 'Male'}</span>
-                            <span><span style={{ ...styles.legendDot('#ec4899') }} />{th ? 'หญิง' : 'Female'}</span>
-                            {profileMode === 'group' && (
-                                <span><span style={{ ...styles.legendDot('#8b5cf6') }} />{th ? 'ชาย-หญิงเท่ากัน' : 'Even split'}</span>
-                            )}
-                        </div>
+                    {/* One picture: the six leaders by name, the rest as clumps */}
+                    <div style={{ display: 'flex', gap: 14, alignItems: 'center', flexWrap: 'wrap', marginBottom: 8, fontSize: 10.5, color: '#64748b', fontWeight: 700 }}>
+                        <span><span style={{ ...styles.legendDot('#3b82f6') }} />{th ? 'ผู้นำชาย 1-2-3' : 'Top 3 male'}</span>
+                        <span><span style={{ ...styles.legendDot('#ec4899') }} />{th ? 'ผู้นำหญิง 1-2-3' : 'Top 3 female'}</span>
+                        <span><span style={{ ...styles.legendDot('#f59e0b') }} />{th ? 'กลุ่มนักวิ่ง (≈ จำนวนคนในช่วงนั้น)' : 'Runner clumps (≈ head count)'}</span>
                     </div>
 
                     <ElevationProfile2D
@@ -681,7 +827,7 @@ function CourseStrip({ cat, data, th, route, onPick }: {
                         checkpoints={cpNames.map((name, i) => ({ name, km: cpKm[i] ?? 0 }))}
                         markers={profileMarkers}
                         th={th}
-                        height={360}
+                        height={chartHeight ?? 360}
                     />
 
                     <div style={{ display: 'flex', gap: 18, justifyContent: 'center', flexWrap: 'wrap', fontSize: 10.5, color: '#94a3b8', marginTop: 8 }}>
@@ -699,13 +845,9 @@ function CourseStrip({ cat, data, th, route, onPick }: {
                     </div>
 
                     <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 6, textAlign: 'center' }}>
-                        {profileMode === 'leaders'
-                            ? (th
-                                ? '💡 ตุ๊กตา = ผู้นำ 3 คนแรกของแต่ละเพศ · คลิกเพื่อดูรายชื่อคนในช่วงนั้น'
-                                : '💡 Each figure is a gender leader · click for the names on that stretch')
-                            : (th
-                                ? `💡 แบ่งนักวิ่งที่ยังอยู่บนเส้นทางเป็นกลุ่มละ ${groupSize} คนตามลำดับการวิ่ง · ตัวเลขบนป้าย = อันดับที่อยู่ในกลุ่ม · คลิกเพื่อดูรายชื่อ`
-                                : `💡 Runners still on course, cut into groups of ${groupSize} by position · the badge shows the ranks in that group · click for names`)}
+                        {th
+                            ? '💡 ตุ๊กตาน้ำเงิน/ชมพู = ผู้นำ 3 คนแรกของแต่ละเพศ (มีเลข BIB) · ตุ๊กตาเหลือง = กลุ่มนักวิ่งที่เหลือ ป้ายบอกจำนวนคนโดยประมาณในช่วงนั้น · คลิกเพื่อดูรายชื่อ'
+                            : '💡 Blue/pink figures are the three leaders of each gender (with bib) · amber figures are the rest of the field, badged with roughly how many are in that stretch · click for names'}
                         <div style={{ marginTop: 3 }}>
                             {th
                                 ? '🚶 ตำแหน่งเป็นค่าประมาณ — คำนวณต่อจากจุดสแกนล่าสุดด้วยความเร็วช่วงที่เพิ่งวิ่งมา (คิดความชันด้วย: ขึ้นเขา 100 ม. ≈ วิ่งเพิ่ม 1 กม.) ตุ๊กตาจะค่อยๆ ขยับไปจุดถัดไปเอง และหยุดรอที่จุดนั้นถ้ายังไม่มีการสแกน'
@@ -739,7 +881,7 @@ function CourseStrip({ cat, data, th, route, onPick }: {
                         }))}
                         checkpointMarks={route.checkpointMarks}
                         th={th}
-                        height={400}
+                        height={chartHeight ?? 400}
                         onPickSegment={(i) => {
                             const seg = segments[i];
                             if (seg && seg.count > 0) onPick(seg.cpName, seg.runners);
@@ -753,7 +895,7 @@ function CourseStrip({ cat, data, th, route, onPick }: {
                 </div>
             ) : (
             <>
-            <ResponsiveContainer width="100%" height={230}>
+            <ResponsiveContainer width="100%" height={chartHeight ?? 230}>
                 <AreaChart
                     data={segments}
                     margin={{ top: 24, right: 20, left: 0, bottom: many ? 28 : 5 }}
@@ -905,8 +1047,150 @@ interface SegmentDatum {
     distance?: string;
 }
 
+// ─── Monitor screen ──────────────────────────────────────────────────────────
+
+/** Viewport size, so the chart can fill whatever screen it is thrown onto. */
+function useViewport() {
+    const [size, setSize] = useState({ w: 1280, h: 720 });
+    useLayoutEffect(() => {
+        const measure = () => setSize({ w: window.innerWidth, h: window.innerHeight });
+        measure();
+        window.addEventListener('resize', measure);
+        return () => window.removeEventListener('resize', measure);
+    }, []);
+    return size;
+}
+
+/**
+ * A single panel filling the screen, for a display next to the finish line.
+ * Everything it needs comes from the parent, which is already polling; this only
+ * decides how big to draw and keeps a clock on screen.
+ */
+function MonitorScreen({ req, th, campaign, loading, current, passed, route, legMedianMs, lastRefresh }: {
+    req: MonitorRequest;
+    th: boolean;
+    campaign: Campaign | null;
+    loading: boolean;
+    current: SegmentDatum[];
+    passed: PassedDatum[];
+    route?: RouteTrack;
+    legMedianMs?: (number | null)[];
+    lastRefresh: Date | null;
+}) {
+    const { w, h } = useViewport();
+    const [clock, setClock] = useState('');
+    useEffect(() => {
+        const tick = () => setClock(new Date().toLocaleTimeString(th ? 'th-TH' : 'en-GB', { hour12: false }));
+        tick();
+        const id = setInterval(tick, 1000);
+        return () => clearInterval(id);
+    }, [th]);
+
+    const HEADER = 74;
+    const FOOTER = 34;
+    const chartHeight = Math.max(220, h - HEADER - FOOTER - 24);
+
+    const title = req.panel === 'passed'
+        ? (th ? '📊 ผ่านจุดนี้แล้ว (สะสม)' : '📊 Passed Through (Cumulative)')
+        : req.panel === 'current'
+            ? (th ? '📌 เหลืออยู่ที่จุดนี้ (แยกสถานะ)' : '📌 Currently At (by status)')
+            : (th ? '🗺️ ความหนาแน่นนักวิ่งบนเส้นทาง' : '🗺️ Runner density along the course');
+
+    const toggleFullscreen = () => {
+        if (document.fullscreenElement) document.exitFullscreen().catch(() => { });
+        else document.documentElement.requestFullscreen().catch(() => { });
+    };
+
+    return (
+        <div style={{
+            minHeight: '100vh', background: '#fff', fontFamily: "'Inter', 'Segoe UI', sans-serif",
+            display: 'flex', flexDirection: 'column',
+        }}>
+            <style>{`@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}`}</style>
+            <div style={{
+                height: HEADER, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 16,
+                padding: '0 24px', borderBottom: '1px solid #f1f5f9', background: '#fcfcfd',
+            }}>
+                <div style={{
+                    background: '#7c3aed', color: '#fff', fontWeight: 900, fontSize: 20,
+                    padding: '6px 16px', borderRadius: 10, letterSpacing: 0.5,
+                }}>{req.cat}</div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 20, fontWeight: 900, color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {title}
+                    </div>
+                    <div style={{ fontSize: 12, color: '#94a3b8', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {campaign?.name || (loading ? (th ? 'กำลังโหลด...' : 'Loading...') : (th ? 'ไม่พบกิจกรรม' : 'No campaign'))}
+                    </div>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11, fontWeight: 800, color: '#22c55e' }}>
+                    <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#22c55e', animation: 'pulse 2s infinite' }} />
+                    LIVE
+                </div>
+                <div style={{ fontSize: 26, fontWeight: 900, color: '#0f172a', fontVariantNumeric: 'tabular-nums' }}>{clock}</div>
+                <button
+                    type="button"
+                    onClick={toggleFullscreen}
+                    title={th ? 'เต็มจอ' : 'Fullscreen'}
+                    style={{
+                        border: '1px solid #e2e8f0', background: '#fff', color: '#64748b', borderRadius: 8,
+                        padding: '7px 9px', cursor: 'pointer', display: 'inline-flex', fontFamily: 'inherit',
+                    }}
+                >
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                        <path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3" />
+                    </svg>
+                </button>
+            </div>
+
+            <div style={{ flex: 1, padding: '12px 20px 0' }}>
+                {!campaign && !loading ? (
+                    <div style={{ padding: 60, textAlign: 'center', color: '#94a3b8' }}>
+                        {th ? 'ไม่พบกิจกรรม' : 'No campaign found'}
+                    </div>
+                ) : req.panel === 'passed' ? (
+                    <PassedThroughChart data={passed} th={th} height={chartHeight} />
+                ) : req.panel === 'current' ? (
+                    <>
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', paddingRight: 12 }}>
+                            <StatusLegend th={th} />
+                        </div>
+                        <CurrentlyAtChart data={current} th={th} height={chartHeight - 20} onPick={() => { }} />
+                    </>
+                ) : (
+                    <CourseStrip
+                        cat={req.cat}
+                        data={current}
+                        th={th}
+                        route={route}
+                        legMedianMs={legMedianMs}
+                        onPick={() => { }}
+                        initial={{ view: req.view }}
+                        // The strip draws its own header and hints above the chart.
+                        chartHeight={Math.max(220, chartHeight - 120)}
+                    />
+                )}
+            </div>
+
+            <div style={{
+                height: FOOTER, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                gap: 14, fontSize: 11, color: '#cbd5e1', borderTop: '1px solid #f8fafc',
+            }}>
+                <span>{th ? 'อัปเดตอัตโนมัติทุก 15 วินาที' : 'Auto-refreshes every 15s'}</span>
+                {lastRefresh && <span>· {th ? 'ล่าสุด' : 'last'} {lastRefresh.toLocaleTimeString(th ? 'th-TH' : 'en-GB', { hour12: false })}</span>}
+                <span>· {w}×{h}</span>
+            </div>
+        </div>
+    );
+}
+
 // ─── Component ───────────────────────────────────────────────────────────────
-export default function GeneralChartPage() {
+/**
+ * The statistics page. With `monitor` set it drops the admin chrome and renders
+ * that one panel full-screen instead — that is what /monitor/general-chart mounts,
+ * so a display screen shows exactly the same chart without logging in.
+ */
+export function GeneralChartView({ monitor }: { monitor?: MonitorRequest }) {
     const { language } = useLanguage();
     const th = language === 'th';
 
@@ -927,17 +1211,23 @@ export default function GeneralChartPage() {
     const [cpDetail, setCpDetail] = useState<{ cat: string; cpName: string; runners: SegmentRunner[] } | null>(null);
 
     // ── Load campaign ──
+    // A monitor link carries its campaign id, because "featured" is per-account
+    // and the monitor screen is not logged in as anybody.
+    const wantedCampaignId = monitor?.campaignId;
     useEffect(() => {
         (async () => {
             try {
-                const res = await fetch('/api/campaigns/featured', { cache: 'no-store' });
+                const url = wantedCampaignId
+                    ? `/api/campaigns/${wantedCampaignId}`
+                    : '/api/campaigns/featured';
+                const res = await fetch(url, { cache: 'no-store' });
                 if (!res.ok) throw new Error();
                 const data = await res.json();
                 if (data?._id) setCampaign(data);
             } catch { setCampaign(null); }
             finally { setLoading(false); }
         })();
-    }, []);
+    }, [wantedCampaignId]);
 
     // ── Load checkpoints ──
     useEffect(() => {
@@ -1115,6 +1405,36 @@ export default function GeneralChartPage() {
         return result;
     }, [categories, runners, checkpoints, cpTimingMap]);
 
+    // ── How long the field actually takes on each leg ──
+    // The median of everyone who has already run a leg is the best available
+    // guess for how long the runners still on it will need, so the 2D view uses
+    // it to pace the figures between checkpoints.
+    const legMediansByCategory = useMemo(() => {
+        const result: Record<string, (number | null)[]> = {};
+        for (const cat of categories) {
+            const catRunners = runners.filter(r => r.category === cat);
+            const catCps = checkpoints.filter(cp =>
+                !cp.distanceMappings?.length || cp.distanceMappings.includes(cat));
+            const medians: (number | null)[] = [];
+            for (let i = 0; i < catCps.length - 1; i++) {
+                const a = cpTimingMap[catCps[i].name];
+                const b = cpTimingMap[catCps[i + 1].name];
+                const durations: number[] = [];
+                if (a && b) {
+                    for (const r of catRunners) {
+                        const ta = a.get(r.bib);
+                        const tb = b.get(r.bib);
+                        if (ta && tb && tb > ta) durations.push(tb - ta);
+                    }
+                }
+                durations.sort((x, y) => x - y);
+                medians.push(durations.length ? durations[Math.floor(durations.length / 2)] : null);
+            }
+            result[cat] = medians;
+        }
+        return result;
+    }, [categories, runners, checkpoints, cpTimingMap]);
+
     // ── Per-category summary ──
     const catSummary = useMemo(() => {
         const result: Record<string, { total: number; started: number; finished: number; dns: number; dnf: number; dq: number; mF: number; fF: number }> = {};
@@ -1238,6 +1558,23 @@ export default function GeneralChartPage() {
         return result;
     }, [categories, runners, checkpoints, cpTimingMap]);
 
+    // ── Monitor window: one panel, no chrome, sized to the screen ──
+    if (monitor) {
+        return (
+            <MonitorScreen
+                req={monitor}
+                th={th}
+                campaign={campaign}
+                loading={loading}
+                current={chartDataByCategory[monitor.cat] || []}
+                passed={chartDataByCategoryPassedThrough[monitor.cat] || []}
+                route={routes[monitor.cat]}
+                legMedianMs={legMediansByCategory[monitor.cat]}
+                lastRefresh={lastRefresh}
+            />
+        );
+    }
+
     if (loading) {
         return (
             <AdminLayout breadcrumbItems={[{ label: 'General Chart', labelEn: 'General Chart' }]}>
@@ -1330,8 +1667,6 @@ export default function GeneralChartPage() {
                     const dataPassed = chartDataByCategoryPassedThrough[cat];
                     const cs = catSummary[cat];
                     if ((!dataCurrently || dataCurrently.length === 0) && (!dataPassed || dataPassed.length === 0)) return null;
-                    const maxValPassed = dataPassed ? Math.max(...dataPassed.map(d => d.count), 1) : 1;
-                    const maxValCurrent = dataCurrently ? Math.max(...dataCurrently.map(d => d.count), 1) : 1;
 
                     return (
                         <div key={cat} style={{ ...styles.sectionCard, marginBottom: 24 }}>
@@ -1351,27 +1686,14 @@ export default function GeneralChartPage() {
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 0 }}>
                                 {/* LEFT: Passed Through (cumulative) */}
                                 <div style={{ borderRight: '1px solid #f1f5f9' }}>
-                                    <div style={{ padding: '12px 16px 4px', fontSize: 12, fontWeight: 800, color: '#3b82f6', textTransform: 'uppercase', letterSpacing: 0.5 }}>
-                                        {th ? '📊 ผ่านจุดนี้แล้ว (สะสม)' : '📊 Passed Through (Cumulative)'}
+                                    <div style={{ padding: '12px 16px 4px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                                        <span style={{ fontSize: 12, fontWeight: 800, color: '#3b82f6', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                                            {th ? '📊 ผ่านจุดนี้แล้ว (สะสม)' : '📊 Passed Through (Cumulative)'}
+                                        </span>
+                                        <MonitorButton th={th} onClick={() => openMonitor({ panel: 'passed', cat, campaignId: campaign._id })} />
                                     </div>
                                     <div style={{ padding: '4px 0 12px 0' }}>
-                                        <ResponsiveContainer width="100%" height={220}>
-                                            <BarChart data={dataPassed || []} margin={{ top: 20, right: 16, left: 4, bottom: 5 }} barCategoryGap="25%">
-                                                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
-                                                <XAxis dataKey="cpName" tick={{ fill: '#94a3b8', fontSize: 10, fontWeight: 700 }} axisLine={{ stroke: '#e2e8f0' }} tickLine={false} interval={0} angle={(dataPassed?.length || 0) > 6 ? -35 : 0} textAnchor={(dataPassed?.length || 0) > 6 ? 'end' : 'middle'} height={(dataPassed?.length || 0) > 6 ? 50 : 30} />
-                                                <YAxis domain={[0, Math.ceil(maxValPassed * 1.3) || 10]} tick={{ fill: '#cbd5e1', fontSize: 10 }} axisLine={false} tickLine={false} width={35} />
-                                                <Tooltip content={<ChartTooltip th={th} />} cursor={{ fill: 'rgba(59,130,246,0.04)' }} />
-                                                <Bar dataKey="count" name={th ? 'ผ่านเข้าจุด' : 'Passed Through'} radius={[4, 4, 0, 0]} maxBarSize={48} isAnimationActive={false}>
-                                                    <LabelList dataKey="count" position="top" style={{ fill: '#475569', fontWeight: 800, fontSize: 11 }} />
-                                                    {(dataPassed || []).map((entry, idx) => {
-                                                        const isFinish = entry.cpName.toLowerCase() === 'finish';
-                                                        if (entry.count === 0) return <Cell key={idx} fill="#e2e8f0" />;
-                                                        if (isFinish) return <Cell key={idx} fill="#22c55e" />;
-                                                        return <Cell key={idx} fill="#60a5fa" />;
-                                                    })}
-                                                </Bar>
-                                            </BarChart>
-                                        </ResponsiveContainer>
+                                        <PassedThroughChart data={dataPassed || []} th={th} height={220} />
                                     </div>
                                 </div>
                                 {/* RIGHT: Currently At — split by status, click a bar for the name list */}
@@ -1380,52 +1702,18 @@ export default function GeneralChartPage() {
                                         <span style={{ fontSize: 12, fontWeight: 800, color: '#f59e0b', textTransform: 'uppercase', letterSpacing: 0.5 }}>
                                             {th ? '📌 เหลืออยู่ที่จุดนี้ (แยกสถานะ)' : '📌 Currently At (by status)'}
                                         </span>
-                                        <span style={{ display: 'flex', gap: 10, fontSize: 10, fontWeight: 700, color: '#64748b', flexWrap: 'wrap' }}>
-                                            {(['active', 'dnf', 'dq', 'other'] as StatusBucket[]).map(b => (
-                                                <span key={b} style={{ display: 'inline-flex', alignItems: 'center' }}>
-                                                    <span style={styles.legendDot(STATUS_META[b].color)} />{th ? STATUS_META[b].th.split(' ')[0] : STATUS_META[b].en}
-                                                </span>
-                                            ))}
+                                        <span style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+                                            <StatusLegend th={th} />
+                                            <MonitorButton th={th} onClick={() => openMonitor({ panel: 'current', cat, campaignId: campaign._id })} />
                                         </span>
                                     </div>
                                     <div style={{ padding: '4px 0 4px 0' }}>
-                                        <ResponsiveContainer width="100%" height={220}>
-                                            <BarChart data={dataCurrently || []} margin={{ top: 20, right: 16, left: 4, bottom: 5 }} barCategoryGap="25%">
-                                                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
-                                                <XAxis dataKey="cpName" tick={{ fill: '#94a3b8', fontSize: 10, fontWeight: 700 }} axisLine={{ stroke: '#e2e8f0' }} tickLine={false} interval={0} angle={(dataCurrently?.length || 0) > 6 ? -35 : 0} textAnchor={(dataCurrently?.length || 0) > 6 ? 'end' : 'middle'} height={(dataCurrently?.length || 0) > 6 ? 50 : 30} />
-                                                <YAxis domain={[0, Math.ceil(maxValCurrent * 1.3) || 10]} tick={{ fill: '#cbd5e1', fontSize: 10 }} axisLine={false} tickLine={false} width={35} />
-                                                <Tooltip content={<StatusTooltip th={th} />} cursor={{ fill: 'rgba(59,130,246,0.04)' }} />
-                                                {(['active', 'dnf', 'dq', 'other'] as StatusBucket[]).map((b, bi) => (
-                                                    <Bar
-                                                        key={b}
-                                                        dataKey={b}
-                                                        name={th ? STATUS_META[b].th : STATUS_META[b].en}
-                                                        stackId="status"
-                                                        fill={STATUS_META[b].color}
-                                                        radius={bi === 3 ? [4, 4, 0, 0] : [0, 0, 0, 0]}
-                                                        maxBarSize={48}
-                                                        cursor="pointer"
-                                                        isAnimationActive={false}
-                                                        onClick={(d: any) => {
-                                                            const seg = d?.payload as SegmentDatum;
-                                                            if (seg && seg.count > 0) setCpDetail({ cat, cpName: seg.cpName, runners: seg.runners });
-                                                        }}
-                                                    >
-                                                        {/* Total label sits on whichever segment is the top-most
-                                                            non-zero one, so it always renders on a visible bar. */}
-                                                        <LabelList content={(props: any) => {
-                                                            const seg = (dataCurrently || [])[props.index] as SegmentDatum | undefined;
-                                                            if (!seg || seg.count <= 0 || topBucketOf(seg) !== b) return null;
-                                                            return (
-                                                                <text x={props.x + props.width / 2} y={props.y - 6} textAnchor="middle" fill="#475569" fontWeight={800} fontSize={11}>
-                                                                    {seg.count}
-                                                                </text>
-                                                            );
-                                                        }} />
-                                                    </Bar>
-                                                ))}
-                                            </BarChart>
-                                        </ResponsiveContainer>
+                                        <CurrentlyAtChart
+                                            data={dataCurrently || []}
+                                            th={th}
+                                            height={220}
+                                            onPick={(seg) => setCpDetail({ cat, cpName: seg.cpName, runners: seg.runners })}
+                                        />
                                     </div>
                                     <div style={{ textAlign: 'center', fontSize: 10, color: '#94a3b8', paddingBottom: 10 }}>
                                         {th ? '💡 คลิกที่แท่งเพื่อดูรายชื่อคนที่เหลือในจุดนั้น' : '💡 Click a bar to see who is still at that point'}
@@ -1434,7 +1722,15 @@ export default function GeneralChartPage() {
                             </div>
 
                             {/* ─── Course Strip: horizontal route map with runners per segment ─── */}
-                            <CourseStrip cat={cat} data={dataCurrently || []} th={th} route={routes[cat]} onPick={(cpName, segRunners) => setCpDetail({ cat, cpName, runners: segRunners })} />
+                            <CourseStrip
+                                cat={cat}
+                                data={dataCurrently || []}
+                                th={th}
+                                route={routes[cat]}
+                                legMedianMs={legMediansByCategory[cat]}
+                                onPick={(cpName, segRunners) => setCpDetail({ cat, cpName, runners: segRunners })}
+                                onOpenMonitor={(state) => openMonitor({ panel: 'course', cat, campaignId: campaign._id, ...state })}
+                            />
                             {/* Mini summary row */}
                             {(() => {
                                 const cells = [
@@ -1692,4 +1988,9 @@ export default function GeneralChartPage() {
             <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
         </AdminLayout>
     );
+}
+
+/** Route entry: the admin page is the view with no monitor request. */
+export default function GeneralChartPage() {
+    return <GeneralChartView />;
 }

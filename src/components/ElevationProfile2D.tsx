@@ -11,18 +11,22 @@
 import { useLayoutEffect, useRef, useState } from 'react';
 import { elevationAtKm, elevationRange } from '@/lib/routeGeometry';
 
-/** One figure on the profile: a leader, or a whole group of runners. */
+/** One figure on the profile: a named leader, or a clump of runners. */
 export interface ProfileMarker {
     key: string;
     km: number;
-    /** Drives the colour: male, female, or a mixed group. */
-    gender: 'M' | 'F' | 'MIX';
-    /** Rank number ("1") or group range ("1–10"), drawn next to the figure. */
+    /** Colour: male, female, or the amber used for a bunch of runners. */
+    tone: 'M' | 'F' | 'GROUP';
+    /** Rank ("#1") or head count ("≈12"), drawn beside the figure. */
     label: string;
-    /** Runner name or "10 คน", drawn under the label. */
+    /** Bib, or "คน" under a group count. */
     sublabel?: string;
+    /** Second line under the figure — the countdown to the next checkpoint. */
+    note?: string;
     /** True while the position is a moving estimate rather than a scan point. */
     moving?: boolean;
+    /** Draws a huddle of figures instead of one, for a group marker. */
+    cluster?: boolean;
     tooltip?: string;
     onClick?: () => void;
 }
@@ -41,7 +45,7 @@ interface Props {
 const COLORS = {
     M: { fill: '#3b82f6', dark: '#1d4ed8', soft: '#dbeafe' },
     F: { fill: '#ec4899', dark: '#be185d', soft: '#fce7f3' },
-    MIX: { fill: '#8b5cf6', dark: '#6d28d9', soft: '#ede9fe' },
+    GROUP: { fill: '#f59e0b', dark: '#b45309', soft: '#fef3c7' },
 };
 
 const PAD = { top: 26, right: 18, bottom: 34, left: 46 };
@@ -50,34 +54,70 @@ const FIGURE_LIFT = 34;
 /** Markers closer than this on X are stacked upwards instead of overlapping. */
 const STACK_GAP_PX = 26;
 
+/** Run-cycle timing. Slightly different per figure so a crowd is not in lockstep. */
+const STRIDE_S = 0.62;
+
 /**
- * A small stick figure — head plus body — centred on (0, 0) at its feet.
- * `moving` leans it forward and swings the legs, so a figure being carried
- * forward by the estimate reads differently from one parked on a scan point.
+ * A runner in mid-stride, standing on (0, 0) at the trailing foot: body leaning
+ * into the run, one arm driving forward with the opposite knee up. Limbs live in
+ * their own groups so `moving` can swing them around the shoulder and the hip —
+ * a real run cycle rather than a rocking stick figure.
  */
-function Figure({ color, dark, moving }: { color: string; dark: string; moving?: boolean }) {
+function RunnerFigure({ color, dark, moving, phase = 0 }: {
+    color: string;
+    dark: string;
+    moving?: boolean;
+    /** Seconds to offset the cycle by, so neighbouring figures fall out of step. */
+    phase?: number;
+}) {
+    const begin = `${(-phase).toFixed(2)}s`;
+    const limb = {
+        stroke: color,
+        strokeWidth: 2.3,
+        strokeLinecap: 'round' as const,
+        strokeLinejoin: 'round' as const,
+        fill: 'none',
+    };
     return (
         <g>
+            {/* Whole body bobs with each stride */}
             {moving && (
                 <animateTransform
-                    attributeName="transform"
-                    type="rotate"
-                    values="-4 0 0; 4 0 0; -4 0 0"
-                    dur="1.1s"
-                    repeatCount="indefinite"
+                    attributeName="transform" type="translate"
+                    values="0 0; 0 -1.3; 0 0; 0 -1.3; 0 0"
+                    dur={`${STRIDE_S * 2}s`} begin={begin} repeatCount="indefinite"
                 />
             )}
-            <circle cx={0} cy={-15.5} r={3.6} fill={color} stroke={dark} strokeWidth={0.8} />
-            <path
-                d={moving
-                    // arms and legs opened up mid-stride
-                    ? 'M0 -11.6 L0 -5 M0 -11.6 L-4.6 -9.6 M0 -11.6 L4.6 -7.4 M0 -5 L-4.6 0 M0 -5 L4.2 0'
-                    : 'M0 -11.6 L0 -5 M0 -11.6 L-4 -8.4 M0 -11.6 L4 -8.4 M0 -5 L-3.4 0 M0 -5 L3.4 0'}
-                stroke={color}
-                strokeWidth={2.4}
-                strokeLinecap="round"
-                fill="none"
-            />
+            {/* Head, set forward of the hips — that lean is what reads as "running" */}
+            <circle cx={2.4} cy={-16.6} r={3.1} fill={color} stroke={dark} strokeWidth={0.7} />
+            {/* Torso */}
+            <path d="M2 -13.5 L-1.3 -6.6" {...limb} strokeWidth={2.7} />
+            {/* Arms, bent at the elbow, swinging around the shoulder */}
+            <g>
+                {moving && (
+                    <animateTransform
+                        attributeName="transform" type="rotate"
+                        values="-18 1.2 -12.7; 18 1.2 -12.7; -18 1.2 -12.7"
+                        dur={`${STRIDE_S * 2}s`} begin={begin} repeatCount="indefinite"
+                    />
+                )}
+                <path d="M1.2 -12.7 L5.2 -11.4 L6.1 -14.2" {...limb} />
+                <path d="M1.2 -12.7 L-3.1 -11.3 L-4.9 -13.7" {...limb} />
+            </g>
+            {/* Legs, swinging around the hip in opposition to the arms */}
+            <g>
+                {moving && (
+                    <animateTransform
+                        attributeName="transform" type="rotate"
+                        values="17 -1.3 -6.6; -17 -1.3 -6.6; 17 -1.3 -6.6"
+                        dur={`${STRIDE_S * 2}s`} begin={begin} repeatCount="indefinite"
+                    />
+                )}
+                {/* front leg: knee up, shin forward */}
+                <path d="M-1.3 -6.6 L3 -4.6 L4.9 -1" {...limb} />
+                {/* trailing leg: pushing off, heel kicking up */}
+                <path d="M-1.3 -6.6 L-4.6 -3.4 L-6.2 0" {...limb} />
+            </g>
         </g>
     );
 }
@@ -167,15 +207,23 @@ export default function ElevationProfile2D({
     // Runner positions come from checkpoints, so many markers land on the exact
     // same km. Group them into columns and stack upwards; whatever no longer fits
     // inside the frame collapses into a "+n" chip on top of its column.
-    const columns = new Map<number, ProfileMarker[]>();
+    // Sweep left to right, opening a new column only once a marker is clear of
+    // the one before it — rounding into fixed buckets let neighbours a few pixels
+    // apart land in different columns and overlap.
+    const columns: ProfileMarker[][] = [];
+    let colAnchor = -Infinity;
     for (const m of markers.slice().sort((a, b) => a.km - b.km)) {
-        const key = Math.round(x(m.km) / STACK_GAP_PX);
-        const col = columns.get(key);
-        if (col) col.push(m); else columns.set(key, [m]);
+        const px = x(m.km);
+        if (!columns.length || px - colAnchor > STACK_GAP_PX) {
+            columns.push([m]);
+            colAnchor = px;
+        } else {
+            columns[columns.length - 1].push(m);
+        }
     }
     const drawn: { marker: ProfileMarker; px: number; py: number; lift: number }[] = [];
     const overflow: { px: number; py: number; lift: number; count: number }[] = [];
-    for (const col of columns.values()) {
+    for (const col of columns) {
         const py = yAt(col[0].km);
         const capacity = Math.max(1, Math.floor((py - PAD.top - 10) / FIGURE_LIFT) + 1);
         const shown = col.length > capacity ? col.slice(0, Math.max(1, capacity - 1)) : col;
@@ -268,23 +316,28 @@ export default function ElevationProfile2D({
                 </text>
 
                 {/* Runners */}
-                {drawn.map(({ marker, px, py, lift }) => {
-                    const c = COLORS[marker.gender];
+                {drawn.map(({ marker, px, py, lift }, mi) => {
+                    const c = COLORS[marker.tone];
                     const top = py - lift * FIGURE_LIFT;
-                    const chipW = Math.max(16, marker.label.length * 6.6 + 8);
+                    const chipFont = marker.cluster ? 10.5 : 9;
+                    const chipW = Math.max(marker.cluster ? 22 : 16, marker.label.length * (chipFont * 0.72) + 10);
+                    const chipH = marker.cluster ? 15 : 13;
                     // Near the finish there is no room on the right, so the badge
                     // flips to the other side of the figure.
-                    const chipX = px + chipW + 12 > width ? -(chipW + 7) : 7;
+                    const chipX = px + chipW + 12 > width ? -(chipW + 8) : 8;
+                    // Stagger the run cycles so a bunch of figures is not in lockstep.
+                    const phase = (mi % 5) * (STRIDE_S / 2.5);
                     return (
                         <g
                             key={marker.key}
-                            transform={`translate(${px}, ${top})`}
+                            // Set through CSS rather than the SVG transform attribute:
+                            // only the CSS property is reliably transitionable, and the
+                            // 1s tween across a 1s tick is what makes the walk smooth
+                            // (it also softens the jump when a new scan lands).
                             style={{
+                                transform: `translate(${px.toFixed(2)}px, ${top.toFixed(2)}px)`,
+                                transition: 'transform 1s linear',
                                 cursor: marker.onClick ? 'pointer' : 'default',
-                                // Positions are recomputed every 5s; easing over the
-                                // same 5s turns those steps into continuous motion
-                                // (and softens the jump when a new scan lands).
-                                transition: 'transform 5s linear',
                             }}
                             onClick={marker.onClick}
                             onMouseEnter={() => marker.tooltip && setHover({ x: px, y: top, text: marker.tooltip })}
@@ -293,17 +346,42 @@ export default function ElevationProfile2D({
                             {lift > 0 && (
                                 <line x1={0} y1={0} x2={0} y2={lift * FIGURE_LIFT} stroke={c.fill} strokeWidth={1} strokeDasharray="2 3" opacity={0.5} />
                             )}
-                            <circle cx={0} cy={0} r={2.6} fill={c.dark} />
-                            <Figure color={c.fill} dark={c.dark} moving={marker.moving} />
-                            <g transform={`translate(${chipX}, -20)`}>
-                                <rect x={0} y={-8} width={chipW} height={13} rx={6.5} fill={c.fill} />
-                                <text x={chipW / 2} y={1.5} textAnchor="middle" fontSize={9} fontWeight={800} fill="#fff">
+                            {/* Exact spot on the line, under the runner's feet */}
+                            <circle cx={0} cy={0} r={1.9} fill={c.dark} opacity={0.55} />
+                            {marker.cluster ? (
+                                // A pack: two runners tucked behind the leading one, so
+                                // the marker reads as "several people" at a glance.
+                                <>
+                                    <g transform="translate(-6.5, 0) scale(0.78)" opacity={0.55}>
+                                        <RunnerFigure color={c.fill} dark={c.dark} moving={marker.moving} phase={phase + 0.22} />
+                                    </g>
+                                    <g transform="translate(4.5, 0) scale(0.86)" opacity={0.75}>
+                                        <RunnerFigure color={c.fill} dark={c.dark} moving={marker.moving} phase={phase + 0.44} />
+                                    </g>
+                                    <RunnerFigure color={c.fill} dark={c.dark} moving={marker.moving} phase={phase} />
+                                </>
+                            ) : (
+                                <RunnerFigure color={c.fill} dark={c.dark} moving={marker.moving} phase={phase} />
+                            )}
+                            {/* A group badge is wide, so it sits centred above the
+                                huddle instead of reaching sideways into the next one. */}
+                            <g transform={marker.cluster
+                                ? `translate(${-chipW / 2}, -25)`
+                                : `translate(${chipX}, -20)`}>
+                                <rect x={0} y={-chipH / 2 - 1.5} width={chipW} height={chipH} rx={chipH / 2} fill={c.fill}
+                                    stroke={marker.cluster ? c.dark : 'none'} strokeWidth={marker.cluster ? 0.9 : 0} />
+                                <text x={chipW / 2} y={2} textAnchor="middle" fontSize={chipFont} fontWeight={900} fill="#fff">
                                     {marker.label}
                                 </text>
                             </g>
                             {marker.sublabel && (
                                 <text x={0} y={11} textAnchor="middle" fontSize={8.5} fontWeight={700} fill={c.dark}>
                                     {marker.sublabel}
+                                </text>
+                            )}
+                            {marker.note && (
+                                <text x={0} y={20} textAnchor="middle" fontSize={7.5} fontWeight={700} fill="#94a3b8">
+                                    {marker.note}
                                 </text>
                             )}
                         </g>
