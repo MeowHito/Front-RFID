@@ -50,6 +50,7 @@ const menuSections: MenuSection[] = [
             { href: '/admin/applicants-import', label: 'นำเข้ารายชื่อผู้สมัคร (Excel)', labelEn: 'Import Applicants (Excel)', icon: 'file-import', iconColor: '#0ea5e9' },
             { href: '/admin/categories', label: 'ประเภทกลุ่มอายุ', labelEn: 'Age Groups', icon: 'layer-group' },
             { href: '/admin/bib-check', label: 'เช็คบิบ', labelEn: 'Check BIB', icon: 'magnifying-glass' },
+            { href: '/admin/bib-check-2', label: 'เช็คบิบ2', labelEn: 'Checkbib2', icon: 'paint-brush', iconColor: '#0ea5e9' },
         ]
     },
     {
