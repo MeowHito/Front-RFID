@@ -628,6 +628,49 @@ export default function ParticipantsPage() {
         }
     }, [campaign?._id]);
 
+    // Download the "Edited List" as CSV — one row per changed field
+    const handleDownloadEditedCsv = useCallback(() => {
+        if (allEditLogs.length === 0) {
+            showToast(language === 'th' ? 'ไม่มีข้อมูลให้ดาวน์โหลด' : 'No data to download', 'error');
+            return;
+        }
+
+        const headers = ['BIB', 'Name', 'NameTH', 'Category', 'Field', 'OldValue', 'NewValue', 'ChangedBy', 'ChangedAt'];
+        const escapeCsv = (value: unknown) => `"${String(value ?? '').replace(/"/g, '""')}"`;
+
+        const csvRows = [headers.join(',')];
+        allEditLogs.forEach(log => {
+            const runner = typeof log.runnerId === 'object' ? log.runnerId : undefined;
+            const nameEn = runner ? `${runner.firstName || ''} ${runner.lastName || ''}`.trim() : '';
+            const nameTh = runner ? `${runner.firstNameTh || ''} ${runner.lastNameTh || ''}`.trim() : '';
+            const changedAt = new Date(log.changedAt).toLocaleString(language === 'th' ? 'th-TH' : 'en-US');
+            log.changes.forEach(c => {
+                const label = EDIT_FIELD_LABELS[c.field]
+                    ? (language === 'th' ? EDIT_FIELD_LABELS[c.field].th : EDIT_FIELD_LABELS[c.field].en)
+                    : c.field;
+                csvRows.push([
+                    log.bib, nameEn, nameTh, runner?.category || '',
+                    label, c.oldValue || '', c.newValue || '', log.changedBy, changedAt,
+                ].map(escapeCsv).join(','));
+            });
+        });
+
+        const csvContent = `\uFEFF${csvRows.join('\n')}`;
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const dateStr = new Date().toISOString().slice(0, 10);
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = `edited-participants-${dateStr}.csv`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(link.href);
+        showToast(
+            language === 'th' ? `ดาวน์โหลดสำเร็จ ${csvRows.length - 1} รายการ` : `Downloaded ${csvRows.length - 1} records`,
+            'success',
+        );
+    }, [allEditLogs, language]);
+
     // Save all edited fields for a runner
     const handleSaveRunner = useCallback(async () => {
         if (!editingRunner) return;
@@ -1997,11 +2040,28 @@ export default function ParticipantsPage() {
                         }}>
                             <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: '#333' }}>
                                 {language === 'th' ? 'รายชื่อที่แก้ไข' : 'Edited List'}
+                                {allEditLogs.length > 0 && (
+                                    <span style={{ color: '#888', fontWeight: 400, fontSize: 13 }}> ({allEditLogs.length})</span>
+                                )}
                             </h3>
-                            <button onClick={() => setShowEditedListModal(false)} style={{
-                                background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: '#999',
-                                lineHeight: 1, padding: '2px 6px',
-                            }}>✕</button>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <button
+                                    onClick={handleDownloadEditedCsv}
+                                    disabled={loadingAllEditLogs || allEditLogs.length === 0}
+                                    className="px-3 py-1.5 text-[12px] rounded-md border cursor-pointer transition whitespace-nowrap border-green-400 bg-green-50 text-green-700 font-semibold hover:bg-green-100 disabled:opacity-50"
+                                >
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="inline mr-1 -mt-0.5">
+                                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                                        <polyline points="7 10 12 15 17 10" />
+                                        <line x1="12" y1="15" x2="12" y2="3" />
+                                    </svg>
+                                    {language === 'th' ? 'ดาวน์โหลด CSV' : 'Download CSV'}
+                                </button>
+                                <button onClick={() => setShowEditedListModal(false)} style={{
+                                    background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: '#999',
+                                    lineHeight: 1, padding: '2px 6px',
+                                }}>✕</button>
+                            </div>
                         </div>
 
                         <div style={{ padding: '16px 20px' }}>
