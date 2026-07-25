@@ -56,6 +56,9 @@ interface TimingRecord {
     elapsedTime?: number;
 }
 
+/** "42 K" / "42k" → "42K", so category names and event names line up. */
+const normCat = (s: string) => (s || '').trim().toUpperCase().replace(/\s+/g, '');
+
 /** A GPX course line uploaded for one race category (see /admin/events/create). */
 interface RouteTrack {
     category: string;
@@ -1242,6 +1245,74 @@ export function GeneralChartView({ monitor }: { monitor?: MonitorRequest }) {
         })();
     }, [campaign?._id]);
 
+    // ── Per-category checkpoint order ──
+    // Checkpoint.orderNum is one shared, campaign-wide sequence, but a trail
+    // race's distances can visit the same checkpoints in a different order (or
+    // skip some). CheckpointMapping.orderNum is recorded per Event — i.e. per
+    // distance — so pull it in and prefer it over the shared order wherever a
+    // category has one, the same way /admin/events/create backfills GPX marks.
+    const [catCpOrder, setCatCpOrder] = useState<Record<string, string[]>>({});
+    useEffect(() => {
+        if (!campaign?._id) return;
+        let cancelled = false;
+        (async () => {
+            try {
+                const evRes = await fetch(`/api/events/by-campaign/${campaign._id}`, { cache: 'no-store' });
+                if (!evRes.ok) return;
+                const events: { _id: string; name?: string; distance?: number }[] = await evRes.json();
+                if (!Array.isArray(events)) return;
+
+                const perEvent = await Promise.all(events.map(async (ev) => {
+                    try {
+                        const res = await fetch(`/api/checkpoints/mapping/event/${ev._id}`, { cache: 'no-store' });
+                        if (!res.ok) return null;
+                        const maps: { orderNum?: number; checkpointId?: { name?: string } | string }[] = await res.json();
+                        if (!Array.isArray(maps) || !maps.length) return null;
+                        const list = maps
+                            .map(m => ({
+                                name: ((typeof m.checkpointId === 'object' && m.checkpointId ? m.checkpointId.name : '') || '').trim(),
+                                order: m.orderNum ?? 999,
+                            }))
+                            .filter(m => m.name)
+                            .sort((a, b) => a.order - b.order)
+                            .map(m => m.name);
+                        return list.length ? { ev, list } : null;
+                    } catch { return null; }
+                }));
+
+                if (cancelled) return;
+                const next: Record<string, string[]> = {};
+                for (const entry of perEvent) {
+                    if (!entry) continue;
+                    const keys = [entry.ev.name, entry.ev.distance ? `${entry.ev.distance}K` : ''];
+                    for (const k of keys) {
+                        const key = normCat(k || '');
+                        if (key && !next[key]) next[key] = entry.list;
+                    }
+                }
+                setCatCpOrder(next);
+            } catch { /* per-category order stays unavailable; campaign-wide order still works */ }
+        })();
+        return () => { cancelled = true; };
+    }, [campaign?._id]);
+
+    /** This category's checkpoints, in its own distance order when known. */
+    const catCpsFor = useCallback((cat: string): Checkpoint[] => {
+        const base = checkpoints.filter(cp => !cp.distanceMappings?.length || cp.distanceMappings.includes(cat));
+        const order = catCpOrder[normCat(cat)];
+        if (!order?.length) return base;
+        const byName = new Map(base.map(cp => [cp.name, cp]));
+        const ordered: Checkpoint[] = [];
+        for (const name of order) {
+            const cp = byName.get(name);
+            if (cp) { ordered.push(cp); byName.delete(name); }
+        }
+        // Anything not covered by the mapping (e.g. a CP added since it was last
+        // generated) still shows, appended in the shared campaign-wide order.
+        for (const cp of base) if (byName.has(cp.name)) ordered.push(cp);
+        return ordered;
+    }, [checkpoints, catCpOrder]);
+
     // ── Load GPX course lines (one per category, optional) ──
     useEffect(() => {
         if (!campaign?._id) return;
@@ -1354,10 +1425,7 @@ export function GeneralChartView({ monitor }: { monitor?: MonitorRequest }) {
         const result: Record<string, SegmentDatum[]> = {};
         for (const cat of categories) {
             const catRunners = runners.filter(r => r.category === cat);
-            const catCps = checkpoints.filter(cp => {
-                if (!cp.distanceMappings || cp.distanceMappings.length === 0) return true;
-                return cp.distanceMappings.includes(cat);
-            });
+            const catCps = catCpsFor(cat);
             if (catCps.length === 0) continue;
             const data: SegmentDatum[] = [];
             for (let i = 0; i < catCps.length; i++) {
@@ -1403,7 +1471,7 @@ export function GeneralChartView({ monitor }: { monitor?: MonitorRequest }) {
             result[cat] = data;
         }
         return result;
-    }, [categories, runners, checkpoints, cpTimingMap]);
+    }, [categories, runners, catCpsFor, cpTimingMap]);
 
     // ── How long the field actually takes on each leg ──
     // The median of everyone who has already run a leg is the best available
@@ -1413,8 +1481,7 @@ export function GeneralChartView({ monitor }: { monitor?: MonitorRequest }) {
         const result: Record<string, (number | null)[]> = {};
         for (const cat of categories) {
             const catRunners = runners.filter(r => r.category === cat);
-            const catCps = checkpoints.filter(cp =>
-                !cp.distanceMappings?.length || cp.distanceMappings.includes(cat));
+            const catCps = catCpsFor(cat);
             const medians: (number | null)[] = [];
             for (let i = 0; i < catCps.length - 1; i++) {
                 const a = cpTimingMap[catCps[i].name];
@@ -1433,7 +1500,7 @@ export function GeneralChartView({ monitor }: { monitor?: MonitorRequest }) {
             result[cat] = medians;
         }
         return result;
-    }, [categories, runners, checkpoints, cpTimingMap]);
+    }, [categories, runners, catCpsFor, cpTimingMap]);
 
     // ── Per-category summary ──
     const catSummary = useMemo(() => {
@@ -1542,10 +1609,7 @@ export function GeneralChartView({ monitor }: { monitor?: MonitorRequest }) {
         const result: Record<string, { cpName: string; count: number; total: number }[]> = {};
         for (const cat of categories) {
             const catRunners = runners.filter(r => r.category === cat);
-            const catCps = checkpoints.filter(cp => {
-                if (!cp.distanceMappings || cp.distanceMappings.length === 0) return true;
-                return cp.distanceMappings.includes(cat);
-            });
+            const catCps = catCpsFor(cat);
             if (catCps.length === 0) continue;
             const data: { cpName: string; count: number; total: number }[] = [];
             for (const cp of catCps) {
@@ -1556,7 +1620,7 @@ export function GeneralChartView({ monitor }: { monitor?: MonitorRequest }) {
             result[cat] = data;
         }
         return result;
-    }, [categories, runners, checkpoints, cpTimingMap]);
+    }, [categories, runners, catCpsFor, cpTimingMap]);
 
     // ── Monitor window: one panel, no chrome, sized to the screen ──
     if (monitor) {

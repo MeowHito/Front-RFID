@@ -500,6 +500,35 @@ export default function EventLivePage() {
         return compareStableBibOrder(a, b);
     }
 
+    // Age-group (CAT/AGE) placings run on NET time, but the running order is still
+    // decided by course progress first: a runner who has passed more checkpoints is
+    // ahead of one who has passed fewer, however small the latter's split time is
+    // (a runner 20s past START is not leading the race). Mirrors
+    // compareRunnerRankOrder with net time as the basis. Used by BOTH the CAT rank
+    // counter and the mobile row order under an age-group filter, so the numbers and
+    // the rows can never disagree.
+    function compareRunnerNetRankOrder(a: Runner, b: Runner) {
+        const statusOrder: Record<string, number> = { 'finished': 0, 'in_progress': 1, 'dnf': 2, 'dns': 3, 'dq': 4, 'not_started': 5 };
+        const statusDiff = (statusOrder[a.status] ?? 6) - (statusOrder[b.status] ?? 6);
+        if (statusDiff !== 0) return statusDiff;
+
+        if (a.status === 'in_progress' && b.status === 'in_progress') {
+            const aPassed = a.passedCount ?? 0;
+            const bPassed = b.passedCount ?? 0;
+            if (aPassed !== bPassed) return bPassed - aPassed;
+        }
+
+        const aTime = getRunnerNetTimeMs(a);
+        const bTime = getRunnerNetTimeMs(b);
+        if (aTime > 0 && bTime > 0 && aTime !== bTime) return aTime - bTime;
+        if (aTime > 0 && bTime <= 0) return -1;
+        if (aTime <= 0 && bTime > 0) return 1;
+        const aScan = getRunnerScanTimeMs(a);
+        const bScan = getRunnerScanTimeMs(b);
+        if (aScan > 0 && bScan > 0 && aScan !== bScan) return aScan - bScan;
+        return compareStableBibOrder(a, b);
+    }
+
     // Derive effective status from actual RaceTiger timing data
     function deriveEffectiveStatus(runner: Runner): Runner {
         // Preserve explicit statuses from backend (finished/dq/dnf/dns)
@@ -1210,20 +1239,18 @@ export default function EventLivePage() {
                 return matchesSearch && matchesGender && matchesFollowed && matchesCategory && matchesStatus && matchesAgeGroup;
             });
         // On the collapsed mobile view the RANK slot shows the gender / age-group
-        // sub-rank when one of those filters is active — order the rows by NET time
-        // (the basis for those ranks) so the numbers read 1 → N ascending.
-        const subRankOrder = isMobile && !showAllColumns
-            && (filterGender === 'M' || filterGender === 'F' || !!filterAgeGroup);
+        // sub-rank when one of those filters is active, so the rows must follow the
+        // SAME order the matching rank counter used or the numbers read out of
+        // sequence (GEN 30, 31, 1, 32 …).
+        //   • Gender filter → GEN comes from `liveRanks`, counted down
+        //     `allRankedRunners` (progress → gun time). `filtered` already preserves
+        //     that order, so leave it alone — re-sorting by time here was the bug.
+        //   • Age-group filter → AGE comes from the net-time counter below, which is
+        //     progress-ordered too, so reuse its exact comparator.
+        const subRankOrder = isMobile && !showAllColumns && !!filterAgeGroup;
         let ordered = filtered;
         if (subRankOrder) {
-            const statusOrder: Record<string, number> = { finished: 0, in_progress: 1, dnf: 2, dns: 3, dq: 4, not_started: 5 };
-            ordered = [...filtered].sort((a, b) => {
-                const sd = (statusOrder[a.status] ?? 6) - (statusOrder[b.status] ?? 6);
-                if (sd !== 0) return sd;
-                const at = getRunnerNetTimeMs(a);
-                const bt = getRunnerNetTimeMs(b);
-                return (at > 0 ? at : Infinity) - (bt > 0 ? bt : Infinity);
-            });
+            ordered = [...filtered].sort(compareRunnerNetRankOrder);
         }
         if (!sortAlertsFirst) return ordered;
         // Stable sort: pull alert (incomplete-checkpoint) runners to the top, keep rank order otherwise.
@@ -1266,13 +1293,12 @@ export default function EventLivePage() {
             entry.genRank = genderCounters[genderKey];
         }
 
-        // Age-group (CAT) — by NET time. Stable sort keeps in-progress runners (no net
-        // time yet) in their existing relative order.
-        const byNet = [...eligible].sort((a, b) => {
-            const at = getRunnerNetTimeMs(a);
-            const bt = getRunnerNetTimeMs(b);
-            return (at > 0 ? at : Infinity) - (bt > 0 ? bt : Infinity);
-        });
+        // Age-group (CAT) — by NET time, but progress-ordered first (see
+        // compareRunnerNetRankOrder): finishers ahead of anyone still on course, and
+        // among in-progress runners more checkpoints passed = ahead. A plain net-time
+        // sort handed AGE rank 1 to whoever had the smallest split time, which during a
+        // live race is a runner 20s past START.
+        const byNet = [...eligible].sort(compareRunnerNetRankOrder);
         // Only count runners that will actually display an age-group rank. DNF/DNS/DQ/
         // not_started rows render '-' for AGE (see `hideCatRank`), yet a DNF-with-progress
         // runner can carry a bogus small net time (a partial leg time, not a real finish),
@@ -1288,7 +1314,7 @@ export default function EventLivePage() {
             ranks.get(runner._id)!.catRank = categoryCounters[catKey];
         }
         return ranks;
-    }, [allRankedRunners, canonicalAgeGroupOf]);
+    }, [allRankedRunners, canonicalAgeGroupOf]); // eslint-disable-line react-hooks/exhaustive-deps
 
 
 
