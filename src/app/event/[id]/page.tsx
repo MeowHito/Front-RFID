@@ -368,6 +368,10 @@ export default function EventLivePage() {
     const [showCourseProfile, setShowCourseProfile] = useState(false);
     const [showCheckpointBars, setShowCheckpointBars] = useState(false);
     const [routeCategories, setRouteCategories] = useState<Set<string>>(new Set());
+    // On mobile, once an age-group dropdown is showing the filter row is already
+    // crowded — the course-profile/checkpoint-bars buttons move into this
+    // floating menu instead of adding a third item to that row.
+    const [showMobileToolsMenu, setShowMobileToolsMenu] = useState(false);
 
     const [currentTime, setCurrentTime] = useState(new Date());
     const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
@@ -1913,7 +1917,7 @@ export default function EventLivePage() {
             onClick={() => setShowCourseProfile(true)}
             aria-label={language === 'th' ? 'ดูโปรไฟล์เส้นทาง 2D' : 'View 2D course profile'}
             title={language === 'th' ? `ดูโปรไฟล์เส้นทาง ${currentCategoryLabel}` : `View the ${currentCategoryLabel} course profile`}
-            className="flex h-[29px] w-[40px] shrink-0 cursor-pointer items-center justify-center rounded-full border border-[var(--border)] bg-transparent text-[var(--muted-foreground)] transition-all duration-200 hover:border-[var(--foreground)] hover:text-[var(--foreground)]"
+            className="flex h-[29px] w-[40px] shrink-0 cursor-pointer items-center justify-center rounded-full bg-transparent text-[var(--muted-foreground)] transition-all duration-200 hover:text-[var(--foreground)]"
         >
             {/* Mountain profile with a peak — reads as "elevation graph" at 14px */}
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -1931,7 +1935,7 @@ export default function EventLivePage() {
             onClick={() => setShowCheckpointBars(true)}
             aria-label={language === 'th' ? 'ดูกราฟแท่งจุดเช็คพอยต์' : 'View checkpoint bar charts'}
             title={language === 'th' ? `ดูกราฟแท่งจุดเช็คพอยต์ ${currentCategoryLabel}` : `View the ${currentCategoryLabel} checkpoint bar charts`}
-            className="flex h-[29px] w-[40px] shrink-0 cursor-pointer items-center justify-center rounded-full border border-[var(--border)] bg-transparent text-[var(--muted-foreground)] transition-all duration-200 hover:border-[var(--foreground)] hover:text-[var(--foreground)]"
+            className="flex h-[29px] w-[40px] shrink-0 cursor-pointer items-center justify-center rounded-full bg-transparent text-[var(--muted-foreground)] transition-all duration-200 hover:text-[var(--foreground)]"
         >
             {/* Three columns of different heights — reads as "bar chart" at 14px */}
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -1940,6 +1944,12 @@ export default function EventLivePage() {
             </svg>
         </button>
     ) : null;
+
+    // Once the age-group select is on screen, row 2 (gender pills + age select)
+    // is already full — route these two into the floating menu instead of
+    // adding a third pair of buttons to that row. Desktop has room, so it
+    // always keeps them inline.
+    const showFloatingCourseTools = isMobile && ageGroupOptions.length > 0 && (!!courseProfileEl || !!checkpointBarsEl);
 
     // ── Filter bar controls, shared between the mobile (3 rows) and desktop (single row) layouts ──
     const searchBoxEl = (
@@ -2226,8 +2236,8 @@ export default function EventLivePage() {
                         <div className="mt-2 flex flex-wrap items-center gap-1.5">
                             {genderBoxEl}
                             {ageSelectEl}
-                            {courseProfileEl}
-                            {checkpointBarsEl}
+                            {!showFloatingCourseTools && courseProfileEl}
+                            {!showFloatingCourseTools && checkpointBarsEl}
                             <div className="ml-auto flex items-center gap-1">
                                 {rankingMenuEl}
                                 {slidersEl}
@@ -2274,6 +2284,51 @@ export default function EventLivePage() {
                 )}
 
             </div>
+
+            {/* ===== FLOATING COURSE TOOLS (mobile, only once age-group is on screen) ===== */}
+            {showFloatingCourseTools && (
+                <div className="fixed bottom-5 right-4 z-[900] flex flex-col items-end gap-2">
+                    {showMobileToolsMenu && (
+                        <div className="flex flex-col gap-2 rounded-2xl border border-[var(--border)] bg-[var(--card-solid)] p-2 shadow-lg">
+                            {courseProfileEl && (
+                                <button
+                                    onClick={() => { setShowCourseProfile(true); setShowMobileToolsMenu(false); }}
+                                    aria-label={language === 'th' ? 'ดูโปรไฟล์เส้นทาง 2D' : 'View 2D course profile'}
+                                    className="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full bg-transparent text-[var(--muted-foreground)] transition-all duration-200 hover:text-[var(--foreground)]"
+                                >
+                                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                        <path d="M3 20h18" />
+                                        <path d="M3 16l5-7 4 5 3-4 6 6" />
+                                    </svg>
+                                </button>
+                            )}
+                            {checkpointBarsEl && (
+                                <button
+                                    onClick={() => { setShowCheckpointBars(true); setShowMobileToolsMenu(false); }}
+                                    aria-label={language === 'th' ? 'ดูกราฟแท่งจุดเช็คพอยต์' : 'View checkpoint bar charts'}
+                                    className="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full bg-transparent text-[var(--muted-foreground)] transition-all duration-200 hover:text-[var(--foreground)]"
+                                >
+                                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                        <path d="M3 21h18" />
+                                        <path d="M6 21V11" /><path d="M12 21V5" /><path d="M18 21V14" />
+                                    </svg>
+                                </button>
+                            )}
+                        </div>
+                    )}
+                    <button
+                        onClick={() => setShowMobileToolsMenu(v => !v)}
+                        aria-label={language === 'th' ? 'เครื่องมือเส้นทาง' : 'Course tools'}
+                        aria-expanded={showMobileToolsMenu}
+                        className="flex h-12 w-12 cursor-pointer items-center justify-center rounded-full text-white shadow-lg transition-transform duration-200"
+                        style={{ background: '#3b82f6', transform: showMobileToolsMenu ? 'rotate(45deg)' : 'none' }}
+                    >
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M12 5v14M5 12h14" />
+                        </svg>
+                    </button>
+                </div>
+            )}
 
             {/* ===== 2D COURSE PROFILE POPUP ===== */}
             {showCourseProfile && (

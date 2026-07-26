@@ -778,6 +778,10 @@ function CourseStrip({
 
     type OnCourseRunner = typeof onCourse[number];
 
+    // `onCourse` also carries finishers (they're still drawn at the FINISH mark),
+    // so the headline count needs them backed out to mean "still racing".
+    const onCourseStillRacing = onCourse.filter(r => r.status !== 'finished').length;
+
     /** "ถึง A2 ในอีก 12:07" — when the next checkpoint should scan this runner. */
     const etaNote = (r: OnCourseRunner) => {
         if (!r.moving) return th ? 'อยู่ที่จุดสแกน' : 'at the scan point';
@@ -978,7 +982,7 @@ function CourseStrip({
                                 <span>{th ? 'ความสูง' : 'Elevation'}: <b style={{ color: '#475569' }}>{Math.round(ele.min)} – {Math.round(ele.max)} m</b></span>
                             ) : null;
                         })()}
-                        <span>{th ? 'อยู่บนเส้นทาง' : 'On course'}: <b style={{ color: '#475569' }}>{onCourse.length}</b></span>
+                        <span>{th ? 'อยู่บนเส้นทาง' : 'On course'}: <b style={{ color: '#475569' }}>{onCourseStillRacing}</b></span>
                     </div>
 
                     {pastCutoff && (
