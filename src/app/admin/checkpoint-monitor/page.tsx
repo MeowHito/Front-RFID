@@ -379,7 +379,7 @@ export default function CheckpointMonitorPage() {
                             {checkpoints.length === 0 && <option value="">{th ? 'ไม่มีจุดเช็คอิน' : 'No checkpoints'}</option>}
                             {checkpoints.map(cp => (
                                 <option key={cp._id} value={cp.name}>
-                                    {cp.name}{cp.kmCumulative ? ` (${cp.kmCumulative}KM)` : ''}
+                                    {cp.name}
                                 </option>
                             ))}
                         </select>

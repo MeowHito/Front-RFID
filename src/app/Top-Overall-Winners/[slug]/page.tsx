@@ -281,9 +281,6 @@ export default function TopOverallWinnersBySlugPage() {
             <span style={{ fontFamily: 'monospace', fontWeight: 800, fontSize: isMobile ? 11 : '1.5vh', color: '#1e293b', flexShrink: 0, minWidth: isMobile ? 60 : '7vh', textAlign: 'right' }}>
                 {runner.gunTimeStr || formatTime(runner.gunTime)}
             </span>
-            <span style={{ fontFamily: 'monospace', fontWeight: 800, fontSize: isMobile ? 11 : '1.5vh', color: '#1e293b', flexShrink: 0, minWidth: isMobile ? 60 : '7vh', textAlign: 'right', marginLeft: isMobile ? 10 : 14 }}>
-                {runner.netTimeStr || formatTime(runner.netTime)}
-            </span>
         </div>
     );
 
@@ -295,7 +292,6 @@ export default function TopOverallWinnersBySlugPage() {
             <span style={{ width: isMobile ? 16 : '1.8vh', flexShrink: 0 }} />
             <span style={{ fontSize: isMobile ? 11 : '1.2vh', color: '#cbd5e1', fontStyle: 'italic', flex: 1 }}>—</span>
             <span style={{ minWidth: isMobile ? 60 : '7vh' }} />
-            <span style={{ minWidth: isMobile ? 60 : '7vh', marginLeft: isMobile ? 10 : 14 }} />
         </div>
     );
 
@@ -329,7 +325,6 @@ export default function TopOverallWinnersBySlugPage() {
                         <div style={{ width: isMobile ? 16 : '1.8vh', flexShrink: 0 }} />
                         <span style={{ fontSize: isMobile ? 9 : '1.1vh', fontWeight: 700, color: '#94a3b8', flex: 1, textTransform: 'uppercase', letterSpacing: 0.5 }}>Name</span>
                         <span style={{ fontSize: isMobile ? 9 : '1.1vh', fontWeight: 700, color: '#94a3b8', flexShrink: 0, minWidth: isMobile ? 60 : '7vh', textAlign: 'right', letterSpacing: 0.5 }}>GunTime</span>
-                        <span style={{ fontSize: isMobile ? 9 : '1.1vh', fontWeight: 700, color: '#94a3b8', flexShrink: 0, minWidth: isMobile ? 60 : '7vh', textAlign: 'right', letterSpacing: 0.5, marginLeft: isMobile ? 10 : 14 }}>NetTime</span>
                     </div>
                     {Array.from({ length: topN }, (_, i) => i).map(i => list[i] ? renderRunnerRow(list[i], i) : renderEmptyRow(i))}
                 </div>

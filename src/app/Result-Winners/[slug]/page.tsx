@@ -435,9 +435,6 @@ export default function ResultWinnersBySlugPage() {
                     : `${runner.bib}  ${runner.firstName} ${runner.lastName}`}
             </span>
             <span style={{ fontFamily: 'monospace', fontWeight: 800, fontSize: isMobile ? 11 : '1.35vh', color: '#1e293b', flexShrink: 0, minWidth: isMobile ? 60 : '6.5vh', textAlign: 'right' }}>
-                {runner.gunTimeStr || formatTime(runner.gunTime)}
-            </span>
-            <span style={{ fontFamily: 'monospace', fontWeight: 800, fontSize: isMobile ? 11 : '1.35vh', color: '#1e293b', flexShrink: 0, minWidth: isMobile ? 60 : '6.5vh', textAlign: 'right', marginLeft: isMobile ? 10 : 14 }}>
                 {runner.netTimeStr || formatTime(runner.netTime)}
             </span>
         </div>
@@ -450,7 +447,6 @@ export default function ResultWinnersBySlugPage() {
             </div>
             <span style={{ fontSize: isMobile ? 11 : '1.2vh', color: '#cbd5e1', fontStyle: 'italic', flex: 1 }}>—</span>
             <span style={{ minWidth: isMobile ? 60 : '6.5vh' }} />
-            <span style={{ minWidth: isMobile ? 60 : '6.5vh', marginLeft: isMobile ? 10 : 14 }} />
         </div>
     );
 
@@ -492,8 +488,7 @@ export default function ResultWinnersBySlugPage() {
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: isMobile ? '2px 8px 3px' : '0.1vh 8px 0.2vh', borderBottom: '1px solid #f1f5f9' }}>
                                 <div style={{ width: isMobile ? 22 : '2.2vh', minWidth: 18, flexShrink: 0 }} />
                                 <span style={{ fontSize: isMobile ? 9 : '1.0vh', fontWeight: 700, color: '#94a3b8', flex: 1, textTransform: 'uppercase', letterSpacing: 0.5 }}>Name</span>
-                                <span style={{ fontSize: isMobile ? 9 : '1.0vh', fontWeight: 700, color: '#94a3b8', flexShrink: 0, minWidth: isMobile ? 60 : '6.5vh', textAlign: 'right', letterSpacing: 0.5 }}>GunTime</span>
-                                <span style={{ fontSize: isMobile ? 9 : '1.0vh', fontWeight: 700, color: '#94a3b8', flexShrink: 0, minWidth: isMobile ? 60 : '6.5vh', textAlign: 'right', letterSpacing: 0.5, marginLeft: isMobile ? 10 : 14 }}>NetTime</span>
+                                <span style={{ fontSize: isMobile ? 9 : '1.0vh', fontWeight: 700, color: '#94a3b8', flexShrink: 0, minWidth: isMobile ? 60 : '6.5vh', textAlign: 'right', letterSpacing: 0.5 }}>NetTime</span>
                             </div>
                             {rows.map(i => list[i] ? renderRunnerRow(list[i], i) : renderEmptyRow(i))}
                         </div>
