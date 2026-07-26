@@ -6,16 +6,17 @@
  * table is filtered to — with the checkpoints marked and the runners still out
  * there drawn on it.
  *
- * Public page, so the positions are simpler than the admin's: a runner stands at
- * the checkpoint they last scanned through, with no dead reckoning toward the
- * next one (that needs the per-leg scan medians only the admin page loads).
+ * Public page, so the positions are estimated more simply than the admin's: the
+ * leg ahead is priced from the runner's own average pace, which is exactly what
+ * the Next/ETA column of the results table does (estimatePaceEtaMs), rather than
+ * from the per-leg field medians only the admin page loads.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { elevationRange } from '@/lib/routeGeometry';
 import {
-    arriveByEta, buildEffortProfile, clusterByDueWindow,
+    arriveByEta, buildEffortProfile, clusterByDueWindow, clusterMinutesOf,
     estimatePaceEtaMs, formatClock, formatCountdown,
 } from '@/lib/routeProgress';
 import type { ProfileMarker } from '@/components/ElevationProfile2D';
@@ -68,6 +69,8 @@ interface Props {
     runners: CourseRunner[];
     /** When this distance closes, in epoch ms — null when the event sets no cut-off. */
     cutoffAt?: number | null;
+    /** Clump width in minutes, set per event by the admin (Campaign.profileClusterMinutes). */
+    clusterMinutes?: number;
     th: boolean;
     isDark: boolean;
 }
@@ -84,8 +87,9 @@ const scanMsOf = (v?: string) => {
 };
 
 export default function CourseProfileModal({
-    open, onClose, campaignId, categoryLabel, categoryKeys, runners, cutoffAt, th, isDark,
+    open, onClose, campaignId, categoryLabel, categoryKeys, runners, cutoffAt, clusterMinutes, th, isDark,
 }: Props) {
+    const windowMinutes = clusterMinutesOf(clusterMinutes);
     const [routes, setRoutes] = useState<CourseRouteTrack[] | null>(() => routeCache.get(campaignId) ?? null);
     const [loading, setLoading] = useState(false);
     const [failed, setFailed] = useState(false);
@@ -291,10 +295,10 @@ export default function CourseProfileModal({
             });
         }
 
-        // One figure per leg per 10 minutes of arrival time: the runners who are
+        // One figure per leg per window of arrival time: the runners who are
         // travelling together, rather than an arbitrary stretch of course.
         const rest = onCourse.filter(r => !named.has(r.bib));
-        for (const chunk of clusterByDueWindow(rest, r => ({ legKey: r.legKey, dueMs: r.dueMs }))) {
+        for (const chunk of clusterByDueWindow(rest, r => ({ legKey: r.legKey, dueMs: r.dueMs }), windowMinutes * 60000)) {
             const males = chunk.filter(r => r.gender === 'M').length;
             const females = chunk.filter(r => r.gender === 'F').length;
             const head = chunk[0];
@@ -332,7 +336,7 @@ export default function CourseProfileModal({
             });
         }
         return out;
-    }, [route, onCourse, th, pastCutoff]);
+    }, [route, onCourse, th, pastCutoff, windowMinutes]);
 
     const onBackdrop = useCallback((e: React.MouseEvent) => {
         if (e.target === e.currentTarget) onClose();
@@ -436,7 +440,7 @@ export default function CourseProfileModal({
                             <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', marginBottom: 8, fontSize: 10.5, color: muted, fontWeight: 700 }}>
                                 <span><Dot color="#3b82f6" />{th ? 'ผู้นำชาย 1-2-3' : 'Top 3 male'}</span>
                                 <span><Dot color="#ec4899" />{th ? 'ผู้นำหญิง 1-2-3' : 'Top 3 female'}</span>
-                                <span><Dot color="#f59e0b" />{th ? 'กลุ่มนักวิ่ง (ถึงจุดหน้าห่างกันไม่เกิน 10 นาที)' : 'Runner clumps (due within 10 min)'}</span>
+                                <span><Dot color="#f59e0b" />{th ? `กลุ่มนักวิ่ง (ถึงจุดหน้าห่างกันไม่เกิน ${windowMinutes} นาที)` : `Runner clumps (due within ${windowMinutes} min)`}</span>
                             </div>
 
                             <ElevationProfile2D
@@ -471,8 +475,8 @@ export default function CourseProfileModal({
 
                             <div style={{ fontSize: 10, color: faint, marginTop: 8, textAlign: 'center', lineHeight: 1.7 }}>
                                 {th
-                                    ? '💡 ตุ๊กตาจะค่อยๆ เดินจากจุดสแกนล่าสุดไปยังจุดถัดไป ตามเวลาเดียวกับช่อง NEXT/ETA ในตาราง (คนที่จบแล้วอยู่ที่ FINISH) · ตุ๊กตาเหลือง 1 ตัว = คนที่จะถึงจุดหน้าห่างกันไม่เกิน 10 นาที ถ้าห่างกว่านั้นจะแยกเป็นตัวถัดไป · คนที่เลยเวลาแล้วยังไม่ถูกสแกนจะรออยู่ก่อนถึงจุดนั้นและรวมเป็นตัวเดียว · แตะเพื่อดูรายละเอียด'
-                                    : '💡 Each figure walks from its last scan point toward the next checkpoint on the same estimate as the NEXT/ETA column (finishers sit on FINISH) · one amber figure groups everyone due there within 10 minutes of each other, a longer gap starts the next figure · anyone past due with no scan waits just short of the line as a single figure · tap for details'}
+                                    ? `💡 ตุ๊กตาจะค่อยๆ เดินจากจุดสแกนล่าสุดไปยังจุดถัดไป ตามเวลาเดียวกับช่อง NEXT/ETA ในตาราง (คนที่จบแล้วอยู่ที่ FINISH) · ตุ๊กตาเหลือง 1 ตัว = คนที่จะถึงจุดหน้าห่างกันไม่เกิน ${windowMinutes} นาที ถ้าห่างกว่านั้นจะแยกเป็นตัวถัดไป · คนที่เลยเวลาแล้วยังไม่ถูกสแกนจะรออยู่ก่อนถึงจุดนั้นและรวมเป็นตัวเดียว · แตะเพื่อดูรายละเอียด`
+                                    : `💡 Each figure walks from its last scan point toward the next checkpoint on the same estimate as the NEXT/ETA column (finishers sit on FINISH) · one amber figure groups everyone due within ${windowMinutes} minutes of each other, a longer gap starts the next figure · anyone past due with no scan waits just short of the line as a single figure · tap for details`}
                                 {!ele && (
                                     <div style={{ marginTop: 4, color: '#f59e0b' }}>
                                         {th

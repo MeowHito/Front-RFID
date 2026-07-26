@@ -15,6 +15,7 @@ import { isNationalitySplitCategory } from '@/lib/nationality';
 import { type AgeGroupBucket, buildCanonicalAgeGroups, canonicalizeAgeGroup, normalizeAgeGroupLabel } from '@/lib/age-groups';
 import RankingMenuDropdown from '@/components/RankingMenuDropdown';
 import CourseProfileModal, { type CourseRunner } from '@/components/CourseProfileModal';
+import CheckpointBarsModal from '@/components/CheckpointBarsModal';
 import { ETA_SLOWDOWN, cutoffAtMs, estimatePaceEtaMs } from '@/lib/routeProgress';
 import { countryName, countryToFlag } from '@/lib/country-flags';
 import type { RankingMenuVisibility } from '@/lib/rankingMenu';
@@ -36,6 +37,8 @@ interface Campaign {
     displayColumnsLab?: string[];
     displayMode?: string;
     raceFinished?: boolean;
+    /** Clump window for the 2D course profile, in minutes (default 10). */
+    profileClusterMinutes?: number;
     // Award config (shared with /admin/age-group-ranking + winner pages)
     overallDisplayCount?: number;
     /** Per-distance overrides of the Overall rank count (admin/top-overall). */
@@ -158,6 +161,9 @@ interface CheckpointDistanceLookup {
     [eventId: string]: {
         checkpoints: Record<string, number>;
         cpOrders: Record<string, number>;
+        /** Lower-cased key → the checkpoint's name as stored. The timing API
+         *  matches the name exactly, so the original casing has to survive. */
+        cpLabels: Record<string, string>;
         totalDistance: number;
         totalCheckpoints: number;
     };
@@ -360,6 +366,7 @@ export default function EventLivePage() {
     // 2D course profile popup — the distances that have a GPX line uploaded, so
     // the button only appears where there is something to show.
     const [showCourseProfile, setShowCourseProfile] = useState(false);
+    const [showCheckpointBars, setShowCheckpointBars] = useState(false);
     const [routeCategories, setRouteCategories] = useState<Set<string>>(new Set());
 
     const [currentTime, setCurrentTime] = useState(new Date());
@@ -643,6 +650,16 @@ export default function EventLivePage() {
         return isFinishLike && meta.totalCheckpoints > 0 && meta.completedCpCount > 0 && meta.completedCpCount < meta.totalCheckpoints;
     }
 
+    /**
+     * What the ⚠ sort pulls to the top: the incomplete-checkpoint alerts, plus
+     * every DQ. A DQ is the other row an admin goes looking for — auto-DQ in
+     * particular is the system's guess and wants checking — and both are needles
+     * in a table of several hundred finishers.
+     */
+    function runnerNeedsAttention(runner: Runner) {
+        return String(runner.status || '').toLowerCase() === 'dq' || runnerHasProgressAlert(runner);
+    }
+
     useEffect(() => {
         const timer = setInterval(() => setCurrentTime(new Date()), 1000);
         return () => clearInterval(timer);
@@ -768,6 +785,7 @@ export default function EventLivePage() {
                         const mappings: CheckpointMapping[] = Array.isArray(mapData) ? mapData : (mapData?.data || []);
                         const cpMap: { [name: string]: number } = {};
                         const cpOrders: { [name: string]: number } = {};
+                        const cpLabels: { [name: string]: string } = {};
                         let maxDist = 0;
                         for (const m of mappings) {
                             const cpObj = typeof m.checkpointId === 'object' ? m.checkpointId : null;
@@ -777,6 +795,7 @@ export default function EventLivePage() {
                                 const key = cpName.trim().toLowerCase();
                                 cpMap[key] = dist;
                                 cpOrders[key] = m.orderNum || 0;
+                                cpLabels[key] = cpName.trim();
                             }
                             if (dist > maxDist) maxDist = dist;
                         }
@@ -789,6 +808,7 @@ export default function EventLivePage() {
                         lookup[evId] = {
                             checkpoints: cpMap,
                             cpOrders,
+                            cpLabels,
                             totalDistance: maxDist > 0 ? maxDist : catDist,
                             totalCheckpoints,
                         };
@@ -1305,9 +1325,10 @@ export default function EventLivePage() {
             ordered = [...filtered].sort(compareRunnerNetRankOrder);
         }
         if (!sortAlertsFirst) return ordered;
-        // Stable sort: pull alert (incomplete-checkpoint) runners to the top, keep rank order otherwise.
+        // Stable sort: pull the rows worth a look (incomplete checkpoints, DQ) to
+        // the top, keep rank order otherwise.
         return ordered
-            .map((runner, i) => ({ runner, i, alert: runnerHasProgressAlert(runner) }))
+            .map((runner, i) => ({ runner, i, alert: runnerNeedsAttention(runner) }))
             .sort((a, b) => (a.alert === b.alert ? a.i - b.i : a.alert ? -1 : 1))
             .map(x => x.runner);
     }, [allRankedRunners, searchQuery, filterGender, followedRunnerIds, filterCategory, filterStatus, filterAgeGroup, resolveRunnerCategoryKey, canonicalAgeGroupOf, getDisplayStatus, sortAlertsFirst, cpDistanceLookup, isMobile, showAllColumns]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -1721,6 +1742,33 @@ export default function EventLivePage() {
         [currentCategoryName, currentCategoryLabel],
     );
 
+    // ── Checkpoint bar charts popup ──
+    // Checkpoints of the selected distance in course order. The lookup is keyed
+    // by event, so take the event most of this distance's runners belong to.
+    const checkpointBarNames = useMemo(() => {
+        const pool = runners.filter(r => !filterCategory || resolveRunnerCategoryKey(r) === filterCategory);
+        const tally = new Map<string, number>();
+        for (const r of pool) if (r.eventId) tally.set(r.eventId, (tally.get(r.eventId) || 0) + 1);
+        let bestEvent = '';
+        let bestCount = 0;
+        for (const [evId, n] of tally) if (n > bestCount) { bestEvent = evId; bestCount = n; }
+        const ev = bestEvent ? cpDistanceLookup[bestEvent] : undefined;
+        if (!ev) return [];
+        // The timing API matches `checkpoint` exactly, so send the stored name,
+        // not the lower-cased lookup key.
+        return Object.entries(ev.cpOrders)
+            .filter(([, order]) => order > 0)
+            .sort((a, b) => a[1] - b[1])
+            .map(([key]) => ev.cpLabels[key] || key);
+    }, [runners, filterCategory, resolveRunnerCategoryKey, cpDistanceLookup]);
+
+    const checkpointBarsRunners = useMemo(() => {
+        if (!showCheckpointBars) return [];
+        return runners
+            .filter(r => !filterCategory || resolveRunnerCategoryKey(r) === filterCategory)
+            .map(r => ({ bib: r.bib, status: r.status }));
+    }, [showCheckpointBars, runners, filterCategory, resolveRunnerCategoryKey]);
+
     // When the distance closes. Null when the event leaves the start time or the
     // cut-off blank — most do, and the profile then just keeps drawing runners.
     const courseProfileCutoffAt = useMemo(() => {
@@ -1805,6 +1853,24 @@ export default function EventLivePage() {
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M3 20h18" />
                 <path d="M3 16l5-7 4 5 3-4 6 6" />
+            </svg>
+        </button>
+    ) : null;
+
+    // Sits next to the course profile: the same two checkpoint bar charts the
+    // admin dashboard shows. Needs checkpoints, not a GPX, so it can appear on
+    // distances that have no route uploaded.
+    const checkpointBarsEl = checkpointBarNames.length ? (
+        <button
+            onClick={() => setShowCheckpointBars(true)}
+            aria-label={language === 'th' ? 'ดูกราฟแท่งจุดเช็คพอยต์' : 'View checkpoint bar charts'}
+            title={language === 'th' ? `ดูกราฟแท่งจุดเช็คพอยต์ ${currentCategoryLabel}` : `View the ${currentCategoryLabel} checkpoint bar charts`}
+            className="flex h-[29px] w-[40px] shrink-0 cursor-pointer items-center justify-center rounded-full border border-[var(--border)] bg-transparent text-[var(--muted-foreground)] transition-all duration-200 hover:border-[var(--foreground)] hover:text-[var(--foreground)]"
+        >
+            {/* Three columns of different heights — reads as "bar chart" at 14px */}
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M3 21h18" />
+                <path d="M6 21V11" /><path d="M12 21V5" /><path d="M18 21V14" />
             </svg>
         </button>
     ) : null;
@@ -1925,7 +1991,7 @@ export default function EventLivePage() {
     const adminSortEl = isAdmin ? (
         <button
             onClick={() => setSortAlertsFirst(v => !v)}
-            title={language === 'th' ? 'เรียงคนที่ขึ้นแจ้งเตือน (⚠) ขึ้นบนสุด' : 'Sort incomplete-checkpoint alerts to the top'}
+            title={language === 'th' ? 'เรียงคนที่ขึ้นแจ้งเตือน (⚠) และคนที่ DQ / Auto DQ ขึ้นบนสุด' : 'Sort incomplete-checkpoint alerts and DQ runners to the top'}
             className="flex shrink-0 cursor-pointer items-center gap-1 whitespace-nowrap rounded-full border px-3.5 py-1.5 text-[11px] font-bold transition-all duration-200"
             style={sortAlertsFirst
                 ? { background: '#f59e0b', borderColor: '#f59e0b', color: '#fff' }
@@ -2095,6 +2161,7 @@ export default function EventLivePage() {
                             {genderBoxEl}
                             {ageSelectEl}
                             {courseProfileEl}
+                            {checkpointBarsEl}
                             <div className="ml-auto flex items-center gap-1">
                                 {rankingMenuEl}
                                 {slidersEl}
@@ -2133,6 +2200,7 @@ export default function EventLivePage() {
                         {genderBoxEl}
                         {ageSelectEl}
                         {courseProfileEl}
+                        {checkpointBarsEl}
                         {slidersEl}
                         {rankingMenuEl}
                         {adminSortEl}
@@ -2151,6 +2219,21 @@ export default function EventLivePage() {
                     categoryKeys={courseProfileKeys}
                     runners={courseProfileRunners}
                     cutoffAt={courseProfileCutoffAt}
+                    clusterMinutes={campaign.profileClusterMinutes}
+                    th={language === 'th'}
+                    isDark={isDark}
+                />
+            )}
+
+            {/* ===== CHECKPOINT BAR CHARTS POPUP ===== */}
+            {showCheckpointBars && (
+                <CheckpointBarsModal
+                    open={showCheckpointBars}
+                    onClose={() => setShowCheckpointBars(false)}
+                    campaignId={campaign._id}
+                    categoryLabel={currentCategoryLabel}
+                    cpNames={checkpointBarNames}
+                    runners={checkpointBarsRunners}
                     th={language === 'th'}
                     isDark={isDark}
                 />

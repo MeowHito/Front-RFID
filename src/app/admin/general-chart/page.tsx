@@ -10,7 +10,12 @@ import {
     AreaChart, Area,
 } from 'recharts';
 import { resolveCpKm, elevationRange } from '@/lib/routeGeometry';
-import { arriveByEta, buildEffortProfile, clusterByDueWindow, cutoffAtMs, effortAtKm, estimateLegMs, formatClock, formatCountdown } from '@/lib/routeProgress';
+import { authHeaders } from '@/lib/authHeaders';
+import {
+    arriveByEta, buildEffortProfile, clusterByDueWindow, cutoffAtMs, effortAtKm, estimateLegMs,
+    formatClock, formatCountdown,
+    CLUSTER_MINUTES_MAX, CLUSTER_MINUTES_MIN, CLUSTER_WINDOW_MINUTES, clusterMinutesOf,
+} from '@/lib/routeProgress';
 import type { ProfileMarker } from '@/components/ElevationProfile2D';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -21,6 +26,8 @@ interface Campaign {
     eventDate?: string;
     location?: string;
     categories?: { name: string; distance?: string; startTime?: string; cutoff?: string }[];
+    /** Clump window for the 2D course profile, in minutes. */
+    profileClusterMinutes?: number;
 }
 
 interface Checkpoint {
@@ -590,7 +597,58 @@ function StatusLegend({ th }: { th: boolean }) {
 // A smooth area chart: X = the route (each checkpoint stretch), Y = how many
 // runners are currently on that stretch. Lets ops see at a glance where the pack
 // is densest along the course. Click a point to see who is on that stretch.
-function CourseStrip({ cat, data, th, route, onPick, legMedianMs, initial, chartHeight, onOpenMonitor, cutoffAt }: {
+/**
+ * How wide a clump is, in minutes — one setting for the whole event, so every
+ * distance on the page (and the public results popup) redraws together. Typed
+ * freely and committed on blur or Enter: saving on each keystroke would fire a
+ * PUT per digit.
+ */
+function ClusterMinutesBox({ th, value, onChange }: {
+    th: boolean;
+    value: number;
+    onChange: (minutes: number) => void;
+}) {
+    const [draft, setDraft] = useState(String(clusterMinutesOf(value)));
+    // Follow the campaign when it is saved from another strip on the page.
+    useEffect(() => { setDraft(String(clusterMinutesOf(value))); }, [value]);
+
+    const commit = () => {
+        const next = clusterMinutesOf(Number(draft));
+        setDraft(String(next));
+        if (next !== clusterMinutesOf(value)) onChange(next);
+    };
+
+    return (
+        <span
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 5, marginLeft: 'auto' }}
+            title={th
+                ? `รวมคนที่จะถึงจุดหน้าห่างกันไม่เกินกี่นาทีไว้ในตุ๊กตาตัวเดียว (${CLUSTER_MINUTES_MIN}–${CLUSTER_MINUTES_MAX}) · ตั้งค่านี้ใช้ทั้งงาน รวมถึงหน้าผลลัพธ์สาธารณะ`
+                : `Minutes apart two runners may be due and still share a figure (${CLUSTER_MINUTES_MIN}–${CLUSTER_MINUTES_MAX}) · applies to the whole event, public results included`}
+        >
+            <span style={{ color: '#94a3b8' }}>{th ? 'รวมกลุ่มทุก' : 'Group every'}</span>
+            <input
+                type="number"
+                min={CLUSTER_MINUTES_MIN}
+                max={CLUSTER_MINUTES_MAX}
+                value={draft}
+                onChange={e => setDraft(e.target.value)}
+                onBlur={commit}
+                onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+                style={{
+                    width: 52, padding: '3px 6px', fontSize: 11, fontWeight: 800, fontFamily: 'inherit',
+                    textAlign: 'center', color: '#0f172a',
+                    border: '1px solid #e2e8f0', borderRadius: 6, background: '#fff',
+                }}
+            />
+            <span style={{ color: '#94a3b8' }}>{th ? 'นาที' : 'min'}</span>
+        </span>
+    );
+}
+
+function CourseStrip({
+    cat, data, th, route, onPick, legMedianMs, initial, chartHeight, onOpenMonitor, cutoffAt,
+    clusterMinutes = CLUSTER_WINDOW_MINUTES, onClusterMinutesChange,
+}: {
     cat: string;
     data: SegmentDatum[];
     th: boolean;
@@ -598,6 +656,10 @@ function CourseStrip({ cat, data, th, route, onPick, legMedianMs, initial, chart
     route?: RouteTrack;
     /** When this distance closes, in epoch ms — null when the event sets no cut-off. */
     cutoffAt?: number | null;
+    /** Minutes-wide arrival window that decides how coarse the clumps are. */
+    clusterMinutes?: number;
+    /** Saves a new window on the campaign; omit to render the box read-only. */
+    onClusterMinutesChange?: (minutes: number) => void;
     /** Median time the field took on each leg, index-aligned with `data`. */
     legMedianMs?: (number | null)[];
     onPick: (cpName: string, runners: SegmentRunner[]) => void;
@@ -771,7 +833,8 @@ function CourseStrip({ cat, data, th, route, onPick, legMedianMs, initial, chart
         // The rest of the field, one figure per leg per 10 minutes of arrival
         // time — see clusterByDueWindow for how a clump is closed.
         const rest = onCourse.filter(r => !named.has(r.bib));
-        for (const chunk of clusterByDueWindow(rest, r => ({ legKey: r.cpIndex, dueMs: r.dueMs }))) {
+        const windowMs = clusterMinutesOf(clusterMinutes) * 60000;
+        for (const chunk of clusterByDueWindow(rest, r => ({ legKey: r.cpIndex, dueMs: r.dueMs }), windowMs)) {
             const males = chunk.filter(r => r.gender === 'M').length;
             const females = chunk.filter(r => r.gender === 'F').length;
             const avgKm = chunk.reduce((sum, r) => sum + r.km, 0) / chunk.length;
@@ -885,7 +948,14 @@ function CourseStrip({ cat, data, th, route, onPick, legMedianMs, initial, chart
                     <div style={{ display: 'flex', gap: 14, alignItems: 'center', flexWrap: 'wrap', marginBottom: 8, fontSize: 10.5, color: '#64748b', fontWeight: 700 }}>
                         <span><span style={{ ...styles.legendDot('#3b82f6') }} />{th ? 'ผู้นำชาย 1-2-3' : 'Top 3 male'}</span>
                         <span><span style={{ ...styles.legendDot('#ec4899') }} />{th ? 'ผู้นำหญิง 1-2-3' : 'Top 3 female'}</span>
-                        <span><span style={{ ...styles.legendDot('#f59e0b') }} />{th ? 'กลุ่มนักวิ่ง (1 ตุ๊กตา = ถึงจุดหน้าในช่วง 10 นาทีเดียวกัน)' : 'Runner clumps (1 figure = one 10-min arrival window)'}</span>
+                        <span><span style={{ ...styles.legendDot('#f59e0b') }} />
+                            {th
+                                ? `กลุ่มนักวิ่ง (1 ตุ๊กตา = ถึงจุดหน้าในช่วง ${clusterMinutesOf(clusterMinutes)} นาทีเดียวกัน)`
+                                : `Runner clumps (1 figure = one ${clusterMinutesOf(clusterMinutes)}-min arrival window)`}
+                        </span>
+                        {onClusterMinutesChange && (
+                            <ClusterMinutesBox th={th} value={clusterMinutes} onChange={onClusterMinutesChange} />
+                        )}
                     </div>
 
                     <ElevationProfile2D
@@ -1234,6 +1304,7 @@ function MonitorScreen({ req, th, campaign, loading, current, passed, route, leg
                         route={route}
                         legMedianMs={legMedianMs}
                         cutoffAt={categoryCutoffAt(campaign, req.cat)}
+                        clusterMinutes={clusterMinutesOf(campaign?.profileClusterMinutes)}
                         onPick={() => { }}
                         initial={{ view: req.view }}
                         // The strip draws its own header and hints above the chart.
@@ -1266,6 +1337,23 @@ export function GeneralChartView({ monitor }: { monitor?: MonitorRequest }) {
 
     const [campaign, setCampaign] = useState<Campaign | null>(null);
     const [loading, setLoading] = useState(true);
+    /** Clump width for the 2D profile — one setting for the whole campaign. */
+    const saveClusterMinutes = useCallback(async (minutes: number) => {
+        if (!campaign?._id) return;
+        const previous = campaign.profileClusterMinutes;
+        setCampaign(prev => prev ? { ...prev, profileClusterMinutes: minutes } : prev);
+        try {
+            const res = await fetch(`/api/campaigns/${campaign._id}`, {
+                method: 'PUT',
+                headers: authHeaders(),
+                body: JSON.stringify({ profileClusterMinutes: minutes }),
+            });
+            if (!res.ok) throw new Error(String(res.status));
+        } catch {
+            // Put the old value back so the box never claims a save that failed.
+            setCampaign(prev => prev ? { ...prev, profileClusterMinutes: previous } : prev);
+        }
+    }, [campaign?._id, campaign?.profileClusterMinutes]);
     const [checkpoints, setCheckpoints] = useState<Checkpoint[]>([]);
     /** GPX course lines keyed by race category — powers the MAP view. */
     const [routes, setRoutes] = useState<Record<string, RouteTrack>>({});
@@ -1873,6 +1961,8 @@ export function GeneralChartView({ monitor }: { monitor?: MonitorRequest }) {
                                 route={routes[cat]}
                                 legMedianMs={legMediansByCategory[cat]}
                                 cutoffAt={categoryCutoffAt(campaign, cat)}
+                                clusterMinutes={clusterMinutesOf(campaign.profileClusterMinutes)}
+                                onClusterMinutesChange={saveClusterMinutes}
                                 onPick={(cpName, segRunners) => setCpDetail({ cat, cpName, runners: segRunners })}
                                 onOpenMonitor={(state) => openMonitor({ panel: 'course', cat, campaignId: campaign._id, ...state })}
                             />

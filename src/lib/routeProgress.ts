@@ -185,8 +185,22 @@ export function formatClock(ms: number): string {
     return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 
-/** A clump of runners covers this much of the timetable: one figure per 10 minutes. */
-export const CLUSTER_WINDOW_MS = 10 * 60 * 1000;
+/** Default width of a clump's arrival window, in minutes. Admins can override it
+ *  per event (Campaign.profileClusterMinutes) — see clusterMinutesOf. */
+export const CLUSTER_WINDOW_MINUTES = 10;
+export const CLUSTER_WINDOW_MS = CLUSTER_WINDOW_MINUTES * 60 * 1000;
+
+/** Clamp of what an admin may type: a window under a minute splits every runner
+ *  into their own figure, and one over 12 hours swallows a whole race. */
+export const CLUSTER_MINUTES_MIN = 1;
+export const CLUSTER_MINUTES_MAX = 720;
+
+/** The event's clump window in minutes, falling back to the default. */
+export function clusterMinutesOf(value?: number | null): number {
+    const n = Number(value);
+    if (!Number.isFinite(n) || n <= 0) return CLUSTER_WINDOW_MINUTES;
+    return Math.min(CLUSTER_MINUTES_MAX, Math.max(CLUSTER_MINUTES_MIN, Math.round(n)));
+}
 
 /**
  * Splits the field into the clumps drawn as amber figures on the profile.
