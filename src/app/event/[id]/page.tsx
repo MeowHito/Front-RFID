@@ -408,6 +408,7 @@ export default function EventLivePage() {
     const [manualCheckpoints, setManualCheckpoints] = useState<{name: string; orderNum: number; type: string}[]>([]);
     const [manualCheckpointsLoading, setManualCheckpointsLoading] = useState(false);
     const [manualSort, setManualSort] = useState<'rank' | 'name' | 'bib'>('rank');
+    const [manualShowSelectedOnly, setManualShowSelectedOnly] = useState(false);
     // Per-runner gun/net time edits inside the bulk Manual Status modal.
     const [manualTimeEdits, setManualTimeEdits] = useState<Record<string, { gun?: string; net?: string }>>({});
 
@@ -1250,7 +1251,9 @@ export default function EventLivePage() {
     }, [runners, filterCategory, resolveRunnerCategoryKey, getDisplayStatus]);
 
     // Runners shown in Manual Status modal — filtered by current category + modal search
-    const manualModalRunners = useMemo(() => {
+    // Runners matching the modal's category + search box, before the
+    // "show selected only" view filter is applied.
+    const manualSearchedRunners = useMemo(() => {
         let base = runners;
         if (filterCategory) {
             base = base.filter(r => resolveRunnerCategoryKey(r) === filterCategory);
@@ -1284,6 +1287,67 @@ export default function EventLivePage() {
             return aN !== bN ? aN - bN : a.bib.localeCompare(b.bib);
         });
     }, [runners, filterCategory, manualSearch, manualSort, resolveRunnerCategoryKey]);
+
+    const manualModalRunners = useMemo(
+        () => manualShowSelectedOnly
+            ? manualSearchedRunners.filter(r => manualSelectedIds.has(r._id))
+            : manualSearchedRunners,
+        [manualSearchedRunners, manualShowSelectedOnly, manualSelectedIds]
+    );
+
+    // Selected runners resolved from the full runner list — a pick stays visible
+    // in the chip bar even when the search box filters its row out of the table.
+    const manualSelectedRunners = useMemo(() => {
+        if (manualSelectedIds.size === 0) return [] as Runner[];
+        const byId = new Map(runners.map(r => [r._id, r]));
+        return [...manualSelectedIds]
+            .map(id => byId.get(id))
+            .filter((r): r is Runner => !!r)
+            .sort((a, b) => {
+                const aN = parseInt(a.bib) || 0;
+                const bN = parseInt(b.bib) || 0;
+                return aN !== bN ? aN - bN : a.bib.localeCompare(b.bib);
+            });
+    }, [manualSelectedIds, runners]);
+
+    const toggleManualSelected = (id: string) => {
+        setManualSelectedIds(prev => {
+            const next = new Set(prev);
+            if (next.has(id)) next.delete(id);
+            else next.add(id);
+            return next;
+        });
+    };
+
+    // Enter in the search box selects the matching BIB(s) and clears the query,
+    // so several BIBs can be typed in a row without losing earlier picks.
+    // Accepts multiple BIBs at once, e.g. "4252 4269, 4248".
+    const commitManualSearchSelection = () => {
+        const q = manualSearch.trim();
+        if (!q) return;
+        const tokens = q.split(/[\s,]+/).filter(Boolean);
+        const pool = manualShowSelectedOnly ? manualSearchedRunners : manualModalRunners;
+        let targets: Runner[] = [];
+        if (tokens.length > 1) {
+            // Multi-BIB entry — match each token against the whole category list.
+            const byBib = new Map<string, Runner>();
+            for (const r of runners) {
+                if (filterCategory && resolveRunnerCategoryKey(r) !== filterCategory) continue;
+                byBib.set(r.bib.toLowerCase(), r);
+            }
+            targets = tokens.map(t => byBib.get(t.toLowerCase())).filter((r): r is Runner => !!r);
+        } else {
+            const exact = pool.filter(r => r.bib.toLowerCase() === q.toLowerCase());
+            targets = exact.length > 0 ? exact : (pool.length === 1 ? pool : []);
+        }
+        if (targets.length === 0) return;
+        setManualSelectedIds(prev => {
+            const next = new Set(prev);
+            targets.forEach(r => next.add(r._id));
+            return next;
+        });
+        setManualSearch('');
+    };
 
     const followedRunnersForEvent = useMemo(
         () => getFollowedRunnersForEvent(followedRunners, eventKey, campaign?._id),
@@ -1545,6 +1609,7 @@ export default function EventLivePage() {
         setManualCheckpoint('');
         setManualNote('');
         setManualSearch('');
+        setManualShowSelectedOnly(false);
         setManualSaveError(null);
         setManualSaveSuccess(null);
         setManualTimeEdits({});
@@ -1667,6 +1732,7 @@ export default function EventLivePage() {
                 };
             }));
             setManualSelectedIds(new Set());
+            setManualShowSelectedOnly(false);
             setManualTimeEdits({});
             const parts: string[] = [];
             if (statusCount > 0) parts.push(language === 'th' ? `${statusCount} คน → ${manualStatus.toUpperCase()}` : `${statusCount} → ${manualStatus.toUpperCase()}`);
@@ -3368,7 +3434,13 @@ export default function EventLivePage() {
                                     type="text"
                                     value={manualSearch}
                                     onChange={e => setManualSearch(e.target.value)}
-                                    placeholder={language === 'th' ? 'ค้นหาชื่อหรือเลข BIB...' : 'Search by name or BIB...'}
+                                    onKeyDown={e => {
+                                        if (e.key === 'Enter') {
+                                            e.preventDefault();
+                                            commitManualSearchSelection();
+                                        }
+                                    }}
+                                    placeholder={language === 'th' ? 'พิมพ์เลข BIB แล้วกด Enter เพื่อเลือก (ใส่หลายเลขคั่นด้วยเว้นวรรคได้)' : 'Type BIB and press Enter to select (space-separated for many)'}
                                     className="min-w-0 flex-1 rounded-lg border px-3 py-2 text-[13px] outline-none"
                                     style={{ borderColor: themeStyles.border, background: isDark ? '#0f172a' : '#f8fafc', color: themeStyles.text }}
                                 />
@@ -3412,26 +3484,80 @@ export default function EventLivePage() {
                                 ))}
                                 <div className="ml-auto flex items-center gap-1.5">
                                     <button
-                                        onClick={() => setManualSelectedIds(new Set(manualModalRunners.map(r => r._id)))}
+                                        onClick={() => setManualSelectedIds(prev => {
+                                            // Union, not replace — adds the rows currently shown
+                                            // without discarding picks made under an earlier search.
+                                            const next = new Set(prev);
+                                            manualModalRunners.forEach(r => next.add(r._id));
+                                            return next;
+                                        })}
                                         className="rounded-md border-none px-3 py-1 text-[11px] font-bold"
                                         style={{ background: isDark ? '#334155' : '#e2e8f0', color: themeStyles.text }}
                                     >
-                                        {language === 'th' ? `เลือกทั้งหมด (${manualModalRunners.length})` : `All (${manualModalRunners.length})`}
+                                        {language === 'th' ? `เลือกที่แสดง (${manualModalRunners.length})` : `Add shown (${manualModalRunners.length})`}
                                     </button>
                                     <button
-                                        onClick={() => setManualSelectedIds(new Set())}
+                                        onClick={() => { setManualSelectedIds(new Set()); setManualShowSelectedOnly(false); }}
                                         className="rounded-md border-none px-3 py-1 text-[11px] font-bold"
                                         style={{ background: isDark ? '#334155' : '#e2e8f0', color: themeStyles.text }}
                                     >
-                                        {language === 'th' ? 'ยกเลิก' : 'None'}
+                                        {language === 'th' ? 'ล้างที่เลือก' : 'Clear'}
                                     </button>
-                                    {manualSelectedIds.size > 0 && (
-                                        <span className="text-[11px] font-semibold text-orange-500">
-                                            {manualSelectedIds.size}
-                                        </span>
-                                    )}
                                 </div>
                             </div>
+
+                            {/* Selected BIB chips — every pick stays visible even when the
+                                search box filters its row out of the table below. */}
+                            {manualSelectedRunners.length > 0 && (
+                                <div
+                                    className="rounded-lg border px-2.5 py-2"
+                                    style={{
+                                        borderColor: '#f97316',
+                                        background: isDark ? 'rgba(249,115,22,0.08)' : 'rgba(249,115,22,0.05)',
+                                    }}
+                                >
+                                    <div className="mb-1.5 flex items-center gap-2">
+                                        <span className="text-[11px] font-bold" style={{ color: '#f97316' }}>
+                                            {language === 'th'
+                                                ? `เลือกแล้ว ${manualSelectedRunners.length} คน → ${manualStatus.toUpperCase()}`
+                                                : `${manualSelectedRunners.length} selected → ${manualStatus.toUpperCase()}`}
+                                        </span>
+                                        <button
+                                            onClick={() => setManualShowSelectedOnly(v => !v)}
+                                            className="ml-auto shrink-0 rounded-md px-2 py-0.5 text-[10px] font-bold"
+                                            style={{
+                                                border: `1px solid ${manualShowSelectedOnly ? '#f97316' : themeStyles.border}`,
+                                                background: manualShowSelectedOnly ? '#f97316' : 'transparent',
+                                                color: manualShowSelectedOnly ? '#fff' : themeStyles.textSecondary,
+                                            }}
+                                        >
+                                            {language === 'th'
+                                                ? (manualShowSelectedOnly ? 'แสดงทั้งหมด' : 'ดูเฉพาะที่เลือก')
+                                                : (manualShowSelectedOnly ? 'Show all' : 'Selected only')}
+                                        </button>
+                                    </div>
+                                    <div className="flex max-h-[84px] flex-wrap gap-1 overflow-y-auto">
+                                        {manualSelectedRunners.map(r => (
+                                            <span
+                                                key={r._id}
+                                                className="inline-flex shrink-0 items-center gap-1 rounded-full py-0.5 pl-2 pr-1 text-[11px] font-bold"
+                                                style={{ background: '#f97316', color: '#fff' }}
+                                                title={`${r.bib} · ${r.firstName} ${r.lastName}`}
+                                            >
+                                                <span className="font-mono">{r.bib}</span>
+                                                <button
+                                                    onClick={() => toggleManualSelected(r._id)}
+                                                    className="flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded-full border-none text-[11px] leading-none"
+                                                    style={{ background: 'rgba(0,0,0,0.22)', color: '#fff' }}
+                                                    aria-label={language === 'th' ? `เอา ${r.bib} ออก` : `Remove ${r.bib}`}
+                                                >
+                                                    ×
+                                                </button>
+                                            </span>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
                         </div>
 
                         {/* Runner List */}
@@ -3458,8 +3584,10 @@ export default function EventLivePage() {
 
                         <div className="flex-1 overflow-y-auto">
                             {manualModalRunners.length === 0 ? (
-                                <div className="flex h-40 items-center justify-center text-sm" style={{ color: themeStyles.textSecondary }}>
-                                    {language === 'th' ? 'ไม่พบนักวิ่ง' : 'No runners found'}
+                                <div className="flex h-40 items-center justify-center text-center text-sm" style={{ color: themeStyles.textSecondary }}>
+                                    {manualShowSelectedOnly && manualSearch.trim()
+                                        ? (language === 'th' ? 'ไม่มีคนที่เลือกไว้ตรงกับคำค้นนี้' : 'No selected runners match this search')
+                                        : (language === 'th' ? 'ไม่พบนักวิ่ง' : 'No runners found')}
                                 </div>
                             ) : (
                                 <div>
@@ -3535,14 +3663,7 @@ export default function EventLivePage() {
                                         return (
                                             <div
                                                 key={runner._id}
-                                                onClick={() => {
-                                                    setManualSelectedIds(prev => {
-                                                        const next = new Set(prev);
-                                                        if (next.has(runner._id)) next.delete(runner._id);
-                                                        else next.add(runner._id);
-                                                        return next;
-                                                    });
-                                                }}
+                                                onClick={() => toggleManualSelected(runner._id)}
                                                 className="flex cursor-pointer items-center gap-2 border-b px-4 py-2 transition-colors"
                                                 style={{
                                                     borderColor: themeStyles.border,

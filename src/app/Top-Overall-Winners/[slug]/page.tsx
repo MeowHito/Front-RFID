@@ -76,7 +76,7 @@ export default function TopOverallWinnersBySlugPage() {
     const refreshTimerRef = useRef<NodeJS.Timeout | null>(null);
     const countdownRef = useRef<NodeJS.Timeout | null>(null);
     const [isMobile, setIsMobile] = useState(false);
-    const [autoMode, setAutoMode] = useState(false);
+    const [autoMode, setAutoMode] = useState(true);
     const [autoCountdown, setAutoCountdown] = useState(5);
     const autoTimerRef = useRef<NodeJS.Timeout | null>(null);
     const autoCountdownRef = useRef<NodeJS.Timeout | null>(null);
@@ -378,14 +378,6 @@ export default function TopOverallWinnersBySlugPage() {
                         <span style={{ fontSize: isMobile ? 13 : '1.7vh', fontWeight: 700, color: '#475569', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: isMobile ? '100%' : '28vw' }}>
                             {campaign.name}
                         </span>
-                        {selectedCategory && (
-                            <span style={{ display: 'inline-flex', alignItems: 'center', padding: isMobile ? '3px 14px' : '0.2vh 1.1vw', background: '#4f46e5', color: '#fff', borderRadius: 999, fontWeight: 900, fontSize: isMobile ? 12 : '1.6vh', letterSpacing: 0.5, whiteSpace: 'nowrap', flexShrink: 0 }}>
-                                {selectedCategory}
-                                {campaign.categories?.find(c => c.name === selectedCategory)?.distance
-                                    ? ` · ${campaign.categories!.find(c => c.name === selectedCategory)!.distance}`
-                                    : ''}
-                            </span>
-                        )}
                     </div>
 
                     {campaign.categories && campaign.categories.length > 0 && (
