@@ -14,7 +14,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { elevationRange } from '@/lib/routeGeometry';
-import { clusterByScanWindow, formatClock } from '@/lib/routeProgress';
+import {
+    arriveByEta, buildEffortProfile, clusterByDueWindow,
+    estimatePaceEtaMs, formatClock, formatCountdown,
+} from '@/lib/routeProgress';
 import type { ProfileMarker } from '@/components/ElevationProfile2D';
 
 // Measures its own container, so keep it off the server render.
@@ -39,8 +42,10 @@ export interface CourseRunner {
     latestCheckpoint?: string;
     /** Live overall rank, used to order the leaders. */
     rank?: number;
-    /** When the last checkpoint scanned them — what the clumps are cut by. */
+    /** When the last checkpoint scanned them — where the creep starts from. */
     lastPassTime?: string;
+    /** Race clock at that scan, in ms — prices the leg ahead at their own pace. */
+    elapsedMs?: number;
 }
 
 /** Same test the results table uses to decide a runner has crossed the line. */
@@ -61,6 +66,8 @@ interface Props {
      */
     categoryKeys: string[];
     runners: CourseRunner[];
+    /** When this distance closes, in epoch ms — null when the event sets no cut-off. */
+    cutoffAt?: number | null;
     th: boolean;
     isDark: boolean;
 }
@@ -77,7 +84,7 @@ const scanMsOf = (v?: string) => {
 };
 
 export default function CourseProfileModal({
-    open, onClose, campaignId, categoryLabel, categoryKeys, runners, th, isDark,
+    open, onClose, campaignId, categoryLabel, categoryKeys, runners, cutoffAt, th, isDark,
 }: Props) {
     const [routes, setRoutes] = useState<CourseRouteTrack[] | null>(() => routeCache.get(campaignId) ?? null);
     const [loading, setLoading] = useState(false);
@@ -158,14 +165,32 @@ export default function CourseProfileModal({
             .sort((a, b) => a.km - b.km);
     }, [route]);
 
+    /** Climb-aware distance along the track, so the creep eases off on the hills. */
+    const effort = useMemo(() => (route ? buildEffortProfile(route.coords) : null), [route]);
+
+    // The positions move with the clock, so tick while the sheet is open.
+    const [now, setNow] = useState(() => Date.now());
+    useEffect(() => {
+        if (!open) return;
+        setNow(Date.now());
+        const id = setInterval(() => setNow(Date.now()), 1000);
+        return () => clearInterval(id);
+    }, [open]);
+
     /**
-     * Everyone still in the race, standing on the checkpoint they last scanned.
+     * Everyone still in the race, walking from the checkpoint they last scanned
+     * toward the next one. The leg is priced exactly the way the Next/ETA column
+     * in the results table prices it — average pace to date plus the same 10%
+     * allowance — so the figure and the countdown next to the runner's name tell
+     * the same story. Nobody is drawn past a checkpoint that has not scanned
+     * them: once the estimate runs out they park just short of it.
+     *
      * Finishers count: they belong at the FINISH mark, which is what the results
-     * table already shows for them. Only runners who are out — DNF, DQ, DNS, or
-     * not released yet — are left off.
+     * table already shows for them, and they stay put. Only runners who are out —
+     * DNF, DQ, DNS, or not released yet — are left off.
      */
     const onCourse = useMemo(() => {
-        if (!route || !checkpoints.length) return [];
+        if (!route || !effort || !checkpoints.length) return [];
         const kmByCp = new Map(checkpoints.map(c => [norm(c.name), c.km]));
         const finishMark = checkpoints.find(c => isFinishName(c.name));
         return runners
@@ -175,24 +200,63 @@ export default function CourseProfileModal({
                 const cp = norm(r.latestCheckpoint);
                 // A finisher sits on the finish line even when the last scan name
                 // is missing or spelled differently from the route's marker.
-                const km = done
+                const cpKm = done
                     ? (finishMark?.km ?? route.distanceKm)
                     : cp ? kmByCp.get(cp) : 0;   // no scan yet = still at the start
-                if (km === undefined) return null;
+                if (cpKm === undefined) return null;
                 const cpName = done
                     ? (finishMark?.name || r.latestCheckpoint || 'FINISH')
                     : (r.latestCheckpoint || checkpoints[0]?.name || '');
-                return { ...r, km, cpName, done, scanMs: scanMsOf(r.lastPassTime) };
+
+                const next = done ? undefined : checkpoints.find(c => c.km > cpKm);
+                const scanMs = scanMsOf(r.lastPassTime);
+                const etaMs = next
+                    ? estimatePaceEtaMs({ elapsedMs: r.elapsedMs || 0, currentKm: cpKm, nextKm: next.km })
+                    : 0;
+                // Without a scan clock or an estimate there is nothing to walk
+                // along, so the figure stays on the checkpoint.
+                const moving = !!next && etaMs > 0 && !!scanMs;
+                const moved = moving
+                    ? arriveByEta(effort, cpKm, next!.km, etaMs, now - scanMs!)
+                    : null;
+
+                return {
+                    ...r,
+                    km: moved ? moved.km : cpKm,
+                    cpName,
+                    done,
+                    scanMs,
+                    moving,
+                    nextCpName: next?.name,
+                    remainingMs: moved ? moved.remainingMs : 0,
+                    overdue: !!moved?.overdue,
+                    // What the clumps are cut by: when this runner is due at the
+                    // next checkpoint. Anyone already late is due "now", so the
+                    // whole overdue tail — which all parks on the same spot —
+                    // shares one figure instead of one per 10 minutes of lateness.
+                    // Finishers have nowhere left to be due: they are all on the
+                    // line, so a single figure counts them rather than a tower of
+                    // 10-minute windows of finish time.
+                    dueMs: done ? 0 : moved ? now + Math.max(0, moved.remainingMs) : (scanMs ?? 0),
+                    // A clump must not straddle a checkpoint, or the figure would
+                    // stand where none of its members are.
+                    legKey: cpKm,
+                };
             })
             .filter((r): r is NonNullable<typeof r> => r !== null)
             .sort((a, b) => (b.km - a.km) || ((a.rank ?? Infinity) - (b.rank ?? Infinity)));
-    }, [route, checkpoints, runners]);
+    }, [route, effort, checkpoints, runners, now]);
 
     const finishedCount = onCourse.filter(r => r.done).length;
 
+    // Past the cut-off nobody is still racing, so the course empties: whoever is
+    // left has not been swept into DNF yet, and drawing them would say the race
+    // is still on.
+    const pastCutoff = !!cutoffAt && now > cutoffAt;
+
     /** Three leaders per gender by name, everyone else bundled into amber clumps. */
     const markers = useMemo<ProfileMarker[]>(() => {
-        if (!route || !onCourse.length) return [];
+        if (!route || !onCourse.length || pastCutoff) return [];
         const out: ProfileMarker[] = [];
         const named = new Set<string>();
 
@@ -205,47 +269,70 @@ export default function CourseProfileModal({
                     tone: g,
                     label: `#${i + 1}`,
                     sublabel: r.bib,
+                    note: r.moving && !r.overdue ? `⏱ ${formatCountdown(r.remainingMs)}` : undefined,
+                    moving: r.moving && !r.overdue,
                     tooltip: [
                         `${i + 1}. ${r.name}`,
                         `BIB ${r.bib} · ${g === 'M' ? (th ? 'ชาย' : 'Male') : (th ? 'หญิง' : 'Female')}`,
                         r.done
                             ? (th ? `เข้าเส้นชัยแล้ว (${r.km.toFixed(2)} กม.)` : `Finished (${r.km.toFixed(2)} km)`)
                             : `${th ? 'จุดสแกนล่าสุด' : 'Last scan'}: ${r.cpName} (${r.km.toFixed(2)} ${th ? 'กม.' : 'km'})`,
-                    ].join('\n'),
+                        r.moving && r.nextCpName
+                            ? (r.overdue
+                                ? (th
+                                    ? `เลยเวลาที่ควรถึง ${r.nextCpName} มา ${formatCountdown(-r.remainingMs)} — รอสแกน`
+                                    : `${formatCountdown(-r.remainingMs)} overdue at ${r.nextCpName}`)
+                                : (th
+                                    ? `ถึง ${r.nextCpName} ในอีก ${formatCountdown(r.remainingMs)}`
+                                    : `${formatCountdown(r.remainingMs)} to ${r.nextCpName}`))
+                            : '',
+                    ].filter(Boolean).join('\n'),
                 });
             });
         }
 
-        // One figure per checkpoint per 10 minutes of scan time: the runners who
-        // came through together, rather than an arbitrary stretch of course.
+        // One figure per leg per 10 minutes of arrival time: the runners who are
+        // travelling together, rather than an arbitrary stretch of course.
         const rest = onCourse.filter(r => !named.has(r.bib));
-        for (const chunk of clusterByScanWindow(rest, r => ({ cpKey: r.km, scanMs: r.scanMs }))) {
+        for (const chunk of clusterByDueWindow(rest, r => ({ legKey: r.legKey, dueMs: r.dueMs }))) {
             const males = chunk.filter(r => r.gender === 'M').length;
             const females = chunk.filter(r => r.gender === 'F').length;
-            const km = chunk[0].km;
+            const head = chunk[0];
+            const km = chunk.reduce((sum, r) => sum + r.km, 0) / chunk.length;
             const scans = chunk.map(r => r.scanMs).filter((ms): ms is number => !!ms);
-            const from = scans.length ? Math.min(...scans) : 0;
-            const to = scans.length ? Math.max(...scans) : 0;
+            const soon = chunk.filter(r => r.moving && !r.overdue).map(r => r.remainingMs);
+            const late = chunk.filter(r => r.overdue).map(r => -r.remainingMs);
             out.push({
-                key: `c${km}-${from}-${chunk[0].bib}`,
+                key: `c${head.legKey}-${Math.round(head.dueMs / 60000)}-${head.bib}`,
                 km,
                 tone: 'GROUP',
                 label: `≈${chunk.length}${th ? ' คน' : ''}`,
+                note: soon.length ? `⏱ ${formatCountdown(Math.min(...soon))}` : undefined,
+                moving: chunk.some(r => r.moving && !r.overdue),
                 cluster: true,
                 tooltip: [
-                    chunk.every(r => r.done)
-                        ? `${chunk.length} ${th ? 'คนเข้าเส้นชัยช่วงเดียวกัน' : 'runners finished together'}`
-                        : `${chunk.length} ${th ? 'คนผ่านช่วงนี้พร้อมกัน' : 'runners through together'}`,
+                    head.done
+                        ? `${chunk.length} ${th ? 'คนเข้าเส้นชัยแล้ว' : 'runners finished'}`
+                        : `${chunk.length} ${th ? 'คนวิ่งมาด้วยกัน' : 'runners travelling together'}`,
                     `♂ ${males} / ♀ ${females}`,
-                    `${chunk[0].cpName} · ${km.toFixed(1)} ${th ? 'กม.' : 'km'}`,
+                    head.done
+                        ? `${head.cpName} · ${km.toFixed(1)} ${th ? 'กม.' : 'km'}`
+                        : `${km.toFixed(1)} ${th ? 'กม.' : 'km'} · ${th ? 'ออกจาก' : 'left'} ${head.cpName}${head.nextCpName ? ` → ${head.nextCpName}` : ''}`,
                     scans.length
-                        ? `${th ? 'สแกน' : 'Scanned'} ${formatClock(from)}${to - from >= 60000 ? `–${formatClock(to)}` : ''}`
+                        ? `${th ? (head.done ? 'เข้าเส้นชัยตั้งแต่' : 'สแกนล่าสุด') : (head.done ? 'From' : 'Last scan')} ${formatClock(Math.min(...scans))}${head.done && Math.max(...scans) - Math.min(...scans) >= 60000 ? `–${formatClock(Math.max(...scans))}` : ''}`
                         : (th ? 'ยังไม่มีการสแกน' : 'No scan yet'),
-                ].join('\n'),
+                    late.length === chunk.length && head.nextCpName
+                        ? (th
+                            ? `เลยเวลาที่ควรถึง ${head.nextCpName} แล้ว ${formatCountdown(Math.min(...late))}–${formatCountdown(Math.max(...late))} — รอสแกน`
+                            : `${formatCountdown(Math.min(...late))}–${formatCountdown(Math.max(...late))} overdue at ${head.nextCpName}`)
+                        : soon.length && head.nextCpName
+                            ? `${th ? 'ถึง' : 'Due at'} ${head.nextCpName} ${th ? 'ในอีก' : 'in'} ${formatCountdown(Math.min(...soon))}`
+                            : '',
+                ].filter(Boolean).join('\n'),
             });
         }
         return out;
-    }, [route, onCourse, th]);
+    }, [route, onCourse, th, pastCutoff]);
 
     const onBackdrop = useCallback((e: React.MouseEvent) => {
         if (e.target === e.currentTarget) onClose();
@@ -349,7 +436,7 @@ export default function CourseProfileModal({
                             <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', marginBottom: 8, fontSize: 10.5, color: muted, fontWeight: 700 }}>
                                 <span><Dot color="#3b82f6" />{th ? 'ผู้นำชาย 1-2-3' : 'Top 3 male'}</span>
                                 <span><Dot color="#ec4899" />{th ? 'ผู้นำหญิง 1-2-3' : 'Top 3 female'}</span>
-                                <span><Dot color="#f59e0b" />{th ? 'กลุ่มนักวิ่ง (ช่วงละ 10 นาที)' : 'Runner clumps (10 min each)'}</span>
+                                <span><Dot color="#f59e0b" />{th ? 'กลุ่มนักวิ่ง (ถึงจุดหน้าห่างกันไม่เกิน 10 นาที)' : 'Runner clumps (due within 10 min)'}</span>
                             </div>
 
                             <ElevationProfile2D
@@ -374,10 +461,18 @@ export default function CourseProfileModal({
                                 <span>{th ? 'เข้าเส้นชัยแล้ว' : 'Finished'}: <b style={{ color: muted }}>{finishedCount}</b></span>
                             </div>
 
+                            {pastCutoff && (
+                                <div style={{ fontSize: 11, color: '#dc2626', fontWeight: 700, marginTop: 10, textAlign: 'center' }}>
+                                    {th
+                                        ? `⏹ หมดเวลา cut-off ของ ${categoryLabel} แล้ว (${formatClock(cutoffAt!)}) — ไม่แสดงตุ๊กตานักวิ่งบนเส้นทาง`
+                                        : `⏹ ${categoryLabel} closed at ${formatClock(cutoffAt!)} — runners are no longer drawn on the course`}
+                                </div>
+                            )}
+
                             <div style={{ fontSize: 10, color: faint, marginTop: 8, textAlign: 'center', lineHeight: 1.7 }}>
                                 {th
-                                    ? '💡 ตุ๊กตายืนอยู่ที่จุดสแกนล่าสุดของนักวิ่งคนนั้น (คนที่จบแล้วจะอยู่ที่จุด FINISH) · ตุ๊กตาเหลือง 1 ตัว = คนที่สแกนจุดเดียวกันภายในช่วง 10 นาที ถ้าห่างเกิน 10 นาทีจะแยกเป็นตุ๊กตาตัวถัดไป · แตะที่ตุ๊กตาเพื่อดูรายละเอียด'
-                                    : '💡 Each figure stands at that runner’s last scan point — finishers sit on FINISH · one amber figure is one 10-minute window of scans at a checkpoint, a longer gap starts the next figure · tap a figure for details'}
+                                    ? '💡 ตุ๊กตาจะค่อยๆ เดินจากจุดสแกนล่าสุดไปยังจุดถัดไป ตามเวลาเดียวกับช่อง NEXT/ETA ในตาราง (คนที่จบแล้วอยู่ที่ FINISH) · ตุ๊กตาเหลือง 1 ตัว = คนที่จะถึงจุดหน้าห่างกันไม่เกิน 10 นาที ถ้าห่างกว่านั้นจะแยกเป็นตัวถัดไป · คนที่เลยเวลาแล้วยังไม่ถูกสแกนจะรออยู่ก่อนถึงจุดนั้นและรวมเป็นตัวเดียว · แตะเพื่อดูรายละเอียด'
+                                    : '💡 Each figure walks from its last scan point toward the next checkpoint on the same estimate as the NEXT/ETA column (finishers sit on FINISH) · one amber figure groups everyone due there within 10 minutes of each other, a longer gap starts the next figure · anyone past due with no scan waits just short of the line as a single figure · tap for details'}
                                 {!ele && (
                                     <div style={{ marginTop: 4, color: '#f59e0b' }}>
                                         {th

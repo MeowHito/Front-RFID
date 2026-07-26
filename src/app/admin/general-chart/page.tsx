@@ -10,7 +10,7 @@ import {
     AreaChart, Area,
 } from 'recharts';
 import { resolveCpKm, elevationRange } from '@/lib/routeGeometry';
-import { arriveByEta, buildEffortProfile, clusterByScanWindow, effortAtKm, estimateLegMs, formatClock, formatCountdown } from '@/lib/routeProgress';
+import { arriveByEta, buildEffortProfile, clusterByDueWindow, cutoffAtMs, effortAtKm, estimateLegMs, formatClock, formatCountdown } from '@/lib/routeProgress';
 import type { ProfileMarker } from '@/components/ElevationProfile2D';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -18,8 +18,9 @@ interface Campaign {
     _id: string;
     name: string;
     date?: string;
+    eventDate?: string;
     location?: string;
-    categories?: { name: string; distance?: string }[];
+    categories?: { name: string; distance?: string; startTime?: string; cutoff?: string }[];
 }
 
 interface Checkpoint {
@@ -58,6 +59,24 @@ interface TimingRecord {
 
 /** "42 K" / "42k" → "42K", so category names and event names line up. */
 const normCat = (s: string) => (s || '').trim().toUpperCase().replace(/\s+/g, '');
+
+/**
+ * When a distance closes, from the campaign's own category row. Null whenever
+ * the event leaves the start time or the cut-off blank, which most do — see
+ * cutoffAtMs.
+ */
+function categoryCutoffAt(campaign: Campaign | null, cat: string): number | null {
+    const wanted = normCat(cat);
+    const row = campaign?.categories?.find(
+        c => normCat(c.name) === wanted || normCat(c.distance || '') === wanted,
+    );
+    if (!row) return null;
+    return cutoffAtMs({
+        eventDate: campaign?.eventDate || campaign?.date,
+        startTime: row.startTime,
+        cutoff: row.cutoff,
+    });
+}
 
 /** A GPX course line uploaded for one race category (see /admin/events/create). */
 interface RouteTrack {
@@ -571,12 +590,14 @@ function StatusLegend({ th }: { th: boolean }) {
 // A smooth area chart: X = the route (each checkpoint stretch), Y = how many
 // runners are currently on that stretch. Lets ops see at a glance where the pack
 // is densest along the course. Click a point to see who is on that stretch.
-function CourseStrip({ cat, data, th, route, onPick, legMedianMs, initial, chartHeight, onOpenMonitor }: {
+function CourseStrip({ cat, data, th, route, onPick, legMedianMs, initial, chartHeight, onOpenMonitor, cutoffAt }: {
     cat: string;
     data: SegmentDatum[];
     th: boolean;
     /** GPX line for this category, if the organiser uploaded one. */
     route?: RouteTrack;
+    /** When this distance closes, in epoch ms — null when the event sets no cut-off. */
+    cutoffAt?: number | null;
     /** Median time the field took on each leg, index-aligned with `data`. */
     legMedianMs?: (number | null)[];
     onPick: (cpName: string, runners: SegmentRunner[]) => void;
@@ -614,12 +635,12 @@ function CourseStrip({ cat, data, th, route, onPick, legMedianMs, initial, chart
     }, [activeView]);
 
     // ── Where every runner currently is, in km along the uploaded line ──
-    // A figure stands on the LAST checkpoint the runner actually scanned, and
-    // stays there until the next scan moves it. It used to creep forward on an
-    // estimated pace, which put people on stretches they had not reached — and
-    // read as plainly wrong whenever somebody missed a checkpoint and turned up
-    // at FINISH. The estimate is still worked out, but only to caption the figure
-    // with when the next checkpoint is due.
+    // A figure leaves the checkpoint it last scanned and creeps toward the next
+    // one on the timetable estimateLegMs works out for it — an hour's worth of
+    // leg is an hour's worth of crawl across the graph. Nobody is ever drawn
+    // past the checkpoint that has not scanned them: once the estimate runs out
+    // the figure parks just short of the line and waits there (arriveByEta's
+    // OVERDUE_AT), which is also where everyone who is late piles up.
     const cpNames = data.map(d => d.cpName);
     const cpKm = hasRoute ? resolveCpKm(cpNames, route!.distanceKm, route!.checkpointMarks) : [];
     const effort = useMemo(
@@ -658,20 +679,31 @@ function CourseStrip({ cat, data, th, route, onPick, legMedianMs, initial, chart
                 const moved = atEnd || !r.lastScanMs
                     ? { km: lastKm, progress: 0, etaMs: 0, remainingMs: 0, overdue: false }
                     : arriveByEta(effort, lastKm, nextKm, etaMs, now - r.lastScanMs);
+                const moving = !atEnd && !!r.lastScanMs;
                 return {
                     ...r,
                     cpIndex: i,
                     cpName: d.cpName,
                     cpKm: lastKm,
                     nextCpName: data[i + 1]?.cpName,
-                    // Pinned to the scan point — see the note above.
-                    km: lastKm,
+                    km: moved.km,
                     etaMs: moved.etaMs,
                     remainingMs: moved.remainingMs,
                     overdue: moved.overdue,
-                    moving: !atEnd && !!r.lastScanMs,
+                    moving,
                     speed: moved.etaMs > 0 ? legEffort / (moved.etaMs / 3600000) : 0,
                     movingSinceMs: r.lastScanMs,
+                    // What the clumps are cut by: when this runner is due at the
+                    // next checkpoint. Anyone already late is due "now", so the
+                    // whole overdue tail shares one figure at the line instead of
+                    // stacking up one per 10 minutes of lateness. Finishers have
+                    // nowhere left to be due, so they all count as one figure on
+                    // the line rather than a tower of 10-minute finish windows.
+                    dueMs: r.status === 'finished'
+                        ? 0
+                        : moving
+                            ? now + Math.max(0, moved.remainingMs)
+                            : (r.lastScanMs ?? 0),
                 };
             }))
             // Everyone on the same checkpoint shares a km, so the tie-break is
@@ -703,8 +735,13 @@ function CourseStrip({ cat, data, th, route, onPick, legMedianMs, initial, chart
      * marker answers "who came through here together" — the pack that was
      * physically side by side, rather than an arbitrary stretch of course.
      */
+    // Past the cut-off nobody is still racing, so the course empties: whoever is
+    // left has not been swept into DNF yet, and drawing them would say the race
+    // is still on.
+    const pastCutoff = !!cutoffAt && now > cutoffAt;
+
     const profileMarkers: ProfileMarker[] = (() => {
-        if (!hasRoute) return [];
+        if (!hasRoute || pastCutoff) return [];
         const out: ProfileMarker[] = [];
         const named = new Set<string>();
 
@@ -731,19 +768,20 @@ function CourseStrip({ cat, data, th, route, onPick, legMedianMs, initial, chart
             });
         }
 
-        // The rest of the field, one figure per checkpoint per 10 minutes of
-        // scan time — see clusterByScanWindow for how a clump is closed.
+        // The rest of the field, one figure per leg per 10 minutes of arrival
+        // time — see clusterByDueWindow for how a clump is closed.
         const rest = onCourse.filter(r => !named.has(r.bib));
-        for (const chunk of clusterByScanWindow(rest, r => ({ cpKey: r.cpIndex, scanMs: r.movingSinceMs }))) {
+        for (const chunk of clusterByDueWindow(rest, r => ({ legKey: r.cpIndex, dueMs: r.dueMs }))) {
             const males = chunk.filter(r => r.gender === 'M').length;
             const females = chunk.filter(r => r.gender === 'F').length;
             const avgKm = chunk.reduce((sum, r) => sum + r.km, 0) / chunk.length;
+            const head = chunk[0];
             const soon = chunk.filter(r => r.moving && !r.overdue).map(r => r.remainingMs);
+            const late = chunk.filter(r => r.overdue).map(r => -r.remainingMs);
             const scans = chunk.map(r => r.movingSinceMs).filter((ms): ms is number => !!ms);
-            const from = scans.length ? Math.min(...scans) : 0;
-            const to = scans.length ? Math.max(...scans) : 0;
+            const allDone = chunk.every(r => r.status === 'finished');
             out.push({
-                key: `c${chunk[0].cpIndex}-${from}-${chunk[0].bib}`,
+                key: `c${head.cpIndex}-${Math.round(head.dueMs / 60000)}-${head.bib}`,
                 km: avgKm,
                 tone: 'GROUP',
                 label: `≈${chunk.length} ${th ? 'คน' : ''}`.trim(),
@@ -751,18 +789,28 @@ function CourseStrip({ cat, data, th, route, onPick, legMedianMs, initial, chart
                 moving: chunk.some(r => r.moving && !r.overdue),
                 cluster: true,
                 tooltip: [
-                    `${chunk.length} ${th ? 'คนผ่านช่วงนี้พร้อมกัน' : 'runners through together'}`,
+                    allDone
+                        ? `${chunk.length} ${th ? 'คนเข้าเส้นชัยแล้ว' : 'runners finished'}`
+                        : `${chunk.length} ${th ? 'คนวิ่งมาด้วยกัน' : 'runners travelling together'}`,
                     `♂ ${males} / ♀ ${females}`,
-                    `${chunk[0].cpName} · ${avgKm.toFixed(1)} ${th ? 'กม.' : 'km'}`,
+                    allDone || !head.nextCpName
+                        ? `${head.cpName} · ${avgKm.toFixed(1)} ${th ? 'กม.' : 'km'}`
+                        : `${avgKm.toFixed(1)} ${th ? 'กม.' : 'km'} · ${th ? 'ออกจาก' : 'left'} ${head.cpName} → ${head.nextCpName}`,
                     scans.length
-                        ? `${th ? 'สแกน' : 'scanned'} ${formatClock(from)}${to - from >= 60000 ? `–${formatClock(to)}` : ''}`
+                        ? `${th ? 'สแกนล่าสุด' : 'last scan'} ${formatClock(Math.min(...scans))}${allDone && Math.max(...scans) - Math.min(...scans) >= 60000 ? `–${formatClock(Math.max(...scans))}` : ''}`
                         : (th ? 'ยังไม่มีการสแกน' : 'no scan yet'),
-                    soon.length
-                        ? `${th ? 'คนแรกถึงจุดหน้าในอีก' : 'first due in'} ${formatCountdown(Math.min(...soon))}`
-                        : (th ? 'อยู่ที่จุดสแกน' : 'at the scan point'),
-                ].join('\n'),
+                    allDone
+                        ? ''
+                        : late.length === chunk.length && head.nextCpName
+                            ? (th
+                                ? `เลยเวลาที่ควรถึง ${head.nextCpName} แล้ว ${formatCountdown(Math.min(...late))}–${formatCountdown(Math.max(...late))} — รอสแกน`
+                                : `${formatCountdown(Math.min(...late))}–${formatCountdown(Math.max(...late))} overdue at ${head.nextCpName} — waiting on a scan`)
+                            : soon.length && head.nextCpName
+                                ? `${th ? 'ถึง' : 'due at'} ${head.nextCpName} ${th ? 'ในอีก' : 'in'} ${formatCountdown(Math.min(...soon))}`
+                                : (th ? 'อยู่ที่จุดสแกน' : 'at the scan point'),
+                ].filter(Boolean).join('\n'),
                 onClick: () => onPick(
-                    chunk[0].cpName,
+                    head.cpName,
                     chunk.map(({ bib, name, status, gender, bucket }) => ({ bib, name, status, gender, bucket })),
                 ),
             });
@@ -837,7 +885,7 @@ function CourseStrip({ cat, data, th, route, onPick, legMedianMs, initial, chart
                     <div style={{ display: 'flex', gap: 14, alignItems: 'center', flexWrap: 'wrap', marginBottom: 8, fontSize: 10.5, color: '#64748b', fontWeight: 700 }}>
                         <span><span style={{ ...styles.legendDot('#3b82f6') }} />{th ? 'ผู้นำชาย 1-2-3' : 'Top 3 male'}</span>
                         <span><span style={{ ...styles.legendDot('#ec4899') }} />{th ? 'ผู้นำหญิง 1-2-3' : 'Top 3 female'}</span>
-                        <span><span style={{ ...styles.legendDot('#f59e0b') }} />{th ? 'กลุ่มนักวิ่ง (1 ตุ๊กตา = สแกนในช่วง 10 นาทีเดียวกัน)' : 'Runner clumps (1 figure = one 10-min scan window)'}</span>
+                        <span><span style={{ ...styles.legendDot('#f59e0b') }} />{th ? 'กลุ่มนักวิ่ง (1 ตุ๊กตา = ถึงจุดหน้าในช่วง 10 นาทีเดียวกัน)' : 'Runner clumps (1 figure = one 10-min arrival window)'}</span>
                     </div>
 
                     <ElevationProfile2D
@@ -863,14 +911,22 @@ function CourseStrip({ cat, data, th, route, onPick, legMedianMs, initial, chart
                         <span>{th ? 'อยู่บนเส้นทาง' : 'On course'}: <b style={{ color: '#475569' }}>{onCourse.length}</b></span>
                     </div>
 
+                    {pastCutoff && (
+                        <div style={{ fontSize: 10.5, color: '#dc2626', fontWeight: 700, marginTop: 8, textAlign: 'center' }}>
+                            {th
+                                ? `⏹ หมดเวลา cut-off ของระยะนี้แล้ว (${formatClock(cutoffAt!)}) — ไม่แสดงตุ๊กตานักวิ่งบนเส้นทาง`
+                                : `⏹ This distance closed at ${formatClock(cutoffAt!)} — runners are no longer drawn on the course`}
+                        </div>
+                    )}
+
                     <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 6, textAlign: 'center' }}>
                         {th
-                            ? '💡 ตุ๊กตาน้ำเงิน/ชมพู = ผู้นำ 3 คนแรกของแต่ละเพศ (มีเลข BIB) · ตุ๊กตาเหลือง 1 ตัว = กลุ่มคนที่สแกนจุดเดียวกันภายในช่วง 10 นาที ป้ายบอกจำนวนคนในกลุ่ม (ห่างเกิน 10 นาที = ตุ๊กตาตัวถัดไป) · คลิกเพื่อดูรายชื่อ'
-                            : '💡 Blue/pink figures are the three leaders of each gender (with bib) · each amber figure is one 10-minute window of scans at a checkpoint, badged with its head count (a gap over 10 minutes starts the next figure) · click for names'}
+                            ? '💡 ตุ๊กตาน้ำเงิน/ชมพู = ผู้นำ 3 คนแรกของแต่ละเพศ (มีเลข BIB) · ตุ๊กตาเหลือง 1 ตัว = กลุ่มคนที่คาดว่าจะถึงจุดหน้าภายในช่วง 10 นาทีเดียวกัน ป้ายบอกจำนวนคนในกลุ่ม (ห่างเกิน 10 นาที = ตุ๊กตาตัวถัดไป) · คลิกเพื่อดูรายชื่อ'
+                            : '💡 Blue/pink figures are the three leaders of each gender (with bib) · each amber figure is a group due at the next checkpoint within the same 10 minutes, badged with its head count (a gap over 10 minutes starts the next figure) · click for names'}
                         <div style={{ marginTop: 3 }}>
                             {th
-                                ? '📍 ตุ๊กตายืนอยู่ที่ "จุดสแกนล่าสุด" ของนักวิ่งคนนั้น และจะขยับก็ต่อเมื่อมีการสแกนจุดถัดไปจริงๆ · ตัวเลข ⏱ ใต้ตุ๊กตาคือเวลาที่ควรถึงจุดหน้า (ประมาณจากความเร็วช่วงที่เพิ่งวิ่งมา + ความชัน)'
-                                : '📍 Each figure stands on the runner’s LAST scan point and only moves when the next checkpoint actually scans them · the ⏱ underneath is when that next checkpoint is due (estimated from the leg just run, climb included).'}
+                                ? '📍 ตุ๊กตาจะค่อยๆ เดินจากจุดสแกนล่าสุดไปยังจุดถัดไปตามเวลาที่คำนวณไว้ (จากความเร็วช่วงที่เพิ่งวิ่งมา + ความชัน) · ตัวเลข ⏱ ใต้ตุ๊กตาคือเวลาที่เหลือก่อนถึงจุดหน้า · คนที่เลยเวลาแล้วยังไม่ถูกสแกนจะไปหยุดรออยู่ก่อนถึงจุดนั้น และรวมกันเป็นตุ๊กตาตัวเดียว'
+                                : '📍 Each figure walks from its last scan point toward the next checkpoint on the estimated leg time (pace just run, climb included) · the ⏱ underneath is the time left before it is due · anyone past due with no scan yet parks just short of the line, and the whole late tail shares one figure.'}
                         </div>
                         {!elevationRange(route.coords) && (
                             <div style={{ marginTop: 3, color: '#f59e0b' }}>
@@ -1177,6 +1233,7 @@ function MonitorScreen({ req, th, campaign, loading, current, passed, route, leg
                         th={th}
                         route={route}
                         legMedianMs={legMedianMs}
+                        cutoffAt={categoryCutoffAt(campaign, req.cat)}
                         onPick={() => { }}
                         initial={{ view: req.view }}
                         // The strip draws its own header and hints above the chart.
@@ -1815,6 +1872,7 @@ export function GeneralChartView({ monitor }: { monitor?: MonitorRequest }) {
                                 th={th}
                                 route={routes[cat]}
                                 legMedianMs={legMediansByCategory[cat]}
+                                cutoffAt={categoryCutoffAt(campaign, cat)}
                                 onPick={(cpName, segRunners) => setCpDetail({ cat, cpName, runners: segRunners })}
                                 onOpenMonitor={(state) => openMonitor({ panel: 'course', cat, campaignId: campaign._id, ...state })}
                             />

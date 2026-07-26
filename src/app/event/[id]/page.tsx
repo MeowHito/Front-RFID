@@ -15,6 +15,7 @@ import { isNationalitySplitCategory } from '@/lib/nationality';
 import { type AgeGroupBucket, buildCanonicalAgeGroups, canonicalizeAgeGroup, normalizeAgeGroupLabel } from '@/lib/age-groups';
 import RankingMenuDropdown from '@/components/RankingMenuDropdown';
 import CourseProfileModal, { type CourseRunner } from '@/components/CourseProfileModal';
+import { ETA_SLOWDOWN, cutoffAtMs, estimatePaceEtaMs } from '@/lib/routeProgress';
 import { countryName, countryToFlag } from '@/lib/country-flags';
 import type { RankingMenuVisibility } from '@/lib/rankingMenu';
 
@@ -458,6 +459,24 @@ export default function EventLivePage() {
         return Number.isFinite(time) && time > 0 ? time : 0;
     }
 
+    /**
+     * Race clock at the last checkpoint, in ms — what the Next/ETA column divides
+     * by the distance covered to price the leg ahead. The 2D course profile walks
+     * its figures on the same number, so the two never disagree.
+     */
+    function getRunnerEtaElapsedMs(runner: Runner) {
+        const direct = runner.gunTime || runner.elapsedTime || runner.netTime
+            || runner.gunTimeMs || runner.totalGunTime || runner.netTimeMs || runner.totalNetTime || 0;
+        if (direct) return direct;
+        // Fallback: parse gunTimeStr like "01:32:17" → ms
+        if (runner.gunTimeStr) {
+            const parts = runner.gunTimeStr.split(':').map(Number);
+            if (parts.length === 3) return (parts[0] * 3600 + parts[1] * 60 + parts[2]) * 1000;
+            if (parts.length === 2) return (parts[0] * 60 + parts[1]) * 1000;
+        }
+        return 0;
+    }
+
     function compareRunnerRankOrder(a: Runner, b: Runner) {
         // When any category splits Overall by nationality, stored overallRank may be
         // per-nationality and is no longer a valid global sort key — keep the combined
@@ -468,17 +487,23 @@ export default function EventLivePage() {
         if (statusDiff !== 0) return statusDiff;
 
         if (a.status === 'finished' && b.status === 'finished') {
-            // Rank all finished runners by overallRank → time → scan time.
-            // CP-completeness no longer affects ordering: if a reader missed a scan,
-            // an admin edit will recompute the rank back to its rightful position.
-            const aRank = a.overallRank ?? 0;
-            const bRank = b.overallRank ?? 0;
-            if (useStoredRank && aRank > 0 && bRank > 0 && aRank !== bRank) return aRank - bRank;
+            // Rank all finished runners by GUN time → scan time, and only fall back to
+            // the stored overallRank when neither runner has a usable time. The stored
+            // rank is NOT the primary key: RaceTiger sends a net-based rank, so trusting
+            // it put a slower gun time above a faster one while the row still displayed
+            // the gun time (BIB 2301 above BIB 2233 on Nakhonsawan Trail 21K).
+            // CP-completeness does not affect ordering: if a reader missed a scan,
+            // an admin edit will recompute the time back to its rightful position.
             const aTime = getRunnerPrimaryTimeMs(a);
             const bTime = getRunnerPrimaryTimeMs(b);
             if (aTime > 0 && bTime > 0 && aTime !== bTime) return aTime - bTime;
             if (aTime > 0 && bTime <= 0) return -1;
             if (aTime <= 0 && bTime > 0) return 1;
+            if (aTime <= 0 && bTime <= 0) {
+                const aStored = a.overallRank ?? 0;
+                const bStored = b.overallRank ?? 0;
+                if (useStoredRank && aStored > 0 && bStored > 0 && aStored !== bStored) return aStored - bStored;
+            }
             const aScan = getRunnerScanTimeMs(a);
             const bScan = getRunnerScanTimeMs(b);
             if (aScan > 0 && bScan > 0 && aScan !== bScan) return aScan - bScan;
@@ -487,7 +512,8 @@ export default function EventLivePage() {
 
         const aRank = a.overallRank ?? 0;
         const bRank = b.overallRank ?? 0;
-        if (useStoredRank && aRank > 0 && bRank > 0 && aRank !== bRank) return aRank - bRank;
+        const bothInProgress = a.status === 'in_progress' && b.status === 'in_progress';
+        if (!bothInProgress && useStoredRank && aRank > 0 && bRank > 0 && aRank !== bRank) return aRank - bRank;
 
         if (a.status === 'in_progress' && b.status === 'in_progress') {
             const aPassed = a.passedCount ?? 0;
@@ -1695,6 +1721,18 @@ export default function EventLivePage() {
         [currentCategoryName, currentCategoryLabel],
     );
 
+    // When the distance closes. Null when the event leaves the start time or the
+    // cut-off blank — most do, and the profile then just keeps drawing runners.
+    const courseProfileCutoffAt = useMemo(() => {
+        const wanted = courseProfileKeys.map(normalizeComparableText).filter(Boolean);
+        const row = campaign?.categories?.find(c =>
+            wanted.includes(normalizeComparableText(c.name))
+            || wanted.includes(normalizeComparableText(c.distance)));
+        return row
+            ? cutoffAtMs({ eventDate: campaign?.eventDate, startTime: row.startTime, cutoff: row.cutoff })
+            : null;
+    }, [campaign?.categories, campaign?.eventDate, courseProfileKeys]);
+
     // Only the selected distance, trimmed down to what the profile needs.
     const courseProfileRunners = useMemo<CourseRunner[]>(() => {
         if (!showCourseProfile) return [];
@@ -1707,8 +1745,10 @@ export default function EventLivePage() {
                 displayStatus: getDisplayStatus(r),
                 latestCheckpoint: r.latestCheckpoint,
                 rank: r.overallRank,
-                // Cuts the amber clumps into 10-minute windows of scan time.
-                lastPassTime: r.lastPassTime || r.scanTime,
+                // Where the figure starts creeping from, and the pace that
+                // decides how fast — the Next/ETA column's own two numbers.
+                lastPassTime: r.scanTime || r.lastPassTime,
+                elapsedMs: getRunnerEtaElapsedMs(r),
             }));
     }, [showCourseProfile, runners, filterCategory, resolveRunnerCategoryKey, getDisplayStatus]);
 
@@ -2110,6 +2150,7 @@ export default function EventLivePage() {
                     categoryLabel={currentCategoryLabel}
                     categoryKeys={courseProfileKeys}
                     runners={courseProfileRunners}
+                    cutoffAt={courseProfileCutoffAt}
                     th={language === 'th'}
                     isDark={isDark}
                 />
@@ -2690,23 +2731,17 @@ export default function EventLivePage() {
                                                         }
 
                                                         // Parse elapsed time from all possible fields
-                                                        let elapsedMs = runner.gunTime || runner.elapsedTime || runner.netTime || runner.gunTimeMs || runner.totalGunTime || runner.netTimeMs || runner.totalNetTime || 0;
-                                                        // Fallback: parse gunTimeStr like "01:32:17" → ms
-                                                        if (!elapsedMs && runner.gunTimeStr) {
-                                                            const parts = runner.gunTimeStr.split(':').map(Number);
-                                                            if (parts.length === 3) elapsedMs = (parts[0] * 3600 + parts[1] * 60 + parts[2]) * 1000;
-                                                            else if (parts.length === 2) elapsedMs = (parts[0] * 60 + parts[1]) * 1000;
-                                                        }
+                                                        const elapsedMs = getRunnerEtaElapsedMs(runner);
                                                         const scanDate = runner.scanTime ? new Date(runner.scanTime) : null;
 
                                                         // Strategy 1: Distance-based ETA (when checkpoint km data exists)
+                                                        // Shared with the 2D course profile — see estimatePaceEtaMs.
                                                         if (currentCpDist > 0 && elapsedMs > 0 && nextCpDist > currentCpDist) {
-                                                            const elapsedMin = elapsedMs / 60000;
-                                                            const paceMinPerKm = elapsedMin / currentCpDist;
-                                                            const remainingKm = nextCpDist - currentCpDist;
-                                                            const rawEtaMs = paceMinPerKm * remainingKm * 60000;
-                                                            const adjustedEtaMs = rawEtaMs * 1.10;
-
+                                                            const adjustedEtaMs = estimatePaceEtaMs({
+                                                                elapsedMs,
+                                                                currentKm: currentCpDist,
+                                                                nextKm: nextCpDist,
+                                                            });
                                                             if (scanDate && !isNaN(scanDate.getTime())) {
                                                                 const arrivalTime = scanDate.getTime() + adjustedEtaMs;
                                                                 const remainMs = arrivalTime - currentTime.getTime();
@@ -2717,15 +2752,14 @@ export default function EventLivePage() {
                                                                     isPastDue = true;
                                                                 }
                                                             } else {
-                                                                etaRemainingSec = Math.round(rawEtaMs * 1.10 / 1000);
+                                                                etaRemainingSec = Math.round(adjustedEtaMs / 1000);
                                                             }
                                                         }
                                                         // Strategy 2: Order-based fallback (when no km data)
                                                         else if (elapsedMs > 0 && currentOrder > 0) {
                                                             const orderSteps = (bestNextKey ? bestNextOrder : totalCps + 1) - currentOrder;
                                                             const timePerOrder = elapsedMs / currentOrder;
-                                                            const rawEtaMs = timePerOrder * orderSteps;
-                                                            const adjustedEtaMs = rawEtaMs * 1.10;
+                                                            const adjustedEtaMs = timePerOrder * orderSteps * ETA_SLOWDOWN;
 
                                                             if (scanDate && !isNaN(scanDate.getTime())) {
                                                                 const arrivalTime = scanDate.getTime() + adjustedEtaMs;
