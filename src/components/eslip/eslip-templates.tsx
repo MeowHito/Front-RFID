@@ -349,7 +349,7 @@ export function Template1({ runner, timings, campaign, bgImage, slipRef, showFie
                                 const displayNetTime = t.netTime ?? t.elapsedTime;
                                 return (
                                     <div key={t._id} className={`flex justify-between items-center pb-1 ${i < displayTimings.length - 1 ? 'border-b border-dashed border-white/10' : ''}`}>
-                                        <span className={`text-[11px] whitespace-nowrap ${isFinish ? 'text-green-500' : 'text-slate-200'}`}>{t.checkpoint}{t.distanceFromStart ? ` (${t.distanceFromStart}K)` : ''}</span>
+                                        <span className={`text-[11px] whitespace-nowrap ${isFinish ? 'text-green-500' : 'text-slate-200'}`}>{t.checkpoint}</span>
                                         <span className="grow border-b border-dotted border-slate-200 relative -top-1" />
                                         <span className={`font-mono whitespace-nowrap ${isFinish ? 'text-sm font-extrabold text-green-500' : 'text-xs font-extrabold text-white'}`}>{displayNetTime ? formatTime(displayNetTime) : '-'}</span>
                                     </div>
@@ -713,9 +713,7 @@ export function paceForTiming(t: TimingRecord): string {
 export function checkpointLabelFor(t: TimingRecord): string {
     const cp = t.checkpoint || '';
     const isFinish = cp.toLowerCase().includes('finish');
-    const name = isFinish ? 'Finish' : cp;
-    const km = t.distanceFromStart != null ? ` (${t.distanceFromStart} KM)` : '';
-    return `${name}${km}`;
+    return isFinish ? 'Finish' : cp;
 }
 
 export function ESlipV2SplitsTable({ el, timings }: { el: ESlipV2Element; timings: TimingRecord[] }) {
