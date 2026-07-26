@@ -1707,6 +1707,8 @@ export default function EventLivePage() {
                 displayStatus: getDisplayStatus(r),
                 latestCheckpoint: r.latestCheckpoint,
                 rank: r.overallRank,
+                // Cuts the amber clumps into 10-minute windows of scan time.
+                lastPassTime: r.lastPassTime || r.scanTime,
             }));
     }, [showCourseProfile, runners, filterCategory, resolveRunnerCategoryKey, getDisplayStatus]);
 

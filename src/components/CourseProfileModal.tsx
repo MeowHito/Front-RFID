@@ -14,6 +14,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { elevationRange } from '@/lib/routeGeometry';
+import { clusterByScanWindow, formatClock } from '@/lib/routeProgress';
 import type { ProfileMarker } from '@/components/ElevationProfile2D';
 
 // Measures its own container, so keep it off the server render.
@@ -38,6 +39,8 @@ export interface CourseRunner {
     latestCheckpoint?: string;
     /** Live overall rank, used to order the leaders. */
     rank?: number;
+    /** When the last checkpoint scanned them — what the clumps are cut by. */
+    lastPassTime?: string;
 }
 
 /** Same test the results table uses to decide a runner has crossed the line. */
@@ -68,8 +71,10 @@ const norm = (v?: string | null) => String(v || '').trim().toLowerCase().replace
 /** Route cache keyed by campaign — the coords array is big, so fetch it once. */
 const routeCache = new Map<string, CourseRouteTrack[]>();
 
-/** Clumps of runners cover this much of the course each. */
-const CLUSTER_SPAN_RATIO = 0.03;
+const scanMsOf = (v?: string) => {
+    const ms = v ? Date.parse(v) : NaN;
+    return Number.isFinite(ms) ? ms : undefined;
+};
 
 export default function CourseProfileModal({
     open, onClose, campaignId, categoryLabel, categoryKeys, runners, th, isDark,
@@ -177,9 +182,9 @@ export default function CourseProfileModal({
                 const cpName = done
                     ? (finishMark?.name || r.latestCheckpoint || 'FINISH')
                     : (r.latestCheckpoint || checkpoints[0]?.name || '');
-                return { ...r, km, cpName, done };
+                return { ...r, km, cpName, done, scanMs: scanMsOf(r.lastPassTime) };
             })
-            .filter((r): r is CourseRunner & { km: number; cpName: string; done: boolean } => r !== null)
+            .filter((r): r is NonNullable<typeof r> => r !== null)
             .sort((a, b) => (b.km - a.km) || ((a.rank ?? Infinity) - (b.rank ?? Infinity)));
     }, [route, checkpoints, runners]);
 
@@ -211,41 +216,34 @@ export default function CourseProfileModal({
             });
         }
 
-        const rest = onCourse.filter(r => !named.has(r.bib)).slice().sort((a, b) => a.km - b.km);
-        const span = Math.max(0.2, (route.distanceKm || 0) * CLUSTER_SPAN_RATIO);
-        let group: typeof rest = [];
-        const flush = () => {
-            if (!group.length) return;
-            const chunk = group;
-            group = [];
+        // One figure per checkpoint per 10 minutes of scan time: the runners who
+        // came through together, rather than an arbitrary stretch of course.
+        const rest = onCourse.filter(r => !named.has(r.bib));
+        for (const chunk of clusterByScanWindow(rest, r => ({ cpKey: r.km, scanMs: r.scanMs }))) {
             const males = chunk.filter(r => r.gender === 'M').length;
             const females = chunk.filter(r => r.gender === 'F').length;
-            const avgKm = chunk.reduce((sum, r) => sum + r.km, 0) / chunk.length;
-            const lo = chunk[0].km;
-            const hi = chunk[chunk.length - 1].km;
+            const km = chunk[0].km;
+            const scans = chunk.map(r => r.scanMs).filter((ms): ms is number => !!ms);
+            const from = scans.length ? Math.min(...scans) : 0;
+            const to = scans.length ? Math.max(...scans) : 0;
             out.push({
-                key: `c${chunk[0].bib}-${chunk.length}`,
-                km: avgKm,
+                key: `c${km}-${from}-${chunk[0].bib}`,
+                km,
                 tone: 'GROUP',
                 label: `≈${chunk.length}${th ? ' คน' : ''}`,
                 cluster: true,
                 tooltip: [
                     chunk.every(r => r.done)
-                        ? `${chunk.length} ${th ? 'คนเข้าเส้นชัยแล้ว' : 'runners finished'}`
-                        : `${chunk.length} ${th ? 'คนอยู่ช่วงนี้' : 'runners here'}`,
+                        ? `${chunk.length} ${th ? 'คนเข้าเส้นชัยช่วงเดียวกัน' : 'runners finished together'}`
+                        : `${chunk.length} ${th ? 'คนผ่านช่วงนี้พร้อมกัน' : 'runners through together'}`,
                     `♂ ${males} / ♀ ${females}`,
-                    hi - lo < 0.05
-                        ? `${avgKm.toFixed(1)} ${th ? 'กม.' : 'km'}`
-                        : `${lo.toFixed(1)}–${hi.toFixed(1)} ${th ? 'กม.' : 'km'}`,
-                    `${th ? 'จุดสแกนล่าสุด' : 'Last scan'}: ${Array.from(new Set(chunk.map(r => r.cpName))).join(' / ')}`,
+                    `${chunk[0].cpName} · ${km.toFixed(1)} ${th ? 'กม.' : 'km'}`,
+                    scans.length
+                        ? `${th ? 'สแกน' : 'Scanned'} ${formatClock(from)}${to - from >= 60000 ? `–${formatClock(to)}` : ''}`
+                        : (th ? 'ยังไม่มีการสแกน' : 'No scan yet'),
                 ].join('\n'),
             });
-        };
-        for (const r of rest) {
-            if (group.length && r.km - group[0].km > span) flush();
-            group.push(r);
         }
-        flush();
         return out;
     }, [route, onCourse, th]);
 
@@ -351,7 +349,7 @@ export default function CourseProfileModal({
                             <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', marginBottom: 8, fontSize: 10.5, color: muted, fontWeight: 700 }}>
                                 <span><Dot color="#3b82f6" />{th ? 'ผู้นำชาย 1-2-3' : 'Top 3 male'}</span>
                                 <span><Dot color="#ec4899" />{th ? 'ผู้นำหญิง 1-2-3' : 'Top 3 female'}</span>
-                                <span><Dot color="#f59e0b" />{th ? 'กลุ่มนักวิ่ง' : 'Runner clumps'}</span>
+                                <span><Dot color="#f59e0b" />{th ? 'กลุ่มนักวิ่ง (ช่วงละ 10 นาที)' : 'Runner clumps (10 min each)'}</span>
                             </div>
 
                             <ElevationProfile2D
@@ -378,8 +376,8 @@ export default function CourseProfileModal({
 
                             <div style={{ fontSize: 10, color: faint, marginTop: 8, textAlign: 'center', lineHeight: 1.7 }}>
                                 {th
-                                    ? '💡 ตุ๊กตายืนอยู่ที่จุดสแกนล่าสุดของนักวิ่งคนนั้น (คนที่จบแล้วจะอยู่ที่จุด FINISH) · แตะที่ตุ๊กตาเพื่อดูรายละเอียด'
-                                    : '💡 Each figure stands at that runner’s last scan point — finishers sit on FINISH · tap a figure for details'}
+                                    ? '💡 ตุ๊กตายืนอยู่ที่จุดสแกนล่าสุดของนักวิ่งคนนั้น (คนที่จบแล้วจะอยู่ที่จุด FINISH) · ตุ๊กตาเหลือง 1 ตัว = คนที่สแกนจุดเดียวกันภายในช่วง 10 นาที ถ้าห่างเกิน 10 นาทีจะแยกเป็นตุ๊กตาตัวถัดไป · แตะที่ตุ๊กตาเพื่อดูรายละเอียด'
+                                    : '💡 Each figure stands at that runner’s last scan point — finishers sit on FINISH · one amber figure is one 10-minute window of scans at a checkpoint, a longer gap starts the next figure · tap a figure for details'}
                                 {!ele && (
                                     <div style={{ marginTop: 4, color: '#f59e0b' }}>
                                         {th

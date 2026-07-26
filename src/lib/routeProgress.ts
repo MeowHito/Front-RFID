@@ -178,3 +178,55 @@ export function formatCountdown(ms: number): string {
         ? `${h}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`
         : `${m}:${String(sec).padStart(2, '0')}`;
 }
+
+/** "09:14" — wall-clock hour and minute of a scan. */
+export function formatClock(ms: number): string {
+    const d = new Date(ms);
+    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
+/** A clump of runners covers this much scan time: one figure per 10 minutes. */
+export const CLUSTER_WINDOW_MS = 10 * 60 * 1000;
+
+/**
+ * Splits the field into the clumps drawn as amber figures on the profile.
+ *
+ * A figure stands on a scan point, so a clump never straddles two checkpoints:
+ * runners are bucketed by checkpoint first, then by scan time inside it. The
+ * window opens on the first runner of a clump and runs for `CLUSTER_WINDOW_MS`;
+ * whoever scans later than that starts the next clump. Runners with no scan
+ * time yet (still at the start) ride together in a clump of their own.
+ */
+export function clusterByScanWindow<T>(
+    runners: T[],
+    at: (r: T) => { cpKey: string | number; scanMs?: number },
+    windowMs: number = CLUSTER_WINDOW_MS,
+): T[][] {
+    const byCp = new Map<string | number, T[]>();
+    for (const r of runners) {
+        const key = at(r).cpKey;
+        const list = byCp.get(key);
+        if (list) list.push(r);
+        else byCp.set(key, [r]);
+    }
+
+    const chunks: T[][] = [];
+    for (const list of Array.from(byCp.values())) {
+        const timed = list
+            .filter(r => !!at(r).scanMs)
+            .sort((a, b) => (at(a).scanMs || 0) - (at(b).scanMs || 0));
+        const untimed = list.filter(r => !at(r).scanMs);
+
+        let group: T[] = [];
+        for (const r of timed) {
+            if (group.length && (at(r).scanMs || 0) - (at(group[0]).scanMs || 0) > windowMs) {
+                chunks.push(group);
+                group = [];
+            }
+            group.push(r);
+        }
+        if (group.length) chunks.push(group);
+        if (untimed.length) chunks.push(untimed);
+    }
+    return chunks;
+}

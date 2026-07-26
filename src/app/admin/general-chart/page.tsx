@@ -10,7 +10,7 @@ import {
     AreaChart, Area,
 } from 'recharts';
 import { resolveCpKm, elevationRange } from '@/lib/routeGeometry';
-import { arriveByEta, buildEffortProfile, effortAtKm, estimateLegMs, formatCountdown } from '@/lib/routeProgress';
+import { arriveByEta, buildEffortProfile, clusterByScanWindow, effortAtKm, estimateLegMs, formatClock, formatCountdown } from '@/lib/routeProgress';
 import type { ProfileMarker } from '@/components/ElevationProfile2D';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -699,11 +699,10 @@ function CourseStrip({ cat, data, th, route, onPick, legMedianMs, initial, chart
 
     /**
      * Leaders get their own figure; everyone else is bundled into amber clumps.
-     * A clump covers a stretch of course rather than a fixed head count, so the
-     * marker answers "roughly how many are around here" — which is all a
-     * position estimated between two checkpoints can honestly claim.
+     * A clump is one checkpoint and one 10-minute window of scan time, so the
+     * marker answers "who came through here together" — the pack that was
+     * physically side by side, rather than an arbitrary stretch of course.
      */
-    const CLUSTER_SPAN_RATIO = 0.03;   // of the course length
     const profileMarkers: ProfileMarker[] = (() => {
         if (!hasRoute) return [];
         const out: ProfileMarker[] = [];
@@ -732,24 +731,19 @@ function CourseStrip({ cat, data, th, route, onPick, legMedianMs, initial, chart
             });
         }
 
-        // Sweep the rest of the field along the course, closing a clump as soon
-        // as the next runner is more than a clump's width further on.
-        const rest = onCourse.filter(r => !named.has(r.bib)).slice().sort((a, b) => a.km - b.km);
-        const span = Math.max(0.2, (route?.distanceKm || 0) * CLUSTER_SPAN_RATIO);
-        let group: typeof rest = [];
-        const flush = () => {
-            if (!group.length) return;
-            const chunk = group;
-            group = [];
+        // The rest of the field, one figure per checkpoint per 10 minutes of
+        // scan time — see clusterByScanWindow for how a clump is closed.
+        const rest = onCourse.filter(r => !named.has(r.bib));
+        for (const chunk of clusterByScanWindow(rest, r => ({ cpKey: r.cpIndex, scanMs: r.movingSinceMs }))) {
             const males = chunk.filter(r => r.gender === 'M').length;
             const females = chunk.filter(r => r.gender === 'F').length;
             const avgKm = chunk.reduce((sum, r) => sum + r.km, 0) / chunk.length;
-            const lo = chunk[0].km;
-            const hi = chunk[chunk.length - 1].km;
             const soon = chunk.filter(r => r.moving && !r.overdue).map(r => r.remainingMs);
-            const cpNamesHere = Array.from(new Set(chunk.map(r => r.cpName)));
+            const scans = chunk.map(r => r.movingSinceMs).filter((ms): ms is number => !!ms);
+            const from = scans.length ? Math.min(...scans) : 0;
+            const to = scans.length ? Math.max(...scans) : 0;
             out.push({
-                key: `c${chunk[0].bib}-${chunk.length}`,
+                key: `c${chunk[0].cpIndex}-${from}-${chunk[0].bib}`,
                 km: avgKm,
                 tone: 'GROUP',
                 label: `≈${chunk.length} ${th ? 'คน' : ''}`.trim(),
@@ -757,12 +751,12 @@ function CourseStrip({ cat, data, th, route, onPick, legMedianMs, initial, chart
                 moving: chunk.some(r => r.moving && !r.overdue),
                 cluster: true,
                 tooltip: [
-                    `${chunk.length} ${th ? 'คนอยู่ช่วงนี้' : 'runners here'}`,
+                    `${chunk.length} ${th ? 'คนผ่านช่วงนี้พร้อมกัน' : 'runners through together'}`,
                     `♂ ${males} / ♀ ${females}`,
-                    hi - lo < 0.05
-                        ? `${avgKm.toFixed(1)} ${th ? 'กม.' : 'km'}`
-                        : `${lo.toFixed(1)}–${hi.toFixed(1)} ${th ? 'กม.' : 'km'}`,
-                    `${th ? 'สแกนล่าสุดที่' : 'last scanned at'} ${cpNamesHere.join(' / ')}`,
+                    `${chunk[0].cpName} · ${avgKm.toFixed(1)} ${th ? 'กม.' : 'km'}`,
+                    scans.length
+                        ? `${th ? 'สแกน' : 'scanned'} ${formatClock(from)}${to - from >= 60000 ? `–${formatClock(to)}` : ''}`
+                        : (th ? 'ยังไม่มีการสแกน' : 'no scan yet'),
                     soon.length
                         ? `${th ? 'คนแรกถึงจุดหน้าในอีก' : 'first due in'} ${formatCountdown(Math.min(...soon))}`
                         : (th ? 'อยู่ที่จุดสแกน' : 'at the scan point'),
@@ -772,12 +766,7 @@ function CourseStrip({ cat, data, th, route, onPick, legMedianMs, initial, chart
                     chunk.map(({ bib, name, status, gender, bucket }) => ({ bib, name, status, gender, bucket })),
                 ),
             });
-        };
-        for (const r of rest) {
-            if (group.length && r.km - group[0].km > span) flush();
-            group.push(r);
         }
-        flush();
         return out;
     })();
 
@@ -848,7 +837,7 @@ function CourseStrip({ cat, data, th, route, onPick, legMedianMs, initial, chart
                     <div style={{ display: 'flex', gap: 14, alignItems: 'center', flexWrap: 'wrap', marginBottom: 8, fontSize: 10.5, color: '#64748b', fontWeight: 700 }}>
                         <span><span style={{ ...styles.legendDot('#3b82f6') }} />{th ? 'ผู้นำชาย 1-2-3' : 'Top 3 male'}</span>
                         <span><span style={{ ...styles.legendDot('#ec4899') }} />{th ? 'ผู้นำหญิง 1-2-3' : 'Top 3 female'}</span>
-                        <span><span style={{ ...styles.legendDot('#f59e0b') }} />{th ? 'กลุ่มนักวิ่ง (≈ จำนวนคนในช่วงนั้น)' : 'Runner clumps (≈ head count)'}</span>
+                        <span><span style={{ ...styles.legendDot('#f59e0b') }} />{th ? 'กลุ่มนักวิ่ง (1 ตุ๊กตา = สแกนในช่วง 10 นาทีเดียวกัน)' : 'Runner clumps (1 figure = one 10-min scan window)'}</span>
                     </div>
 
                     <ElevationProfile2D
@@ -876,8 +865,8 @@ function CourseStrip({ cat, data, th, route, onPick, legMedianMs, initial, chart
 
                     <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 6, textAlign: 'center' }}>
                         {th
-                            ? '💡 ตุ๊กตาน้ำเงิน/ชมพู = ผู้นำ 3 คนแรกของแต่ละเพศ (มีเลข BIB) · ตุ๊กตาเหลือง = กลุ่มนักวิ่งที่เหลือ ป้ายบอกจำนวนคนในช่วงนั้น · คลิกเพื่อดูรายชื่อ'
-                            : '💡 Blue/pink figures are the three leaders of each gender (with bib) · amber figures are the rest of the field, badged with how many are at that point · click for names'}
+                            ? '💡 ตุ๊กตาน้ำเงิน/ชมพู = ผู้นำ 3 คนแรกของแต่ละเพศ (มีเลข BIB) · ตุ๊กตาเหลือง 1 ตัว = กลุ่มคนที่สแกนจุดเดียวกันภายในช่วง 10 นาที ป้ายบอกจำนวนคนในกลุ่ม (ห่างเกิน 10 นาที = ตุ๊กตาตัวถัดไป) · คลิกเพื่อดูรายชื่อ'
+                            : '💡 Blue/pink figures are the three leaders of each gender (with bib) · each amber figure is one 10-minute window of scans at a checkpoint, badged with its head count (a gap over 10 minutes starts the next figure) · click for names'}
                         <div style={{ marginTop: 3 }}>
                             {th
                                 ? '📍 ตุ๊กตายืนอยู่ที่ "จุดสแกนล่าสุด" ของนักวิ่งคนนั้น และจะขยับก็ต่อเมื่อมีการสแกนจุดถัดไปจริงๆ · ตัวเลข ⏱ ใต้ตุ๊กตาคือเวลาที่ควรถึงจุดหน้า (ประมาณจากความเร็วช่วงที่เพิ่งวิ่งมา + ความชัน)'
