@@ -484,6 +484,37 @@ function PassedThroughChart({ data, th, height }: { data: PassedDatum[]; th: boo
     );
 }
 
+/**
+ * The top slice of the "currently at" stack, drawn by hand so it can also carry
+ * the total above the column.
+ *
+ * It cannot be a <LabelList>: recharts drops zero-height slices before it builds
+ * the label list, so the label index stopped matching the data index and the
+ * number went missing above every column whose top slice was not `active`.
+ * A custom shape is called for every datum, empty slice or not — and because
+ * `other` is stacked last, its `y` is the top of the whole column either way.
+ */
+function StackTopSlice(props: {
+    x?: number; y?: number; width?: number; height?: number; fill?: string;
+    payload?: SegmentDatum;
+    onClick?: React.MouseEventHandler<SVGGElement>;
+    onMouseEnter?: React.MouseEventHandler<SVGGElement>;
+    onMouseLeave?: React.MouseEventHandler<SVGGElement>;
+}) {
+    const { x = 0, y = 0, width = 0, height = 0, fill, payload, onClick, onMouseEnter, onMouseLeave } = props;
+    const total = payload?.count ?? 0;
+    return (
+        <g onClick={onClick} onMouseEnter={onMouseEnter} onMouseLeave={onMouseLeave}>
+            {height > 0 && <rect x={x} y={y} width={width} height={height} rx={2} fill={fill} />}
+            {total > 0 && (
+                <text x={x + width / 2} y={y - 6} textAnchor="middle" fill="#475569" fontWeight={800} fontSize={11}>
+                    {total}
+                </text>
+            )}
+        </g>
+    );
+}
+
 function CurrentlyAtChart({ data, th, height, onPick }: {
     data: SegmentDatum[];
     th: boolean;
@@ -510,23 +541,13 @@ function CurrentlyAtChart({ data, th, height, onPick }: {
                         maxBarSize={48}
                         cursor="pointer"
                         isAnimationActive={false}
+                        // Last slice = top of the column, so it draws the total.
+                        shape={bi === 3 ? StackTopSlice : undefined}
                         onClick={(d: any) => {
                             const seg = d?.payload as SegmentDatum;
                             if (seg && seg.count > 0) onPick(seg);
                         }}
-                    >
-                        {/* Total label sits on whichever segment is the top-most
-                            non-zero one, so it always renders on a visible bar. */}
-                        <LabelList content={(props: any) => {
-                            const seg = data[props.index] as SegmentDatum | undefined;
-                            if (!seg || seg.count <= 0 || topBucketOf(seg) !== b) return null;
-                            return (
-                                <text x={props.x + props.width / 2} y={props.y - 6} textAnchor="middle" fill="#475569" fontWeight={800} fontSize={11}>
-                                    {seg.count}
-                                </text>
-                            );
-                        }} />
-                    </Bar>
+                    />
                 ))}
             </BarChart>
         </ResponsiveContainer>
@@ -593,11 +614,12 @@ function CourseStrip({ cat, data, th, route, onPick, legMedianMs, initial, chart
     }, [activeView]);
 
     // ── Where every runner currently is, in km along the uploaded line ──
-    // A scan only says where someone *was*. From the last scan we work out how
-    // long the leg ahead should take them — from the field's median for that leg,
-    // adjusted by how they compare with it — and walk them along that timetable,
-    // so a figure moves even at the start line where there is no leg behind them
-    // to measure a speed from.
+    // A figure stands on the LAST checkpoint the runner actually scanned, and
+    // stays there until the next scan moves it. It used to creep forward on an
+    // estimated pace, which put people on stretches they had not reached — and
+    // read as plainly wrong whenever somebody missed a checkpoint and turned up
+    // at FINISH. The estimate is still worked out, but only to caption the figure
+    // with when the next checkpoint is due.
     const cpNames = data.map(d => d.cpName);
     const cpKm = hasRoute ? resolveCpKm(cpNames, route!.distanceKm, route!.checkpointMarks) : [];
     const effort = useMemo(
@@ -637,8 +659,8 @@ function CourseStrip({ cat, data, th, route, onPick, legMedianMs, initial, chart
                     cpName: d.cpName,
                     cpKm: lastKm,
                     nextCpName: data[i + 1]?.cpName,
-                    km: moved.km,
-                    progress: moved.progress,
+                    // Pinned to the scan point — see the note above.
+                    km: lastKm,
                     etaMs: moved.etaMs,
                     remainingMs: moved.remainingMs,
                     overdue: moved.overdue,
@@ -647,8 +669,8 @@ function CourseStrip({ cat, data, th, route, onPick, legMedianMs, initial, chart
                     movingSinceMs: r.lastScanMs,
                 };
             }))
-            // A runner further along the leg is genuinely ahead of one who only
-            // just left the same checkpoint, so rank on the estimate first.
+            // Everyone on the same checkpoint shares a km, so the tie-break is
+            // what actually orders them: whoever got there in less time leads.
             .sort((a, b) => (b.km - a.km)
                 || (b.cpIndex - a.cpIndex)
                 || ((a.elapsedMs ?? Infinity) - (b.elapsedMs ?? Infinity))
@@ -657,7 +679,7 @@ function CourseStrip({ cat, data, th, route, onPick, legMedianMs, initial, chart
 
     type OnCourseRunner = typeof onCourse[number];
 
-    /** "ถึง A2 ในอีก 12:07" — the countdown driving where the figure stands. */
+    /** "ถึง A2 ในอีก 12:07" — when the next checkpoint should scan this runner. */
     const etaNote = (r: OnCourseRunner) => {
         if (!r.moving) return th ? 'อยู่ที่จุดสแกน' : 'at the scan point';
         if (r.overdue) {
@@ -666,8 +688,8 @@ function CourseStrip({ cat, data, th, route, onPick, legMedianMs, initial, chart
                 : `${formatCountdown(-r.remainingMs)} overdue at ${r.nextCpName}`;
         }
         return th
-            ? `ถึง ${r.nextCpName} ในอีก ${formatCountdown(r.remainingMs)} (${Math.round(r.progress * 100)}% ของช่วง)`
-            : `${formatCountdown(r.remainingMs)} to ${r.nextCpName} (${Math.round(r.progress * 100)}% of the leg)`;
+            ? `ควรถึง ${r.nextCpName} ในอีก ${formatCountdown(r.remainingMs)}`
+            : `${formatCountdown(r.remainingMs)} to ${r.nextCpName}`;
     };
 
     /**
@@ -697,7 +719,7 @@ function CourseStrip({ cat, data, th, route, onPick, legMedianMs, initial, chart
                     tooltip: [
                         `${i + 1}. ${r.name}`,
                         `BIB ${r.bib} · ${g === 'M' ? (th ? 'ชาย' : 'Male') : (th ? 'หญิง' : 'Female')}`,
-                        `${th ? 'ประมาณ' : 'approx.'} ${r.km.toFixed(2)} ${th ? 'กม.' : 'km'} (${r.cpName}${r.nextCpName ? ` → ${r.nextCpName}` : ''})`,
+                        `${th ? 'จุดสแกนล่าสุด' : 'last scan'}: ${r.cpName} (${r.km.toFixed(2)} ${th ? 'กม.' : 'km'})`,
                         etaNote(r),
                     ].join('\n'),
                     onClick: () => onPick(r.cpName, data[r.cpIndex]?.runners || []),
@@ -730,12 +752,12 @@ function CourseStrip({ cat, data, th, route, onPick, legMedianMs, initial, chart
                 moving: chunk.some(r => r.moving && !r.overdue),
                 cluster: true,
                 tooltip: [
-                    `${th ? 'ประมาณ' : 'about'} ${chunk.length} ${th ? 'คนอยู่ช่วงนี้' : 'runners here'}`,
+                    `${chunk.length} ${th ? 'คนอยู่ช่วงนี้' : 'runners here'}`,
                     `♂ ${males} / ♀ ${females}`,
                     hi - lo < 0.05
                         ? `${avgKm.toFixed(1)} ${th ? 'กม.' : 'km'}`
                         : `${lo.toFixed(1)}–${hi.toFixed(1)} ${th ? 'กม.' : 'km'}`,
-                    `${th ? 'ออกจาก' : 'left'} ${cpNamesHere.join(' / ')}`,
+                    `${th ? 'สแกนล่าสุดที่' : 'last scanned at'} ${cpNamesHere.join(' / ')}`,
                     soon.length
                         ? `${th ? 'คนแรกถึงจุดหน้าในอีก' : 'first due in'} ${formatCountdown(Math.min(...soon))}`
                         : (th ? 'อยู่ที่จุดสแกน' : 'at the scan point'),
@@ -849,12 +871,12 @@ function CourseStrip({ cat, data, th, route, onPick, legMedianMs, initial, chart
 
                     <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 6, textAlign: 'center' }}>
                         {th
-                            ? '💡 ตุ๊กตาน้ำเงิน/ชมพู = ผู้นำ 3 คนแรกของแต่ละเพศ (มีเลข BIB) · ตุ๊กตาเหลือง = กลุ่มนักวิ่งที่เหลือ ป้ายบอกจำนวนคนโดยประมาณในช่วงนั้น · คลิกเพื่อดูรายชื่อ'
-                            : '💡 Blue/pink figures are the three leaders of each gender (with bib) · amber figures are the rest of the field, badged with roughly how many are in that stretch · click for names'}
+                            ? '💡 ตุ๊กตาน้ำเงิน/ชมพู = ผู้นำ 3 คนแรกของแต่ละเพศ (มีเลข BIB) · ตุ๊กตาเหลือง = กลุ่มนักวิ่งที่เหลือ ป้ายบอกจำนวนคนในช่วงนั้น · คลิกเพื่อดูรายชื่อ'
+                            : '💡 Blue/pink figures are the three leaders of each gender (with bib) · amber figures are the rest of the field, badged with how many are at that point · click for names'}
                         <div style={{ marginTop: 3 }}>
                             {th
-                                ? '🚶 ตำแหน่งเป็นค่าประมาณ — คำนวณต่อจากจุดสแกนล่าสุดด้วยความเร็วช่วงที่เพิ่งวิ่งมา (คิดความชันด้วย: ขึ้นเขา 100 ม. ≈ วิ่งเพิ่ม 1 กม.) ตุ๊กตาจะค่อยๆ ขยับไปจุดถัดไปเอง และหยุดรอที่จุดนั้นถ้ายังไม่มีการสแกน'
-                                : '🚶 Positions are estimates — carried forward from the last scan at the speed of the leg just run, with climb counted (100 m of ascent ≈ 1 extra km). Figures creep toward the next checkpoint and wait there until it scans.'}
+                                ? '📍 ตุ๊กตายืนอยู่ที่ "จุดสแกนล่าสุด" ของนักวิ่งคนนั้น และจะขยับก็ต่อเมื่อมีการสแกนจุดถัดไปจริงๆ · ตัวเลข ⏱ ใต้ตุ๊กตาคือเวลาที่ควรถึงจุดหน้า (ประมาณจากความเร็วช่วงที่เพิ่งวิ่งมา + ความชัน)'
+                                : '📍 Each figure stands on the runner’s LAST scan point and only moves when the next checkpoint actually scans them · the ⏱ underneath is when that next checkpoint is due (estimated from the leg just run, climb included).'}
                         </div>
                         {!elevationRange(route.coords) && (
                             <div style={{ marginTop: 3, color: '#f59e0b' }}>
@@ -1016,14 +1038,8 @@ function statusBucketOf(status: string): StatusBucket {
     // in_progress / not_started / finished / blank → still counts as "on course"
     return 'active';
 }
-// The visually top-most non-zero segment of a stacked bar (bottom→top order),
-// so the total label can sit on a bar that actually gets rendered.
-function topBucketOf(d: { active: number; dnf: number; dq: number; other: number }): StatusBucket | null {
-    const order: StatusBucket[] = ['active', 'dnf', 'dq', 'other'];
-    let top: StatusBucket | null = null;
-    for (const b of order) if (d[b] > 0) top = b;
-    return top;
-}
+/** The cells of the per-distance summary strip under each course chart. */
+type SummaryBucket = 'total' | 'started' | 'finished' | 'dns' | 'dnf' | 'dq' | 'mF' | 'fF';
 
 interface SegmentRunner {
     bib: string;
@@ -1212,6 +1228,8 @@ export function GeneralChartView({ monitor }: { monitor?: MonitorRequest }) {
 
     // Which checkpoint segment's runner list is open in the drill-down modal
     const [cpDetail, setCpDetail] = useState<{ cat: string; cpName: string; runners: SegmentRunner[] } | null>(null);
+    /** Which summary cell the admin clicked — shows the bibs behind the number. */
+    const [bibDetail, setBibDetail] = useState<{ cat: string; label: string; color: string; runners: Runner[] } | null>(null);
 
     // ── Load campaign ──
     // A monitor link carries its campaign id, because "featured" is per-account
@@ -1503,20 +1521,22 @@ export function GeneralChartView({ monitor }: { monitor?: MonitorRequest }) {
     }, [categories, runners, catCpsFor, cpTimingMap]);
 
     // ── Per-category summary ──
+    // Each bucket keeps the runners themselves, not just a count, so clicking a
+    // summary cell can list exactly which bibs it stands for.
     const catSummary = useMemo(() => {
-        const result: Record<string, { total: number; started: number; finished: number; dns: number; dnf: number; dq: number; mF: number; fF: number }> = {};
+        const result: Record<string, Record<SummaryBucket, Runner[]>> = {};
         const startBibs = cpTimingMap['START'] || cpTimingMap['Start'] || new Map<string, number>();
         for (const cat of categories) {
             const cr = runners.filter(r => r.category === cat);
             result[cat] = {
-                total: cr.length,
-                started: cr.filter(r => startBibs.has(r.bib) || r.status === 'in_progress' || r.status === 'finished').length,
-                finished: cr.filter(r => r.status === 'finished').length,
-                dns: cr.filter(r => r.status === 'dns').length,
-                dnf: cr.filter(r => r.status === 'dnf').length,
-                dq: cr.filter(r => r.status === 'dq').length,
-                mF: cr.filter(r => r.gender === 'M' && r.status === 'finished').length,
-                fF: cr.filter(r => r.gender === 'F' && r.status === 'finished').length,
+                total: cr,
+                started: cr.filter(r => startBibs.has(r.bib) || r.status === 'in_progress' || r.status === 'finished'),
+                finished: cr.filter(r => r.status === 'finished'),
+                dns: cr.filter(r => r.status === 'dns'),
+                dnf: cr.filter(r => r.status === 'dnf'),
+                dq: cr.filter(r => r.status === 'dq'),
+                mF: cr.filter(r => r.gender === 'M' && r.status === 'finished'),
+                fF: cr.filter(r => r.gender === 'F' && r.status === 'finished'),
             };
         }
         return result;
@@ -1795,29 +1815,42 @@ export function GeneralChartView({ monitor }: { monitor?: MonitorRequest }) {
                                 onPick={(cpName, segRunners) => setCpDetail({ cat, cpName, runners: segRunners })}
                                 onOpenMonitor={(state) => openMonitor({ panel: 'course', cat, campaignId: campaign._id, ...state })}
                             />
-                            {/* Mini summary row */}
+                            {/* Mini summary row — every cell opens the bibs behind its number */}
                             {(() => {
-                                const cells = [
-                                    { label: th ? 'สมัคร' : 'Registered', value: cs?.total || 0, color: '#64748b' },
-                                    { label: th ? 'ปล่อยตัว' : 'Started', value: cs?.started || 0, color: '#f59e0b' },
-                                    { label: 'DNS', value: cs?.dns || 0, color: '#94a3b8' },
-                                    { label: th ? 'จบ' : 'Finished', value: cs?.finished || 0, color: '#22c55e' },
-                                    { label: 'DNF', value: cs?.dnf || 0, color: '#f59e0b' },
-                                    { label: 'DQ', value: cs?.dq || 0, color: '#ef4444' },
-                                    { label: '♂', value: cs?.mF || 0, color: '#3b82f6' },
-                                    { label: '♀', value: cs?.fF || 0, color: '#ec4899' },
+                                const cells: { label: string; bucket: SummaryBucket; color: string }[] = [
+                                    { label: th ? 'สมัคร' : 'Registered', bucket: 'total', color: '#64748b' },
+                                    { label: th ? 'ปล่อยตัว' : 'Started', bucket: 'started', color: '#f59e0b' },
+                                    { label: 'DNS', bucket: 'dns', color: '#94a3b8' },
+                                    { label: th ? 'จบ' : 'Finished', bucket: 'finished', color: '#22c55e' },
+                                    { label: 'DNF', bucket: 'dnf', color: '#f59e0b' },
+                                    { label: 'DQ', bucket: 'dq', color: '#ef4444' },
+                                    { label: '♂', bucket: 'mF', color: '#3b82f6' },
+                                    { label: '♀', bucket: 'fF', color: '#ec4899' },
                                 ];
                                 return (
                                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 0, borderTop: '1px solid #f1f5f9' }}>
-                                        {cells.map((s, i) => (
-                                            <div key={i} style={{
-                                                flex: '1 1 12.5%', minWidth: 70, textAlign: 'center', padding: '10px 6px',
-                                                borderRight: i < cells.length - 1 ? '1px solid #f1f5f9' : undefined,
-                                            }}>
-                                                <div style={{ fontSize: 9, color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>{s.label}</div>
-                                                <div style={{ fontSize: 16, fontWeight: 900, color: s.color, marginTop: 2 }}>{s.value}</div>
-                                            </div>
-                                        ))}
+                                        {cells.map((s, i) => {
+                                            const list = cs?.[s.bucket] || [];
+                                            return (
+                                                <button
+                                                    key={i}
+                                                    type="button"
+                                                    disabled={list.length === 0}
+                                                    onClick={() => setBibDetail({ cat, label: s.label, color: s.color, runners: list })}
+                                                    title={list.length ? (th ? `ดูเลข BIB ทั้ง ${list.length} คน` : `See all ${list.length} bibs`) : undefined}
+                                                    style={{
+                                                        flex: '1 1 12.5%', minWidth: 70, textAlign: 'center', padding: '10px 6px',
+                                                        borderRight: i < cells.length - 1 ? '1px solid #f1f5f9' : undefined,
+                                                        borderTop: 'none', borderBottom: 'none', borderLeft: 'none',
+                                                        background: 'transparent', fontFamily: 'inherit',
+                                                        cursor: list.length ? 'pointer' : 'default',
+                                                    }}
+                                                >
+                                                    <div style={{ fontSize: 9, color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>{s.label}</div>
+                                                    <div style={{ fontSize: 16, fontWeight: 900, color: s.color, marginTop: 2 }}>{list.length}</div>
+                                                </button>
+                                            );
+                                        })}
                                     </div>
                                 );
                             })()}
@@ -2029,6 +2062,67 @@ export function GeneralChartView({ monitor }: { monitor?: MonitorRequest }) {
                                         ))}
                                     </tbody>
                                 </table>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Which bibs are behind a summary number */}
+            {bibDetail && (
+                <div
+                    onClick={() => setBibDetail(null)}
+                    style={{
+                        position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', zIndex: 10000,
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
+                    }}
+                >
+                    <div
+                        onClick={e => e.stopPropagation()}
+                        style={{
+                            background: '#fff', borderRadius: 14, width: '100%', maxWidth: 620,
+                            maxHeight: '86vh', display: 'flex', flexDirection: 'column',
+                            boxShadow: '0 20px 60px rgba(0,0,0,0.3)', overflow: 'hidden',
+                        }}
+                    >
+                        <div style={{ padding: '18px 22px', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+                            <div>
+                                <h3 style={{ margin: 0, fontSize: 16, fontWeight: 900, color: '#0f172a' }}>
+                                    {bibDetail.cat} — {bibDetail.label}
+                                </h3>
+                                <p style={{ margin: '3px 0 0', fontSize: 12, color: '#94a3b8' }}>
+                                    {th ? 'จำนวน' : 'Count'}: <strong style={{ color: bibDetail.color }}>{bibDetail.runners.length}</strong>
+                                    <span style={{ marginLeft: 8 }}>{th ? '· ชี้ที่เลข BIB เพื่อดูชื่อ' : '· hover a bib for the name'}</span>
+                                </p>
+                            </div>
+                            <button onClick={() => setBibDetail(null)} style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: '#94a3b8', lineHeight: 1 }}>✕</button>
+                        </div>
+                        <div style={{ overflowY: 'auto', padding: '14px 22px 20px' }}>
+                            {bibDetail.runners.length === 0 ? (
+                                <div style={{ padding: 30, textAlign: 'center', color: '#94a3b8', fontSize: 13 }}>
+                                    {th ? 'ไม่มีนักวิ่งในกลุ่มนี้' : 'No runners in this group'}
+                                </div>
+                            ) : (
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                                    {bibDetail.runners
+                                        .slice()
+                                        .sort((a, b) => (a.bib || '').localeCompare(b.bib || '', undefined, { numeric: true }))
+                                        .map(r => (
+                                            <span
+                                                key={r._id || r.bib}
+                                                title={`${r.firstName || ''} ${r.lastName || ''}`.trim() || r.bib}
+                                                style={{
+                                                    fontFamily: 'monospace', fontSize: 12.5, fontWeight: 800,
+                                                    color: '#0f172a', background: '#f8fafc',
+                                                    border: `1px solid ${bibDetail.color}33`,
+                                                    borderLeft: `3px solid ${bibDetail.color}`,
+                                                    borderRadius: 6, padding: '4px 9px',
+                                                }}
+                                            >
+                                                {r.bib}
+                                            </span>
+                                        ))}
+                                </div>
                             )}
                         </div>
                     </div>

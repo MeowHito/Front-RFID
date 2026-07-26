@@ -14,6 +14,7 @@ import { computeAwardsForCategory, type AwardResult } from '@/lib/awards';
 import { isNationalitySplitCategory } from '@/lib/nationality';
 import { type AgeGroupBucket, buildCanonicalAgeGroups, canonicalizeAgeGroup, normalizeAgeGroupLabel } from '@/lib/age-groups';
 import RankingMenuDropdown from '@/components/RankingMenuDropdown';
+import CourseProfileModal, { type CourseRunner } from '@/components/CourseProfileModal';
 import type { RankingMenuVisibility } from '@/lib/rankingMenu';
 
 interface Campaign {
@@ -354,6 +355,11 @@ export default function EventLivePage() {
     const [showAllColumns, setShowAllColumns] = useState(false);
     const [isMobile, setIsMobile] = useState(false);
 
+    // 2D course profile popup — the distances that have a GPX line uploaded, so
+    // the button only appears where there is something to show.
+    const [showCourseProfile, setShowCourseProfile] = useState(false);
+    const [routeCategories, setRouteCategories] = useState<Set<string>>(new Set());
+
     const [currentTime, setCurrentTime] = useState(new Date());
     const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
     const [checkpointMappings, setCheckpointMappings] = useState<CheckpointMapping[]>([]);
@@ -681,6 +687,25 @@ export default function EventLivePage() {
         }, 10_000);
         return () => clearInterval(refreshInterval);
     }, [campaign?._id, isRaceFinished]);
+
+    // Which distances have a GPX course line. `meta=true` leaves out the coords,
+    // so this stays cheap — the full track is only pulled when the popup opens.
+    useEffect(() => {
+        if (!campaign?._id) return;
+        let alive = true;
+        (async () => {
+            try {
+                const res = await fetch(`/api/routes?campaignId=${campaign._id}&meta=true`, { cache: 'no-store' });
+                if (!res.ok) return;
+                const data = await res.json();
+                if (!alive || !Array.isArray(data)) return;
+                setRouteCategories(new Set(
+                    data.map((r: { category?: string }) => normalizeComparableText(r?.category)).filter(Boolean)
+                ));
+            } catch { /* the button simply stays hidden */ }
+        })();
+        return () => { alive = false; };
+    }, [campaign?._id]);
 
     async function fetchEventData() {
         try {
@@ -1660,6 +1685,30 @@ export default function EventLivePage() {
         setClearingCheckpoint(null);
     };
 
+    // ── 2D course profile popup ──
+    // A route is filed under the campaign category name, but older events have it
+    // under the distance label, so both count as a match.
+    const currentCategoryLabel = categories.find(c => c.key === filterCategory)?.label || '';
+    const courseProfileKeys = useMemo(
+        () => [currentCategoryName, currentCategoryLabel].filter(Boolean),
+        [currentCategoryName, currentCategoryLabel],
+    );
+
+    // Only the selected distance, trimmed down to what the profile needs.
+    const courseProfileRunners = useMemo<CourseRunner[]>(() => {
+        if (!showCourseProfile) return [];
+        return runners
+            .filter(r => !filterCategory || resolveRunnerCategoryKey(r) === filterCategory)
+            .map(r => ({
+                bib: r.bib,
+                name: `${r.firstName || ''} ${r.lastName || ''}`.trim() || r.bib,
+                gender: r.gender,
+                displayStatus: getDisplayStatus(r),
+                latestCheckpoint: r.latestCheckpoint,
+                rank: r.overallRank,
+            }));
+    }, [showCourseProfile, runners, filterCategory, resolveRunnerCategoryKey, getDisplayStatus]);
+
     // Loading state
     if (loading) {
         return (
@@ -1699,6 +1748,23 @@ export default function EventLivePage() {
         inputBg: isDark ? '#1e1e26' : '#f1f5f9',
         hoverBg: isDark ? 'rgba(34,197,94,0.1)' : '#f0fdf4',
     };
+
+    const hasCourseRoute = courseProfileKeys.some(k => routeCategories.has(normalizeComparableText(k)));
+
+    const courseProfileEl = hasCourseRoute ? (
+        <button
+            onClick={() => setShowCourseProfile(true)}
+            aria-label={language === 'th' ? 'ดูโปรไฟล์เส้นทาง 2D' : 'View 2D course profile'}
+            title={language === 'th' ? `ดูโปรไฟล์เส้นทาง ${currentCategoryLabel}` : `View the ${currentCategoryLabel} course profile`}
+            className="flex h-[29px] w-[40px] shrink-0 cursor-pointer items-center justify-center rounded-full border border-[var(--border)] bg-transparent text-[var(--muted-foreground)] transition-all duration-200 hover:border-[var(--foreground)] hover:text-[var(--foreground)]"
+        >
+            {/* Mountain profile with a peak — reads as "elevation graph" at 14px */}
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M3 20h18" />
+                <path d="M3 16l5-7 4 5 3-4 6 6" />
+            </svg>
+        </button>
+    ) : null;
 
     // ── Filter bar controls, shared between the mobile (3 rows) and desktop (single row) layouts ──
     const searchBoxEl = (
@@ -1985,6 +2051,7 @@ export default function EventLivePage() {
                         <div className="mt-2 flex flex-wrap items-center gap-1.5">
                             {genderBoxEl}
                             {ageSelectEl}
+                            {courseProfileEl}
                             <div className="ml-auto flex items-center gap-1">
                                 {rankingMenuEl}
                                 {slidersEl}
@@ -2022,6 +2089,7 @@ export default function EventLivePage() {
                         {searchBoxEl}
                         {genderBoxEl}
                         {ageSelectEl}
+                        {courseProfileEl}
                         {slidersEl}
                         {rankingMenuEl}
                         {adminSortEl}
@@ -2029,6 +2097,20 @@ export default function EventLivePage() {
                 )}
 
             </div>
+
+            {/* ===== 2D COURSE PROFILE POPUP ===== */}
+            {showCourseProfile && (
+                <CourseProfileModal
+                    open={showCourseProfile}
+                    onClose={() => setShowCourseProfile(false)}
+                    campaignId={campaign._id}
+                    categoryLabel={currentCategoryLabel}
+                    categoryKeys={courseProfileKeys}
+                    runners={courseProfileRunners}
+                    th={language === 'th'}
+                    isDark={isDark}
+                />
+            )}
 
             {/* ===== TABLE ===== */}
             {/* Full-bleed on mobile (no side gutters) so the results table uses the entire screen width */}

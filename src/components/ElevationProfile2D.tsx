@@ -40,7 +40,23 @@ interface Props {
     markers: ProfileMarker[];
     th: boolean;
     height?: number;
+    /** Swaps the grid/axis greys for ones that read on a dark card. */
+    dark?: boolean;
 }
+
+/** Grid, axis and checkpoint greys. The purple profile line works on both. */
+const SKIN = {
+    light: {
+        grid: '#f1f5f9', axisText: '#94a3b8', axisLine: '#e2e8f0', tick: '#cbd5e1',
+        unit: '#cbd5e1', cpLine: '#cbd5e1', cpText: '#64748b', cpDot: '#fff',
+        overflow: '#475569', tooltipBg: '#0f172a',
+    },
+    dark: {
+        grid: '#243044', axisText: '#8ea0b8', axisLine: '#334155', tick: '#475569',
+        unit: '#475569', cpLine: '#475569', cpText: '#cbd5e1', cpDot: '#0f172a',
+        overflow: '#94a3b8', tooltipBg: '#020617',
+    },
+};
 
 const COLORS = {
     M: { fill: '#3b82f6', dark: '#1d4ed8', soft: '#dbeafe' },
@@ -133,8 +149,9 @@ function niceStep(span: number, target: number): number {
 }
 
 export default function ElevationProfile2D({
-    coords, distanceKm, checkpoints, markers, th, height = 340,
+    coords, distanceKm, checkpoints, markers, th, height = 340, dark = false,
 }: Props) {
+    const skin = dark ? SKIN.dark : SKIN.light;
     const wrapRef = useRef<HTMLDivElement | null>(null);
     const [width, setWidth] = useState(900);
     const [hover, setHover] = useState<{ x: number; y: number; text: string } | null>(null);
@@ -253,8 +270,8 @@ export default function ElevationProfile2D({
                 {/* Horizontal grid + elevation axis */}
                 {(hasEle ? eleTicks : []).map(t => (
                     <g key={`e${t}`}>
-                        <line x1={PAD.left} y1={y(t)} x2={PAD.left + innerW} y2={y(t)} stroke="#f1f5f9" strokeWidth={1} />
-                        <text x={PAD.left - 8} y={y(t) + 3} textAnchor="end" fontSize={10} fill="#94a3b8">{t}</text>
+                        <line x1={PAD.left} y1={y(t)} x2={PAD.left + innerW} y2={y(t)} stroke={skin.grid} strokeWidth={1} />
+                        <text x={PAD.left - 8} y={y(t) + 3} textAnchor="end" fontSize={10} fill={skin.axisText}>{t}</text>
                     </g>
                 ))}
                 <text
@@ -263,7 +280,7 @@ export default function ElevationProfile2D({
                     textAnchor="end"
                     fontSize={9}
                     fontWeight={700}
-                    fill="#cbd5e1"
+                    fill={skin.unit}
                 >
                     {hasEle ? (th ? 'ม.' : 'm') : ''}
                 </text>
@@ -278,16 +295,16 @@ export default function ElevationProfile2D({
                         <line
                             x1={x(cp.km)} y1={PAD.top - 6}
                             x2={x(cp.km)} y2={PAD.top + innerH}
-                            stroke="#cbd5e1" strokeWidth={1} strokeDasharray="3 4"
+                            stroke={skin.cpLine} strokeWidth={1} strokeDasharray="3 4"
                         />
-                        <circle cx={x(cp.km)} cy={yAt(cp.km)} r={3.2} fill="#fff" stroke="#7c3aed" strokeWidth={2} />
+                        <circle cx={x(cp.km)} cy={yAt(cp.km)} r={3.2} fill={skin.cpDot} stroke="#7c3aed" strokeWidth={2} />
                         <text
                             x={x(cp.km)}
                             y={PAD.top - 12}
                             textAnchor="middle"
                             fontSize={9.5}
                             fontWeight={800}
-                            fill="#64748b"
+                            fill={skin.cpText}
                         >
                             {cp.name}
                         </text>
@@ -295,11 +312,11 @@ export default function ElevationProfile2D({
                 ))}
 
                 {/* Distance axis */}
-                <line x1={PAD.left} y1={PAD.top + innerH} x2={PAD.left + innerW} y2={PAD.top + innerH} stroke="#e2e8f0" />
+                <line x1={PAD.left} y1={PAD.top + innerH} x2={PAD.left + innerW} y2={PAD.top + innerH} stroke={skin.axisLine} />
                 {kmTicks.map(t => (
                     <g key={`k${t}`}>
-                        <line x1={x(t)} y1={PAD.top + innerH} x2={x(t)} y2={PAD.top + innerH + 4} stroke="#cbd5e1" />
-                        <text x={x(t)} y={PAD.top + innerH + 16} textAnchor="middle" fontSize={10} fill="#94a3b8">
+                        <line x1={x(t)} y1={PAD.top + innerH} x2={x(t)} y2={PAD.top + innerH + 4} stroke={skin.tick} />
+                        <text x={x(t)} y={PAD.top + innerH + 16} textAnchor="middle" fontSize={10} fill={skin.axisText}>
                             {t % 1 === 0 ? t : t.toFixed(1)}
                         </text>
                     </g>
@@ -310,7 +327,7 @@ export default function ElevationProfile2D({
                     textAnchor="end"
                     fontSize={9}
                     fontWeight={700}
-                    fill="#cbd5e1"
+                    fill={skin.unit}
                 >
                     {th ? 'ระยะทาง (กม.)' : 'Distance (km)'}
                 </text>
@@ -380,7 +397,7 @@ export default function ElevationProfile2D({
                                 </text>
                             )}
                             {marker.note && (
-                                <text x={0} y={20} textAnchor="middle" fontSize={7.5} fontWeight={700} fill="#94a3b8">
+                                <text x={0} y={20} textAnchor="middle" fontSize={7.5} fontWeight={700} fill={skin.axisText}>
                                     {marker.note}
                                 </text>
                             )}
@@ -391,7 +408,7 @@ export default function ElevationProfile2D({
                 {/* Whatever did not fit in a column */}
                 {overflow.map((o, i) => (
                     <g key={`ov${i}`} transform={`translate(${o.px}, ${o.py - o.lift * FIGURE_LIFT})`}>
-                        <rect x={-15} y={-12} width={30} height={14} rx={7} fill="#475569" />
+                        <rect x={-15} y={-12} width={30} height={14} rx={7} fill={skin.overflow} />
                         <text x={0} y={-1.5} textAnchor="middle" fontSize={9} fontWeight={800} fill="#fff">
                             +{o.count}
                         </text>
@@ -406,7 +423,7 @@ export default function ElevationProfile2D({
                         left: Math.min(Math.max(hover.x - 70, 0), Math.max(0, width - 150)),
                         top: Math.max(0, hover.y - 62),
                         width: 150,
-                        background: '#0f172a',
+                        background: skin.tooltipBg,
                         color: '#fff',
                         borderRadius: 8,
                         padding: '7px 10px',
