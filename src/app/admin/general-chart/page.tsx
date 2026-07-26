@@ -629,9 +629,14 @@ function CourseStrip({ cat, data, th, route, onPick, legMedianMs, initial, chart
         [hasRoute, route?.coords],
     );
 
+    // Out of the race = off the picture. Checked on the status itself rather than
+    // the colour bucket, because `not_started` shares the bucket with the runners
+    // who are genuinely out there.
+    const OFF_COURSE_STATUSES = new Set(['dns', 'dnf', 'dq', 'not_started']);
+
     const onCourse = hasRoute && effort
         ? data.flatMap((d, i) => d.runners
-            .filter(r => r.bucket === 'active')
+            .filter(r => r.bucket === 'active' && !OFF_COURSE_STATUSES.has((r.status || '').toLowerCase()))
             .map(r => {
                 const lastKm = cpKm[i] ?? 0;
                 const nextKm = cpKm[i + 1];
@@ -1445,36 +1450,45 @@ export function GeneralChartView({ monitor }: { monitor?: MonitorRequest }) {
             const catRunners = runners.filter(r => r.category === cat);
             const catCps = catCpsFor(cat);
             if (catCps.length === 0) continue;
-            const data: SegmentDatum[] = [];
-            for (let i = 0; i < catCps.length; i++) {
-                const cp = catCps[i];
-                const nextCp = i < catCps.length - 1 ? catCps[i + 1] : null;
-                const cpBibs = cpTimingMap[cp.name] || new Map<string, number>();
-                const catBibsAtCp = catRunners.filter(r => cpBibs.has(r.bib));
-                let remaining: Runner[];
-                if (cp.type === 'finish' || cp.name.toLowerCase() === 'finish') {
-                    remaining = catBibsAtCp;
-                } else if (nextCp) {
-                    const nextBibs = cpTimingMap[nextCp.name] || new Map<string, number>();
-                    remaining = catBibsAtCp.filter(r => !nextBibs.has(r.bib));
-                } else {
-                    remaining = catBibsAtCp;
-                }
-                const prevBibs = i > 0 ? cpTimingMap[catCps[i - 1].name] : undefined;
-                const segRunners: SegmentRunner[] = remaining.map(r => ({
-                    bib: r.bib,
-                    name: `${r.firstName || ''} ${r.lastName || ''}`.trim() || r.bib,
-                    status: r.status,
-                    gender: r.gender,
-                    bucket: statusBucketOf(r.status),
-                    elapsedMs: r.elapsedTime || r.netTime || r.gunTime || undefined,
-                    // The last two scans give the speed of the leg they just ran,
-                    // which is what the 2D view carries forward.
-                    lastScanMs: cpBibs.get(r.bib),
-                    prevScanMs: prevBibs?.get(r.bib),
-                })).sort((a, b) => (a.bib || '').localeCompare(b.bib || '', undefined, { numeric: true }));
+            const cpBibMaps = catCps.map(cp => cpTimingMap[cp.name] || new Map<string, number>());
+
+            // Every runner belongs to the LAST checkpoint they actually scanned.
+            // The old rule — "scanned here but not the next one" — sent anybody
+            // who missed a checkpoint back to the gap: a finisher who skipped A2
+            // was drawn standing on START, and counted a second time at FINISH.
+            // `scans` keeps the indices they really passed, so the leg behind
+            // them is the previous scan they have, not the checkpoint before.
+            const placement = new Map<string, { last: number; scans: number[] }>();
+            for (const r of catRunners) {
+                const scans: number[] = [];
+                for (let i = 0; i < catCps.length; i++) if (cpBibMaps[i].has(r.bib)) scans.push(i);
+                if (scans.length) placement.set(r.bib, { last: scans[scans.length - 1], scans });
+            }
+            const atCp: Runner[][] = catCps.map(() => []);
+            for (const r of catRunners) {
+                const p = placement.get(r.bib);
+                if (p) atCp[p.last].push(r);
+            }
+
+            const data: SegmentDatum[] = catCps.map((cp, i) => {
+                const segRunners: SegmentRunner[] = atCp[i].map(r => {
+                    const scans = placement.get(r.bib)!.scans;
+                    const prevIdx = scans.length > 1 ? scans[scans.length - 2] : undefined;
+                    return {
+                        bib: r.bib,
+                        name: `${r.firstName || ''} ${r.lastName || ''}`.trim() || r.bib,
+                        status: r.status,
+                        gender: r.gender,
+                        bucket: statusBucketOf(r.status),
+                        elapsedMs: r.elapsedTime || r.netTime || r.gunTime || undefined,
+                        // The last two scans give the speed of the leg they just ran,
+                        // which is what the 2D view carries forward.
+                        lastScanMs: cpBibMaps[i].get(r.bib),
+                        prevScanMs: prevIdx === undefined ? undefined : cpBibMaps[prevIdx].get(r.bib),
+                    };
+                }).sort((a, b) => (a.bib || '').localeCompare(b.bib || '', undefined, { numeric: true }));
                 const by = (b: StatusBucket) => segRunners.filter(r => r.bucket === b).length;
-                data.push({
+                return {
                     cpName: cp.name,
                     count: segRunners.length,
                     total: catRunners.length,
@@ -1484,8 +1498,8 @@ export function GeneralChartView({ monitor }: { monitor?: MonitorRequest }) {
                     other: by('other'),
                     runners: segRunners,
                     distance: (cp as any).distance || (cp as any).distanceKm || undefined,
-                });
-            }
+                };
+            });
             result[cat] = data;
         }
         return result;

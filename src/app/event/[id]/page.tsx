@@ -15,6 +15,7 @@ import { isNationalitySplitCategory } from '@/lib/nationality';
 import { type AgeGroupBucket, buildCanonicalAgeGroups, canonicalizeAgeGroup, normalizeAgeGroupLabel } from '@/lib/age-groups';
 import RankingMenuDropdown from '@/components/RankingMenuDropdown';
 import CourseProfileModal, { type CourseRunner } from '@/components/CourseProfileModal';
+import { countryName, countryToFlag } from '@/lib/country-flags';
 import type { RankingMenuVisibility } from '@/lib/rankingMenu';
 
 interface Campaign {
@@ -2334,7 +2335,19 @@ export default function EventLivePage() {
                                                                     BIB {runner.bib}
                                                                 </span>
                                                                 {/* Age group moved to the CAT column; show nationality here, falling back to category when there is no age group. */}
-                                                                {runner.nationality ? runner.nationality : ''}{!runner.ageGroup && runner.category ? `${runner.nationality ? ' | ' : ''}${runner.category}` : ''}
+                                                                {runner.nationality ? (
+                                                                    // The flag replaces the code ("THA"); the code stays as the
+                                                                    // fallback for anything the table cannot resolve, and the
+                                                                    // full country name is on hover.
+                                                                    <span
+                                                                        title={`${countryName(runner.nationality, language === 'th' ? 'th' : 'en')} (${runner.nationality.toUpperCase()})`}
+                                                                        className={isMobile ? 'text-[12px]' : 'text-[13px]'}
+                                                                        style={{ lineHeight: 1 }}
+                                                                    >
+                                                                        {countryToFlag(runner.nationality) || runner.nationality.toUpperCase()}
+                                                                    </span>
+                                                                ) : null}
+                                                                {!runner.ageGroup && runner.category ? `${runner.nationality ? ' | ' : ''}${runner.category}` : ''}
                                                             </span>
                                                         </div>
                                                     </td>
