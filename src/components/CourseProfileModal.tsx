@@ -33,12 +33,18 @@ export interface CourseRunner {
     name: string;
     /** 'M' / 'F' — anything else is treated as unknown and clumped. */
     gender: string;
-    /** Display status: only `in_progress` runners are still on the course. */
+    /** Display status. `dnf`/`dq`/`dns`/`wait` are out of the race and not drawn. */
     displayStatus: string;
     latestCheckpoint?: string;
     /** Live overall rank, used to order the leaders. */
     rank?: number;
 }
+
+/** Same test the results table uses to decide a runner has crossed the line. */
+const isFinishName = (v?: string | null) => {
+    const upper = String(v || '').trim().toUpperCase();
+    return upper.includes('FINISH') || upper === 'FIN';
+};
 
 interface Props {
     open: boolean;
@@ -147,21 +153,37 @@ export default function CourseProfileModal({
             .sort((a, b) => a.km - b.km);
     }, [route]);
 
-    /** Runners still on the course, placed at the checkpoint they last scanned. */
+    /**
+     * Everyone still in the race, standing on the checkpoint they last scanned.
+     * Finishers count: they belong at the FINISH mark, which is what the results
+     * table already shows for them. Only runners who are out — DNF, DQ, DNS, or
+     * not released yet — are left off.
+     */
     const onCourse = useMemo(() => {
         if (!route || !checkpoints.length) return [];
         const kmByCp = new Map(checkpoints.map(c => [norm(c.name), c.km]));
+        const finishMark = checkpoints.find(c => isFinishName(c.name));
         return runners
-            .filter(r => r.displayStatus === 'in_progress')
+            .filter(r => r.displayStatus === 'in_progress' || r.displayStatus === 'finished')
             .map(r => {
+                const done = r.displayStatus === 'finished' || isFinishName(r.latestCheckpoint);
                 const cp = norm(r.latestCheckpoint);
-                // No scan yet = still at the start line.
-                const km = cp ? kmByCp.get(cp) : 0;
-                return km === undefined ? null : { ...r, km, cpName: r.latestCheckpoint || checkpoints[0]?.name || '' };
+                // A finisher sits on the finish line even when the last scan name
+                // is missing or spelled differently from the route's marker.
+                const km = done
+                    ? (finishMark?.km ?? route.distanceKm)
+                    : cp ? kmByCp.get(cp) : 0;   // no scan yet = still at the start
+                if (km === undefined) return null;
+                const cpName = done
+                    ? (finishMark?.name || r.latestCheckpoint || 'FINISH')
+                    : (r.latestCheckpoint || checkpoints[0]?.name || '');
+                return { ...r, km, cpName, done };
             })
-            .filter((r): r is CourseRunner & { km: number; cpName: string } => r !== null)
+            .filter((r): r is CourseRunner & { km: number; cpName: string; done: boolean } => r !== null)
             .sort((a, b) => (b.km - a.km) || ((a.rank ?? Infinity) - (b.rank ?? Infinity)));
     }, [route, checkpoints, runners]);
+
+    const finishedCount = onCourse.filter(r => r.done).length;
 
     /** Three leaders per gender by name, everyone else bundled into amber clumps. */
     const markers = useMemo<ProfileMarker[]>(() => {
@@ -181,7 +203,9 @@ export default function CourseProfileModal({
                     tooltip: [
                         `${i + 1}. ${r.name}`,
                         `BIB ${r.bib} · ${g === 'M' ? (th ? 'ชาย' : 'Male') : (th ? 'หญิง' : 'Female')}`,
-                        `${r.km.toFixed(2)} ${th ? 'กม.' : 'km'} · ${r.cpName}`,
+                        r.done
+                            ? (th ? `เข้าเส้นชัยแล้ว (${r.km.toFixed(2)} กม.)` : `Finished (${r.km.toFixed(2)} km)`)
+                            : `${th ? 'จุดสแกนล่าสุด' : 'Last scan'}: ${r.cpName} (${r.km.toFixed(2)} ${th ? 'กม.' : 'km'})`,
                     ].join('\n'),
                 });
             });
@@ -206,11 +230,14 @@ export default function CourseProfileModal({
                 label: `≈${chunk.length}${th ? ' คน' : ''}`,
                 cluster: true,
                 tooltip: [
-                    `${th ? 'ประมาณ' : 'about'} ${chunk.length} ${th ? 'คนอยู่ช่วงนี้' : 'runners here'}`,
+                    chunk.every(r => r.done)
+                        ? `${chunk.length} ${th ? 'คนเข้าเส้นชัยแล้ว' : 'runners finished'}`
+                        : `${chunk.length} ${th ? 'คนอยู่ช่วงนี้' : 'runners here'}`,
                     `♂ ${males} / ♀ ${females}`,
                     hi - lo < 0.05
                         ? `${avgKm.toFixed(1)} ${th ? 'กม.' : 'km'}`
                         : `${lo.toFixed(1)}–${hi.toFixed(1)} ${th ? 'กม.' : 'km'}`,
+                    `${th ? 'จุดสแกนล่าสุด' : 'Last scan'}: ${Array.from(new Set(chunk.map(r => r.cpName))).join(' / ')}`,
                 ].join('\n'),
             });
         };
@@ -345,13 +372,14 @@ export default function CourseProfileModal({
                                 {ele && (
                                     <span>{th ? 'ความสูง' : 'Elevation'}: <b style={{ color: muted }}>{Math.round(ele.min)} – {Math.round(ele.max)} m</b></span>
                                 )}
-                                <span>{th ? 'อยู่บนเส้นทาง' : 'On course'}: <b style={{ color: muted }}>{onCourse.length}</b></span>
+                                <span>{th ? 'อยู่บนเส้นทาง' : 'On course'}: <b style={{ color: muted }}>{onCourse.length - finishedCount}</b></span>
+                                <span>{th ? 'เข้าเส้นชัยแล้ว' : 'Finished'}: <b style={{ color: muted }}>{finishedCount}</b></span>
                             </div>
 
                             <div style={{ fontSize: 10, color: faint, marginTop: 8, textAlign: 'center', lineHeight: 1.7 }}>
                                 {th
-                                    ? '💡 ตุ๊กตายืนอยู่ที่จุดสแกนล่าสุดของนักวิ่งคนนั้น · แตะที่ตุ๊กตาเพื่อดูรายละเอียด'
-                                    : '💡 Each figure stands at that runner’s last scan point · tap a figure for details'}
+                                    ? '💡 ตุ๊กตายืนอยู่ที่จุดสแกนล่าสุดของนักวิ่งคนนั้น (คนที่จบแล้วจะอยู่ที่จุด FINISH) · แตะที่ตุ๊กตาเพื่อดูรายละเอียด'
+                                    : '💡 Each figure stands at that runner’s last scan point — finishers sit on FINISH · tap a figure for details'}
                                 {!ele && (
                                     <div style={{ marginTop: 4, color: '#f59e0b' }}>
                                         {th

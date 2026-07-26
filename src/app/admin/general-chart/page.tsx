@@ -1764,7 +1764,7 @@ export function GeneralChartView({ monitor }: { monitor?: MonitorRequest }) {
                                 </div>
                                 <div style={styles.distBadge}>
                                     <div style={styles.distBadgeLabel}>TOTAL</div>
-                                    <div style={styles.distBadgeValue}>{cs?.total?.toLocaleString() || 0}</div>
+                                    <div style={styles.distBadgeValue}>{(cs?.total?.length || 0).toLocaleString()}</div>
                                 </div>
                             </div>
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 0 }}>
