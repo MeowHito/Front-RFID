@@ -565,7 +565,7 @@ function CourseStrip({ cat, data, th, route, onPick, legMedianMs, initial, chart
     chartHeight?: number;
     onOpenMonitor?: (state: { view: 'graph' | 'map' | '2d' }) => void;
 }) {
-    const [view, setView] = useState<'graph' | 'map' | '2d'>(initial?.view ?? 'graph');
+    const [view, setView] = useState<'graph' | 'map' | '2d'>(initial?.view ?? '2d');
     // 2D view: show the leading three of each gender, or the whole field cut into
     // equal-sized groups (the admin picks the size).
 

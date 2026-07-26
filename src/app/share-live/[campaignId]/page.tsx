@@ -463,7 +463,7 @@ export default function ShareLiveMonitorPage() {
                             {checkpoints.length === 0 && <option value="">No checkpoints</option>}
                             {checkpoints.map(cp => (
                                 <option key={cp._id} value={cp.name}>
-                                    {cp.name}{cp.kmCumulative ? ` (${cp.kmCumulative}KM)` : ''}
+                                    {cp.name}
                                 </option>
                             ))}
                         </select>
