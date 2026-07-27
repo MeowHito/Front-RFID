@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState, useCallback, useMemo, useRef, useLayoutEffect } from 'react';
 import dynamic from 'next/dynamic';
+import * as XLSX from 'xlsx';
 import { useLanguage } from '@/lib/language-context';
 import AdminLayout from '../AdminLayout';
 import '../admin.css';
@@ -63,6 +64,19 @@ interface TimingRecord {
     scanTime?: string;
     elapsedTime?: number;
 }
+
+/** Whether a runner counts as DNS. An explicit manual status always wins over RFID scan
+ *  data — a staff member marking someone "dns" (e.g. to correct a stray/duplicate scan)
+ *  or "finished/dnf/dq/in_progress" (e.g. a no-scan auto-DQ) is the ground truth. Only
+ *  when the status is still the untouched default ("not_started"/blank) do we fall back
+ *  to whether they have a START scan. This keeps DNS the exact complement of "started" —
+ *  Started + DNS = Registered always, and Finished + DNF + DQ = Started once no one is
+ *  still mid-race — while never overriding a status a human explicitly set. */
+const isDnsRunner = (r: Runner, startBibs: Map<string, number>): boolean => {
+    if (r.status === 'dns') return true;
+    if (r.status === 'in_progress' || r.status === 'finished' || r.status === 'dnf' || r.status === 'dq') return false;
+    return !startBibs.has(r.bib);
+};
 
 /** "42 K" / "42k" → "42K", so category names and event names line up. */
 const normCat = (s: string) => (s || '').trim().toUpperCase().replace(/\s+/g, '');
@@ -1682,9 +1696,9 @@ export function GeneralChartView({ monitor }: { monitor?: MonitorRequest }) {
             const cr = runners.filter(r => r.category === cat);
             result[cat] = {
                 total: cr,
-                started: cr.filter(r => startBibs.has(r.bib) || r.status === 'in_progress' || r.status === 'finished'),
+                started: cr.filter(r => !isDnsRunner(r, startBibs)),
                 finished: cr.filter(r => r.status === 'finished'),
-                dns: cr.filter(r => r.status === 'dns'),
+                dns: cr.filter(r => isDnsRunner(r, startBibs)),
                 dnf: cr.filter(r => r.status === 'dnf'),
                 dq: cr.filter(r => r.status === 'dq'),
                 mF: cr.filter(r => r.gender === 'M' && r.status === 'finished'),
@@ -1744,10 +1758,10 @@ export function GeneralChartView({ monitor }: { monitor?: MonitorRequest }) {
     // ── Runner count by status (Starters / Finishers / DNF / DNS / DQ) ──
     const statusChartData = useMemo(() => {
         const startBibs = cpTimingMap['START'] || cpTimingMap['Start'] || new Map<string, number>();
-        const starters = runners.filter(r => startBibs.has(r.bib) || r.status === 'in_progress' || r.status === 'finished' || r.status === 'dnf');
+        const starters = runners.filter(r => !isDnsRunner(r, startBibs));
         const finishers = runners.filter(r => r.status === 'finished');
         const dnfRunners = runners.filter(r => r.status === 'dnf');
-        const dnsRunners = runners.filter(r => r.status === 'dns');
+        const dnsRunners = runners.filter(r => isDnsRunner(r, startBibs));
         const dqRunners = runners.filter(r => r.status === 'dq');
         return [
             { name: th ? 'ปล่อยตัว' : 'Starters', male: starters.filter(r => r.gender === 'M').length, female: starters.filter(r => r.gender === 'F').length, total: starters.length },
@@ -1761,7 +1775,7 @@ export function GeneralChartView({ monitor }: { monitor?: MonitorRequest }) {
     // ── Starters by age group ──
     const startersByAgeData = useMemo(() => {
         const startBibs = cpTimingMap['START'] || cpTimingMap['Start'] || new Map<string, number>();
-        const starters = runners.filter(r => startBibs.has(r.bib) || r.status === 'in_progress' || r.status === 'finished' || r.status === 'dnf');
+        const starters = runners.filter(r => !isDnsRunner(r, startBibs));
         const groups: Record<string, { male: number; female: number }> = {};
         starters.forEach(r => {
             const ag = r.ageGroup || 'N/A';
@@ -1794,64 +1808,42 @@ export function GeneralChartView({ monitor }: { monitor?: MonitorRequest }) {
         return result;
     }, [categories, runners, catCpsFor, cpTimingMap]);
 
-    // ── Export per-category summary as CSV (checkpoint distribution + status counts) ──
-    const escapeCsvCell = (val: unknown): string => {
-        const s = val === null || val === undefined ? '' : String(val);
-        if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
-        return s;
-    };
-    const downloadCategoryCsv = useCallback((cat: string) => {
-        const dataPassed = chartDataByCategoryPassedThrough[cat] || [];
-        const dataCurrently = chartDataByCategory[cat] || [];
-        const cs = catSummary[cat];
-
-        const rows: string[] = [];
-        rows.push(['Category', cat].map(escapeCsvCell).join(','));
-        rows.push('');
-
-        // Summary counts
-        rows.push(['Registered', 'Started', 'Finished', 'DNS', 'DNF', 'DQ', 'Male Finished', 'Female Finished'].map(escapeCsvCell).join(','));
-        rows.push([
-            cs?.total?.length || 0,
-            cs?.started?.length || 0,
-            cs?.finished?.length || 0,
-            cs?.dns?.length || 0,
-            cs?.dnf?.length || 0,
-            cs?.dq?.length || 0,
-            cs?.mF?.length || 0,
-            cs?.fF?.length || 0,
-        ].map(escapeCsvCell).join(','));
-        rows.push('');
-
-        // Checkpoint distribution
-        rows.push(['Checkpoint', 'Passed Through (cumulative)', 'Total Runners', 'Currently Active', 'Currently DNF', 'Currently DQ', 'Currently Other'].map(escapeCsvCell).join(','));
-        const currentlyByCp = new Map(dataCurrently.map(d => [d.cpName, d]));
-        for (const p of dataPassed) {
-            const cur = currentlyByCp.get(p.cpName);
-            rows.push([
-                p.cpName,
-                p.count,
-                p.total,
-                cur?.active ?? '',
-                cur?.dnf ?? '',
-                cur?.dq ?? '',
-                cur?.other ?? '',
-            ].map(escapeCsvCell).join(','));
+    // ── Export ALL categories' summary as ONE Excel file — one sheet per category, so
+    //    printing the workbook naturally puts each distance on its own page. ──
+    const downloadAllCategoriesExcel = useCallback(() => {
+        const wb = XLSX.utils.book_new();
+        const usedSheetNames = new Set<string>();
+        for (const cat of categories) {
+            const cs = catSummary[cat];
+            const aoa: (string | number)[][] = [
+                ['Category', cat],
+                [],
+                ['Registered', 'Started', 'Finished', 'DNS', 'DNF', 'DQ', 'Male Finished', 'Female Finished'],
+                [
+                    cs?.total?.length || 0,
+                    cs?.started?.length || 0,
+                    cs?.finished?.length || 0,
+                    cs?.dns?.length || 0,
+                    cs?.dnf?.length || 0,
+                    cs?.dq?.length || 0,
+                    cs?.mF?.length || 0,
+                    cs?.fF?.length || 0,
+                ],
+            ];
+            const ws = XLSX.utils.aoa_to_sheet(aoa);
+            ws['!cols'] = aoa[2].map(() => ({ wch: 16 }));
+            // Excel sheet names: 31 chars max, no \ / ? * [ ], and must be unique per workbook.
+            let sheetName = cat.replace(/[\\/?*[\]]/g, '-').slice(0, 31) || 'Sheet';
+            let n = 2;
+            while (usedSheetNames.has(sheetName)) {
+                sheetName = `${cat.slice(0, 28)}-${n++}`;
+            }
+            usedSheetNames.add(sheetName);
+            XLSX.utils.book_append_sheet(wb, ws, sheetName);
         }
-
-        const csvContent = '﻿' + rows.join('\r\n');
-        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
         const eventNameSafe = (campaign?.name || 'event').replace(/[^\w\-]+/g, '_');
-        const catSafe = cat.replace(/[^\w\-]+/g, '_');
-        link.download = `${eventNameSafe}-${catSafe}-summary-${new Date().toISOString().slice(0, 10)}.csv`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        URL.revokeObjectURL(url);
-    }, [chartDataByCategory, chartDataByCategoryPassedThrough, catSummary, campaign]);
+        XLSX.writeFile(wb, `${eventNameSafe}-summary-${new Date().toISOString().slice(0, 10)}.xlsx`);
+    }, [categories, catSummary, campaign]);
 
     // ── Monitor window: one panel, no chrome, sized to the screen ──
     if (monitor) {
@@ -1896,6 +1888,25 @@ export function GeneralChartView({ monitor }: { monitor?: MonitorRequest }) {
             <style>{`@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}`}</style>
 
             <div style={styles.page}>
+
+                {/* ─── Export all categories' summary as one Excel file ─── */}
+                <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
+                    <button
+                        type="button"
+                        onClick={downloadAllCategoriesExcel}
+                        disabled={categories.length === 0}
+                        title={th ? 'ดาวน์โหลดสรุปทุกระยะเป็นไฟล์ Excel เดียว (1 ระยะ = 1 ชีท พิมพ์ได้ 1 ระยะ/หน้า A4)' : 'Download all distances as one Excel file (one sheet per distance, prints one page each)'}
+                        style={{
+                            display: 'flex', alignItems: 'center', gap: 6,
+                            padding: '9px 16px', borderRadius: 8, border: '1px solid #bbf7d0',
+                            background: '#f0fdf4', color: '#16a34a', fontSize: 13, fontWeight: 700,
+                            cursor: categories.length === 0 ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap',
+                            opacity: categories.length === 0 ? 0.5 : 1,
+                        }}
+                    >
+                        ⬇ {th ? 'ดาวน์โหลดสรุปทุกระยะ (Excel)' : 'Export All Distances (Excel)'}
+                    </button>
+                </div>
 
                 {/* ─── Runner Count by Status ─── */}
                 <div style={styles.distGrid} className="gc-dist-grid">
@@ -1973,24 +1984,9 @@ export function GeneralChartView({ monitor }: { monitor?: MonitorRequest }) {
                                     </h2>
                                     <p style={styles.sectionSub}>{th ? 'เปรียบเทียบจำนวนนักวิ่งที่ผ่านแต่ละจุด กับจำนวนที่เหลืออยู่ปัจจุบัน' : 'Comparing cumulative pass-through vs runners currently remaining at each checkpoint'}</p>
                                 </div>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                                    <button
-                                        type="button"
-                                        onClick={() => downloadCategoryCsv(cat)}
-                                        title={th ? `ดาวน์โหลดสรุป ${cat} เป็น CSV` : `Download ${cat} summary as CSV`}
-                                        style={{
-                                            display: 'flex', alignItems: 'center', gap: 6,
-                                            padding: '8px 14px', borderRadius: 8, border: '1px solid #bbf7d0',
-                                            background: '#f0fdf4', color: '#16a34a', fontSize: 12, fontWeight: 700,
-                                            cursor: 'pointer', whiteSpace: 'nowrap',
-                                        }}
-                                    >
-                                        ⬇ {th ? 'ดาวน์โหลด CSV' : 'Export CSV'}
-                                    </button>
-                                    <div style={styles.distBadge}>
-                                        <div style={styles.distBadgeLabel}>TOTAL</div>
-                                        <div style={styles.distBadgeValue}>{(cs?.total?.length || 0).toLocaleString()}</div>
-                                    </div>
+                                <div style={styles.distBadge}>
+                                    <div style={styles.distBadgeLabel}>TOTAL</div>
+                                    <div style={styles.distBadgeValue}>{(cs?.total?.length || 0).toLocaleString()}</div>
                                 </div>
                             </div>
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 0 }}>

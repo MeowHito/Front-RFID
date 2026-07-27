@@ -469,9 +469,15 @@ export default function ResultsPage() {
     }, [runners, selectedCategory]);
     const statusCounts = useMemo(() => {
         const counts: Record<string, number> = {};
-        categoryScopedRunners.forEach(r => { counts[r.status] = (counts[r.status] || 0) + 1; });
+        categoryScopedRunners.forEach(r => {
+            // Once the race is over, a runner still sitting as "not_started" never showed
+            // up — that's a DNS, not "yet to start". Fold it into the DNS tile so the
+            // summary counts reflect reality instead of an in-progress-race snapshot.
+            const key = (isRaceFinished && r.status === 'not_started') ? 'dns' : r.status;
+            counts[key] = (counts[key] || 0) + 1;
+        });
         return counts;
-    }, [categoryScopedRunners]);
+    }, [categoryScopedRunners, isRaceFinished]);
     const totalRunners = categoryScopedRunners.length;
     const getStatusCount = (st: string) => statusCounts[st] || 0;
 
