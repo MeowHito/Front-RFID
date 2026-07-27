@@ -81,12 +81,18 @@ function loadTemplates(): ESlipV2Template[] {
     }
 }
 
-function persistTemplates(list: ESlipV2Template[]) {
-    if (typeof window === 'undefined') return;
+/** Returns true if the templates list was actually written to localStorage.
+ *  Templates embed images as base64 data URLs, so this can silently exceed
+ *  the browser's ~5-10MB per-origin quota — callers must check the result
+ *  instead of assuming the save succeeded just because state updated. */
+function persistTemplates(list: ESlipV2Template[]): boolean {
+    if (typeof window === 'undefined') return false;
     try {
         localStorage.setItem(TEMPLATES_STORAGE_KEY, JSON.stringify(list));
+        return true;
     } catch {
-        /* quota / private-mode — ignore */
+        /* quota / private-mode — surfaced to the caller, not swallowed */
+        return false;
     }
 }
 
@@ -479,6 +485,9 @@ export default function ESlip2EditorPage() {
     const [scale, setScale] = useState(0.8);
     const [bgTab, setBgTab] = useState<'color' | 'image'>('color');
     const [templates, setTemplates] = useState<ESlipV2Template[]>([]);
+    // Which saved template (if any) the canvas currently reflects — lets "บันทึกเป็นเทมเพลต"
+    // update that same entry in place instead of always creating a duplicate.
+    const [activeTemplateId, setActiveTemplateId] = useState<string | null>(null);
     const [templateMsg, setTemplateMsg] = useState<string | null>(null);
     const templateImportRef = useRef<HTMLInputElement>(null);
 
@@ -880,6 +889,24 @@ export default function ESlip2EditorPage() {
     };
 
     const saveAsTemplate = () => {
+        // If the canvas currently reflects a saved template, default to updating
+        // that same entry in place rather than always creating a duplicate.
+        const activeTpl = activeTemplateId ? templates.find(t => t.id === activeTemplateId) : null;
+        if (activeTpl) {
+            const updateInPlace = window.confirm(`อัปเดตเทมเพลต "${activeTpl.name}" ที่กำลังใช้อยู่?\n\nกด OK เพื่ออัปเดตของเดิม หรือกด Cancel เพื่อบันทึกเป็นเทมเพลตใหม่แทน`);
+            if (updateInPlace) {
+                const next = templates.map(t => t.id === activeTpl.id
+                    ? { ...t, savedAt: Date.now(), layout: JSON.parse(JSON.stringify(layoutRef.current)) }
+                    : t);
+                if (!persistTemplates(next)) {
+                    flashTemplateMsg('✕ บันทึกเทมเพลตไม่สำเร็จ — พื้นที่เก็บข้อมูลเบราว์เซอร์เต็ม (รูปภาพในเทมเพลตใหญ่เกินไป) ลองลบเทมเพลตเก่าออกก่อน');
+                    return;
+                }
+                setTemplates(next);
+                flashTemplateMsg(`✓ อัปเดตเทมเพลต "${activeTpl.name}" แล้ว`);
+                return;
+            }
+        }
         const name = window.prompt('ตั้งชื่อเทมเพลต:', campaign?.name || 'E-Slip Template');
         if (!name || !name.trim()) return;
         const tpl: ESlipV2Template = {
@@ -889,8 +916,12 @@ export default function ESlip2EditorPage() {
             layout: JSON.parse(JSON.stringify(layoutRef.current)),
         };
         const next = [tpl, ...templates];
+        if (!persistTemplates(next)) {
+            flashTemplateMsg('✕ บันทึกเทมเพลตไม่สำเร็จ — พื้นที่เก็บข้อมูลเบราว์เซอร์เต็ม (รูปภาพในเทมเพลตใหญ่เกินไป) ลองลบเทมเพลตเก่าออกก่อน');
+            return;
+        }
         setTemplates(next);
-        persistTemplates(next);
+        setActiveTemplateId(tpl.id);
         flashTemplateMsg('✓ บันทึกเทมเพลตแล้ว');
     };
 
@@ -898,13 +929,18 @@ export default function ESlip2EditorPage() {
         snapshot();
         setLayout(ensureSplitsElement(JSON.parse(JSON.stringify(tpl.layout))));
         setSelectedId(null);
+        setActiveTemplateId(tpl.id);
         flashTemplateMsg(`✓ โหลดเทมเพลต "${tpl.name}" แล้ว (อย่าลืมกดบันทึก)`);
     };
 
     const deleteTemplate = (id: string) => {
         const next = templates.filter(t => t.id !== id);
+        if (!persistTemplates(next)) {
+            flashTemplateMsg('✕ ลบเทมเพลตไม่สำเร็จ');
+            return;
+        }
         setTemplates(next);
-        persistTemplates(next);
+        if (activeTemplateId === id) setActiveTemplateId(null);
     };
 
     const exportTemplate = () => {
@@ -935,6 +971,7 @@ export default function ESlip2EditorPage() {
             snapshot();
             setLayout(ensureSplitsElement(json.layout as ESlipV2Layout));
             setSelectedId(null);
+            setActiveTemplateId(null);
             flashTemplateMsg('✓ นำเข้าเทมเพลตแล้ว (อย่าลืมกดบันทึก)');
         } catch {
             flashTemplateMsg('✕ อ่านไฟล์เทมเพลตไม่ได้');
@@ -1118,8 +1155,14 @@ export default function ESlip2EditorPage() {
                                     {templates.map(t => (
                                         <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                                             <button type="button" onClick={() => applyTemplate(t)} title="โหลดเทมเพลตนี้"
-                                                style={{ flex: 1, textAlign: 'left', padding: '6px 8px', borderRadius: 6, fontSize: 11, cursor: 'pointer', border: '1px solid #e2e8f0', background: '#fff', color: '#374151', fontFamily: 'inherit', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                                🧩 {t.name}
+                                                style={{
+                                                    flex: 1, textAlign: 'left', padding: '6px 8px', borderRadius: 6, fontSize: 11, cursor: 'pointer', fontFamily: 'inherit', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                                                    border: t.id === activeTemplateId ? '1px solid #7c3aed' : '1px solid #e2e8f0',
+                                                    background: t.id === activeTemplateId ? '#f5f3ff' : '#fff',
+                                                    color: t.id === activeTemplateId ? '#7c3aed' : '#374151',
+                                                    fontWeight: t.id === activeTemplateId ? 700 : 400,
+                                                }}>
+                                                {t.id === activeTemplateId ? '● ' : '🧩 '}{t.name}
                                             </button>
                                             <button type="button" onClick={() => deleteTemplate(t.id)} title="ลบเทมเพลต"
                                                 style={{ padding: '6px 8px', borderRadius: 6, fontSize: 11, cursor: 'pointer', border: '1px solid #fecaca', background: '#fff5f5', color: '#ef4444', fontFamily: 'inherit' }}>🗑</button>
