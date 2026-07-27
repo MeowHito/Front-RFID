@@ -115,7 +115,7 @@ function computeTargetBandLabel(runner: RunnerData, campaign: CampaignData | nul
 
 interface CheckpointMappingData {
     _id: string;
-    checkpointId: { _id: string; name: string; type: string; orderNum?: number; kmCumulative?: number } | string;
+    checkpointId: { _id: string; name: string; type: string; orderNum?: number; kmCumulative?: number; kmCumulativeByDistance?: Record<string, number> } | string;
     eventId: string;
     orderNum: number;
     distanceFromStart?: number;
@@ -577,7 +577,7 @@ export default function RunnerProfilePage() {
     for (const m of cpMappings) {
         const cp = typeof m.checkpointId === 'object' ? m.checkpointId : null;
         if (!cp?.name) continue;
-        const dist = m.distanceFromStart ?? cp.kmCumulative;
+        const dist = m.distanceFromStart ?? cp.kmCumulativeByDistance?.[runner.category] ?? cp.kmCumulative;
         if (dist != null) cpDistMap.set(cp.name.trim().toLowerCase(), Number(dist));
     }
     const distFor = (cpName?: string): number | null => {
@@ -640,11 +640,11 @@ export default function RunnerProfilePage() {
         .filter(m => typeof m.checkpointId === 'object' && m.checkpointId?.name)
         .sort((a, b) => (a.orderNum || 0) - (b.orderNum || 0))
         .map(m => {
-            const cp = m.checkpointId as { _id: string; name: string; type: string; orderNum?: number; kmCumulative?: number };
+            const cp = m.checkpointId as { _id: string; name: string; type: string; orderNum?: number; kmCumulative?: number; kmCumulativeByDistance?: Record<string, number> };
             return {
                 name: cp.name,
                 type: cp.type,
-                distanceFromStart: m.distanceFromStart ?? cp.kmCumulative ?? undefined,
+                distanceFromStart: m.distanceFromStart ?? cp.kmCumulativeByDistance?.[runner.category] ?? cp.kmCumulative ?? undefined,
                 orderNum: m.orderNum,
             };
         });

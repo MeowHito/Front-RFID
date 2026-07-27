@@ -32,7 +32,8 @@ interface Checkpoint {
     active: boolean;
     description?: string;
     readerId?: string;
-    kmCumulative?: number;
+    kmCumulative?: number; // LEGACY (global). Per-distance KM lives in kmCumulativeByDistance.
+    kmCumulativeByDistance?: Record<string, number>; // key: category name, value: cumulative KM
     cutoffTime?: string; // LEGACY (global). Per-distance cutoffs live in cutoffTimes.
     cutoffTimes?: Record<string, string>; // key: category name, value: ISO datetime
     distanceMappings?: string[];
@@ -521,6 +522,7 @@ export default function RouteMappingPage() {
                     description: cp.description,
                     readerId: cp.readerId || '',
                     kmCumulative: cp.kmCumulative,
+                    kmCumulativeByDistance: cp.kmCumulativeByDistance || {},
                     cutoffTime: cp.cutoffTime,
                     cutoffTimes: cp.cutoffTimes || {},
                     distanceMappings: cp.distanceMappings || [],
@@ -653,6 +655,7 @@ export default function RouteMappingPage() {
                     description: cp.description,
                     readerId: cp.readerId || '',
                     kmCumulative: cp.kmCumulative,
+                    kmCumulativeByDistance: cp.kmCumulativeByDistance || {},
                     cutoffTime: cp.cutoffTime,
                     cutoffTimes: cp.cutoffTimes || {},
                     distanceMappings: newMappings,
@@ -1523,7 +1526,15 @@ export default function RouteMappingPage() {
                                             const hasAnyPerCategoryCutoff = !!cp.cutoffTimes && Object.values(cp.cutoffTimes).some(v => !!v && v !== '-');
                                             const effectiveCutoff = cutoffForCategory || (hasAnyPerCategoryCutoff ? '' : (cp.cutoffTime || ''));
                                             const hasCutoff = effectiveCutoff && effectiveCutoff !== '-' && effectiveCutoff !== '';
-                                            const kmHasValue = cp.kmCumulative !== undefined && cp.kmCumulative !== null && cp.kmCumulative > 0;
+                                            const kmForCategory = selectedCategory
+                                                ? cp.kmCumulativeByDistance?.[selectedCategory]
+                                                : undefined;
+                                            // Backward compat: if no per-category km entries exist at all,
+                                            // surface the legacy shared kmCumulative so existing data is editable.
+                                            // As soon as a user sets a per-distance value, the legacy field is ignored.
+                                            const hasAnyPerCategoryKm = !!cp.kmCumulativeByDistance && Object.keys(cp.kmCumulativeByDistance).length > 0;
+                                            const effectiveKm = kmForCategory ?? (hasAnyPerCategoryKm ? 0 : (cp.kmCumulative ?? 0));
+                                            const kmHasValue = effectiveKm !== undefined && effectiveKm !== null && effectiveKm > 0;
                                             const mode: 'rfid' | 'manual' =
                                                 (cp.description === 'manual' || cp.description === 'rfid') ? cp.description : 'rfid';
                                             const badge = getModeBadgeStyle(mode);
@@ -1573,11 +1584,14 @@ export default function RouteMappingPage() {
                                                             type="number"
                                                             step="0.1"
                                                             className="table-input"
-                                                            defaultValue={cp.kmCumulative ?? 0}
-                                                            key={`km-${cp._id}-${cp.kmCumulative}`}
+                                                            defaultValue={effectiveKm}
+                                                            key={`km-${cp._id}-${selectedCategory}-${effectiveKm}`}
                                                             onChange={e => {
                                                                 const val = parseFloat(e.target.value) || 0;
-                                                                updateCheckpoint(cp._id, { kmCumulative: val });
+                                                                if (!selectedCategory) return;
+                                                                updateCheckpoint(cp._id, {
+                                                                    kmCumulativeByDistance: { ...(cp.kmCumulativeByDistance || {}), [selectedCategory]: val },
+                                                                });
                                                             }}
                                                             style={{
                                                                 width: '100%', padding: '4px 8px', border: '1px solid #ddd',

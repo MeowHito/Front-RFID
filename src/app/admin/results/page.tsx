@@ -567,7 +567,12 @@ export default function ResultsPage() {
 
             if (cpRes.ok) {
                 const cpData = await cpRes.json();
-                const cps = (Array.isArray(cpData) ? cpData : cpData?.data || []).map((cp: any) => ({
+                const allCps: any[] = Array.isArray(cpData) ? cpData : cpData?.data || [];
+                // Only show checkpoints that apply to this runner's own category/distance
+                const scopedCps = runner.category
+                    ? allCps.filter(cp => !cp.distanceMappings || cp.distanceMappings.length === 0 || cp.distanceMappings.includes(runner.category))
+                    : allCps;
+                const cps = scopedCps.map((cp: any) => ({
                     name: cp.name || '',
                     orderNum: cp.orderNum ?? 0,
                     type: cp.type || 'checkpoint',
@@ -1414,7 +1419,7 @@ export default function ResultsPage() {
                         >
                             <div
                                 onClick={e => e.stopPropagation()}
-                                style={{ background: '#fff', borderRadius: 12, padding: 24, width: 560, maxWidth: '95vw', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}
+                                style={{ background: '#fff', borderRadius: 12, padding: 24, width: 820, maxWidth: '95vw', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}
                             >
                                 <div style={{ marginBottom: 16 }}>
                                     <h3 style={{ margin: '0 0 8px', fontSize: 14, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
@@ -1531,7 +1536,7 @@ export default function ResultsPage() {
                                             {language === 'th' ? 'ไม่พบข้อมูล Checkpoint' : 'No checkpoints found'}
                                         </div>
                                     ) : (
-                                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8 }}>
                                             {editCheckpoints.map((cp) => {
                                                 const matchedRecord = editTimingRecords.find(r => r.checkpoint.toUpperCase() === cp.name.toUpperCase());
                                                 const currentValue = editTimingChanges[cp.name] !== undefined
@@ -1557,7 +1562,7 @@ export default function ResultsPage() {
                                                     type="button"
                                                     onClick={handleTimingSave}
                                                     disabled={editTimingSaving}
-                                                    style={{ padding: '6px 16px', borderRadius: 6, border: 'none', background: '#8b5cf6', color: '#fff', fontSize: 12, fontWeight: 700, cursor: editTimingSaving ? 'not-allowed' : 'pointer', alignSelf: 'flex-end', marginTop: 4, opacity: editTimingSaving ? 0.6 : 1 }}
+                                                    style={{ gridColumn: '1 / -1', justifySelf: 'flex-end', padding: '6px 16px', borderRadius: 6, border: 'none', background: '#8b5cf6', color: '#fff', fontSize: 12, fontWeight: 700, cursor: editTimingSaving ? 'not-allowed' : 'pointer', marginTop: 4, opacity: editTimingSaving ? 0.6 : 1 }}
                                                 >
                                                     {editTimingSaving ? (language === 'th' ? 'กำลังบันทึก...' : 'Saving...') : (language === 'th' ? 'บันทึกเวลา Checkpoint' : 'Save Checkpoint Times')}
                                                 </button>

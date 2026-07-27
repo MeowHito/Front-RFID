@@ -153,6 +153,7 @@ interface CheckpointMapping {
         name?: string;
         type?: string;
         kmCumulative?: number;
+        kmCumulativeByDistance?: Record<string, number>;
     } | string;
 }
 
@@ -788,6 +789,10 @@ export default function EventLivePage() {
                         if (!mapRes.ok) return;
                         const mapData = await mapRes.json();
                         const mappings: CheckpointMapping[] = Array.isArray(mapData) ? mapData : (mapData?.data || []);
+                        // Find matching category (name) from campaign categories, used to scope kmCumulativeByDistance
+                        const evCategory = campaignData.categories?.find((c: any) =>
+                            String(c.eventId || '') === evId || String(c._id || '') === evId
+                        );
                         const cpMap: { [name: string]: number } = {};
                         const cpOrders: { [name: string]: number } = {};
                         const cpLabels: { [name: string]: string } = {};
@@ -795,7 +800,9 @@ export default function EventLivePage() {
                         for (const m of mappings) {
                             const cpObj = typeof m.checkpointId === 'object' ? m.checkpointId : null;
                             const cpName = cpObj?.name || '';
-                            const dist = m.distanceFromStart ?? cpObj?.kmCumulative ?? 0;
+                            const dist = m.distanceFromStart
+                                ?? (evCategory?.name ? cpObj?.kmCumulativeByDistance?.[evCategory.name] : undefined)
+                                ?? cpObj?.kmCumulative ?? 0;
                             if (cpName) {
                                 const key = cpName.trim().toLowerCase();
                                 cpMap[key] = dist;
@@ -804,10 +811,6 @@ export default function EventLivePage() {
                             }
                             if (dist > maxDist) maxDist = dist;
                         }
-                        // Find matching category distance from campaign categories
-                        const evCategory = campaignData.categories?.find((c: any) =>
-                            String(c.eventId || '') === evId || String(c._id || '') === evId
-                        );
                         const catDist = evCategory ? (parseDistanceValue(evCategory.distance || evCategory.name) || 0) : 0;
                         const totalCheckpoints = Object.values(cpOrders).filter((order) => order > 0).length;
                         lookup[evId] = {
@@ -1486,7 +1489,14 @@ export default function EventLivePage() {
                 if (cpRes.ok) {
                     const cpData = await cpRes.json();
                     const list = Array.isArray(cpData) ? cpData : cpData?.data || [];
-                    const cps = list.map((m: any) => {
+                    const cps = list
+                      .filter((m: any) => {
+                          const cp = typeof m.checkpointId === 'object' && m.checkpointId !== null ? m.checkpointId : null;
+                          const distanceMappings: string[] | undefined = cp?.distanceMappings;
+                          if (!runner.category || !distanceMappings || distanceMappings.length === 0) return true;
+                          return distanceMappings.includes(runner.category);
+                      })
+                      .map((m: any) => {
                         const cp = typeof m.checkpointId === 'object' && m.checkpointId !== null ? m.checkpointId : null;
                         return {
                             name: cp?.name || '',
@@ -3172,7 +3182,7 @@ export default function EventLivePage() {
                 >
                     <div
                         onClick={e => e.stopPropagation()}
-                        className="max-h-[90vh] w-[520px] max-w-[95vw] overflow-y-auto rounded-xl p-6 shadow-[0_20px_60px_rgba(0,0,0,0.3)]"
+                        className="max-h-[90vh] w-[820px] max-w-[95vw] overflow-y-auto rounded-xl p-6 shadow-[0_20px_60px_rgba(0,0,0,0.3)]"
                         style={{ background: isDark ? '#1e293b' : '#fff' }}
                     >
                         <div className="mb-4">
@@ -3300,7 +3310,7 @@ export default function EventLivePage() {
                                     {language === 'th' ? 'ไม่พบข้อมูล Checkpoint' : 'No checkpoints found'}
                                 </div>
                             ) : (
-                                <div className="flex flex-col gap-1.5">
+                                <div className="grid grid-cols-2 gap-1.5">
                                     {editCheckpoints.map((cp, i) => {
                                         const matchedRecord = editTimingRecords.find(r =>
                                             r.checkpoint.toUpperCase() === cp.name.toUpperCase()
@@ -3411,13 +3421,13 @@ export default function EventLivePage() {
                                                 }
                                                 setTimeout(() => setEditTimingSaveMsg(null), 3000);
                                             }}
-                                            className="mt-1 self-end rounded-md border-none bg-violet-500 px-4 py-1.5 text-xs font-bold text-white"
+                                            className="col-span-2 mt-1 justify-self-end rounded-md border-none bg-violet-500 px-4 py-1.5 text-xs font-bold text-white"
                                         >
                                             {language === 'th' ? 'บันทึกเวลา Checkpoint' : 'Save Checkpoint Times'}
                                         </button>
                                     )}
                                     {editTimingSaveMsg && (
-                                        <span className="self-end text-[11px] font-semibold text-green-500">
+                                        <span className="col-span-2 justify-self-end text-[11px] font-semibold text-green-500">
                                             ✓ {editTimingSaveMsg}
                                         </span>
                                     )}

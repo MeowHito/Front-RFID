@@ -1794,6 +1794,65 @@ export function GeneralChartView({ monitor }: { monitor?: MonitorRequest }) {
         return result;
     }, [categories, runners, catCpsFor, cpTimingMap]);
 
+    // ── Export per-category summary as CSV (checkpoint distribution + status counts) ──
+    const escapeCsvCell = (val: unknown): string => {
+        const s = val === null || val === undefined ? '' : String(val);
+        if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+        return s;
+    };
+    const downloadCategoryCsv = useCallback((cat: string) => {
+        const dataPassed = chartDataByCategoryPassedThrough[cat] || [];
+        const dataCurrently = chartDataByCategory[cat] || [];
+        const cs = catSummary[cat];
+
+        const rows: string[] = [];
+        rows.push(['Category', cat].map(escapeCsvCell).join(','));
+        rows.push('');
+
+        // Summary counts
+        rows.push(['Registered', 'Started', 'Finished', 'DNS', 'DNF', 'DQ', 'Male Finished', 'Female Finished'].map(escapeCsvCell).join(','));
+        rows.push([
+            cs?.total?.length || 0,
+            cs?.started?.length || 0,
+            cs?.finished?.length || 0,
+            cs?.dns?.length || 0,
+            cs?.dnf?.length || 0,
+            cs?.dq?.length || 0,
+            cs?.mF?.length || 0,
+            cs?.fF?.length || 0,
+        ].map(escapeCsvCell).join(','));
+        rows.push('');
+
+        // Checkpoint distribution
+        rows.push(['Checkpoint', 'Passed Through (cumulative)', 'Total Runners', 'Currently Active', 'Currently DNF', 'Currently DQ', 'Currently Other'].map(escapeCsvCell).join(','));
+        const currentlyByCp = new Map(dataCurrently.map(d => [d.cpName, d]));
+        for (const p of dataPassed) {
+            const cur = currentlyByCp.get(p.cpName);
+            rows.push([
+                p.cpName,
+                p.count,
+                p.total,
+                cur?.active ?? '',
+                cur?.dnf ?? '',
+                cur?.dq ?? '',
+                cur?.other ?? '',
+            ].map(escapeCsvCell).join(','));
+        }
+
+        const csvContent = '﻿' + rows.join('\r\n');
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        const eventNameSafe = (campaign?.name || 'event').replace(/[^\w\-]+/g, '_');
+        const catSafe = cat.replace(/[^\w\-]+/g, '_');
+        link.download = `${eventNameSafe}-${catSafe}-summary-${new Date().toISOString().slice(0, 10)}.csv`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+    }, [chartDataByCategory, chartDataByCategoryPassedThrough, catSummary, campaign]);
+
     // ── Monitor window: one panel, no chrome, sized to the screen ──
     if (monitor) {
         return (
@@ -1914,9 +1973,24 @@ export function GeneralChartView({ monitor }: { monitor?: MonitorRequest }) {
                                     </h2>
                                     <p style={styles.sectionSub}>{th ? 'เปรียบเทียบจำนวนนักวิ่งที่ผ่านแต่ละจุด กับจำนวนที่เหลืออยู่ปัจจุบัน' : 'Comparing cumulative pass-through vs runners currently remaining at each checkpoint'}</p>
                                 </div>
-                                <div style={styles.distBadge}>
-                                    <div style={styles.distBadgeLabel}>TOTAL</div>
-                                    <div style={styles.distBadgeValue}>{(cs?.total?.length || 0).toLocaleString()}</div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                    <button
+                                        type="button"
+                                        onClick={() => downloadCategoryCsv(cat)}
+                                        title={th ? `ดาวน์โหลดสรุป ${cat} เป็น CSV` : `Download ${cat} summary as CSV`}
+                                        style={{
+                                            display: 'flex', alignItems: 'center', gap: 6,
+                                            padding: '8px 14px', borderRadius: 8, border: '1px solid #bbf7d0',
+                                            background: '#f0fdf4', color: '#16a34a', fontSize: 12, fontWeight: 700,
+                                            cursor: 'pointer', whiteSpace: 'nowrap',
+                                        }}
+                                    >
+                                        ⬇ {th ? 'ดาวน์โหลด CSV' : 'Export CSV'}
+                                    </button>
+                                    <div style={styles.distBadge}>
+                                        <div style={styles.distBadgeLabel}>TOTAL</div>
+                                        <div style={styles.distBadgeValue}>{(cs?.total?.length || 0).toLocaleString()}</div>
+                                    </div>
                                 </div>
                             </div>
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 0 }}>
