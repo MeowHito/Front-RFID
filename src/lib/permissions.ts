@@ -38,6 +38,7 @@ export const ROUTE_TO_MODULE: Record<string, string> = {
     // Module-gated pages
     '/admin/events': 'results', // organizer can view events (read-only via results module)
     '/admin/participants': 'participants',
+    '/admin/edit-history': 'participants',
     '/admin/categories': 'participants',
     '/admin/bib-check': 'participants',
     '/admin/bib-check-2': 'participants',
