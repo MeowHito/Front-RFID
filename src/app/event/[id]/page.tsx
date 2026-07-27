@@ -2778,22 +2778,26 @@ export default function EventLivePage() {
                                                 );
                                             case 'distFromStart': {
                                                 const runnerCatDist = parseDistanceValue(runner.category);
-                                                // Many imports never populate distanceFromStart on the timing
-                                                // record itself (RaceTiger only sends the checkpoint name).
-                                                // Fall back to the per-event checkpoint mapping so the column
-                                                // still reflects the runner's progress.
-                                                let rawDist: number | null = runner.distanceFromStart ?? null;
-                                                if (rawDist == null || rawDist <= 0) {
-                                                    const evLookupDist = checkpointMeta.evLookup;
-                                                    if (evLookupDist) {
-                                                        if (isFinishCp || runner.status === 'finished') {
-                                                            const total = evLookupDist.totalDistance || runnerCatDist || 0;
-                                                            if (total > 0) rawDist = total;
-                                                        } else if (checkpointKey) {
-                                                            const mapped = evLookupDist.checkpoints[checkpointKey];
-                                                            if (mapped != null && mapped > 0) rawDist = mapped;
-                                                        }
+                                                // Prefer the per-event checkpoint mapping over the timing
+                                                // record's own `distanceFromStart` — that field is a snapshot
+                                                // written once at scan/sync time, so it goes stale (and stays
+                                                // wrong forever) whenever an admin later corrects a
+                                                // checkpoint's per-category KM. The mapping lookup always
+                                                // reflects the current, correct value; many older imports
+                                                // never populated it at all, so still fall back when missing.
+                                                let rawDist: number | null = null;
+                                                const evLookupDist = checkpointMeta.evLookup;
+                                                if (evLookupDist) {
+                                                    if (isFinishCp || runner.status === 'finished') {
+                                                        const total = evLookupDist.totalDistance || runnerCatDist || 0;
+                                                        if (total > 0) rawDist = total;
+                                                    } else if (checkpointKey) {
+                                                        const mapped = evLookupDist.checkpoints[checkpointKey];
+                                                        if (mapped != null && mapped > 0) rawDist = mapped;
                                                     }
+                                                }
+                                                if (rawDist == null || rawDist <= 0) {
+                                                    rawDist = runner.distanceFromStart ?? null;
                                                 }
                                                 const displayDist = rawDist != null
                                                     ? (runnerCatDist != null && rawDist > runnerCatDist ? runnerCatDist : rawDist)
