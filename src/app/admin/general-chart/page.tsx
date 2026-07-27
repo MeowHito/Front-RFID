@@ -57,6 +57,8 @@ interface Runner {
     /** Time on course at the last scan — orders runners sitting on the same stretch. */
     elapsedTime?: number;
     overallRank?: number;
+    /** Wall-clock time of this runner's latest checkpoint scan (ISO string). */
+    scanTime?: string;
 }
 
 interface TimingRecord {
@@ -1387,6 +1389,7 @@ export function GeneralChartView({ monitor }: { monitor?: MonitorRequest }) {
     const [cpDetail, setCpDetail] = useState<{ cat: string; cpName: string; runners: SegmentRunner[] } | null>(null);
     /** Which summary cell the admin clicked — shows the bibs behind the number. */
     const [bibDetail, setBibDetail] = useState<{ cat: string; label: string; color: string; runners: Runner[] } | null>(null);
+    const [bibDetailSearch, setBibDetailSearch] = useState('');
 
     // ── Load campaign ──
     // A monitor link carries its campaign id, because "featured" is per-account
@@ -2061,7 +2064,7 @@ export function GeneralChartView({ monitor }: { monitor?: MonitorRequest }) {
                                                     key={i}
                                                     type="button"
                                                     disabled={list.length === 0}
-                                                    onClick={() => setBibDetail({ cat, label: s.label, color: s.color, runners: list })}
+                                                    onClick={() => { setBibDetail({ cat, label: s.label, color: s.color, runners: list }); setBibDetailSearch(''); }}
                                                     title={list.length ? (th ? `ดูเลข BIB ทั้ง ${list.length} คน` : `See all ${list.length} bibs`) : undefined}
                                                     style={{
                                                         flex: '1 1 12.5%', minWidth: 70, textAlign: 'center', padding: '10px 6px',
@@ -2294,7 +2297,17 @@ export function GeneralChartView({ monitor }: { monitor?: MonitorRequest }) {
             )}
 
             {/* Which bibs are behind a summary number */}
-            {bibDetail && (
+            {bibDetail && (() => {
+                const q = bibDetailSearch.trim().toLowerCase();
+                const shown = bibDetail.runners
+                    .slice()
+                    .sort((a, b) => (a.bib || '').localeCompare(b.bib || '', undefined, { numeric: true }))
+                    .filter(r => {
+                        if (!q) return true;
+                        const name = `${r.firstName || ''} ${r.lastName || ''}`.toLowerCase();
+                        return (r.bib || '').toLowerCase().includes(q) || name.includes(q);
+                    });
+                return (
                 <div
                     onClick={() => setBibDetail(null)}
                     style={{
@@ -2305,7 +2318,7 @@ export function GeneralChartView({ monitor }: { monitor?: MonitorRequest }) {
                     <div
                         onClick={e => e.stopPropagation()}
                         style={{
-                            background: '#fff', borderRadius: 14, width: '100%', maxWidth: 620,
+                            background: '#fff', borderRadius: 14, width: '100%', maxWidth: 680,
                             maxHeight: '86vh', display: 'flex', flexDirection: 'column',
                             boxShadow: '0 20px 60px rgba(0,0,0,0.3)', overflow: 'hidden',
                         }}
@@ -2317,42 +2330,62 @@ export function GeneralChartView({ monitor }: { monitor?: MonitorRequest }) {
                                 </h3>
                                 <p style={{ margin: '3px 0 0', fontSize: 12, color: '#94a3b8' }}>
                                     {th ? 'จำนวน' : 'Count'}: <strong style={{ color: bibDetail.color }}>{bibDetail.runners.length}</strong>
-                                    <span style={{ marginLeft: 8 }}>{th ? '· ชี้ที่เลข BIB เพื่อดูชื่อ' : '· hover a bib for the name'}</span>
+                                    {q && <span style={{ marginLeft: 8 }}>{th ? `· พบ ${shown.length} คน` : `· ${shown.length} match`}</span>}
                                 </p>
                             </div>
                             <button onClick={() => setBibDetail(null)} style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: '#94a3b8', lineHeight: 1 }}>✕</button>
                         </div>
-                        <div style={{ overflowY: 'auto', padding: '14px 22px 20px' }}>
-                            {bibDetail.runners.length === 0 ? (
+                        <div style={{ padding: '12px 22px 0' }}>
+                            <input
+                                type="text"
+                                value={bibDetailSearch}
+                                onChange={e => setBibDetailSearch(e.target.value)}
+                                placeholder={th ? 'ค้นหา BIB หรือชื่อ...' : 'Search bib or name...'}
+                                autoFocus
+                                style={{
+                                    width: '100%', boxSizing: 'border-box', padding: '9px 12px',
+                                    border: '1px solid #e2e8f0', borderRadius: 9, fontSize: 13, outline: 'none',
+                                }}
+                            />
+                        </div>
+                        <div style={{ overflowY: 'auto', padding: '10px 0 20px' }}>
+                            {shown.length === 0 ? (
                                 <div style={{ padding: 30, textAlign: 'center', color: '#94a3b8', fontSize: 13 }}>
-                                    {th ? 'ไม่มีนักวิ่งในกลุ่มนี้' : 'No runners in this group'}
+                                    {q
+                                        ? (th ? 'ไม่พบนักวิ่งที่ตรงกับคำค้นหา' : 'No runners match your search')
+                                        : (th ? 'ไม่มีนักวิ่งในกลุ่มนี้' : 'No runners in this group')}
                                 </div>
                             ) : (
-                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                                    {bibDetail.runners
-                                        .slice()
-                                        .sort((a, b) => (a.bib || '').localeCompare(b.bib || '', undefined, { numeric: true }))
-                                        .map(r => (
-                                            <span
-                                                key={r._id || r.bib}
-                                                title={`${r.firstName || ''} ${r.lastName || ''}`.trim() || r.bib}
-                                                style={{
-                                                    fontFamily: 'monospace', fontSize: 12.5, fontWeight: 800,
-                                                    color: '#0f172a', background: '#f8fafc',
-                                                    border: `1px solid ${bibDetail.color}33`,
-                                                    borderLeft: `3px solid ${bibDetail.color}`,
-                                                    borderRadius: 6, padding: '4px 9px',
-                                                }}
-                                            >
-                                                {r.bib}
-                                            </span>
+                                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                                    <thead>
+                                        <tr style={{ borderBottom: '1px solid #eef2f7' }}>
+                                            <th style={{ padding: '6px 22px', textAlign: 'left', fontSize: 11, fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase' }}>BIB</th>
+                                            <th style={{ padding: '6px 8px', textAlign: 'left', fontSize: 11, fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase' }}>{th ? 'ชื่อ' : 'Name'}</th>
+                                            <th style={{ padding: '6px 8px', textAlign: 'center', fontSize: 11, fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase' }}>{th ? 'เพศ' : 'Gender'}</th>
+                                            <th style={{ padding: '6px 8px', textAlign: 'left', fontSize: 11, fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase' }}>{th ? 'ระยะ' : 'Distance'}</th>
+                                            <th style={{ padding: '6px 22px', textAlign: 'right', fontSize: 11, fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase' }}>{th ? 'เวลาบันทึก' : 'Recorded'}</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {shown.map(r => (
+                                            <tr key={r._id || r.bib} style={{ borderBottom: '1px solid #f8fafc' }}>
+                                                <td style={{ padding: '9px 22px', fontFamily: 'monospace', fontWeight: 800, color: '#0f172a' }}>{r.bib}</td>
+                                                <td style={{ padding: '9px 8px', color: '#334155' }}>{`${r.firstName || ''} ${r.lastName || ''}`.trim() || '—'}</td>
+                                                <td style={{ padding: '9px 8px', textAlign: 'center' }}>{r.gender === 'F' ? '♀' : r.gender === 'M' ? '♂' : '—'}</td>
+                                                <td style={{ padding: '9px 8px', color: '#334155' }}>{r.category || bibDetail.cat}</td>
+                                                <td style={{ padding: '9px 22px', textAlign: 'right', color: '#64748b', fontVariantNumeric: 'tabular-nums' }}>
+                                                    {r.scanTime ? new Date(r.scanTime).toLocaleTimeString(th ? 'th-TH' : 'en-GB', { hour12: false }) : '—'}
+                                                </td>
+                                            </tr>
                                         ))}
-                                </div>
+                                    </tbody>
+                                </table>
                             )}
                         </div>
                     </div>
                 </div>
-            )}
+                );
+            })()}
 
             {/* Loading indicator */}
             {runnersLoading && (

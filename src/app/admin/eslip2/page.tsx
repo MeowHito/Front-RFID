@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import AdminLayout from '../AdminLayout';
 import { useAuth } from '@/lib/auth-context';
 import { authHeaders } from '@/lib/authHeaders';
+import { loadTemplateList, persistTemplateList } from '@/lib/idb-templates';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -70,30 +71,13 @@ export interface ESlipV2Template {
 
 const TEMPLATES_STORAGE_KEY = 'eslip2_templates';
 
-function loadTemplates(): ESlipV2Template[] {
-    if (typeof window === 'undefined') return [];
-    try {
-        const raw = localStorage.getItem(TEMPLATES_STORAGE_KEY);
-        const arr = raw ? JSON.parse(raw) : [];
-        return Array.isArray(arr) ? arr : [];
-    } catch {
-        return [];
-    }
+function loadTemplates(): Promise<ESlipV2Template[]> {
+    return loadTemplateList<ESlipV2Template>(TEMPLATES_STORAGE_KEY);
 }
 
-/** Returns true if the templates list was actually written to localStorage.
- *  Templates embed images as base64 data URLs, so this can silently exceed
- *  the browser's ~5-10MB per-origin quota — callers must check the result
- *  instead of assuming the save succeeded just because state updated. */
-function persistTemplates(list: ESlipV2Template[]): boolean {
-    if (typeof window === 'undefined') return false;
-    try {
-        localStorage.setItem(TEMPLATES_STORAGE_KEY, JSON.stringify(list));
-        return true;
-    } catch {
-        /* quota / private-mode — surfaced to the caller, not swallowed */
-        return false;
-    }
+/** Returns true if the templates list was actually written to storage. */
+function persistTemplates(list: ESlipV2Template[]): Promise<boolean> {
+    return persistTemplateList(TEMPLATES_STORAGE_KEY, list);
 }
 
 type ResizeDir = 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w' | 'nw';
@@ -880,15 +864,15 @@ export default function ESlip2EditorPage() {
         }
     };
 
-    // ── Templates (localStorage, reusable across events) ──
-    useEffect(() => { setTemplates(loadTemplates()); }, []);
+    // ── Templates (IndexedDB, reusable across events) ──
+    useEffect(() => { loadTemplates().then(setTemplates); }, []);
 
     const flashTemplateMsg = (msg: string) => {
         setTemplateMsg(msg);
         setTimeout(() => setTemplateMsg(null), 3000);
     };
 
-    const saveAsTemplate = () => {
+    const saveAsTemplate = async () => {
         // If the canvas currently reflects a saved template, default to updating
         // that same entry in place rather than always creating a duplicate.
         const activeTpl = activeTemplateId ? templates.find(t => t.id === activeTemplateId) : null;
@@ -898,8 +882,8 @@ export default function ESlip2EditorPage() {
                 const next = templates.map(t => t.id === activeTpl.id
                     ? { ...t, savedAt: Date.now(), layout: JSON.parse(JSON.stringify(layoutRef.current)) }
                     : t);
-                if (!persistTemplates(next)) {
-                    flashTemplateMsg('✕ บันทึกเทมเพลตไม่สำเร็จ — พื้นที่เก็บข้อมูลเบราว์เซอร์เต็ม (รูปภาพในเทมเพลตใหญ่เกินไป) ลองลบเทมเพลตเก่าออกก่อน');
+                if (!(await persistTemplates(next))) {
+                    flashTemplateMsg('✕ บันทึกเทมเพลตไม่สำเร็จ — พื้นที่เก็บข้อมูลเบราว์เซอร์เต็ม ลองลบเทมเพลตเก่าออกก่อน');
                     return;
                 }
                 setTemplates(next);
@@ -916,8 +900,8 @@ export default function ESlip2EditorPage() {
             layout: JSON.parse(JSON.stringify(layoutRef.current)),
         };
         const next = [tpl, ...templates];
-        if (!persistTemplates(next)) {
-            flashTemplateMsg('✕ บันทึกเทมเพลตไม่สำเร็จ — พื้นที่เก็บข้อมูลเบราว์เซอร์เต็ม (รูปภาพในเทมเพลตใหญ่เกินไป) ลองลบเทมเพลตเก่าออกก่อน');
+        if (!(await persistTemplates(next))) {
+            flashTemplateMsg('✕ บันทึกเทมเพลตไม่สำเร็จ — พื้นที่เก็บข้อมูลเบราว์เซอร์เต็ม ลองลบเทมเพลตเก่าออกก่อน');
             return;
         }
         setTemplates(next);
@@ -933,9 +917,9 @@ export default function ESlip2EditorPage() {
         flashTemplateMsg(`✓ โหลดเทมเพลต "${tpl.name}" แล้ว (อย่าลืมกดบันทึก)`);
     };
 
-    const deleteTemplate = (id: string) => {
+    const deleteTemplate = async (id: string) => {
         const next = templates.filter(t => t.id !== id);
-        if (!persistTemplates(next)) {
+        if (!(await persistTemplates(next))) {
             flashTemplateMsg('✕ ลบเทมเพลตไม่สำเร็จ');
             return;
         }

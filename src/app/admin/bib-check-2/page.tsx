@@ -13,6 +13,7 @@ import {
     type BibCheck2Layout, type BibCheck2Canvas, type BibCheck2Element,
     type BibField, type Orientation, type RenderContext,
 } from '@/lib/bibcheck2';
+import { loadTemplateList, persistTemplateList } from '@/lib/idb-templates';
 
 // ─── Image compression (keeps the saved JSON under the nginx 1 MB body limit) ──
 
@@ -51,20 +52,17 @@ async function compressImage(file: File, maxWidth: number, maxBytes: number): Pr
     });
 }
 
-// ─── Templates (localStorage — reusable across events, same idea as E-Slip 2) ──
+// ─── Templates (IndexedDB — reusable across events, same idea as E-Slip 2) ──
 
 interface BibTemplate { id: string; name: string; savedAt: number; layout: BibCheck2Layout; }
 const TEMPLATES_KEY = 'bibcheck2_templates';
 
-function loadTemplates(): BibTemplate[] {
-    if (typeof window === 'undefined') return [];
-    try {
-        const arr = JSON.parse(localStorage.getItem(TEMPLATES_KEY) || '[]');
-        return Array.isArray(arr) ? arr : [];
-    } catch { return []; }
+function loadTemplates(): Promise<BibTemplate[]> {
+    return loadTemplateList<BibTemplate>(TEMPLATES_KEY);
 }
-function persistTemplates(list: BibTemplate[]) {
-    try { localStorage.setItem(TEMPLATES_KEY, JSON.stringify(list)); } catch { /* quota */ }
+/** Returns true if the templates list was actually written to storage. */
+function persistTemplates(list: BibTemplate[]): Promise<boolean> {
+    return persistTemplateList(TEMPLATES_KEY, list);
 }
 
 // ─── Drag state ───────────────────────────────────────────────────────────────
@@ -189,7 +187,7 @@ export default function BibCheck2Page() {
         })();
     }, []);
 
-    useEffect(() => { setTemplates(loadTemplates()); }, []);
+    useEffect(() => { loadTemplates().then(setTemplates); }, []);
 
     // ── Fit-to-viewport scale ──
     useEffect(() => {
@@ -442,12 +440,15 @@ export default function BibCheck2Page() {
     // ── Templates ──
     const flashTemplateMsg = (msg: string) => { setTemplateMsg(msg); setTimeout(() => setTemplateMsg(null), 3000); };
 
-    const saveAsTemplate = () => {
+    const saveAsTemplate = async () => {
         const name = window.prompt('ตั้งชื่อเทมเพลต:', campaign?.name || 'Check BIB 2 Template');
         if (!name?.trim()) return;
         const next = [{ id: `tpl-${Date.now()}`, name: name.trim(), savedAt: Date.now(), layout: JSON.parse(JSON.stringify(layoutRef.current)) }, ...templates];
+        if (!(await persistTemplates(next))) {
+            flashTemplateMsg('✕ บันทึกเทมเพลตไม่สำเร็จ — พื้นที่เก็บข้อมูลเบราว์เซอร์เต็ม ลองลบเทมเพลตเก่าออกก่อน');
+            return;
+        }
         setTemplates(next);
-        persistTemplates(next);
         flashTemplateMsg('✓ บันทึกเทมเพลตแล้ว');
     };
 
@@ -458,10 +459,13 @@ export default function BibCheck2Page() {
         flashTemplateMsg(`✓ โหลด "${tpl.name}" แล้ว (อย่าลืมกดบันทึก)`);
     };
 
-    const deleteTemplate = (id: string) => {
+    const deleteTemplate = async (id: string) => {
         const next = templates.filter(t => t.id !== id);
+        if (!(await persistTemplates(next))) {
+            flashTemplateMsg('✕ ลบเทมเพลตไม่สำเร็จ');
+            return;
+        }
         setTemplates(next);
-        persistTemplates(next);
     };
 
     const exportTemplate = () => {
