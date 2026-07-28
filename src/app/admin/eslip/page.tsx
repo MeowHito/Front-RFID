@@ -13,6 +13,7 @@ interface Campaign {
     eslipCustomHtml?: string;
     eslipVisibleFields?: string[];
     eslipMode?: string;
+    eslipLogoUrl?: string;
 }
 
 const ESLIP_FIELDS = [
@@ -42,7 +43,18 @@ const TEMPLATES = [
         previewBg: 'linear-gradient(135deg, #f8fafc, #e2e8f0)',
         icon: '🤍',
     },
+    {
+        id: 'template4',
+        name: 'E-Slip — Default 2 (โลโก้)',
+        description: 'เหมือน Default แต่มีโลโก้กิจกรรมวงกลมอยู่เหนือชื่องาน',
+        previewBg: 'linear-gradient(135deg, #f8fafc, #e2e8f0)',
+        icon: '🏅',
+    },
 ];
+
+/** Templates enabled for a campaign that has never saved E-Slip settings.
+ *  Default 2 is opt-in — it looks identical to Default until a logo is uploaded. */
+const DEFAULT_TEMPLATE_IDS = ['template2', 'template3'];
 
 export default function AdminESlipPage() {
     const router = useRouter();
@@ -50,6 +62,8 @@ export default function AdminESlipPage() {
     const [selectedTemplates, setSelectedTemplates] = useState<string[]>([]);
     const [visibleFields, setVisibleFields] = useState<string[]>(ESLIP_FIELDS.map(f => f.key));
     const [eslipMode, setEslipMode] = useState<'v1' | 'v2'>('v1');
+    const [logoUrl, setLogoUrl] = useState<string>('');
+    const [logoError, setLogoError] = useState<string | null>(null);
     const [saving, setSaving] = useState(false);
     const [saved, setSaved] = useState(false);
     const [loading, setLoading] = useState(true);
@@ -63,10 +77,11 @@ export default function AdminESlipPage() {
                     const data = await res.json();
                     setCampaign(data);
                     const saved = data.eslipTemplates;
-                    setSelectedTemplates(Array.isArray(saved) && saved.length > 0 ? saved : TEMPLATES.map(t => t.id));
+                    setSelectedTemplates(Array.isArray(saved) && saved.length > 0 ? saved : DEFAULT_TEMPLATE_IDS);
                     const savedFields = data.eslipVisibleFields;
                     setVisibleFields(Array.isArray(savedFields) && savedFields.length > 0 ? savedFields : ESLIP_FIELDS.map(f => f.key));
                     setEslipMode(data.eslipMode === 'v2' ? 'v2' : 'v1');
+                    setLogoUrl(typeof data.eslipLogoUrl === 'string' ? data.eslipLogoUrl : '');
                 }
             } catch (err) {
                 console.error('Failed to load campaign:', err);
@@ -106,6 +121,24 @@ export default function AdminESlipPage() {
         });
     };
 
+    // Logo is stored inline on the campaign as a small PNG data URI so the e-slip
+    // image export (html-to-image) can rasterise it without a cross-origin fetch.
+    const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const input = e.currentTarget;
+        const file = input.files?.[0];
+        input.value = '';
+        if (!file) return;
+        setLogoError(null);
+        try {
+            const { resizeLogo } = await import('@/lib/image-utils');
+            const dataUrl = await resizeLogo(file, 320);
+            setLogoUrl(dataUrl);
+        } catch (err) {
+            console.error('Logo upload error:', err);
+            setLogoError('อัปโหลดโลโก้ไม่สำเร็จ — ลองไฟล์ PNG หรือ JPG อีกครั้ง');
+        }
+    };
+
     const handleSave = async () => {
         if (!campaign?._id) return;
         setSaving(true);
@@ -116,6 +149,7 @@ export default function AdminESlipPage() {
                 eslipTemplates: selectedTemplates,
                 eslipTemplate: selectedTemplates[0] || 'template1',
                 eslipVisibleFields: visibleFields,
+                eslipLogoUrl: logoUrl,
             };
 
             const res = await fetch(`/api/campaigns/${campaign._id}`, {
@@ -335,6 +369,68 @@ export default function AdminESlipPage() {
                                             );
                                         })}
                                     </div>
+                                </div>
+
+                                {/* Event logo — only used by the "Default 2" template */}
+                                <div style={{ marginBottom: 32 }}>
+                                    <h2 style={{ fontSize: 18, fontWeight: 700, color: '#0f172a', margin: '0 0 4px' }}>
+                                        <i className="fas fa-image" style={{ marginRight: 8, color: '#f59e0b' }} />
+                                        โลโก้สำหรับ Default 2
+                                    </h2>
+                                    <p style={{ fontSize: 12, color: '#64748b', margin: '0 0 12px' }}>
+                                        แสดงเป็นวงกลมเหนือชื่อกิจกรรม เฉพาะเทมเพลต <b>E-Slip — Default 2</b> เท่านั้น (Default แบบเดิมไม่เปลี่ยน) · แนะนำรูปจัตุรัส (1:1) จะได้ไม่โดนครอบตัด
+                                    </p>
+                                    {!selectedTemplates.includes('template4') && (
+                                        <p style={{ fontSize: 12, color: '#b45309', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8, padding: '8px 12px', margin: '0 0 12px', fontWeight: 600 }}>
+                                            <i className="fas fa-info-circle" style={{ marginRight: 6 }} />
+                                            ยังไม่ได้เปิด Template “Default 2” ด้านบน — นักวิ่งจะยังไม่เห็นแบบที่มีโลโก้
+                                        </p>
+                                    )}
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 20, flexWrap: 'wrap' }}>
+                                        {/* Round preview — matches how the slip crops the logo */}
+                                        <div style={{
+                                            width: 120, height: 120, borderRadius: '50%',
+                                            border: logoUrl ? '1px solid #e2e8f0' : '2px dashed #cbd5e1',
+                                            background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                            overflow: 'hidden', flexShrink: 0,
+                                        }}>
+                                            {logoUrl ? (
+                                                // eslint-disable-next-line @next/next/no-img-element
+                                                <img src={logoUrl} alt="Logo" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                            ) : (
+                                                <span style={{ fontSize: 12, color: '#94a3b8', textAlign: 'center' }}>ยังไม่มีโลโก้</span>
+                                            )}
+                                        </div>
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                                            <input type="file" id="eslip-logo" accept="image/*" style={{ display: 'none' }} onChange={handleLogoUpload} />
+                                            <label htmlFor="eslip-logo" style={{
+                                                padding: '10px 20px', borderRadius: 10, fontSize: 13, fontWeight: 700,
+                                                background: '#3b82f6', color: '#fff', cursor: 'pointer', textAlign: 'center',
+                                            }}>
+                                                <i className="fas fa-upload" style={{ marginRight: 8 }} />
+                                                {logoUrl ? 'เปลี่ยนโลโก้' : 'อัปโหลดโลโก้'}
+                                            </label>
+                                            {logoUrl && (
+                                                <button
+                                                    onClick={() => setLogoUrl('')}
+                                                    style={{
+                                                        padding: '10px 20px', borderRadius: 10, fontSize: 13, fontWeight: 700,
+                                                        background: '#fff', color: '#dc2626', border: '1px solid #fecaca', cursor: 'pointer',
+                                                    }}
+                                                >
+                                                    <i className="fas fa-trash" style={{ marginRight: 8 }} />
+                                                    ลบโลโก้
+                                                </button>
+                                            )}
+                                            <span style={{ fontSize: 11, color: '#94a3b8' }}>ระบบย่อรูปให้อัตโนมัติ (ด้านยาวสุด 320px)</span>
+                                        </div>
+                                    </div>
+                                    {logoError && (
+                                        <p style={{ fontSize: 12, color: '#dc2626', margin: '10px 2px 0', fontWeight: 600 }}>{logoError}</p>
+                                    )}
+                                    <p style={{ fontSize: 12, color: '#94a3b8', margin: '10px 2px 0' }}>
+                                        อย่าลืมกด “บันทึกการตั้งค่า” ด้านล่างหลังเลือกโลโก้
+                                    </p>
                                 </div>
 
                                 {/* Field Visibility Toggles */}

@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import AdminLayout from '@/app/admin/AdminLayout';
 import { useLanguage } from '@/lib/language-context';
 import { authHeaders } from '@/lib/authHeaders';
+import { buildColumnOrder, moveKey, serializeColumnOrder } from '@/lib/display-columns';
 
 type ColDef = { key: string; thLabel: string; thLabelTh: string; width: string; align: 'left' | 'center' | 'right'; fixed?: boolean };
 
@@ -105,33 +106,18 @@ export default function DisplaySettingsPage() {
                 const saved: string[] = Array.isArray(data.displayColumns) && data.displayColumns.length > 0
                     ? data.displayColumns
                     : MARATHON_PUBLIC_DEFAULT_KEYS;
-                setSelectedCols(saved);
-                rebuildOrder(saved, MARATHON_COLUMNS, MARATHON_TOGGLEABLE, setColOrder);
+                // A saved order now carries the fixed columns too (they became
+                // draggable) — the checkbox state is only ever about toggleable ones.
+                setSelectedCols(saved.filter(k => MARATHON_TOGGLEABLE.includes(k)));
+                setColOrder(buildColumnOrder(saved, MARATHON_COLUMNS));
                 // Lab — same treatment
                 const savedLab: string[] = Array.isArray(data.displayColumnsLab) ? data.displayColumnsLab : LAB_TOGGLEABLE;
-                setSelectedColsLab(savedLab);
-                rebuildOrder(savedLab, LAB_COLUMNS, LAB_TOGGLEABLE, setColOrderLab);
+                setSelectedColsLab(savedLab.filter(k => LAB_TOGGLEABLE.includes(k)));
+                setColOrderLab(buildColumnOrder(savedLab, LAB_COLUMNS));
                 // Mode
                 setDisplayMode(data.displayMode === 'lab' ? 'lab' : 'marathon');
             }
         } catch { /* */ } finally { setLoading(false); }
-    };
-
-    const rebuildOrder = (selected: string[], columns: ColDef[], toggleableKeys: string[], setter: (v: string[]) => void) => {
-        const toggleOrdered = [
-            ...selected.filter(k => toggleableKeys.includes(k)),
-            ...toggleableKeys.filter(k => !selected.includes(k)),
-        ];
-        const result: string[] = [];
-        let tIdx = 0;
-        for (const col of columns) {
-            if (col.fixed) {
-                result.push(col.key);
-            } else {
-                result.push(toggleOrdered[tIdx++]);
-            }
-        }
-        setter(result);
     };
 
     const showToast = (message: string, type: 'success' | 'error') => {
@@ -150,42 +136,62 @@ export default function DisplaySettingsPage() {
     const selectAll = (mode: DisplayMode) => mode === 'marathon' ? setSelectedCols([...MARATHON_TOGGLEABLE]) : setSelectedColsLab([...LAB_TOGGLEABLE]);
     const selectNone = (mode: DisplayMode) => mode === 'marathon' ? setSelectedCols([]) : setSelectedColsLab([]);
 
-    // Drag handlers — only toggleable columns
-    const handleDragStart = (key: string) => {
+    // ── Drag & drop reordering ──────────────────────────────────────────────
+    // Every column is movable now, fixed ones included ("fixed" only means the
+    // column can't be switched off). The list reorders live as you drag over a
+    // neighbour rather than swapping two columns on drop, which is what made the
+    // old behaviour feel jumpy: what you see mid-drag is the final order.
+    const moveColumn = (mode: DisplayMode, from: string, to: string) => {
+        const setter = mode === 'marathon' ? setColOrder : setColOrderLab;
+        setter(prev => moveKey(prev, from, to));
+    };
+
+    const handleDragStart = (e: React.DragEvent, key: string) => {
         dragKey.current = key;
         setDraggingKey(key);
+        // Firefox refuses to start a drag without payload on the dataTransfer.
+        e.dataTransfer.effectAllowed = 'move';
+        try { e.dataTransfer.setData('text/plain', key); } catch { /* older browsers */ }
     };
-    const handleDragEnter = (key: string) => {
+
+    const handleDragEnter = (mode: DisplayMode, key: string) => {
+        const from = dragKey.current;
+        if (!from || from === key) return;
         dragOverKey.current = key;
         setDropTargetKey(key);
+        // After the move the pointer sits on the dragged header itself, so the
+        // next dragenter events are ignored by the guard above — no oscillation.
+        moveColumn(mode, from, key);
     };
-    const handleDragEnd = (mode: DisplayMode) => {
-        const from = dragKey.current;
-        const to = dragOverKey.current;
+
+    const handleDragEnd = () => {
         dragKey.current = null;
         dragOverKey.current = null;
         setDraggingKey(null);
         setDropTargetKey(null);
-        if (!from || !to || from === to) return;
-        const columns = mode === 'marathon' ? MARATHON_COLUMNS : LAB_COLUMNS;
-        if (columns.find(c => c.key === from)?.fixed || columns.find(c => c.key === to)?.fixed) return;
-        const setter = mode === 'marathon' ? setColOrder : setColOrderLab;
-        setter(prev => {
-            const arr = [...prev];
-            const fi = arr.indexOf(from);
-            const ti = arr.indexOf(to);
-            if (fi === -1 || ti === -1) return prev;
-            [arr[fi], arr[ti]] = [arr[ti], arr[fi]];
-            return arr;
-        });
+    };
+
+    /** Nudge a column one slot left/right — the keyboard/touch-friendly path. */
+    const nudgeColumn = (mode: DisplayMode, key: string, direction: -1 | 1, visibleOrder: string[]) => {
+        const idx = visibleOrder.indexOf(key);
+        const neighbour = visibleOrder[idx + direction];
+        if (!neighbour) return;
+        moveColumn(mode, key, neighbour);
+    };
+
+    const resetOrder = (mode: DisplayMode) => {
+        if (mode === 'marathon') setColOrder(MARATHON_COLUMNS.map(c => c.key));
+        else setColOrderLab(LAB_COLUMNS.map(c => c.key));
     };
 
     const handleSave = async () => {
         if (!campaign?._id) return;
         setSaving(true);
         try {
-            const orderedMarathon = colOrder.filter(k => !MARATHON_COLUMNS.find(c => c.key === k)?.fixed && selectedCols.includes(k));
-            const orderedLab = colOrderLab.filter(k => !LAB_COLUMNS.find(c => c.key === k)?.fixed && selectedColsLab.includes(k));
+            // Persist the visible columns *including* the fixed ones, so /event
+            // can replay the exact left-to-right order the admin arranged here.
+            const orderedMarathon = serializeColumnOrder(colOrder, MARATHON_COLUMNS, selectedCols);
+            const orderedLab = serializeColumnOrder(colOrderLab, LAB_COLUMNS, selectedColsLab);
             const res = await fetch(`/api/campaigns/${campaign._id}`, {
                 method: 'PUT',
                 headers: authHeaders(),
@@ -363,6 +369,92 @@ export default function DisplaySettingsPage() {
                     </div>
                 </div>
 
+                {/* Order strip — big drag targets for every visible column, fixed ones
+                    included. Same array as the table preview, just easier to grab. */}
+                {visibleOrder.length > 0 && (
+                    <div style={{ padding: '12px 16px 0' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                            <span style={{ fontSize: 11.5, fontWeight: 800, color: '#0f172a' }}>
+                                {language === 'th' ? 'ลำดับคอลัมน์ (ซ้าย → ขวา)' : 'Column order (left → right)'}
+                            </span>
+                            <span style={{ fontSize: 11, color: '#64748b' }}>
+                                {language === 'th' ? 'ลากสลับตำแหน่ง หรือกดลูกศร' : 'Drag to reorder, or use the arrows'}
+                            </span>
+                            <button
+                                type="button"
+                                onClick={() => resetOrder(mode)}
+                                style={{
+                                    marginLeft: 'auto', fontSize: 11, fontWeight: 700, padding: '4px 10px',
+                                    border: '1px solid #cbd5e1', borderRadius: 6, background: '#fff',
+                                    color: '#475569', cursor: 'pointer',
+                                }}
+                            >
+                                {language === 'th' ? 'รีเซ็ตลำดับ' : 'Reset order'}
+                            </button>
+                        </div>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                            {visibleOrder.map((key, idx) => {
+                                const col = colDef(key);
+                                const isFixed = !!col.fixed;
+                                const isDragging = draggingKey === key;
+                                const isTarget = dropTargetKey === key && !isDragging;
+                                return (
+                                    <div
+                                        key={key}
+                                        draggable
+                                        onDragStart={e => handleDragStart(e, key)}
+                                        onDragEnter={() => handleDragEnter(mode, key)}
+                                        onDragEnd={handleDragEnd}
+                                        onDragOver={e => e.preventDefault()}
+                                        onDrop={e => { e.preventDefault(); handleDragEnd(); }}
+                                        style={{
+                                            display: 'inline-flex', alignItems: 'center', gap: 4,
+                                            padding: '5px 6px 5px 8px', borderRadius: 8,
+                                            border: `1px solid ${isTarget ? '#f97316' : (isFixed ? '#86efac' : '#bfdbfe')}`,
+                                            background: isDragging ? '#fff7ed' : (isFixed ? '#f0fdf4' : '#eff6ff'),
+                                            color: isFixed ? '#166534' : '#1e40af',
+                                            fontSize: 12, fontWeight: 700,
+                                            cursor: isDragging ? 'grabbing' : 'grab',
+                                            opacity: isDragging ? 0.5 : 1,
+                                            transition: 'opacity 0.15s ease, border-color 0.15s ease, background 0.15s ease',
+                                            userSelect: 'none',
+                                        }}
+                                    >
+                                        <span style={{ opacity: 0.5, fontSize: 11, letterSpacing: -1 }}>⋮⋮</span>
+                                        <span style={{
+                                            minWidth: 16, textAlign: 'center', fontSize: 10, fontWeight: 800,
+                                            color: '#64748b', background: '#fff', borderRadius: 4, padding: '0 3px',
+                                        }}>{idx + 1}</span>
+                                        {language === 'th' ? col.thLabelTh : col.thLabel}
+                                        <span style={{ display: 'inline-flex', gap: 2, marginLeft: 2 }}>
+                                            {([-1, 1] as const).map(dir => (
+                                                <button
+                                                    key={dir}
+                                                    type="button"
+                                                    onClick={() => nudgeColumn(mode, key, dir, visibleOrder)}
+                                                    disabled={dir === -1 ? idx === 0 : idx === visibleOrder.length - 1}
+                                                    title={dir === -1
+                                                        ? (language === 'th' ? 'เลื่อนไปซ้าย' : 'Move left')
+                                                        : (language === 'th' ? 'เลื่อนไปขวา' : 'Move right')}
+                                                    style={{
+                                                        width: 18, height: 18, lineHeight: '16px', padding: 0,
+                                                        border: '1px solid #cbd5e1', borderRadius: 4, background: '#fff',
+                                                        color: '#475569', fontSize: 10, fontWeight: 800,
+                                                        cursor: 'pointer',
+                                                        opacity: (dir === -1 ? idx === 0 : idx === visibleOrder.length - 1) ? 0.3 : 1,
+                                                    }}
+                                                >
+                                                    {dir === -1 ? '‹' : '›'}
+                                                </button>
+                                            ))}
+                                        </span>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+                )}
+
                 {/* Table preview — only shows enabled columns */}
                 <div style={{ overflowX: 'auto', padding: '12px 16px 16px' }}>
                     {visibleOrder.length === 0 ? (
@@ -376,22 +468,25 @@ export default function DisplaySettingsPage() {
                                     {visibleOrder.map(key => {
                                         const col = colDef(key);
                                         const isFixed = !!col.fixed;
-                                        const isDraggable = !isFixed;
+                                        const isDragging = draggingKey === key;
                                         return (
-                                            <th key={key} draggable={isDraggable}
-                                                onDragStart={() => isDraggable && handleDragStart(key)}
-                                                onDragEnter={() => isDraggable && handleDragEnter(key)}
-                                                onDragEnd={() => handleDragEnd(mode)}
-                                                onDragOver={e => { if (isDraggable) e.preventDefault(); }}
+                                            <th key={key} draggable
+                                                onDragStart={e => handleDragStart(e, key)}
+                                                onDragEnter={() => handleDragEnter(mode, key)}
+                                                onDragEnd={handleDragEnd}
+                                                onDragOver={e => e.preventDefault()}
+                                                onDrop={e => { e.preventDefault(); handleDragEnd(); }}
                                                 style={{
                                                     padding: '10px 5px', textAlign: col.align, width: col.width,
-                                                    cursor: isDraggable ? 'grab' : 'default',
-                                                    opacity: draggingKey === key ? 0.4 : 1,
-                                                    background: isFixed ? '#ecfdf5' : '#eff6ff',
-                                                    borderLeft: dropTargetKey === key && draggingKey !== key ? '3px solid #f97316' : (isDraggable ? '1px dashed #cbd5e1' : 'none'),
-                                                    transition: 'all 0.2s', userSelect: 'none', position: 'relative',
+                                                    cursor: isDragging ? 'grabbing' : 'grab',
+                                                    opacity: isDragging ? 0.5 : 1,
+                                                    background: isDragging ? '#fff7ed' : (isFixed ? '#ecfdf5' : '#eff6ff'),
+                                                    outline: isDragging ? '2px dashed #f97316' : 'none',
+                                                    outlineOffset: -2,
+                                                    transition: 'opacity 0.15s ease, background 0.15s ease',
+                                                    userSelect: 'none', position: 'relative',
                                                 }}>
-                                                {isDraggable && <div style={{ position: 'absolute', top: 1, right: 1, opacity: 0.4, fontSize: 7 }}>⋮⋮</div>}
+                                                <div style={{ position: 'absolute', top: 1, right: 1, opacity: 0.4, fontSize: 7 }}>⋮⋮</div>
                                                 <span style={{ color: isFixed ? '#16a34a' : '#1e40af' }}>{language === 'th' ? col.thLabelTh : col.thLabel}</span>
                                             </th>
                                         );
@@ -445,7 +540,9 @@ export default function DisplaySettingsPage() {
                         </table>
                     )}
                     <p style={{ fontSize: 10, color: '#aaa', margin: '8px 0 0', fontStyle: 'italic' }}>
-                        {language === 'th' ? '* ติ๊กถูกใน Dropdown = เปิดการมองเห็นในหน้า Events + เพิ่มในตาราง  |  ลากหัวคอลัมน์สีฟ้าเพื่อสลับตำแหน่ง' : '* Check in Dropdown = visible on Events page + added to table  |  Drag blue headers to reorder'}
+                        {language === 'th'
+                            ? '* ติ๊กถูกใน Dropdown = เปิดการมองเห็นในหน้า Events + เพิ่มในตาราง  |  ลากหัวคอลัมน์ได้ทุกคอลัมน์ (สีเขียว = ปิดไม่ได้ แต่ย้ายได้)  |  ลำดับที่จัดไว้จะไปแสดงที่หน้า /event หลังกดบันทึก'
+                            : '* Check in Dropdown = visible on Events page + added to table  |  Every header is draggable (green = always shown, still movable)  |  The saved order is what /event renders'}
                     </p>
                 </div>
             </div>

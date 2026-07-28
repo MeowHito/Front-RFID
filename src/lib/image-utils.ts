@@ -57,6 +57,36 @@ export function compressImage(
 }
 
 /**
+ * Shrink a logo to fit inside `maxDimension` (keeps aspect ratio) and return a
+ * PNG data URL. PNG — not JPEG — so transparent logos stay transparent on the
+ * e-slip; the small max size keeps the base64 payload a few tens of KB.
+ */
+export function resizeLogo(file: File, maxDimension = 320): Promise<string> {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+            const img = new Image();
+            img.onload = () => {
+                const scale = Math.min(1, maxDimension / Math.max(img.width, img.height));
+                const w = Math.max(1, Math.round(img.width * scale));
+                const h = Math.max(1, Math.round(img.height * scale));
+                const canvas = document.createElement('canvas');
+                canvas.width = w;
+                canvas.height = h;
+                const ctx = canvas.getContext('2d');
+                if (!ctx) return reject(new Error('Canvas not supported'));
+                ctx.drawImage(img, 0, 0, w, h);
+                resolve(canvas.toDataURL('image/png'));
+            };
+            img.onerror = () => reject(new Error('Failed to load image'));
+            img.src = reader.result as string;
+        };
+        reader.onerror = () => reject(new Error('Failed to read file'));
+        reader.readAsDataURL(file);
+    });
+}
+
+/**
  * Crop and resize an image to a fixed 16:8 (2:1) aspect ratio using canvas.
  * Returns a base64 data URL of the cropped image.
  */

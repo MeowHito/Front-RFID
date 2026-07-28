@@ -126,6 +126,21 @@ const GROUP_STYLES: Record<string, { bg: string; border: string; text: string; t
     personal: { bg: '#f1f5f9', border: '#cbd5e1', text: '#334155', th: 'ข้อมูลส่วนตัว', en: 'Personal' },
 };
 
+/** Quote a CSV cell — Excel-safe for commas, quotes and embedded newlines. */
+function escapeCsv(value: string): string {
+    const text = String(value ?? '');
+    return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+}
+
+/** Local timestamp for the log CSV — sortable, no timezone guessing needed. */
+function csvTimestamp(iso: string): string {
+    if (!iso) return '';
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return iso;
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+
 function msToClock(ms: number): string {
     if (!Number.isFinite(ms) || ms <= 0) return '-';
     const total = Math.floor(ms / 1000);
@@ -308,6 +323,70 @@ export default function EditHistoryPage() {
         }
     };
 
+    /**
+     * Download the raw edit log as CSV — one row per changed field, newest first.
+     * It follows what's on screen: the distance filter and the search box both
+     * apply, so "ดูเฉพาะ 21K แล้วโหลด" gives you just that distance. BIB name and
+     * distance come from the summary rows, which the log entries don't carry.
+     */
+    const exportCsv = () => {
+        const metaByBib = new Map<string, EditSummaryRow>();
+        for (const r of filtered) metaByBib.set(`${r.bib}::${r.eventId || ''}`, r);
+
+        const q = search.trim().toLowerCase();
+        const entries = logs
+            .filter(l => {
+                if (eventFilter && String(l.eventId || '') !== eventFilter) return false;
+                if (!q) return true;
+                const meta = metaByBib.get(`${l.bib}::${l.eventId || ''}`);
+                return String(l.bib).toLowerCase().includes(q)
+                    || (l.changedBy || '').toLowerCase().includes(q)
+                    || (meta?.name || '').toLowerCase().includes(q);
+            })
+            .sort((a, b) => new Date(b.changedAt).getTime() - new Date(a.changedAt).getTime());
+
+        const header = [
+            t('เวลาที่แก้ไข', 'Changed At'), 'BIB', t('ชื่อ-นามสกุล', 'Name'), t('ระยะ', 'Event'),
+            t('ช่องที่แก้', 'Field'), t('ค่าเดิม', 'Old Value'), t('ค่าใหม่', 'New Value'),
+            t('แก้ไขโดย', 'Changed By'), t('ที่มา', 'Source'), t('หมายเหตุ', 'Note'),
+        ];
+
+        const lines = [header.map(escapeCsv).join(',')];
+        for (const entry of entries) {
+            const meta = metaByBib.get(`${entry.bib}::${entry.eventId || ''}`);
+            for (const change of entry.changes || []) {
+                lines.push([
+                    csvTimestamp(entry.changedAt),
+                    String(entry.bib ?? ''),
+                    meta?.name || '',
+                    meta?.eventName || meta?.category || '',
+                    fieldLabel(change.field),
+                    formatValue(change.field, change.oldValue),
+                    formatValue(change.field, change.newValue),
+                    entry.changedBy || '',
+                    entry.source || '',
+                    entry.note || '',
+                ].map(escapeCsv).join(','));
+            }
+        }
+
+        if (lines.length === 1) {
+            showToast(t('ไม่มี log ให้ดาวน์โหลด', 'No log entries to download'), 'error');
+            return;
+        }
+
+        // BOM so Excel reads the Thai names as UTF-8 instead of mojibake.
+        const blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        const slug = (campaign?.name || 'campaign').replace(/[^\p{L}\p{N}]+/gu, '-').slice(0, 60);
+        a.href = url;
+        a.download = `edit-history-${slug}-${new Date().toISOString().slice(0, 10)}.csv`;
+        a.click();
+        URL.revokeObjectURL(url);
+        showToast(t(`ดาวน์โหลด ${lines.length - 1} รายการแล้ว`, `Downloaded ${lines.length - 1} rows`), 'success');
+    };
+
     const doDeleteLogs = async () => {
         if (!campaign) return;
         setDeleting(true);
@@ -427,6 +506,26 @@ export default function EditHistoryPage() {
                     </button>
 
                     <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+                        <button
+                            onClick={exportCsv}
+                            disabled={loading || logs.length === 0}
+                            title={t('ดาวน์โหลด log ตามตัวกรองที่เลือกอยู่ (CSV เปิดด้วย Excel ได้)',
+                                'Download the log for the current filters (CSV, opens in Excel)')}
+                            style={{
+                                padding: '6px 12px', borderRadius: 6, border: '1px solid #16a34a',
+                                background: '#fff', color: '#15803d', fontSize: 12.5, fontWeight: 700,
+                                cursor: logs.length === 0 ? 'not-allowed' : 'pointer',
+                                opacity: logs.length === 0 ? 0.5 : 1,
+                                display: 'inline-flex', alignItems: 'center', gap: 6,
+                            }}
+                        >
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                                <polyline points="7 10 12 15 17 10" />
+                                <line x1="12" y1="15" x2="12" y2="3" />
+                            </svg>
+                            {t('ดาวน์โหลด log (CSV)', 'Download log (CSV)')}
+                        </button>
                         <button
                             onClick={() => campaign && load(campaign._id)}
                             disabled={loading || !campaign}

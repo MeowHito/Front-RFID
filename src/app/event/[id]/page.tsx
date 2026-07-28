@@ -18,6 +18,7 @@ import CourseProfileModal, { type CourseRunner } from '@/components/CourseProfil
 import CheckpointBarsModal from '@/components/CheckpointBarsModal';
 import { ETA_SLOWDOWN, cutoffAtMs, estimatePaceEtaMs } from '@/lib/routeProgress';
 import { countryName, countryToFlag } from '@/lib/country-flags';
+import { buildColumnOrder } from '@/lib/display-columns';
 import {
     compareRunnerNetRankOrder,
     computeLiveRanks,
@@ -1039,25 +1040,14 @@ export default function EventLivePage() {
             ? configuredToggleKeys
             : MARATHON_PUBLIC_DEFAULT_KEYS.filter(k => configuredToggleKeys.includes(k));
         const allowedToggleKeys = isAuthenticated ? configuredToggleKeys : publicToggleKeys;
-        // Rebuild full column order from admin settings
-        let fullOrder: string[];
-        if (configuredToggleKeys.length > 0) {
-            const toggleOrdered = [
-                ...configuredToggleKeys,
-                ...activeToggleableKeys.filter(k => !configuredToggleKeys.includes(k)),
-            ];
-            fullOrder = [];
-            let tIdx = 0;
-            for (const col of activeColDefs) {
-                if (col.fixed) {
-                    fullOrder.push(col.key);
-                } else {
-                    fullOrder.push(toggleOrdered[tIdx++]);
-                }
-            }
-        } else {
-            fullOrder = activeColDefs.map(c => c.key);
-        }
+        // Rebuild the full column order from admin settings. /admin/display can now
+        // drag the fixed columns (Rank / Runner / Status / Progress) too, and when it
+        // does it saves the whole order — buildColumnOrder replays that verbatim and
+        // falls back to the old "fill the toggleable slots" rule for legacy settings.
+        const fullOrder = buildColumnOrder(
+            hasSavedAdminCols ? adminCols : configuredToggleKeys,
+            activeColDefs,
+        );
 
         // Filter to only visible columns
         return fullOrder.filter(key => {

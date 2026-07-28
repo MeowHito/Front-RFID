@@ -17,8 +17,13 @@ import {
     Template1,
     Template2,
     Template3,
+    Template4,
     ESlipV2Renderer,
 } from '@/components/eslip/eslip-templates';
+
+/** The white "Default" cards (Default 1 = no logo, Default 2 = round event logo).
+ *  Both share the light page theme, light export background and have no photo picker. */
+const WHITE_TEMPLATES = ['template3', 'template4'];
 
 /**
  * Shared e-slip renderer. Fetches the runner profile from `apiUrl` (which must
@@ -199,7 +204,7 @@ export default function ESlipView({ apiUrl }: { apiUrl: string }) {
             const opts = {
                 quality: 0.95,
                 pixelRatio: 3,
-                backgroundColor: v2Mode ? (campaign?.eslipV2Layout?.background?.color || '#1e293b') : activeTemplate === 'template3' ? '#f1f5f9' : '#0f172a',
+                backgroundColor: v2Mode ? (campaign?.eslipV2Layout?.background?.color || '#1e293b') : WHITE_TEMPLATES.includes(activeTemplate) ? '#f1f5f9' : '#0f172a',
                 cacheBust: true,
             };
             // Safari/iOS needs a double-render: first pass primes image loading, second captures correctly
@@ -254,7 +259,7 @@ export default function ESlipView({ apiUrl }: { apiUrl: string }) {
                 pixelRatio: 3,
                 backgroundColor: v2Mode
                     ? (campaign?.eslipV2Layout?.background?.color || '#1e293b')
-                    : activeTemplate === 'template3' ? '#f1f5f9' : '#0f172a',
+                    : WHITE_TEMPLATES.includes(activeTemplate) ? '#f1f5f9' : '#0f172a',
                 cacheBust: true,
             };
             await toJpeg(slipRef.current, opts).catch(() => {});
@@ -307,7 +312,7 @@ export default function ESlipView({ apiUrl }: { apiUrl: string }) {
     const modeIsV2 = campaign?.eslipMode === 'v2';
     const hasV2Layout = modeIsV2 && (campaign?.eslipV2Layout?.elements?.length ?? 0) > 0;
     const isV2 = hasV2Layout;
-    const isWhiteTheme = !modeIsV2 && activeTemplate === 'template3';
+    const isWhiteTheme = !modeIsV2 && WHITE_TEMPLATES.includes(activeTemplate);
     const bgColor = isWhiteTheme ? 'bg-slate-100' : 'bg-slate-900';
 
     return (
@@ -333,7 +338,7 @@ export default function ESlipView({ apiUrl }: { apiUrl: string }) {
                     <div className="mb-4 flex gap-2 flex-wrap justify-center">
                         {availableTemplates.map(t => {
                             const isActive = activeTemplate === t;
-                            const label = t === 'template2' ? '📷 Photo' : '🤍 Default';
+                            const label = t === 'template2' ? '📷 Photo' : t === 'template4' ? '🏅 Default 2' : '🤍 Default';
                             return (
                                 <button
                                     key={t}
@@ -412,6 +417,7 @@ export default function ESlipView({ apiUrl }: { apiUrl: string }) {
                         const common = { runner: runnerForSlip!, timings, campaign, slipRef, showField, awardLabel: displayAwardLabel, targetBandLabel, language };
                         if (activeTemplate === 'template1') return <Template1 {...common} bgImage={bgImage} />;
                         if (activeTemplate === 'template2') return <Template2 {...common} bgImage={bgImage} textColorMode={photoTextColor} />;
+                        if (activeTemplate === 'template4') return <Template4 {...common} bgImage={null} />;
                         return <Template3 {...common} bgImage={null} />;
                     })()
                 }
@@ -419,7 +425,7 @@ export default function ESlipView({ apiUrl }: { apiUrl: string }) {
 
                 {/* Action Buttons */}
                 <div className="flex gap-3 w-full max-w-[380px] mt-5">
-                    {!modeIsV2 && activeTemplate !== 'template3' && (
+                    {!modeIsV2 && !WHITE_TEMPLATES.includes(activeTemplate) && (
                         <>
                             <input type="file" id="eslip-bg" accept="image/*" className="hidden" onChange={handleBgUpload} />
                             <label htmlFor="eslip-bg" className="flex-1 py-4 rounded-[15px] font-extrabold text-sm text-center cursor-pointer bg-white text-black flex justify-center items-center gap-2">
