@@ -79,6 +79,11 @@ const NAME_TO_ALPHA2: Record<string, string> = {
     PHILIPPINES: 'PH', INDIA: 'IN', KOREA: 'KR', GERMANY: 'DE', FRANCE: 'FR',
 };
 
+/** Reverse of ALPHA3_TO_ALPHA2, built once — used by toAlpha3(). */
+const ALPHA2_TO_ALPHA3: Record<string, string> = Object.fromEntries(
+    Object.entries(ALPHA3_TO_ALPHA2).map(([alpha3, alpha2]) => [alpha2, alpha3]),
+);
+
 function alpha2ToFlag(alpha2: string): string {
     const upper = alpha2.toUpperCase();
     if (upper.length !== 2) return '';
@@ -97,6 +102,19 @@ export function toAlpha2(code: string | undefined | null): string {
         return ALPHA3_TO_ALPHA2[upper] || (viaIoc ? ALPHA3_TO_ALPHA2[viaIoc] || '' : '');
     }
     return NAME_TO_ALPHA2[upper.replace(/\s+/g, '')] || '';
+}
+
+/**
+ * Any accepted spelling → ISO 3166-1 alpha-3 ("TH"/"THAILAND"/"THA" → "THA").
+ * Result exports (ITRA and friends) require alpha-3, and entry lists carry a mix
+ * of alpha-2, IOC codes and spelled-out names. Unrecognised values come back
+ * upper-cased and unchanged so nothing silently disappears from an export.
+ */
+export function toAlpha3(code: string | undefined | null): string {
+    const raw = String(code ?? '').trim().toUpperCase();
+    if (!raw) return '';
+    const alpha2 = toAlpha2(raw);
+    return alpha2 ? (ALPHA2_TO_ALPHA3[alpha2] || raw) : raw;
 }
 
 /**

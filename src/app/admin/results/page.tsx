@@ -908,7 +908,16 @@ export default function ResultsPage() {
         }
     }, [selectedIds, bulkStatus, language, fetchAllData]);
 
-    const thStyle = { padding: '8px 10px', textAlign: 'center' as const, fontWeight: 700, fontSize: 11, color: '#555', borderBottom: '2px solid #e5e7eb', whiteSpace: 'nowrap' as const };
+    // `top: 0` freezes the header row against the scroll box below; the BIB/#/checkbox
+    // columns are also `left`-pinned, so they need a higher z-index to stay above the
+    // headers they slide under. borderBottom does not paint on a sticky cell once it
+    // detaches, hence the boxShadow standing in for the rule.
+    const thStyle = {
+        padding: '8px 10px', textAlign: 'center' as const, fontWeight: 700, fontSize: 11, color: '#555',
+        whiteSpace: 'nowrap' as const,
+        position: 'sticky' as const, top: 0, zIndex: 2,
+        boxShadow: 'inset 0 -2px 0 0 #e5e7eb',
+    };
     const tdStyle = { padding: '6px 10px', borderBottom: '1px solid #f3f4f6', fontSize: 12 };
 
     // ── Column definitions (draggable columns only — checkbox/#/BIB are pinned) ──
@@ -1194,7 +1203,10 @@ export default function ResultsPage() {
                                 </p>
                             </div>
                         ) : (
-                            <div style={{ overflowX: 'auto' }}>
+                            // The header row is frozen (position: sticky), which only works inside a
+                            // scroll box — hence the capped height here rather than letting the page
+                            // itself scroll.
+                            <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 230px)' }}>
                                 <style>{`
                                     .drag-col-over-left { box-shadow: inset 3px 0 0 0 #3b82f6 !important; }
                                     .drag-col-over-right { box-shadow: inset -3px 0 0 0 #3b82f6 !important; }
@@ -1206,11 +1218,11 @@ export default function ResultsPage() {
                                     <thead>
                                         <tr style={{ background: '#f8fafc' }}>
                                             {/* Pinned columns */}
-                                            <th style={{ ...thStyle, minWidth: 32, position: 'sticky', left: 0, background: '#f8fafc', zIndex: 2 }}>
+                                            <th style={{ ...thStyle, minWidth: 32, left: 0, background: '#f8fafc', zIndex: 3 }}>
                                                 <input type="checkbox" checked={selectedIds.size > 0 && selectedIds.size === filteredRunners.length} onChange={toggleSelectAll} style={{ accentColor: '#3b82f6', cursor: 'pointer', width: 15, height: 15 }} />
                                             </th>
-                                            <th style={{ ...thStyle, minWidth: 36, position: 'sticky', left: 32, background: '#f8fafc', zIndex: 2 }}>{renderSortableHeader('#', 'default')}</th>
-                                            <th style={{ ...thStyle, minWidth: 54, position: 'sticky', left: 68, background: '#f8fafc', zIndex: 2, textAlign: 'left' }}>{renderSortableHeader('BIB', 'bib', { justifyContent: 'flex-start' })}</th>
+                                            <th style={{ ...thStyle, minWidth: 36, left: 32, background: '#f8fafc', zIndex: 3 }}>{renderSortableHeader('#', 'default')}</th>
+                                            <th style={{ ...thStyle, minWidth: 54, left: 68, background: '#f8fafc', zIndex: 3, textAlign: 'left' }}>{renderSortableHeader('BIB', 'bib', { justifyContent: 'flex-start' })}</th>
                                             {/* Draggable columns */}
                                             {orderedColumns.map(col => {
                                                 const isDragging = dragColKey === col.key;

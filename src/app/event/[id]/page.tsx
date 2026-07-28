@@ -18,6 +18,12 @@ import CourseProfileModal, { type CourseRunner } from '@/components/CourseProfil
 import CheckpointBarsModal from '@/components/CheckpointBarsModal';
 import { ETA_SLOWDOWN, cutoffAtMs, estimatePaceEtaMs } from '@/lib/routeProgress';
 import { countryName, countryToFlag } from '@/lib/country-flags';
+import {
+    compareRunnerNetRankOrder,
+    computeLiveRanks,
+    deriveEffectiveStatus,
+    makeCompareRunnerRankOrder,
+} from '@/lib/live-ranking';
 import type { RankingMenuVisibility } from '@/lib/rankingMenu';
 
 interface Campaign {
@@ -419,58 +425,14 @@ export default function EventLivePage() {
 
     const toApiData = (payload: any) => payload?.data ?? payload;
 
-    function compareStableBibOrder(a: Runner, b: Runner) {
-        const bibCompare = (a.bib || '').localeCompare(b.bib || '', undefined, { numeric: true });
-        if (bibCompare !== 0) return bibCompare;
-        return (a._id || '').localeCompare(b._id || '');
-    }
-
-    // Overall placing is decided by GUN time — prefer gun fields, fall back to net
-    // (locally-timed events store only net time).
-    function getRunnerPrimaryTimeMs(runner: Runner) {
-        const candidates = [
-            runner.gunTimeMs,
-            runner.totalGunTimeMs,
-            runner.totalGunTime,
-            runner.gunTime,
-            runner.netTimeMs,
-            runner.totalNetTimeMs,
-            runner.totalNetTime,
-            runner.netTime,
-            runner.elapsedTime,
-        ];
-        for (const value of candidates) {
-            const num = Number(value || 0);
-            if (Number.isFinite(num) && num > 0) return num;
-        }
-        return 0;
-    }
-
-    // Gender + age-group placings are decided by NET (chip) time — prefer net fields,
-    // fall back to gun.
-    function getRunnerNetTimeMs(runner: Runner) {
-        const candidates = [
-            runner.netTimeMs,
-            runner.totalNetTimeMs,
-            runner.totalNetTime,
-            runner.netTime,
-            runner.gunTimeMs,
-            runner.totalGunTimeMs,
-            runner.totalGunTime,
-            runner.gunTime,
-            runner.elapsedTime,
-        ];
-        for (const value of candidates) {
-            const num = Number(value || 0);
-            if (Number.isFinite(num) && num > 0) return num;
-        }
-        return 0;
-    }
-
-    function getRunnerScanTimeMs(runner: Runner) {
-        const time = runner.scanTime ? new Date(runner.scanTime).getTime() : 0;
-        return Number.isFinite(time) && time > 0 ? time : 0;
-    }
+    // Ranking helpers live in @/lib/live-ranking so the public results table and
+    // /admin/export produce identical RANK / GEN / AGE numbers. `useStoredRank` is
+    // off whenever a category splits Overall by nationality (stored ranks are then
+    // per-nationality and no longer a valid global sort key).
+    const compareRunnerRankOrder = useMemo(
+        () => makeCompareRunnerRankOrder(!(campaign?.separateOverallNationalityCategories?.length)),
+        [campaign?.separateOverallNationalityCategories],
+    );
 
     /**
      * Race clock at the last checkpoint, in ms — what the Next/ETA column divides
@@ -488,114 +450,6 @@ export default function EventLivePage() {
             if (parts.length === 2) return (parts[0] * 60 + parts[1]) * 1000;
         }
         return 0;
-    }
-
-    function compareRunnerRankOrder(a: Runner, b: Runner) {
-        // When any category splits Overall by nationality, stored overallRank may be
-        // per-nationality and is no longer a valid global sort key — keep the combined
-        // table ordered by time and let the rank number come from liveRanks.
-        const useStoredRank = !(campaign?.separateOverallNationalityCategories?.length);
-        const statusOrder: Record<string, number> = { 'finished': 0, 'in_progress': 1, 'dnf': 2, 'dns': 3, 'dq': 4, 'not_started': 5 };
-        const statusDiff = (statusOrder[a.status] ?? 6) - (statusOrder[b.status] ?? 6);
-        if (statusDiff !== 0) return statusDiff;
-
-        if (a.status === 'finished' && b.status === 'finished') {
-            // Rank all finished runners by GUN time → scan time, and only fall back to
-            // the stored overallRank when neither runner has a usable time. The stored
-            // rank is NOT the primary key: RaceTiger sends a net-based rank, so trusting
-            // it put a slower gun time above a faster one while the row still displayed
-            // the gun time (BIB 2301 above BIB 2233 on Nakhonsawan Trail 21K).
-            // CP-completeness does not affect ordering: if a reader missed a scan,
-            // an admin edit will recompute the time back to its rightful position.
-            const aTime = getRunnerPrimaryTimeMs(a);
-            const bTime = getRunnerPrimaryTimeMs(b);
-            if (aTime > 0 && bTime > 0 && aTime !== bTime) return aTime - bTime;
-            if (aTime > 0 && bTime <= 0) return -1;
-            if (aTime <= 0 && bTime > 0) return 1;
-            if (aTime <= 0 && bTime <= 0) {
-                const aStored = a.overallRank ?? 0;
-                const bStored = b.overallRank ?? 0;
-                if (useStoredRank && aStored > 0 && bStored > 0 && aStored !== bStored) return aStored - bStored;
-            }
-            const aScan = getRunnerScanTimeMs(a);
-            const bScan = getRunnerScanTimeMs(b);
-            if (aScan > 0 && bScan > 0 && aScan !== bScan) return aScan - bScan;
-            return compareStableBibOrder(a, b);
-        }
-
-        const aRank = a.overallRank ?? 0;
-        const bRank = b.overallRank ?? 0;
-        const bothInProgress = a.status === 'in_progress' && b.status === 'in_progress';
-        if (!bothInProgress && useStoredRank && aRank > 0 && bRank > 0 && aRank !== bRank) return aRank - bRank;
-
-        if (a.status === 'in_progress' && b.status === 'in_progress') {
-            const aPassed = a.passedCount ?? 0;
-            const bPassed = b.passedCount ?? 0;
-            if (aPassed !== bPassed) return bPassed - aPassed;
-            const aTime = getRunnerPrimaryTimeMs(a);
-            const bTime = getRunnerPrimaryTimeMs(b);
-            if (aTime > 0 && bTime > 0 && aTime !== bTime) return aTime - bTime;
-            if (aTime > 0 && bTime <= 0) return -1;
-            if (aTime <= 0 && bTime > 0) return 1;
-            const aScan = getRunnerScanTimeMs(a);
-            const bScan = getRunnerScanTimeMs(b);
-            if (aScan > 0 && bScan > 0 && aScan !== bScan) return aScan - bScan;
-            return compareStableBibOrder(a, b);
-        }
-
-        return compareStableBibOrder(a, b);
-    }
-
-    // Age-group (CAT/AGE) placings run on NET time, but the running order is still
-    // decided by course progress first: a runner who has passed more checkpoints is
-    // ahead of one who has passed fewer, however small the latter's split time is
-    // (a runner 20s past START is not leading the race). Mirrors
-    // compareRunnerRankOrder with net time as the basis. Used by BOTH the CAT rank
-    // counter and the mobile row order under an age-group filter, so the numbers and
-    // the rows can never disagree.
-    function compareRunnerNetRankOrder(a: Runner, b: Runner) {
-        const statusOrder: Record<string, number> = { 'finished': 0, 'in_progress': 1, 'dnf': 2, 'dns': 3, 'dq': 4, 'not_started': 5 };
-        const statusDiff = (statusOrder[a.status] ?? 6) - (statusOrder[b.status] ?? 6);
-        if (statusDiff !== 0) return statusDiff;
-
-        if (a.status === 'in_progress' && b.status === 'in_progress') {
-            const aPassed = a.passedCount ?? 0;
-            const bPassed = b.passedCount ?? 0;
-            if (aPassed !== bPassed) return bPassed - aPassed;
-        }
-
-        const aTime = getRunnerNetTimeMs(a);
-        const bTime = getRunnerNetTimeMs(b);
-        if (aTime > 0 && bTime > 0 && aTime !== bTime) return aTime - bTime;
-        if (aTime > 0 && bTime <= 0) return -1;
-        if (aTime <= 0 && bTime > 0) return 1;
-        const aScan = getRunnerScanTimeMs(a);
-        const bScan = getRunnerScanTimeMs(b);
-        if (aScan > 0 && bScan > 0 && aScan !== bScan) return aScan - bScan;
-        return compareStableBibOrder(a, b);
-    }
-
-    // Derive effective status from actual RaceTiger timing data
-    function deriveEffectiveStatus(runner: Runner): Runner {
-        // Preserve explicit statuses from backend (finished/dq/dnf/dns)
-        // Backend already handles DNF correctly (from RaceTiger API or raceFinished=true auto-detection)
-        if (['finished', 'dq', 'dnf', 'dns'].includes(runner.status)) return runner;
-
-        const hasGunTime = (runner.gunTime && runner.gunTime > 0) || !!runner.gunTimeStr;
-        const hasNetTime = (runner.netTime && runner.netTime > 0) || !!runner.netTimeStr;
-        const hasCheckpoint = !!runner.latestCheckpoint && runner.latestCheckpoint.toLowerCase() !== 'start';
-        const hasPassedCount = (runner.passedCount ?? 0) > 0;
-        const hasElapsed = (runner.elapsedTime && runner.elapsedTime > 0);
-
-        if (hasGunTime || hasNetTime || hasCheckpoint || hasPassedCount || hasElapsed) {
-            // Runner has evidence of starting — mark as in_progress
-            // Do NOT promote to "finished" based on overallRank — backend live ranking
-            // now assigns overallRank to in_progress runners too
-            return { ...runner, status: 'in_progress' };
-        }
-
-        // No timing data at all → keep original (not_started = DNS)
-        return runner;
     }
 
     function isFinishCheckpointName(value?: string | null): boolean {
@@ -1404,61 +1258,12 @@ export default function EventLivePage() {
             .map(x => x.runner);
     }, [allRankedRunners, searchQuery, filterGender, followedRunnerIds, filterCategory, filterStatus, filterAgeGroup, resolveRunnerCategoryKey, canonicalAgeGroupOf, getDisplayStatus, sortAlertsFirst, cpDistanceLookup, isMobile, showAllColumns]); // eslint-disable-line react-hooks/exhaustive-deps
 
-    // Compute live overall + gender + category ranks.
-    // Ranking convention: Overall (RANK) and Gender (GEN) are decided by GUN time, while
-    // Age-group (CAT/AGE) is decided by NET (chip) time. Overall is a single combined
-    // list — no gender or nationality split. CAT rank is scoped to gender + ageGroup so
-    // M40-49 and F40-49 rank separately.
-    const liveRanks = useMemo(() => {
-        const rankable = (runner: Runner) => {
-            // Rank runners who have passed at least one checkpoint (finished, in_progress, or DNF with progress)
-            // Skip DNS/DQ/not_started runners with no checkpoint progress
-            if (runner.status === 'not_started' || runner.status === 'dns' || runner.status === 'dq') return false;
-            if (runner.status === 'dnf' && !((runner.passedCount ?? 0) > 0)) return false;
-            return true;
-        };
-        const eligible = allRankedRunners.filter(rankable);
-        const ranks = new Map<string, { overallRank: number; genRank: number; catRank: number }>();
-        for (const runner of eligible) {
-            ranks.set(runner._id, { overallRank: 0, genRank: 0, catRank: 0 });
-        }
-
-        // Overall (combined) + Gender — by GUN time. `eligible` is already gun-ordered
-        // via allRankedRunners, so a single pass assigns both.
-        const eventCounters: Record<string, number> = {};
-        const genderCounters: Record<string, number> = {};
-        for (const runner of eligible) {
-            const eventKey = runner.eventId || '_';
-            const genderKey = `${eventKey}::${runner.gender || '_'}`;
-            eventCounters[eventKey] = (eventCounters[eventKey] || 0) + 1;
-            genderCounters[genderKey] = (genderCounters[genderKey] || 0) + 1;
-            const entry = ranks.get(runner._id)!;
-            entry.overallRank = eventCounters[eventKey];
-            entry.genRank = genderCounters[genderKey];
-        }
-
-        // Age-group (CAT) — by NET time, but progress-ordered first (see
-        // compareRunnerNetRankOrder): finishers ahead of anyone still on course, and
-        // among in-progress runners more checkpoints passed = ahead. A plain net-time
-        // sort handed AGE rank 1 to whoever had the smallest split time, which during a
-        // live race is a runner 20s past START.
-        const byNet = [...eligible].sort(compareRunnerNetRankOrder);
-        // Only count runners that will actually display an age-group rank. DNF/DNS/DQ/
-        // not_started rows render '-' for AGE (see `hideCatRank`), yet a DNF-with-progress
-        // runner can carry a bogus small net time (a partial leg time, not a real finish),
-        // which sorts it to the front of its bucket and pushes every finisher +1. Skipping
-        // those non-finishers keeps the age-group rank starting at 1 for the true winner.
-        const hidesCatRank = (status: string) => ['dnf', 'dns', 'dq', 'not_started'].includes(status);
-        const categoryCounters: Record<string, number> = {};
-        for (const runner of byNet) {
-            if (hidesCatRank(runner.status)) continue;
-            const eventKey = runner.eventId || '_';
-            const catKey = `${eventKey}::${runner.gender || '_'}::${canonicalAgeGroupOf(runner) || '_'}`;
-            categoryCounters[catKey] = (categoryCounters[catKey] || 0) + 1;
-            ranks.get(runner._id)!.catRank = categoryCounters[catKey];
-        }
-        return ranks;
-    }, [allRankedRunners, canonicalAgeGroupOf]); // eslint-disable-line react-hooks/exhaustive-deps
+    // Live overall + gender + age-group ranks — see @/lib/live-ranking for the
+    // convention (RANK/GEN by GUN time, AGE by NET time, Overall combined).
+    const liveRanks = useMemo(
+        () => computeLiveRanks(allRankedRunners, canonicalAgeGroupOf),
+        [allRankedRunners, canonicalAgeGroupOf],
+    );
 
 
 
@@ -2624,7 +2429,10 @@ export default function EventLivePage() {
                                                 const showInProgressCheckpointBadge = !!statusCheckpointName && runner.status === 'in_progress' && !isFinishCp;
                                                 const showDnfChip = isDnfStatus;
                                                 const showCheckpointChip = showFinishCheckpointBadge || showInProgressCheckpointBadge || showDnfChip;
-                                                const hideCheckpointText = runner.status === 'dns' || runner.status === 'not_started' || isDnfStatus;
+                                                // Signed-out viewers get a bare "DQ" badge — no checkpoint the runner was
+                                                // pulled at, no note. Staff still see where and why.
+                                                const hideCheckpointText = runner.status === 'dns' || runner.status === 'not_started' || isDnfStatus
+                                                    || (runner.status === 'dq' && !isAuthenticated);
                                                 const showCheckpointBelow = false;
                                                 const inlineStatusCheckpoint = showDnfChip
                                                     ? getStatusLabel(runner.status)
@@ -2649,8 +2457,11 @@ export default function EventLivePage() {
                                                                 {inlineStatusCheckpoint ? (
                                                                     <span className={`${showCheckpointChip ? 'inline-block' : 'block'} min-w-0 max-w-full ${showCheckpointChip ? 'shrink-0 grow-0 basis-auto' : 'flex-1'} whitespace-nowrap font-bold leading-[1.15] ${showCheckpointChip ? 'overflow-visible text-clip rounded-full' : 'overflow-hidden text-ellipsis'} ${isMobile ? 'text-[9px]' : 'text-[11px]'}`} style={{ color: statusNameColor, background: showFinishCheckpointBadge ? '#dcfce7' : showInProgressCheckpointBadge ? '#fef3c7' : showDnfChip ? '#dc2626' : 'transparent', border: 'none', padding: showCheckpointChip ? (isMobile ? '2px 7px' : '3px 10px') : 0 }}>
                                                                         {inlineStatusCheckpoint}
-                                                                        {/* Full note (e.g. the "finished without a START record" reason) is admin-only; public viewers see just the short label like "Auto DQ". */}
-                                                                        {!showDnfChip && runner.statusNote ? ` · ${isAdmin ? runner.statusNote : runner.statusNote.split(':')[0].trim()}` : ''}
+                                                                        {/* The status note is staff-only. Signed-out viewers see the status alone —
+                                                                            a DQ reads as "DQ", never "FINISH · Auto DQ", and a note left behind after an
+                                                                            admin corrected the status can no longer leak onto the public table.
+                                                                            Admins get the full note, other signed-in roles the short label. */}
+                                                                        {!showDnfChip && isAuthenticated && runner.statusNote ? ` · ${isAdmin ? runner.statusNote : runner.statusNote.split(':')[0].trim()}` : ''}
                                                                     </span>
                                                                 ) : null}
                                                                 {isFollowedRunner && (
