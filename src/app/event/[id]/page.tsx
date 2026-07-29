@@ -101,6 +101,8 @@ interface Runner {
     teamName?: string;
     latestCheckpoint?: string;
     passedCount?: number;
+    /** Uppercased checkpoint names whose time was typed in by staff (shown in orange). */
+    manualCheckpoints?: string[];
     lapCount?: number;
     bestLapTime?: number;
     avgLapTime?: number;
@@ -400,7 +402,7 @@ export default function EventLivePage() {
 
     // Checkpoint timing data for edit modal
     const [editCheckpoints, setEditCheckpoints] = useState<{name: string; orderNum: number; type: string}[]>([]);
-    const [editTimingRecords, setEditTimingRecords] = useState<{_id?: string; checkpoint: string; scanTime: string; order?: number}[]>([]);
+    const [editTimingRecords, setEditTimingRecords] = useState<{_id?: string; checkpoint: string; scanTime: string; order?: number; isManualTime?: boolean}[]>([]);
     const [editTimingChanges, setEditTimingChanges] = useState<Record<string, string>>({});
     const [editTimingLoading, setEditTimingLoading] = useState(false);
     const [editTimingSaveMsg, setEditTimingSaveMsg] = useState<string | null>(null);
@@ -451,6 +453,31 @@ export default function EventLivePage() {
             if (parts.length === 2) return (parts[0] * 60 + parts[1]) * 1000;
         }
         return 0;
+    }
+
+    /**
+     * Times an admin typed in by hand (a missed checkpoint filled in, or a corrected
+     * scan) are rendered in orange so it's obvious at a glance which figures on the
+     * table did not come off an RFID mat. The backend flags them per checkpoint on
+     * `manualCheckpoints`.
+     */
+    const MANUAL_TIME_COLOR = '#f97316';
+
+    function isManualCheckpoint(runner: Runner, checkpointName?: string | null): boolean {
+        const list = runner.manualCheckpoints;
+        if (!list?.length) return false;
+        const target = String(checkpointName || '').trim().toUpperCase();
+        if (!target) return false;
+        return list.some(cp => String(cp || '').trim().toUpperCase() === target);
+    }
+
+    /** The finish time (gun/net/total) is manual when the FINISH record itself was typed in. */
+    function hasManualFinishTime(runner: Runner): boolean {
+        return (runner.manualCheckpoints || []).some(cp => isFinishCheckpointName(cp));
+    }
+
+    function manualTimeTitle(): string {
+        return language === 'th' ? 'เวลาที่แอดมินใส่เอง (แมนนวล)' : 'Time entered manually by an admin';
     }
 
     function isFinishCheckpointName(value?: string | null): boolean {
@@ -1309,6 +1336,7 @@ export default function EventLivePage() {
                         checkpoint: r.checkpoint || '',
                         scanTime: r.scanTime || '',
                         order: r.order,
+                        isManualTime: r.isManualTime === true,
                     }));
                     setEditTimingRecords(records);
                 }
@@ -1592,6 +1620,7 @@ export default function EventLivePage() {
                         checkpoint: r.checkpoint || '',
                         scanTime: r.scanTime || '',
                         order: r.order,
+                        isManualTime: r.isManualTime === true,
                     }));
                     setEditTimingRecords(records);
                 }
@@ -2434,7 +2463,12 @@ export default function EventLivePage() {
                                                         : showDnfChip
                                                             ? '#ffffff'
                                                             : runner.statusCheckpoint ? '#dc2626' : themeStyles.text;
-                                                const statusTimeColor = statusCheckpointName ? statusNameColor : themeStyles.text;
+                                                // A hand-entered scan time overrides the status colouring — orange
+                                    // is the signal that this figure was typed in, not measured.
+                                    const isManualStatusTime = isManualCheckpoint(runner, statusCheckpointName);
+                                    const statusTimeColor = isManualStatusTime
+                                        ? MANUAL_TIME_COLOR
+                                        : statusCheckpointName ? statusNameColor : themeStyles.text;
                                                 return (
                                                     <td key={key} className={isMobile ? 'px-0 py-1 align-top' : 'px-1.5 py-1.5 align-top'}>
                                                         <div className={`${isMobile ? 'min-h-7' : 'min-h-8'} relative grid min-w-0 justify-items-center gap-y-[3px]`} style={{ gridTemplateRows: showCheckpointBelow ? (statusScanTimeLabel ? 'auto auto auto' : 'auto auto') : (statusScanTimeLabel ? 'auto auto' : 'auto') }}>
@@ -2476,7 +2510,11 @@ export default function EventLivePage() {
                                                                 </button>
                                                             )}
                                                             {statusScanTimeLabel && (
-                                                                <span className={`${isMobile ? 'text-[9px]' : 'text-[10px]'} block max-w-full overflow-hidden text-ellipsis whitespace-nowrap text-center font-semibold leading-[1.15]`} style={{ color: isDnfStatus ? '#dc2626' : statusTimeColor }}>
+                                                                <span
+                                                                    className={`${isMobile ? 'text-[9px]' : 'text-[10px]'} block max-w-full overflow-hidden text-ellipsis whitespace-nowrap text-center font-semibold leading-[1.15]`}
+                                                                    style={{ color: isManualStatusTime ? MANUAL_TIME_COLOR : isDnfStatus ? '#dc2626' : statusTimeColor }}
+                                                                    title={isManualStatusTime ? manualTimeTitle() : undefined}
+                                                                >
                                                                     {statusScanTimeLabel}
                                                                 </span>
                                                             )}
@@ -2488,9 +2526,14 @@ export default function EventLivePage() {
                                                 // When an age-group filter is active on collapsed mobile the header
                                                 // switches to NET TIME, so this slot must show the net (chip) time.
                                                 const showNetInGunSlot = isMobile && !showAllColumns && !!filterAgeGroup;
+                                                const manualFinish = hasManualFinishTime(runner);
                                                 return (
                                                     <td key={key} className={isMobile ? 'px-0 py-1 text-center' : 'px-1.5 py-1.5 text-left'}>
-                                                        <span className={`${isMobile ? 'text-[11px]' : 'text-xs'} font-bold font-mono`} style={{ color: themeStyles.text }}>
+                                                        <span
+                                                            className={`${isMobile ? 'text-[11px]' : 'text-xs'} font-bold font-mono`}
+                                                            style={{ color: manualFinish ? MANUAL_TIME_COLOR : themeStyles.text }}
+                                                            title={manualFinish ? manualTimeTitle() : undefined}
+                                                        >
                                                             {showNetInGunSlot
                                                                 ? (formatDisplayTimeString(runner.netTimeStr, isAdmin) || formatTime(runner.netTime) || '-')
                                                                 : (formatDisplayTimeString(runner.gunTimeStr, isAdmin) || formatTime(runner.gunTime || runner.elapsedTime))}
@@ -2498,14 +2541,20 @@ export default function EventLivePage() {
                                                     </td>
                                                 );
                                             }
-                                            case 'netTime':
+                                            case 'netTime': {
+                                                const manualFinish = hasManualFinishTime(runner);
                                                 return (
                                                     <td key={key} className="px-1.5 py-1.5 text-center">
-                                                        <span className="font-mono text-xs font-bold" style={{ color: (runner.netTimeStr || runner.netTime) ? '#22c55e' : themeStyles.textSecondary }}>
+                                                        <span
+                                                            className="font-mono text-xs font-bold"
+                                                            style={{ color: manualFinish ? MANUAL_TIME_COLOR : (runner.netTimeStr || runner.netTime) ? '#22c55e' : themeStyles.textSecondary }}
+                                                            title={manualFinish ? manualTimeTitle() : undefined}
+                                                        >
                                                             {formatDisplayTimeString(runner.netTimeStr, isAdmin) || formatTime(runner.netTime)}
                                                         </span>
                                                     </td>
                                                 );
+                                            }
                                             case 'genNet':
                                                 return (
                                                     <td key={key} className="px-1 py-1.5 text-center text-[11px] font-semibold" style={{ color: themeStyles.textMuted }}>
@@ -2916,22 +2965,34 @@ export default function EventLivePage() {
                                                         </span>
                                                     </td>
                                                 );
-                                            case 'totalTime':
+                                            case 'totalTime': {
+                                                const manualFinish = hasManualFinishTime(runner);
                                                 return (
                                                     <td key={key} className="px-1.5 py-1.5 text-center">
-                                                        <span className="font-mono text-xs font-bold" style={{ color: themeStyles.text }}>
+                                                        <span
+                                                            className="font-mono text-xs font-bold"
+                                                            style={{ color: manualFinish ? MANUAL_TIME_COLOR : themeStyles.text }}
+                                                            title={manualFinish ? manualTimeTitle() : undefined}
+                                                        >
                                                             {formatTime(runner.elapsedTime || runner.gunTime)}
                                                         </span>
                                                     </td>
                                                 );
-                                            case 'lastPass':
+                                            }
+                                            case 'lastPass': {
+                                                const manualLastPass = isManualCheckpoint(runner, statusCheckpointName);
                                                 return (
                                                     <td key={key} className="px-1.5 py-1.5 text-center">
-                                                        <span className="font-mono text-[11px]" style={{ color: runner.lastPassTime ? themeStyles.text : themeStyles.textSecondary }}>
+                                                        <span
+                                                            className="font-mono text-[11px]"
+                                                            style={{ color: manualLastPass ? MANUAL_TIME_COLOR : runner.lastPassTime ? themeStyles.text : themeStyles.textSecondary }}
+                                                            title={manualLastPass ? manualTimeTitle() : undefined}
+                                                        >
                                                             {runner.lastPassTime ? new Date(runner.lastPassTime).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '-'}
                                                         </span>
                                                     </td>
                                                 );
+                                            }
                                             case 'lapPace': {
                                                 const lapsCount = runner.lapCount || runner.passedCount || 0;
                                                 const totalMs = runner.elapsedTime || runner.gunTime || 0;
@@ -3138,6 +3199,12 @@ export default function EventLivePage() {
                                         const cpColor = cp.type === 'start' ? '#3b82f6' : cp.type === 'finish' ? '#22c55e' : '#8b5cf6';
                                         const hasChanged = editTimingChanges[cp.name] !== undefined;
                                         const isClearing = clearingCheckpoint === cp.name;
+                                        // Already-saved manual times keep the orange treatment used on the
+                                        // results table, so staff can tell them from RFID-captured times.
+                                        const isManualRecord = matchedRecord?.isManualTime === true;
+                                        const timeColor = displayTime
+                                            ? (isManualRecord && !hasChanged ? MANUAL_TIME_COLOR : themeStyles.text)
+                                            : themeStyles.textSecondary;
                                         return (
                                             <div key={cp.name + i} className="flex items-center gap-2">
                                                 <span className="inline-block min-w-[60px] whitespace-nowrap rounded px-2 py-0.5 text-center text-[10px] font-bold text-white" style={{ background: cpColor }}>
@@ -3145,8 +3212,9 @@ export default function EventLivePage() {
                                                 </span>
                                                 <button
                                                     onClick={() => setCpTimingPickerOpen(cp.name)}
+                                                    title={isManualRecord ? manualTimeTitle() : undefined}
                                                     className="box-border flex-1 cursor-pointer rounded-md px-2.5 py-1.5 text-left font-mono text-xs transition-all duration-150"
-                                                    style={{ border: `1px solid ${hasChanged ? '#8b5cf6' : themeStyles.border}`, background: isDark ? '#0f172a' : '#fff', color: displayTime ? themeStyles.text : themeStyles.textSecondary }}
+                                                    style={{ border: `1px solid ${hasChanged ? '#8b5cf6' : isManualRecord ? MANUAL_TIME_COLOR : themeStyles.border}`, background: isDark ? '#0f172a' : '#fff', color: timeColor }}
                                                 >
                                                     {displayTime || (language === 'th' ? 'กดเพื่อตั้งเวลา' : 'Click to set time')}
                                                 </button>
@@ -3196,6 +3264,7 @@ export default function EventLivePage() {
                                                                     checkpoint: cpName,
                                                                     scanTime: isoDate,
                                                                     note: 'Admin manual entry',
+                                                                    isManual: true,
                                                                 }),
                                                             });
                                                             savedCount++;
@@ -3219,6 +3288,7 @@ export default function EventLivePage() {
                                                                 checkpoint: r.checkpoint || '',
                                                                 scanTime: r.scanTime || '',
                                                                 order: r.order,
+                                                                isManualTime: r.isManualTime === true,
                                                             }));
                                                             setEditTimingRecords(records);
                                                         }
