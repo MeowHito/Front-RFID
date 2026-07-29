@@ -338,7 +338,14 @@ export default function ESlipView({ apiUrl }: { apiUrl: string }) {
                     <div className="mb-4 flex gap-2 flex-wrap justify-center">
                         {availableTemplates.map(t => {
                             const isActive = activeTemplate === t;
-                            const label = t === 'template2' ? '📷 Photo' : t === 'template4' ? '🏅 Default 2' : '🤍 Default';
+                            // Both white cards are just "Default" to the runner — the "2"
+                            // only appears when the organiser enabled both at once.
+                            const bothDefaults = availableTemplates.includes('template3') && availableTemplates.includes('template4');
+                            const label = t === 'template2'
+                                ? '📷 Photo'
+                                : t === 'template4'
+                                    ? (bothDefaults ? '🏅 Default 2' : '🤍 Default')
+                                    : '🤍 Default';
                             return (
                                 <button
                                     key={t}

@@ -45,15 +45,15 @@ const TEMPLATES = [
     },
     {
         id: 'template4',
-        name: 'E-Slip — Default 2 (โลโก้)',
-        description: 'เหมือน Default แต่มีโลโก้กิจกรรมวงกลมอยู่เหนือชื่องาน',
+        name: 'E-Slip — Default 2 (แบรนเนอร์)',
+        description: 'เหมือน Default แต่มีแบรนเนอร์กิจกรรม 16:3 อยู่เหนือชื่องาน',
         previewBg: 'linear-gradient(135deg, #f8fafc, #e2e8f0)',
         icon: '🏅',
     },
 ];
 
 /** Templates enabled for a campaign that has never saved E-Slip settings.
- *  Default 2 is opt-in — it looks identical to Default until a logo is uploaded. */
+ *  Default 2 is opt-in — it looks identical to Default until a banner is uploaded. */
 const DEFAULT_TEMPLATE_IDS = ['template2', 'template3'];
 
 export default function AdminESlipPage() {
@@ -121,7 +121,7 @@ export default function AdminESlipPage() {
         });
     };
 
-    // Logo is stored inline on the campaign as a small PNG data URI so the e-slip
+    // Banner is stored inline on the campaign as a resized data URI so the e-slip
     // image export (html-to-image) can rasterise it without a cross-origin fetch.
     const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const input = e.currentTarget;
@@ -130,12 +130,12 @@ export default function AdminESlipPage() {
         if (!file) return;
         setLogoError(null);
         try {
-            const { resizeLogo } = await import('@/lib/image-utils');
-            const dataUrl = await resizeLogo(file, 320);
+            const { resizeBanner } = await import('@/lib/image-utils');
+            const dataUrl = await resizeBanner(file);
             setLogoUrl(dataUrl);
         } catch (err) {
-            console.error('Logo upload error:', err);
-            setLogoError('อัปโหลดโลโก้ไม่สำเร็จ — ลองไฟล์ PNG หรือ JPG อีกครั้ง');
+            console.error('Banner upload error:', err);
+            setLogoError('อัปโหลดแบรนเนอร์ไม่สำเร็จ — ลองไฟล์ PNG หรือ JPG อีกครั้ง');
         }
     };
 
@@ -371,34 +371,35 @@ export default function AdminESlipPage() {
                                     </div>
                                 </div>
 
-                                {/* Event logo — only used by the "Default 2" template */}
+                                {/* Event banner — only used by the "Default 2" template */}
                                 <div style={{ marginBottom: 32 }}>
                                     <h2 style={{ fontSize: 18, fontWeight: 700, color: '#0f172a', margin: '0 0 4px' }}>
                                         <i className="fas fa-image" style={{ marginRight: 8, color: '#f59e0b' }} />
-                                        โลโก้สำหรับ Default 2
+                                        แบรนเนอร์สำหรับ Default 2
                                     </h2>
                                     <p style={{ fontSize: 12, color: '#64748b', margin: '0 0 12px' }}>
-                                        แสดงเป็นวงกลมเหนือชื่อกิจกรรม เฉพาะเทมเพลต <b>E-Slip — Default 2</b> เท่านั้น (Default แบบเดิมไม่เปลี่ยน) · แนะนำรูปจัตุรัส (1:1) จะได้ไม่โดนครอบตัด
+                                        แสดงเต็มความกว้างเหนือชื่อกิจกรรม เฉพาะเทมเพลต <b>E-Slip — Default 2</b> เท่านั้น (Default แบบเดิมไม่เปลี่ยน) · แนะนำอัตราส่วน <b>16:3</b> เช่น 1200×225 px
                                     </p>
                                     {!selectedTemplates.includes('template4') && (
                                         <p style={{ fontSize: 12, color: '#b45309', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8, padding: '8px 12px', margin: '0 0 12px', fontWeight: 600 }}>
                                             <i className="fas fa-info-circle" style={{ marginRight: 6 }} />
-                                            ยังไม่ได้เปิด Template “Default 2” ด้านบน — นักวิ่งจะยังไม่เห็นแบบที่มีโลโก้
+                                            ยังไม่ได้เปิด Template “Default 2” ด้านบน — นักวิ่งจะยังไม่เห็นแบบที่มีแบรนเนอร์
                                         </p>
                                     )}
                                     <div style={{ display: 'flex', alignItems: 'center', gap: 20, flexWrap: 'wrap' }}>
-                                        {/* Round preview — matches how the slip crops the logo */}
+                                        {/* 16:3 preview — same box the slip draws the banner in */}
                                         <div style={{
-                                            width: 120, height: 120, borderRadius: '50%',
+                                            width: 320, aspectRatio: '16 / 3',
                                             border: logoUrl ? '1px solid #e2e8f0' : '2px dashed #cbd5e1',
-                                            background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                            borderRadius: 10, background: '#fff',
+                                            display: 'flex', alignItems: 'center', justifyContent: 'center',
                                             overflow: 'hidden', flexShrink: 0,
                                         }}>
                                             {logoUrl ? (
                                                 // eslint-disable-next-line @next/next/no-img-element
-                                                <img src={logoUrl} alt="Logo" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                                <img src={logoUrl} alt="Banner" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
                                             ) : (
-                                                <span style={{ fontSize: 12, color: '#94a3b8', textAlign: 'center' }}>ยังไม่มีโลโก้</span>
+                                                <span style={{ fontSize: 12, color: '#94a3b8', textAlign: 'center' }}>ยังไม่มีแบรนเนอร์</span>
                                             )}
                                         </div>
                                         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -408,7 +409,7 @@ export default function AdminESlipPage() {
                                                 background: '#3b82f6', color: '#fff', cursor: 'pointer', textAlign: 'center',
                                             }}>
                                                 <i className="fas fa-upload" style={{ marginRight: 8 }} />
-                                                {logoUrl ? 'เปลี่ยนโลโก้' : 'อัปโหลดโลโก้'}
+                                                {logoUrl ? 'เปลี่ยนแบรนเนอร์' : 'อัปโหลดแบรนเนอร์'}
                                             </label>
                                             {logoUrl && (
                                                 <button
@@ -419,17 +420,17 @@ export default function AdminESlipPage() {
                                                     }}
                                                 >
                                                     <i className="fas fa-trash" style={{ marginRight: 8 }} />
-                                                    ลบโลโก้
+                                                    ลบแบรนเนอร์
                                                 </button>
                                             )}
-                                            <span style={{ fontSize: 11, color: '#94a3b8' }}>ระบบย่อรูปให้อัตโนมัติ (ด้านยาวสุด 320px)</span>
+                                            <span style={{ fontSize: 11, color: '#94a3b8' }}>ระบบย่อรูปให้อัตโนมัติ · รูปทั้งภาพจะถูกแสดง ไม่โดนครอบตัด</span>
                                         </div>
                                     </div>
                                     {logoError && (
                                         <p style={{ fontSize: 12, color: '#dc2626', margin: '10px 2px 0', fontWeight: 600 }}>{logoError}</p>
                                     )}
                                     <p style={{ fontSize: 12, color: '#94a3b8', margin: '10px 2px 0' }}>
-                                        อย่าลืมกด “บันทึกการตั้งค่า” ด้านล่างหลังเลือกโลโก้
+                                        อย่าลืมกด “บันทึกการตั้งค่า” ด้านล่างหลังเลือกแบรนเนอร์
                                     </p>
                                 </div>
 

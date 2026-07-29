@@ -57,17 +57,18 @@ export function compressImage(
 }
 
 /**
- * Shrink a logo to fit inside `maxDimension` (keeps aspect ratio) and return a
- * PNG data URL. PNG — not JPEG — so transparent logos stay transparent on the
- * e-slip; the small max size keeps the base64 payload a few tens of KB.
+ * Shrink an e-slip banner so it stays sharp on the exported slip (rendered at
+ * 3x pixel ratio) without bloating the campaign document. Keeps the original
+ * aspect ratio — the slip letterboxes it inside a 16:3 box — and flattens onto
+ * white so transparent PNGs don't turn black in the JPEG output.
  */
-export function resizeLogo(file: File, maxDimension = 320): Promise<string> {
+export function resizeBanner(file: File, maxWidth = 1200, maxHeight = 600): Promise<string> {
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = () => {
             const img = new Image();
             img.onload = () => {
-                const scale = Math.min(1, maxDimension / Math.max(img.width, img.height));
+                const scale = Math.min(1, maxWidth / img.width, maxHeight / img.height);
                 const w = Math.max(1, Math.round(img.width * scale));
                 const h = Math.max(1, Math.round(img.height * scale));
                 const canvas = document.createElement('canvas');
@@ -75,8 +76,10 @@ export function resizeLogo(file: File, maxDimension = 320): Promise<string> {
                 canvas.height = h;
                 const ctx = canvas.getContext('2d');
                 if (!ctx) return reject(new Error('Canvas not supported'));
+                ctx.fillStyle = '#ffffff';
+                ctx.fillRect(0, 0, w, h);
                 ctx.drawImage(img, 0, 0, w, h);
-                resolve(canvas.toDataURL('image/png'));
+                resolve(canvas.toDataURL('image/jpeg', 0.88));
             };
             img.onerror = () => reject(new Error('Failed to load image'));
             img.src = reader.result as string;

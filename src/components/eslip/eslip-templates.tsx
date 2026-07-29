@@ -539,7 +539,7 @@ export function Template2({ runner, timings, campaign, bgImage, slipRef, showFie
 // ==================== TEMPLATE 3: Clean White Card ====================
 /** `withLogo` is what separates the two "Default" options the admin can enable:
  *  Template3 (Default) keeps the original header, Template4 (Default 2) adds the
- *  round event logo above the event name. */
+ *  16:3 event banner above the event name. */
 function DefaultCard({ runner, timings, campaign, slipRef, showField, awardLabel, targetBandLabel, language = 'en', withLogo = false }: TemplateProps & { withLogo?: boolean }) {
     const displayName = resolveRunnerName(runner, language);
     const genderLabel = runner.gender === 'M' ? 'Male' : 'Female';
@@ -556,23 +556,27 @@ function DefaultCard({ runner, timings, campaign, slipRef, showField, awardLabel
         return (a.order || 0) - (b.order || 0);
     });
     const displayTimings = sortedTimings.slice(-7);
-    const showLogo = withLogo && !!campaign?.eslipLogoUrl;
+    const showBanner = withLogo && !!campaign?.eslipLogoUrl;
 
     return (
         <div ref={slipRef} className="w-full max-w-[360px] min-h-[720px] bg-white rounded-[32px] overflow-hidden shadow-xl border border-slate-200 flex flex-col">
-            {/* Header — Default 2 shows the round event logo above the event name;
-                its padding is tightened so the card stays about as tall as Default 1
-                and still fits one phone screen. */}
-            <div className={`bg-slate-50 px-5 text-center border-b border-slate-100 ${showLogo ? 'pt-5 pb-4' : 'pt-9 pb-6'}`}>
-                {showLogo && (
-                    /* <img> (not next/image) so html-to-image rasterises the data URI reliably */
-                    <img
-                        src={campaign!.eslipLogoUrl!}
-                        alt=""
-                        className="w-14 h-14 rounded-full object-cover bg-white border border-slate-200 mx-auto mb-2"
-                    />
+            {/* Header — Default 2 puts a full-bleed 16:3 event banner above the event
+                name (object-contain so the whole artwork shows, never cropped); the
+                title padding is tightened so the card still fits one phone screen. */}
+            <div className="bg-slate-50 text-center border-b border-slate-100">
+                {showBanner && (
+                    <div className="w-full aspect-[16/3] bg-white overflow-hidden">
+                        {/* <img> (not next/image) so html-to-image rasterises the data URI reliably */}
+                        <img
+                            src={campaign!.eslipLogoUrl!}
+                            alt=""
+                            className="w-full h-full object-contain"
+                        />
+                    </div>
                 )}
-                <FitName className="font-black text-slate-900 uppercase leading-tight text-center" maxSize={22}>{campaign?.name || 'Race Event'}</FitName>
+                <div className={`px-5 ${showBanner ? 'pt-3.5 pb-4' : 'pt-9 pb-6'}`}>
+                    <FitName className="font-black text-slate-900 uppercase leading-tight text-center" maxSize={22}>{campaign?.name || 'Race Event'}</FitName>
+                </div>
             </div>
 
             {/* Content */}
@@ -684,8 +688,8 @@ export function Template3(props: TemplateProps) {
     return <DefaultCard {...props} />;
 }
 
-/** E-Slip 1 "Default 2" — same card with the round event logo on top.
- *  Falls back to the plain header when no logo has been uploaded. */
+/** E-Slip 1 "Default 2" — same card with the 16:3 event banner on top.
+ *  Falls back to the plain header when no banner has been uploaded. */
 export function Template4(props: TemplateProps) {
     return <DefaultCard {...props} withLogo />;
 }
