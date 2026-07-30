@@ -96,6 +96,8 @@ const FIELD_LABELS: Record<string, { th: string; en: string }> = {
     elapsedTime: { th: 'Elapsed Time', en: 'Elapsed Time' },
     finishTime: { th: 'เวลาเข้าเส้นชัย', en: 'Finish Time' },
     startTime: { th: 'เวลาออกตัว', en: 'Start Time' },
+    returnedHome: { th: 'กลับถึงเส้นชัยแล้ว', en: 'Back At Finish' },
+    returnedHomeNote: { th: 'หมายเหตุการกลับ', en: 'Back-At-Finish Note' },
 };
 
 const STATUS_LABELS: Record<string, { th: string; en: string; color: string }> = {
@@ -109,7 +111,7 @@ const STATUS_LABELS: Record<string, { th: string; en: string; color: string }> =
 
 const TIME_FIELDS = new Set(['netTime', 'gunTime', 'elapsedTime']);
 const DATE_FIELDS = new Set(['birthDate', 'finishTime', 'startTime']);
-const STATUS_FIELD_KEYS = new Set(['status', 'statusNote', 'statusCheckpoint']);
+const STATUS_FIELD_KEYS = new Set(['status', 'statusNote', 'statusCheckpoint', 'returnedHome', 'returnedHomeNote']);
 
 /** Group a field into a colour-coded family so the table reads at a glance. */
 function fieldGroup(field: string): 'status' | 'time' | 'identity' | 'personal' {

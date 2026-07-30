@@ -59,7 +59,18 @@ interface Runner {
     overallRank?: number;
     /** Wall-clock time of this runner's latest checkpoint scan (ISO string). */
     scanTime?: string;
+    /** Wall-clock time of this runner's FINISH scan, if any — set even for DNF/DQ. */
+    finishScanTime?: string;
+    /** Staff-set flag for a DNF/DQ runner confirmed back at the finish area. */
+    returnedHome?: boolean;
+    returnedHomeNote?: string;
 }
+
+/** DNF/DQ — the runners whose whereabouts operations has to account for. */
+const isStoppedRunner = (r: Runner): boolean => r.status === 'dnf' || r.status === 'dq';
+
+/** Back at the finish: proven by a FINISH scan, or vouched for by staff. */
+const hasReturnedHome = (r: Runner): boolean => r.returnedHome === true || !!r.finishScanTime;
 
 interface TimingRecord {
     bib: string;
@@ -1390,6 +1401,57 @@ export function GeneralChartView({ monitor }: { monitor?: MonitorRequest }) {
     /** Which summary cell the admin clicked — shows the bibs behind the number. */
     const [bibDetail, setBibDetail] = useState<{ cat: string; label: string; color: string; runners: Runner[] } | null>(null);
     const [bibDetailSearch, setBibDetailSearch] = useState('');
+    /**
+     * Returned-home edits made from the DNF/DQ drill-down, keyed by runner id. The list
+     * behind the modal is a snapshot and the passtime feed is cached for a few seconds,
+     * so the tick has to be reflected locally or it appears to bounce back.
+     */
+    const [homeEdits, setHomeEdits] = useState<Record<string, { returnedHome: boolean; returnedHomeNote: string }>>({});
+    const [homeSavingId, setHomeSavingId] = useState<string | null>(null);
+    /** Which row has its note box open — the note is the exception, not the default. */
+    const [homeNoteOpenId, setHomeNoteOpenId] = useState<string | null>(null);
+
+    /** A runner's returned-home state, with any unsaved-in-this-view edit layered on top. */
+    const homeStateOf = useCallback((r: Runner) => {
+        const edit = homeEdits[String(r._id)];
+        const returnedHome = edit ? edit.returnedHome : r.returnedHome === true;
+        return {
+            returnedHome,
+            returnedHomeNote: edit ? edit.returnedHomeNote : (r.returnedHomeNote || ''),
+            // A FINISH scan is proof on its own and cannot be un-ticked by hand.
+            hasFinishScan: !!r.finishScanTime,
+            isHome: returnedHome || !!r.finishScanTime,
+        };
+    }, [homeEdits]);
+
+    const saveReturnedHome = useCallback(async (r: Runner, returnedHome: boolean, note: string) => {
+        const id = String(r._id);
+        const prev = homeEdits[id];
+        setHomeEdits(m => ({ ...m, [id]: { returnedHome, returnedHomeNote: note } }));
+        setHomeSavingId(id);
+        try {
+            const res = await fetch(`/api/runners/${id}`, {
+                method: 'PUT',
+                headers: authHeaders(),
+                body: JSON.stringify({ returnedHome, returnedHomeNote: note }),
+            });
+            if (!res.ok) throw new Error(String(res.status));
+            setRunners(list => list.map(x => (String(x._id) === id
+                ? { ...x, returnedHome, returnedHomeNote: note }
+                : x)));
+        } catch (err) {
+            console.error('Failed to save returned-home flag', err);
+            // Put the row back the way it was rather than leaving a tick that never saved.
+            setHomeEdits(m => {
+                const next = { ...m };
+                if (prev) next[id] = prev; else delete next[id];
+                return next;
+            });
+            alert(th ? 'บันทึกไม่สำเร็จ ลองใหม่อีกครั้ง' : 'Could not save. Please try again.');
+        } finally {
+            setHomeSavingId(cur => (cur === id ? null : cur));
+        }
+    }, [homeEdits, th]);
 
     // ── Load campaign ──
     // A monitor link carries its campaign id, because "featured" is per-account
@@ -2307,6 +2369,11 @@ export function GeneralChartView({ monitor }: { monitor?: MonitorRequest }) {
                         const name = `${r.firstName || ''} ${r.lastName || ''}`.toLowerCase();
                         return (r.bib || '').toLowerCase().includes(q) || name.includes(q);
                     });
+                // The returned-home column only means anything for runners pulled off
+                // course, so it appears on the DNF/DQ lists and nowhere else.
+                const stoppedRunners = bibDetail.runners.filter(isStoppedRunner);
+                const showHomeColumn = stoppedRunners.length > 0;
+                const stillOutCount = stoppedRunners.filter(r => !homeStateOf(r).isHome).length;
                 return (
                 <div
                     onClick={() => setBibDetail(null)}
@@ -2332,6 +2399,14 @@ export function GeneralChartView({ monitor }: { monitor?: MonitorRequest }) {
                                     {th ? 'จำนวน' : 'Count'}: <strong style={{ color: bibDetail.color }}>{bibDetail.runners.length}</strong>
                                     {q && <span style={{ marginLeft: 8 }}>{th ? `· พบ ${shown.length} คน` : `· ${shown.length} match`}</span>}
                                 </p>
+                                {showHomeColumn && (
+                                    <p style={{ margin: '5px 0 0', fontSize: 11.5, color: '#64748b' }}>
+                                        🏠 <strong style={{ color: '#15803d' }}>{stoppedRunners.length - stillOutCount}</strong>
+                                        {th ? ' กลับถึงเส้นชัยแล้ว · ' : ' back at the finish · '}
+                                        <strong style={{ color: stillOutCount > 0 ? '#dc2626' : '#94a3b8' }}>{stillOutCount}</strong>
+                                        {th ? ' ยังไม่ยืนยัน' : ' unaccounted for'}
+                                    </p>
+                                )}
                             </div>
                             <button onClick={() => setBibDetail(null)} style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: '#94a3b8', lineHeight: 1 }}>✕</button>
                         </div>
@@ -2364,20 +2439,109 @@ export function GeneralChartView({ monitor }: { monitor?: MonitorRequest }) {
                                             <th style={{ padding: '6px 8px', textAlign: 'center', fontSize: 11, fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase' }}>{th ? 'เพศ' : 'Gender'}</th>
                                             <th style={{ padding: '6px 8px', textAlign: 'left', fontSize: 11, fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase' }}>{th ? 'ระยะ' : 'Distance'}</th>
                                             <th style={{ padding: '6px 22px', textAlign: 'right', fontSize: 11, fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase' }}>{th ? 'เวลาบันทึก' : 'Recorded'}</th>
+                                            {showHomeColumn && (
+                                                <th style={{ padding: '6px 22px 6px 0', textAlign: 'center', fontSize: 11, fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase' }}>{th ? 'กลับบ้านแล้ว' : 'Back home'}</th>
+                                            )}
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {shown.map(r => (
-                                            <tr key={r._id || r.bib} style={{ borderBottom: '1px solid #f8fafc' }}>
+                                        {shown.map(r => {
+                                            const home = homeStateOf(r);
+                                            const stopped = isStoppedRunner(r);
+                                            // Green + 🏠 = accounted for. Everyone else on a DNF/DQ list is
+                                            // someone nobody has seen come back yet.
+                                            const nameColor = stopped && home.isHome ? '#15803d' : '#334155';
+                                            const saving = homeSavingId === String(r._id);
+                                            const noteOpen = homeNoteOpenId === String(r._id);
+                                            return (
+                                            <React.Fragment key={r._id || r.bib}>
+                                            <tr style={{ borderBottom: noteOpen ? 'none' : '1px solid #f8fafc', background: stopped && home.isHome ? '#f0fdf4' : undefined }}>
                                                 <td style={{ padding: '9px 22px', fontFamily: 'monospace', fontWeight: 800, color: '#0f172a' }}>{r.bib}</td>
-                                                <td style={{ padding: '9px 8px', color: '#334155' }}>{`${r.firstName || ''} ${r.lastName || ''}`.trim() || '—'}</td>
+                                                <td style={{ padding: '9px 8px', color: nameColor, fontWeight: stopped && home.isHome ? 700 : 400 }}>
+                                                    {stopped && home.isHome && (
+                                                        <span
+                                                            style={{ marginRight: 5 }}
+                                                            title={home.hasFinishScan
+                                                                ? (th ? 'มีสแกนที่จุด FINISH' : 'FINISH scan recorded')
+                                                                : (th ? 'แอดมินระบุว่ากลับถึงเส้นชัยแล้ว' : 'Marked back at the finish by staff')}
+                                                        >🏠</span>
+                                                    )}
+                                                    {`${r.firstName || ''} ${r.lastName || ''}`.trim() || '—'}
+                                                </td>
                                                 <td style={{ padding: '9px 8px', textAlign: 'center' }}>{r.gender === 'F' ? '♀' : r.gender === 'M' ? '♂' : '—'}</td>
                                                 <td style={{ padding: '9px 8px', color: '#334155' }}>{r.category || bibDetail.cat}</td>
                                                 <td style={{ padding: '9px 22px', textAlign: 'right', color: '#64748b', fontVariantNumeric: 'tabular-nums' }}>
                                                     {r.scanTime ? new Date(r.scanTime).toLocaleTimeString(th ? 'th-TH' : 'en-GB', { hour12: false }) : '—'}
                                                 </td>
+                                                {showHomeColumn && (
+                                                    <td style={{ padding: '9px 22px 9px 0', textAlign: 'center', whiteSpace: 'nowrap' }}>
+                                                        {!stopped ? (
+                                                            <span style={{ color: '#cbd5e1' }}>—</span>
+                                                        ) : home.hasFinishScan ? (
+                                                            // The mat already answered the question — nothing to tick.
+                                                            <span
+                                                                style={{ fontSize: 11, fontWeight: 800, color: '#15803d' }}
+                                                                title={th ? 'ยืนยันจากการสแกนที่จุด FINISH' : 'Confirmed by the FINISH scan'}
+                                                            >
+                                                                {new Date(r.finishScanTime as string).toLocaleTimeString(th ? 'th-TH' : 'en-GB', { hour12: false })}
+                                                            </span>
+                                                        ) : (
+                                                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                                                                <label style={{ display: 'inline-flex', alignItems: 'center', gap: 5, cursor: saving ? 'wait' : 'pointer', fontSize: 12, color: '#475569' }}>
+                                                                    <input
+                                                                        type="checkbox"
+                                                                        checked={home.returnedHome}
+                                                                        disabled={saving}
+                                                                        onChange={e => saveReturnedHome(r, e.target.checked, home.returnedHomeNote)}
+                                                                        style={{ width: 15, height: 15, accentColor: '#16a34a', cursor: saving ? 'wait' : 'pointer' }}
+                                                                    />
+                                                                    {saving ? (th ? 'กำลังบันทึก…' : 'Saving…') : (th ? 'กลับแล้ว' : 'Back')}
+                                                                </label>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => setHomeNoteOpenId(noteOpen ? null : String(r._id))}
+                                                                    title={th ? 'หมายเหตุ' : 'Note'}
+                                                                    style={{
+                                                                        border: 'none', background: 'none', cursor: 'pointer', padding: 0,
+                                                                        fontSize: 13, opacity: home.returnedHomeNote ? 1 : 0.45,
+                                                                    }}
+                                                                >📝</button>
+                                                            </span>
+                                                        )}
+                                                    </td>
+                                                )}
                                             </tr>
-                                        ))}
+                                            {noteOpen && (
+                                                <tr style={{ borderBottom: '1px solid #f8fafc', background: '#f8fafc' }}>
+                                                    <td colSpan={showHomeColumn ? 6 : 5} style={{ padding: '0 22px 10px' }}>
+                                                        <input
+                                                            type="text"
+                                                            defaultValue={home.returnedHomeNote}
+                                                            placeholder={th ? 'หมายเหตุ เช่น รถ sweep ส่งกลับ (กด Enter เพื่อบันทึก)' : 'Note, e.g. picked up by the sweep vehicle (press Enter to save)'}
+                                                            // Enter just leaves the field; the blur handler below is the
+                                                            // single save path, so a note can never be written twice.
+                                                            onKeyDown={e => {
+                                                                const el = e.target as HTMLInputElement;
+                                                                if (e.key === 'Escape') el.value = home.returnedHomeNote;
+                                                                if (e.key === 'Enter' || e.key === 'Escape') el.blur();
+                                                            }}
+                                                            onBlur={e => {
+                                                                const next = e.target.value.trim();
+                                                                if (next !== home.returnedHomeNote) saveReturnedHome(r, home.returnedHome, next);
+                                                                setHomeNoteOpenId(cur => (cur === String(r._id) ? null : cur));
+                                                            }}
+                                                            autoFocus
+                                                            style={{
+                                                                width: '100%', boxSizing: 'border-box', padding: '7px 10px',
+                                                                border: '1px solid #e2e8f0', borderRadius: 8, fontSize: 12, outline: 'none',
+                                                            }}
+                                                        />
+                                                    </td>
+                                                </tr>
+                                            )}
+                                            </React.Fragment>
+                                            );
+                                        })}
                                     </tbody>
                                 </table>
                             )}

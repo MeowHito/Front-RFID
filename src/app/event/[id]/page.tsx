@@ -117,6 +117,11 @@ interface Runner {
     statusNote?: string;
     statusChangedBy?: string;
     statusChangedAt?: string;
+    /** ISO time of this runner's FINISH scan, if they have one (set even for DNF/DQ). */
+    finishScanTime?: string;
+    /** Admin-set flag: a DNF/DQ runner who is confirmed back at the finish area. */
+    returnedHome?: boolean;
+    returnedHomeNote?: string;
     scanTime?: string;
     distanceFromStart?: number;
     splitTime?: number;
@@ -400,6 +405,12 @@ export default function EventLivePage() {
     const [editSaving, setEditSaving] = useState(false);
     const [editSaveError, setEditSaveError] = useState<string | null>(null);
 
+    // "Back at the finish" ticks made from the table, keyed by runner id. The runners
+    // feed is cached a few seconds upstream, so the toggle has to answer from local
+    // state or the icon appears to snap back right after it is clicked.
+    const [homeEdits, setHomeEdits] = useState<Record<string, boolean>>({});
+    const [homeSavingId, setHomeSavingId] = useState<string | null>(null);
+
     // Checkpoint timing data for edit modal
     const [editCheckpoints, setEditCheckpoints] = useState<{name: string; orderNum: number; type: string}[]>([]);
     const [editTimingRecords, setEditTimingRecords] = useState<{_id?: string; checkpoint: string; scanTime: string; order?: number; isManualTime?: boolean}[]>([]);
@@ -460,10 +471,16 @@ export default function EventLivePage() {
      * scan) are rendered in orange so it's obvious at a glance which figures on the
      * table did not come off an RFID mat. The backend flags them per checkpoint on
      * `manualCheckpoints`.
+     *
+     * The orange is staff bookkeeping, not a result: to the public — and to any
+     * signed-in role that is not an admin — a hand-entered time is just a time, so
+     * both predicates below report "not manual" for them and the table keeps its
+     * normal colours.
      */
     const MANUAL_TIME_COLOR = '#f97316';
 
     function isManualCheckpoint(runner: Runner, checkpointName?: string | null): boolean {
+        if (!isAdmin) return false;
         const list = runner.manualCheckpoints;
         if (!list?.length) return false;
         const target = String(checkpointName || '').trim().toUpperCase();
@@ -473,7 +490,73 @@ export default function EventLivePage() {
 
     /** The finish time (gun/net/total) is manual when the FINISH record itself was typed in. */
     function hasManualFinishTime(runner: Runner): boolean {
+        if (!isAdmin) return false;
         return (runner.manualCheckpoints || []).some(cp => isFinishCheckpointName(cp));
+    }
+
+    /**
+     * A DNF/DQ runner is accounted for once they are back at the finish area — either
+     * because a FINISH mat picked them up on the way in, or because staff ticked the
+     * flag by hand for someone who came back without a working chip. Anyone stopped on
+     * course without either is still out there, which is the thing operations needs to
+     * see at a glance.
+     */
+    function isStoppedRunner(runner: Runner): boolean {
+        const status = String(runner.status || '').toLowerCase();
+        return status === 'dnf' || status === 'dq';
+    }
+
+    /** The hand-set flag, with any tick made in this session layered on top. */
+    function isMarkedHome(runner: Runner): boolean {
+        const edit = homeEdits[runner._id];
+        return edit !== undefined ? edit : runner.returnedHome === true;
+    }
+
+    function hasReturnedHome(runner: Runner): boolean {
+        return isMarkedHome(runner) || !!runner.finishScanTime;
+    }
+
+    function returnedHomeTitle(runner: Runner): string {
+        const manual = !runner.finishScanTime;
+        const base = language === 'th'
+            ? (manual ? 'กลับถึงเส้นชัยแล้ว (แอดมินระบุเอง)' : 'กลับถึงเส้นชัยแล้ว (มีสแกนที่จุด FINISH)')
+            : (manual ? 'Back at the finish (marked by staff)' : 'Back at the finish (FINISH scan recorded)');
+        const note = String(runner.returnedHomeNote || '').trim();
+        return note ? `${base} · ${note}` : base;
+    }
+
+    /**
+     * Toggle the flag straight from the table. Deliberately NOT tied to the finish
+     * time: a runner who was swept back to the finish area has come home without
+     * finishing, and inventing a FINISH time to say so would corrupt the results.
+     */
+    async function toggleReturnedHome(runner: Runner, event: React.MouseEvent) {
+        event.stopPropagation();
+        const id = runner._id;
+        if (homeSavingId === id) return;
+        const next = !isMarkedHome(runner);
+        const prev = homeEdits[id];
+        setHomeEdits(m => ({ ...m, [id]: next }));
+        setHomeSavingId(id);
+        try {
+            const res = await fetch(`/api/runners/${id}`, {
+                method: 'PUT',
+                headers: authHeaders(),
+                body: JSON.stringify({ returnedHome: next }),
+            });
+            if (!res.ok) throw new Error(String(res.status));
+            setRunners(list => list.map(r => (r._id === id ? { ...r, returnedHome: next } : r)));
+        } catch (err) {
+            console.error('Failed to save returned-home flag', err);
+            setHomeEdits(m => {
+                const copy = { ...m };
+                if (prev === undefined) delete copy[id]; else copy[id] = prev;
+                return copy;
+            });
+            alert(language === 'th' ? 'บันทึกไม่สำเร็จ ลองใหม่อีกครั้ง' : 'Could not save. Please try again.');
+        } finally {
+            setHomeSavingId(cur => (cur === id ? null : cur));
+        }
     }
 
     function manualTimeTitle(): string {
@@ -2410,6 +2493,48 @@ export default function EventLivePage() {
                                                                         ? `${runner.firstNameTh} ${runner.lastNameTh || ''}`.trim()
                                                                         : `${runner.firstName} ${runner.lastName}`}
                                                                 </span>
+                                                                {/* A DNF/DQ who is back at the finish. It rides after the name
+                                                                    rather than in the STATUS cell, where the admin edit pencil
+                                                                    already sits in the top-right corner.
+                                                                    A FINISH scan settles it on its own; without one the house
+                                                                    is a greyed-out button an admin clicks once the runner turns
+                                                                    up, so nobody has to fake a finish time to record it. */}
+                                                                {(() => {
+                                                                    // Staff-only. Whether a runner has been accounted for is an
+                                                                    // operations question, not a result — the public table says
+                                                                    // nothing about it either way.
+                                                                    if (!isAdmin || !isStoppedRunner(runner)) return null;
+                                                                    const home = hasReturnedHome(runner);
+                                                                    const scanProven = !!runner.finishScanTime;
+                                                                    const iconClass = `${isMobile ? 'text-[11px]' : 'text-[13px]'} shrink-0 leading-none`;
+                                                                    if (scanProven) {
+                                                                        return home ? (
+                                                                            <span className={iconClass} title={returnedHomeTitle(runner)} aria-label={returnedHomeTitle(runner)}>🏠</span>
+                                                                        ) : null;
+                                                                    }
+                                                                    const saving = homeSavingId === runner._id;
+                                                                    const label = home
+                                                                        ? returnedHomeTitle(runner)
+                                                                        : (language === 'th' ? 'ยังไม่ยืนยันว่ากลับถึงเส้นชัย — กดเพื่อระบุว่ากลับมาแล้ว' : 'Not yet confirmed back at the finish — click to mark them returned');
+                                                                    return (
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={(e) => toggleReturnedHome(runner, e)}
+                                                                            disabled={saving}
+                                                                            title={label}
+                                                                            aria-label={label}
+                                                                            aria-pressed={home}
+                                                                            className={`${iconClass} border-none bg-transparent p-0 transition-opacity duration-150`}
+                                                                            style={{
+                                                                                cursor: saving ? 'wait' : 'pointer',
+                                                                                opacity: saving ? 0.4 : home ? 1 : 0.3,
+                                                                                filter: home ? 'none' : 'grayscale(1)',
+                                                                            }}
+                                                                        >
+                                                                            🏠
+                                                                        </button>
+                                                                    );
+                                                                })()}
                                                             </span>
                                                             <span className={`flex items-center whitespace-nowrap font-semibold ${isMobile ? 'gap-1 text-[9px]' : 'gap-1.5 text-[10px]'}`} style={{ color: themeStyles.text, lineHeight: 1.15 }}>
                                                                 <span className={`rounded bg-[#dc2626] px-1.5 py-px font-extrabold tracking-[0.05em] text-white ${isMobile ? 'text-[9px]' : 'text-[10px]'}`}>
@@ -3767,6 +3892,9 @@ export default function EventLivePage() {
                                                                         {chipLabel}
                                                                     </span>
                                                                 ) : null}
+                                                                {isAdmin && isStoppedRunner(runner) && hasReturnedHome(runner) && (
+                                                                    <span className="shrink-0 text-[11px] leading-none" title={returnedHomeTitle(runner)}>🏠</span>
+                                                                )}
                                                             </div>
                                                             {scanLabel && (
                                                                 <div className="truncate text-[9px] font-semibold" style={{ color: isDnfSt ? '#dc2626' : themeStyles.textSecondary }}>
