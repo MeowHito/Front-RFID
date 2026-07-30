@@ -5,6 +5,7 @@ import { useLanguage } from '@/lib/language-context';
 import { authHeaders } from '@/lib/authHeaders';
 import { computeAwardsForCategory, formatAwardLabel, formatOverallAwardLabel } from '@/lib/awards';
 import { isNationalitySplitCategory } from '@/lib/nationality';
+import { categoryDistanceLabel, resolveRunnerDistanceLabel } from '@/lib/category-distance';
 import { bestOfProvinceAwardFor } from '@/lib/thai-provinces';
 import AdminLayout from '../AdminLayout';
 
@@ -316,14 +317,20 @@ function formatTime(ms?: number): string {
     return `${Math.floor(s / 3600).toString().padStart(2, '0')}:${Math.floor((s % 3600) / 60).toString().padStart(2, '0')}:${(s % 60).toString().padStart(2, '0')}`;
 }
 
-function categoryToDistance(cat?: string): string {
-    if (!cat) return '-';
-    const m = cat.match(/(\d+(?:\.\d+)?)\s*K/i);
-    return m ? `${m[1]}K` : cat;
-}
-
 function substituteFields(content: string, runner: Runner | null, campaign: Campaign | null, awards?: AwardLabels | null): string {
-    if (!runner) return content.replace(/\{\{[^}]+\}\}/g, m => FIELD_PREVIEWS[m] ?? m);
+    if (!runner) {
+        // Sample preview — show this campaign's own first distance/category names so
+        // the placeholder reads like a real certificate instead of a generic "100K".
+        const sampleCat = (campaign?.categories || [])[0];
+        const previews: Record<string, string> = {
+            ...FIELD_PREVIEWS,
+            ...(sampleCat ? {
+                '{{category}}': String(sampleCat.name || '').trim() || FIELD_PREVIEWS['{{category}}'],
+                '{{distance}}': categoryDistanceLabel(sampleCat) || FIELD_PREVIEWS['{{distance}}'],
+            } : {}),
+        };
+        return content.replace(/\{\{[^}]+\}\}/g, m => previews[m] ?? m);
+    }
     const netTime = typeof runner.netTime === 'number' && runner.netTime > 0 ? formatTime(runner.netTime) : (runner.finishTime || '-');
     const gunTime = typeof runner.gunTime === 'number' && runner.gunTime > 0 ? formatTime(runner.gunTime) : '-';
     const nat = resolveNationality(runner.nationality);
@@ -337,7 +344,7 @@ function substituteFields(content: string, runner: Runner | null, campaign: Camp
         '{{last_name}}': runner.lastName ?? '-',
         '{{bib}}': runner.bib ?? '-',
         '{{category}}': runner.category ?? '-',
-        '{{distance}}': categoryToDistance(runner.category),
+        '{{distance}}': resolveRunnerDistanceLabel(runner.category, campaign?.categories),
         '{{gender}}': runner.gender === 'M' ? 'Male' : 'Female',
         '{{age}}': runner.age ? String(runner.age) : '-',
         '{{age_group}}': runner.ageGroup ?? '-',

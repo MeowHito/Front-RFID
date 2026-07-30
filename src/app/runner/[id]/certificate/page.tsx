@@ -10,6 +10,7 @@ import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { computeAwardsForCategory, computeOverallRanks, formatAwardLabel, formatOverallAwardLabel } from '@/lib/awards';
 import { isNationalitySplitCategory } from '@/lib/nationality';
+import { resolveRunnerDistanceLabel, type RaceCategoryLike } from '@/lib/category-distance';
 import { bestOfProvinceAwardFor } from '@/lib/thai-provinces';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -92,6 +93,8 @@ interface CampaignData {
     nameEn?: string | null;
     eventDate?: string;
     location?: string;
+    /** Race distances as configured on the campaign — `{{distance}}` reads its label from here. */
+    categories?: RaceCategoryLike[];
     isApproveCertificate?: boolean;
     certLayout?: CertElement[] | null;
     certBackgroundImage?: string | null;
@@ -214,12 +217,6 @@ function formatTime(ms?: number | null): string {
     return `${Math.floor(s / 3600).toString().padStart(2, '0')}:${Math.floor((s % 3600) / 60).toString().padStart(2, '0')}:${(s % 60).toString().padStart(2, '0')}`;
 }
 
-function categoryToDistance(cat?: string): string {
-    if (!cat) return '-';
-    const m = cat.match(/(\d+(?:\.\d+)?)\s*K/i);
-    return m ? `${m[1]}K` : cat;
-}
-
 function countryFlagEmoji(code: string): string {
     if (!code) return '';
     const c = code.trim().toUpperCase();
@@ -259,7 +256,7 @@ function substituteFields(content: string, runner: RunnerData | null, campaign: 
         '{{last_name}}': runner.lastName ?? '-',
         '{{bib}}': runner.bib ?? '-',
         '{{category}}': runner.category ?? '-',
-        '{{distance}}': categoryToDistance(runner.category),
+        '{{distance}}': resolveRunnerDistanceLabel(runner.category, campaign?.categories),
         '{{gender}}': runner.gender === 'M' ? 'Male' : runner.gender === 'F' ? 'Female' : (runner.gender || '-'),
         '{{age}}': runner.age ? String(runner.age) : '-',
         '{{age_group}}': runner.ageGroup ?? '-',
