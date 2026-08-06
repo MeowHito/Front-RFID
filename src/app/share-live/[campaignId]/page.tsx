@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { useParams, useSearchParams, useRouter } from 'next/navigation';
+import { useParams, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
 
@@ -103,7 +103,6 @@ function dedupeRunners(items: RunnerAtCheckpoint[]): RunnerAtCheckpoint[] {
 export default function ShareLiveMonitorPage() {
     const params = useParams();
     const searchParams = useSearchParams();
-    const router = useRouter();
     const campaignId = params.campaignId as string;
     const cpParam = searchParams.get('cp') || '';
 
@@ -116,8 +115,6 @@ export default function ShareLiveMonitorPage() {
     const [search, setSearch] = useState('');
     const [sortBy, setSortBy] = useState<'arrival' | 'bib' | 'name' | 'elapsed' | 'pace'>('arrival');
     const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
-    const [lastRefresh, setLastRefresh] = useState(new Date());
-    const [currentTime, setCurrentTime] = useState(new Date());
     const [statusFilter, setStatusFilter] = useState<string | null>('passed');
     const [rankDeltas, setRankDeltas] = useState<Map<string, number>>(new Map());
     const intervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -196,7 +193,7 @@ export default function ShareLiveMonitorPage() {
             prevRanksRef.current = currentRanks;
             setRunners(newRunners);
         } catch { setRunners([]); }
-        finally { setDataLoading(false); setLastRefresh(new Date()); }
+        finally { setDataLoading(false); }
     }, [campaignId, selectedCp]);
 
     useEffect(() => { if (campaignId && selectedCp) fetchRunners(); }, [campaignId, selectedCp, fetchRunners]);
@@ -208,12 +205,6 @@ export default function ShareLiveMonitorPage() {
         }
         return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
     }, [campaignId, selectedCp, fetchRunners]);
-
-    // Live clock
-    useEffect(() => {
-        const t = setInterval(() => setCurrentTime(new Date()), 1000);
-        return () => clearInterval(t);
-    }, []);
 
     // ===== TTS: Speak text via Gemini API with browser fallback =====
     const speakText = useCallback((text: string): Promise<void> => {
@@ -424,58 +415,41 @@ export default function ShareLiveMonitorPage() {
     return (
         <div className="min-h-screen bg-slate-50">
             {/* Top Banner */}
-            <div className="bg-gradient-to-r from-green-700 to-emerald-600 text-white px-5 py-3 shadow-lg">
-                <div className="max-w-6xl mx-auto flex items-center justify-between gap-4 flex-wrap">
-                    <div className="flex items-center gap-3">
-                        {/* Back button */}
-                        <button
-                            onClick={() => router.back()}
-                            title="ย้อนกลับ"
-                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-white/30 bg-white/10 text-white/90 text-xs font-semibold cursor-pointer transition-all hover:bg-white/20 hover:text-white hover:border-white/50 flex-shrink-0"
-                        >
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M19 12H5" /><path d="M12 19l-7-7 7-7" /></svg>
-                            <span>ย้อนกลับ</span>
-                        </button>
+            <div className="bg-gradient-to-r from-green-700 to-emerald-600 text-white px-3 sm:px-5 py-2.5 shadow-lg">
+                <div className="max-w-6xl mx-auto flex items-center justify-between gap-2 sm:gap-4">
+                    <div className="flex items-center gap-2.5 min-w-0">
                         {/* Logo */}
                         <Link href="/" className="flex-shrink-0" title="กลับหน้าแรก">
                             <Image
                                 src="/logo-white.png"
                                 alt="ACTION"
-                                width={80}
-                                height={26}
+                                width={72}
+                                height={24}
                                 style={{ objectFit: 'contain' }}
                             />
                         </Link>
-                        {/* Title */}
-                        <div className="border-l border-white/30 pl-3">
-                            <h1 className="text-lg font-extrabold m-0 flex items-center gap-2">
-                                Live Checkpoint Monitor
-                            </h1>
-                            <p className="text-green-100 text-sm mt-0.5 font-medium">
-                                {campaign.nameTh || campaign.nameEn || campaign.name}
-                            </p>
-                        </div>
+                        {/* Campaign name */}
+                        <h1 className="border-l border-white/30 pl-2.5 text-[13px] sm:text-base font-extrabold m-0 leading-tight truncate">
+                            {campaign.nameTh || campaign.nameEn || campaign.name}
+                        </h1>
                     </div>
-                    <div className="flex items-center gap-2">
-                        <span className="text-sm font-bold text-green-100">Checkpoint:</span>
-                        <select value={selectedCp} onChange={e => setSelectedCp(e.target.value)}
-                            className="px-3.5 py-2 rounded-lg border-2 border-green-400 bg-green-800 text-white text-sm font-bold cursor-pointer min-w-[180px]">
-                            {checkpoints.length === 0 && <option value="">No checkpoints</option>}
-                            {checkpoints.map(cp => (
-                                <option key={cp._id} value={cp.name}>
-                                    {cp.name}
-                                </option>
-                            ))}
-                        </select>
-                    </div>
+                    <select value={selectedCp} onChange={e => setSelectedCp(e.target.value)}
+                        className="flex-shrink-0 px-2 sm:px-3.5 py-1.5 sm:py-2 rounded-lg border-2 border-green-400 bg-green-800 text-white text-[13px] sm:text-sm font-bold cursor-pointer max-w-[42vw] sm:max-w-none sm:min-w-[180px]">
+                        {checkpoints.length === 0 && <option value="">No checkpoints</option>}
+                        {checkpoints.map(cp => (
+                            <option key={cp._id} value={cp.name}>
+                                {cp.name}
+                            </option>
+                        ))}
+                    </select>
                 </div>
             </div>
 
             {/* Controls */}
-            <div className="max-w-6xl mx-auto px-4 mt-4">
-                <div className="bg-white border border-slate-200 rounded-xl px-3 py-2.5 shadow-sm flex justify-between items-center gap-2 flex-wrap">
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                        <span className="text-[11px] font-bold text-slate-400">สรุป:</span>
+            <div className="max-w-6xl mx-auto px-2 sm:px-4 mt-3">
+                <div className="bg-white border border-slate-200 rounded-xl px-2 sm:px-3 py-2 shadow-sm flex items-center gap-2 flex-nowrap">
+                    <div className="flex items-center gap-1.5 flex-nowrap overflow-x-auto min-w-0 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                        <span className="hidden sm:inline text-[11px] font-bold text-slate-400 flex-shrink-0">สรุป:</span>
                         {[
                             { key: 'passed', label: 'ผ่าน', count: runners.filter(r => { const s = normalizeRunnerStatus(r.status); return !['dnf', 'dns', 'dq'].includes(s) && !!r.scanTime; }).length, bg: 'text-green-700 border-b-2 border-green-500 bg-green-200', bgActive: 'bg-green-600 text-white border-b-0' },
                             { key: 'coming', label: 'มา', count: runners.filter(r => { const s = normalizeRunnerStatus(r.status); return !['dnf', 'dns', 'dq', 'finished'].includes(s) && !r.scanTime; }).length, bg: 'text-amber-800 bg-amber-200', bgActive: 'bg-amber-500 text-white' },
@@ -485,19 +459,19 @@ export default function ShareLiveMonitorPage() {
                         ].map(item => (
                             <button key={item.key ?? 'all'}
                                 onClick={() => setStatusFilter(prev => prev === item.key ? null : item.key)}
-                                className={`min-h-[34px] px-3 py-1.5 rounded-lg text-[12px] font-bold cursor-pointer border-none transition-all ${statusFilter === item.key ? item.bgActive : item.bg
+                                className={`flex-shrink-0 whitespace-nowrap min-h-[32px] px-2 sm:px-3 py-1.5 rounded-lg text-[11px] sm:text-[12px] font-bold cursor-pointer border-none transition-all ${statusFilter === item.key ? item.bgActive : item.bg
                                     } hover:opacity-80`}
                             >
                                 {item.label} {item.count}
                             </button>
                         ))}
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1.5 sm:gap-2 flex-shrink-0 ml-auto">
                         <div className="relative">
-                            <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400">🔍</span>
+                            <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[11px] text-slate-400">🔍</span>
                             <input type="text" value={search} onChange={e => setSearch(e.target.value)}
                                 placeholder="ค้นหา BIB, ชื่อ..."
-                                className="py-1.5 pr-3 pl-[30px] rounded-[10px] border-[1.5px] border-slate-200 text-[12px] w-full sm:w-[250px] outline-none focus:border-slate-400 transition-colors" />
+                                className="py-1.5 pr-2 pl-[26px] rounded-[10px] border-[1.5px] border-slate-200 text-[12px] w-[110px] sm:w-[250px] outline-none focus:border-slate-400 transition-colors" />
                         </div>
                         <button
                             onClick={toggleSound}
@@ -531,20 +505,15 @@ export default function ShareLiveMonitorPage() {
                                 />
                             )}
                         </button>
-                        <button onClick={fetchRunners} disabled={dataLoading}
-                            className="px-3.5 py-2 rounded-lg border border-slate-200 bg-white text-xs font-semibold cursor-pointer text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed transition-colors">
-                            {dataLoading ? '...' : '🔄'}
-                        </button>
-                        <span className="text-[10px] text-slate-400 font-mono">{currentTime.toLocaleTimeString('th-TH')}</span>
                     </div>
                 </div>
             </div>
 
             {/* Table */}
-            <div className="max-w-6xl mx-auto px-4 mt-3 pb-10">
+            <div className="max-w-6xl mx-auto px-2 sm:px-4 mt-3 pb-10">
                 <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
                     <div className="overflow-x-auto">
-                        <table className="w-full border-collapse text-[13px] min-w-[700px]">
+                        <table className="w-full border-collapse text-[12px] sm:text-[13px] min-w-[620px] sm:min-w-[700px]">
                             <thead className="bg-slate-50 sticky top-0 z-10">
                                 <tr>
                                     <th className="px-2 py-3 text-center font-bold text-slate-600 w-[60px]">
@@ -616,10 +585,10 @@ export default function ShareLiveMonitorPage() {
                                             <td className={`pl-0.5 pr-0.5 py-2.5 text-center text-xs font-bold ${isStopped ? 'text-slate-400' : 'text-blue-700'}`}>
                                                 {r.categoryRank || '-'}
                                             </td>
-                                            <td className="p-2.5 text-center text-[11px] font-medium text-slate-500">
+                                            <td className="p-2 sm:p-2.5 text-center text-[11px] font-medium text-slate-500">
                                                 {r.category || '-'}
                                             </td>
-                                            <td className="p-2.5 text-center text-[13px] font-bold text-black">
+                                            <td className="p-2 sm:p-2.5 text-center text-[13px] font-bold text-black">
                                                 {r.scanTime
                                                     ? (() => { const d = new Date(r.scanTime); const hh = d.getHours().toString().padStart(2, '0'); const mm = d.getMinutes().toString().padStart(2, '0'); const ss = d.getSeconds().toString().padStart(2, '0'); const ms = d.getMilliseconds().toString().padStart(3, '0'); return `${hh}:${mm}:${ss}.${ms}`; })()
                                                     : (!isStopped && r.statusCheckpoint)
@@ -633,7 +602,7 @@ export default function ShareLiveMonitorPage() {
                                                         ? 'กำลังมา'
                                                         : formatMs(r.netTime ?? r.elapsedTime ?? (r.scanTime ? 0 : undefined))}
                                             </td>
-                                            <td className="p-2.5 text-center text-[11px] text-slate-500">
+                                            <td className="p-2 sm:p-2.5 text-center text-[11px] text-slate-500">
                                                 {isStopped ? '-' : (r.netPace || r.gunPace || '-')}
                                             </td>
                                         </tr>
