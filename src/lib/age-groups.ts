@@ -107,6 +107,80 @@ export function buildCanonicalAgeGroups(rawLabels: Array<string | undefined | nu
     return { buckets, canonicalLabelOf };
 }
 
+/**
+ * The age-group labels a given race distance actually uses, most-used spelling
+ * per bracket, ordered youngest first.
+ *
+ * The same real bracket is spelled differently per distance ("30 - 39" on 25K,
+ * "30-39" on 15K), so /admin/participants offers the labels belonging to the
+ * distance being edited — picking a foreign spelling would strand the runner in
+ * a bracket of one. Input is the per-label usage counts from
+ * `GET /runners/age-groups`. Labels that don't parse as a bracket are kept at
+ * the end rather than dropped, so nothing in use becomes unselectable.
+ */
+export function buildAgeGroupOptions(raw: { label: string; count: number }[] | undefined): string[] {
+    if (!raw || raw.length === 0) return [];
+    // Reuse the results page's own bucketing so the offered labels are exactly the
+    // brackets a runner can land in — this drops one-off variants that merely
+    // overlap a real bracket ("20-29" alongside a dominant "Under 29"), which the
+    // results page would fold away anyway, leaving the picker no dead choices.
+    const labels = raw.flatMap(entry => Array(Math.max(1, entry.count)).fill(entry.label) as string[]);
+    const { buckets } = buildCanonicalAgeGroups(labels);
+    const dominant = buckets.map(b => b.label);
+
+    // Labels that aren't brackets at all are invisible to the canonicalizer but are
+    // still in use, so keep them selectable at the end rather than dropping them.
+    const unparsed = raw
+        .filter(entry => !parseAgeGroupBucket(entry.label))
+        .sort((a, b) => b.count - a.count)
+        .map(entry => entry.label);
+    return [...dominant, ...unparsed];
+}
+
+/**
+ * The option a runner of `age` belongs to, so a birth-date edit can auto-select one.
+ *
+ * Falls back to the highest bracket starting at or below `age` when nothing
+ * contains it, because RaceTiger's own brackets leave gaps: "Under 29" parses as
+ * 0-28 and the next bracket starts at 30, so a 29-year-old matches nothing
+ * literally but plainly belongs in "Under 29". Ages below every bracket land in
+ * the youngest one. Returns '' only when no option parses as a bracket at all.
+ */
+export function matchAgeGroupOption(age: number, options: string[]): string {
+    const parsed = options
+        .map(label => ({ label, bucket: parseAgeGroupBucket(label) }))
+        .filter((entry): entry is { label: string; bucket: AgeGroupBucket } => entry.bucket !== null)
+        .sort((a, b) => a.bucket.min - b.bucket.min);
+    if (parsed.length === 0) return '';
+
+    const contained = parsed.find(entry => age >= entry.bucket.min && age <= entry.bucket.max);
+    if (contained) return contained.label;
+
+    let fallback = '';
+    for (const entry of parsed) {
+        if (entry.bucket.min <= age) fallback = entry.label;
+    }
+    return fallback || parsed[0].label;
+}
+
+/**
+ * Re-spell an age-group label into the equivalent label used by another distance,
+ * matching on the real bracket rather than the string ("50 - 59" → "50-59").
+ * Returns '' when that distance has no equivalent bracket, so the caller can fall
+ * back to deriving one from the birth date instead of carrying a stale label over.
+ */
+export function remapAgeGroupToOptions(current: string, options: string[]): string {
+    if (!current || options.length === 0) return current;
+    if (options.includes(current)) return current;
+    const bucket = parseAgeGroupBucket(current);
+    if (!bucket) return current;
+    const exact = options.find(o => {
+        const b = parseAgeGroupBucket(o);
+        return b && b.min === bucket.min && b.max === bucket.max;
+    });
+    return exact || '';
+}
+
 /** Maps one raw ageGroup string to its canonical label using a lookup built by `buildCanonicalAgeGroups`. */
 export function canonicalizeAgeGroup(raw: string | undefined | null, canonicalLabelOf: Map<string, string>): string {
     const bucket = parseAgeGroupBucket(raw);

@@ -7,6 +7,7 @@ import { authHeaders } from '@/lib/authHeaders';
 import * as XLSX from 'xlsx';
 import AdminLayout from '../AdminLayout';
 import { countryToFlag } from '@/lib/country-flags';
+import { buildAgeGroupOptions, matchAgeGroupOption, remapAgeGroupToOptions } from '@/lib/age-groups';
 import '../admin.css';
 
 interface RaceCategory {
@@ -135,7 +136,7 @@ const IMPORT_TEMPLATE_HEADERS = [
  * provides age, not birthDate). Returns no gender prefix and no leading zero pad,
  * so a 24-year-old resolves to "20-24" — the value RaceTiger itself uses.
  */
-function calculateAgeGroup(birthDate: string, ageFallback?: number): string {
+function calculateAge(birthDate: string, ageFallback?: number): number | null {
     let age: number | null = null;
     if (birthDate) {
         const birth = new Date(birthDate);
@@ -147,7 +148,12 @@ function calculateAgeGroup(birthDate: string, ageFallback?: number): string {
         }
     }
     if (age == null && typeof ageFallback === 'number' && ageFallback > 0) age = ageFallback;
-    if (age == null || age <= 0) return '';
+    return age != null && age > 0 ? age : null;
+}
+
+function calculateAgeGroup(birthDate: string, ageFallback?: number): string {
+    const age = calculateAge(birthDate, ageFallback);
+    if (age == null) return '';
     if (age < 20) return 'U 19';
     if (age >= 70) return '70 +';
     const lo = Math.floor(age / 5) * 5; // 24 → 20, 29 → 25
@@ -228,6 +234,8 @@ export default function ParticipantsPage() {
     const [listPage, setListPage] = useState(1);
     const listLimit = 50;
     const [categoryCounts, setCategoryCounts] = useState<Record<string, number>>({});
+    // Age-group labels in use per race distance, for the edit form's dropdown
+    const [ageGroupsByCategory, setAgeGroupsByCategory] = useState<Record<string, { label: string; count: number }[]>>({});
     const [listRunnerStatus, setListRunnerStatus] = useState<string[]>([]);
     const [natFilter, setNatFilter] = useState<'all' | 'thai' | 'foreign'>('all');
     const [natCounts, setNatCounts] = useState<{ thai: number; foreign: number; total: number }>({ thai: 0, foreign: 0, total: 0 });
@@ -243,6 +251,8 @@ export default function ParticipantsPage() {
 
     // Edit modal state
     const [editingRunner, setEditingRunner] = useState<Runner | null>(null);
+    // Runner currently being pulled from RaceTiger one-by-one (null = none)
+    const [syncingRunnerId, setSyncingRunnerId] = useState<string | null>(null);
     const [editForm, setEditForm] = useState<Record<string, string>>({});
     // Birth-date picker draft (day / month / year in Buddhist Era) — kept separate
     // so a half-finished pick survives re-renders without writing a broken ISO date.
@@ -329,6 +339,10 @@ export default function ParticipantsPage() {
                             if ((counts['__all__'] || 0) > 0) setActiveTab('all');
                         }
                     } catch { /* */ }
+                    try {
+                        const agRes = await fetch(`/api/runners/age-groups?campaignId=${data._id}`, { cache: 'no-store' });
+                        if (agRes.ok) setAgeGroupsByCategory(await agRes.json());
+                    } catch { /* dropdown falls back to free text */ }
                 }
             } catch {
                 setCampaign(null);
@@ -689,14 +703,105 @@ export default function ParticipantsPage() {
             const updated = await res.json();
             setRunners(prev => prev.map(r => r._id === editingRunner._id ? { ...r, ...updated } : r));
             setEditingRunner(null);
-            showToast(language === 'th' ? 'บันทึกสำเร็จ' : 'Saved successfully', 'success');
+
+            // A distance change moves the runner between tabs, so the row and the
+            // per-distance counts on screen are both stale — reload rather than patch.
+            const movedDistance = (updated?.category || '') !== (editingRunner.category || '');
+            if (movedDistance && campaign?._id) {
+                fetchRunners(true);
+                try {
+                    const countsRes = await fetch(`/api/runners/counts?campaignId=${campaign._id}`, { cache: 'no-store' });
+                    if (countsRes.ok) setCategoryCounts(await countsRes.json());
+                } catch { /* counts refresh is cosmetic */ }
+            }
+
+            showToast(
+                movedDistance
+                    ? (language === 'th'
+                        ? `ย้ายไประยะ ${updated?.category} แล้ว`
+                        : `Moved to ${updated?.category}`)
+                    : (language === 'th' ? 'บันทึกสำเร็จ' : 'Saved successfully'),
+                'success',
+            );
         } catch (err: unknown) {
             const msg = err instanceof Error ? err.message : 'Unknown error';
             showToast(language === 'th' ? `บันทึกไม่สำเร็จ: ${msg}` : `Save failed: ${msg}`, 'error');
         } finally {
             setSavingRunner(false);
         }
-    }, [editingRunner, editForm, language]);
+    }, [editingRunner, editForm, language, campaign?._id, fetchRunners]);
+
+    /**
+     * Re-pull one runner's data from RaceTiger. Unlike Full Sync (which wipes and
+     * re-imports the whole field) this touches only the runner you clicked, so it
+     * is safe to use mid-race. Reports which fields changed and which were left
+     * alone because an admin had hand-edited them.
+     */
+    const handleSyncRunner = useCallback(async (runner: Runner) => {
+        setSyncingRunnerId(runner._id);
+        try {
+            const res = await fetch(`/api/sync/runner?runnerId=${runner._id}`, {
+                method: 'POST',
+                headers: authHeaders(),
+            });
+            const body = await res.json();
+            if (!res.ok) throw new Error(body?.error || body?.message || 'Failed');
+            const result = body?.data || {};
+
+            if (!result.found) {
+                showToast(
+                    language === 'th'
+                        ? `ไม่พบ BIB ${runner.bib} ใน RaceTiger`
+                        : `BIB ${runner.bib} not found in RaceTiger`,
+                    'error',
+                );
+                return;
+            }
+
+            const applied: string[] = result.applied || [];
+            const skipped: string[] = result.skipped || [];
+            const labelOf = (field: string) => EDIT_FIELD_LABELS[field]
+                ? (language === 'th' ? EDIT_FIELD_LABELS[field].th : EDIT_FIELD_LABELS[field].en)
+                : field;
+
+            if (applied.length === 0 && skipped.length === 0) {
+                showToast(
+                    language === 'th'
+                        ? `BIB ${runner.bib}: ข้อมูลตรงกับ RaceTiger อยู่แล้ว`
+                        : `BIB ${runner.bib}: already matches RaceTiger`,
+                    'success',
+                );
+            } else {
+                const parts: string[] = [];
+                if (applied.length > 0) {
+                    parts.push(language === 'th'
+                        ? `อัปเดต ${applied.map(labelOf).join(', ')}`
+                        : `Updated ${applied.map(labelOf).join(', ')}`);
+                }
+                if (skipped.length > 0) {
+                    // 🔒 fields were hand-edited, so the sync deliberately left them.
+                    parts.push(language === 'th'
+                        ? `🔒 ข้ามที่แก้เอง: ${skipped.map(labelOf).join(', ')}`
+                        : `🔒 Kept your edits: ${skipped.map(labelOf).join(', ')}`);
+                }
+                showToast(`BIB ${runner.bib} — ${parts.join(' | ')}`, 'success');
+            }
+
+            // The runner may have changed distance, so reload rather than patch the row.
+            fetchRunners(true);
+            if (result.movedEvent && campaign?._id) {
+                try {
+                    const countsRes = await fetch(`/api/runners/counts?campaignId=${campaign._id}`, { cache: 'no-store' });
+                    if (countsRes.ok) setCategoryCounts(await countsRes.json());
+                } catch { /* counts refresh is cosmetic */ }
+            }
+        } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : 'Unknown error';
+            showToast(language === 'th' ? `Sync ไม่สำเร็จ: ${msg}` : `Sync failed: ${msg}`, 'error');
+        } finally {
+            setSyncingRunnerId(null);
+        }
+    }, [language, campaign?._id, fetchRunners]);
 
     // Delete a runner
     const handleDeleteRunner = useCallback(async () => {
@@ -1606,6 +1711,21 @@ export default function ParticipantsPage() {
                                                                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
                                                                     </button>
                                                                     {!readOnly && (
+                                                                        <button
+                                                                            onClick={() => handleSyncRunner(r)}
+                                                                            disabled={syncingRunnerId !== null}
+                                                                            title={language === 'th'
+                                                                                ? `ดึงข้อมูล BIB ${r.bib} จาก RaceTiger (เฉพาะคนนี้คนเดียว)`
+                                                                                : `Pull BIB ${r.bib} from RaceTiger (this runner only)`}
+                                                                            className="p-1 border border-gray-300 rounded bg-white text-[#00a65a] cursor-pointer hover:bg-green-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                                                                        >
+                                                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={syncingRunnerId === r._id ? 'animate-spin' : ''}>
+                                                                                <polyline points="23 4 23 10 17 10" /><polyline points="1 20 1 14 7 14" />
+                                                                                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+                                                                            </svg>
+                                                                        </button>
+                                                                    )}
+                                                                    {!readOnly && (
                                                                         <button onClick={() => handleDeleteSingle(r)} title={language === 'th' ? 'ลบ' : 'Delete'} className="p-1 border border-red-300 rounded bg-white text-red-500 cursor-pointer hover:bg-red-50">
                                                                             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>
                                                                         </button>
@@ -1777,6 +1897,41 @@ export default function ParticipantsPage() {
                                     ...inputStyle, border: '1px solid #d1d5db', borderRadius: 6,
                                     padding: '6px 6px', background: '#fff', cursor: 'pointer', fontSize: 13,
                                 };
+                                // Race distances this campaign offers — the targets a runner can be moved to.
+                                const categoryOptions = (campaign?.categories || []).map(c => c.name).filter(Boolean);
+                                // Age-group labels belonging to whichever distance the form points at now.
+                                const ageGroupOptions = buildAgeGroupOptions(ageGroupsByCategory[editForm.category || '']);
+
+                                /** Age group for a birth date, in the spelling `category` itself uses. */
+                                const resolveAgeGroup = (birthDate: string, category: string): string => {
+                                    const options = buildAgeGroupOptions(ageGroupsByCategory[category]);
+                                    const age = calculateAge(birthDate, editingRunner?.age);
+                                    if (age != null && options.length > 0) {
+                                        const matched = matchAgeGroupOption(age, options);
+                                        if (matched) return matched;
+                                    }
+                                    return calculateAgeGroup(birthDate, editingRunner?.age);
+                                };
+
+                                /**
+                                 * Move the runner to another distance. The age group moves with them:
+                                 * the same bracket is spelled differently per distance ("50 - 59" on
+                                 * 25K vs "50-59" on 15K), and keeping the old spelling would leave
+                                 * them ranked in a bucket of one on the new distance.
+                                 */
+                                const moveRunnerToCategory = (category: string) => {
+                                    setEditForm(prev => {
+                                        const options = buildAgeGroupOptions(ageGroupsByCategory[category]);
+                                        const next: Record<string, string> = { ...prev, category };
+                                        if (options.length > 0) {
+                                            next.ageGroup = remapAgeGroupToOptions(prev.ageGroup || '', options)
+                                                || resolveAgeGroup(prev.birthDate || '', category)
+                                                || prev.ageGroup || '';
+                                        }
+                                        return next;
+                                    });
+                                };
+
                                 const commitDob = (parts: { d: string; m: string; y: string }) => {
                                     setDobParts(parts);
                                     setEditForm(prev => {
@@ -1784,8 +1939,10 @@ export default function ParticipantsPage() {
                                         if (parts.d && parts.m && parts.y) {
                                             const iso = `${parts.y}-${parts.m}-${parts.d}`;
                                             next.birthDate = iso;
-                                            // Only auto-fill age group when it's still empty.
-                                            if (!(prev.ageGroup || '').trim()) next.ageGroup = calculateAgeGroup(iso, editingRunner?.age);
+                                            // A complete birth-date pick is the better source of truth than
+                                            // whatever age group was there, so it takes over.
+                                            const derived = resolveAgeGroup(iso, prev.category || '');
+                                            if (derived) next.ageGroup = derived;
                                         } else {
                                             // Incomplete pick — don't emit a broken ISO date.
                                             next.birthDate = '';
@@ -1860,23 +2017,67 @@ export default function ParticipantsPage() {
                                                         <option key={o.v} value={o.v}>{o.l}</option>
                                                     ))}
                                                 </select>
+                                            ) : f.key === 'category' ? (
+                                                <select
+                                                    value={editForm.category || ''}
+                                                    onChange={e => moveRunnerToCategory(e.target.value)}
+                                                    title={language === 'th'
+                                                        ? 'เลือกระยะทางเพื่อย้ายนักกีฬาไปอยู่ระยะนั้น (ย้ายทั้งอันดับและจุด Checkpoint)'
+                                                        : 'Pick a distance to move this runner onto it (rank + checkpoints move too)'}
+                                                    style={inputStyle}
+                                                >
+                                                    {/* The runner's stored value stays selectable even if it is not a
+                                                        configured distance, so opening the form can never silently
+                                                        rewrite it into something else. */}
+                                                    {!categoryOptions.includes(editForm.category || '') && (
+                                                        <option value={editForm.category || ''}>{editForm.category || '—'}</option>
+                                                    )}
+                                                    {categoryOptions.map(name => {
+                                                        const cat = campaign?.categories?.find(c => c.name === name);
+                                                        return (
+                                                            <option key={name} value={name}>
+                                                                {cat?.distance ? `${name} (${cat.distance})` : name}
+                                                            </option>
+                                                        );
+                                                    })}
+                                                </select>
                                             ) : f.key === 'ageGroup' ? (
                                                 <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                                                    <input
-                                                        type="text"
-                                                        value={editForm.ageGroup || ''}
-                                                        onChange={e => {
-                                                            const value = e.target.value;
-                                                            setEditForm(prev => ({ ...prev, ageGroup: value }));
-                                                        }}
-                                                        placeholder={language === 'th' ? 'เช่น 20-24 (ตาม RaceTiger)' : 'e.g. 20-24'}
-                                                        title={language === 'th' ? 'พิมพ์กลุ่มอายุได้เอง — กด ↻ เพื่อคำนวณจากวันเกิด' : 'Editable — click ↻ to recalculate from birth date'}
-                                                        style={{ ...inputStyle, flex: 1 }}
-                                                    />
+                                                    {ageGroupOptions.length > 0 ? (
+                                                        <select
+                                                            value={editForm.ageGroup || ''}
+                                                            onChange={e => setEditForm(prev => ({ ...prev, ageGroup: e.target.value }))}
+                                                            title={language === 'th'
+                                                                ? 'เลือกกลุ่มอายุที่ใช้ในระยะนี้ — หรือกด ↻ / เลือกวันเกิด เพื่อให้คำนวณให้อัตโนมัติ'
+                                                                : 'Pick an age group used by this distance — or click ↻ / set a birth date to fill it automatically'}
+                                                            style={{ ...inputStyle, flex: 1 }}
+                                                        >
+                                                            <option value="">{language === 'th' ? '— ไม่ระบุ —' : '— None —'}</option>
+                                                            {/* Keep an off-list stored value selectable rather than blanking it. */}
+                                                            {(editForm.ageGroup || '') !== '' && !ageGroupOptions.includes(editForm.ageGroup) && (
+                                                                <option value={editForm.ageGroup}>{editForm.ageGroup}</option>
+                                                            )}
+                                                            {ageGroupOptions.map(g => (
+                                                                <option key={g} value={g}>{g}</option>
+                                                            ))}
+                                                        </select>
+                                                    ) : (
+                                                        <input
+                                                            type="text"
+                                                            value={editForm.ageGroup || ''}
+                                                            onChange={e => {
+                                                                const value = e.target.value;
+                                                                setEditForm(prev => ({ ...prev, ageGroup: value }));
+                                                            }}
+                                                            placeholder={language === 'th' ? 'เช่น 20-24 (ตาม RaceTiger)' : 'e.g. 20-24'}
+                                                            title={language === 'th' ? 'พิมพ์กลุ่มอายุได้เอง — กด ↻ เพื่อคำนวณจากวันเกิด' : 'Editable — click ↻ to recalculate from birth date'}
+                                                            style={{ ...inputStyle, flex: 1 }}
+                                                        />
+                                                    )}
                                                     <button
                                                         type="button"
-                                                        title={language === 'th' ? 'คำนวณจากอายุ/วันเกิด (band 5 ปี เช่น 20-24)' : 'Recalculate from age / birth date (5-year band, e.g. 20-24)'}
-                                                        onClick={() => setEditForm(prev => ({ ...prev, ageGroup: calculateAgeGroup(prev.birthDate || '', editingRunner?.age) }))}
+                                                        title={language === 'th' ? 'คำนวณจากอายุ/วันเกิด' : 'Recalculate from age / birth date'}
+                                                        onClick={() => setEditForm(prev => ({ ...prev, ageGroup: resolveAgeGroup(prev.birthDate || '', prev.category || '') }))}
                                                         style={{ padding: '2px 9px', border: '1px solid #d1d5db', borderRadius: 5, background: '#f9fafb', color: '#374151', cursor: 'pointer', fontSize: 14, fontWeight: 700, lineHeight: 1.4 }}
                                                     >↻</button>
                                                 </div>
@@ -1888,10 +2089,9 @@ export default function ParticipantsPage() {
                                                         const value = e.target.value;
                                                         setEditForm(prev => {
                                                             const next = { ...prev, [f.key]: value };
-                                                            // Only auto-fill age group when it's still empty — never
-                                                            // overwrite an existing value on a birth-date edit.
-                                                            if (f.key === 'birthDate' && !(prev.ageGroup || '').trim()) {
-                                                                next.ageGroup = calculateAgeGroup(value, editingRunner?.age);
+                                                            if (f.key === 'birthDate') {
+                                                                const derived = resolveAgeGroup(value, prev.category || '');
+                                                                if (derived) next.ageGroup = derived;
                                                             }
                                                             return next;
                                                         });
@@ -1986,6 +2186,27 @@ export default function ParticipantsPage() {
                                     {showEditLogs
                                         ? (language === 'th' ? 'ซ่อนประวัติ' : 'Hide History')
                                         : (language === 'th' ? 'ประวัติการแก้ไข' : 'Edit History')}
+                                </button>
+                                {/* Pulls only this runner — unsaved edits in the form would be
+                                    overwritten on reload, so it closes the modal first. */}
+                                <button
+                                    onClick={() => { const target = editingRunner; setEditingRunner(null); handleSyncRunner(target); }}
+                                    disabled={savingRunner || syncingRunnerId !== null}
+                                    title={language === 'th'
+                                        ? 'ดึงข้อมูลของนักกีฬาคนนี้จาก RaceTiger (คนเดียว ไม่กระทบคนอื่น)'
+                                        : 'Pull this runner from RaceTiger (this runner only)'}
+                                    style={{
+                                        padding: '8px 14px', fontSize: 12, border: '1px solid #00a65a',
+                                        borderRadius: 4, background: '#fff', color: '#00a65a',
+                                        cursor: 'pointer', fontWeight: 600,
+                                        opacity: (savingRunner || syncingRunnerId !== null) ? 0.5 : 1,
+                                    }}
+                                >
+                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: 5, verticalAlign: -2 }}>
+                                        <polyline points="23 4 23 10 17 10" /><polyline points="1 20 1 14 7 14" />
+                                        <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+                                    </svg>
+                                    {language === 'th' ? 'Sync คนนี้' : 'Sync This Runner'}
                                 </button>
                             </div>
                             <div style={{ display: 'flex', gap: 10 }}>
