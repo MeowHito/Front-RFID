@@ -224,10 +224,18 @@ export function isRankableRunner(runner: RankableRunner): boolean {
  *
  * @param rankOrdered runners already sorted by makeCompareRunnerRankOrder (gun order)
  * @param ageGroupOf  canonical age-group label for a runner (labels vary per distance)
+ * @param poolKeyOf   which pool a runner is counted in — MUST be the same key the
+ *                    caller uses to pick the rows of a distance tab. Defaulting to
+ *                    eventId is only safe while every runner's category matches its
+ *                    event: a runner whose category was moved without moving eventId
+ *                    (see MEMORY: project_category_move_event) is displayed in one
+ *                    distance but counted in another, which duplicates a rank number
+ *                    inside the table (two rows both showing e.g. RANK 24).
  */
 export function computeLiveRanks<T extends RankableRunner>(
     rankOrdered: T[],
     ageGroupOf: (runner: T) => string,
+    poolKeyOf: (runner: T) => string = (runner) => runner.eventId || '_',
 ): Map<string, LiveRank> {
     const eligible = rankOrdered.filter(isRankableRunner);
     const ranks = new Map<string, LiveRank>();
@@ -240,7 +248,7 @@ export function computeLiveRanks<T extends RankableRunner>(
     const eventCounters: Record<string, number> = {};
     const genderCounters: Record<string, number> = {};
     for (const runner of eligible) {
-        const eventKey = runner.eventId || '_';
+        const eventKey = poolKeyOf(runner) || '_';
         const genderKey = `${eventKey}::${runner.gender || '_'}`;
         eventCounters[eventKey] = (eventCounters[eventKey] || 0) + 1;
         genderCounters[genderKey] = (genderCounters[genderKey] || 0) + 1;
@@ -259,7 +267,7 @@ export function computeLiveRanks<T extends RankableRunner>(
     const categoryCounters: Record<string, number> = {};
     for (const runner of byNet) {
         if (hidesCatRank(runner.status)) continue;
-        const eventKey = runner.eventId || '_';
+        const eventKey = poolKeyOf(runner) || '_';
         const catKey = `${eventKey}::${runner.gender || '_'}::${ageGroupOf(runner) || '_'}`;
         categoryCounters[catKey] = (categoryCounters[catKey] || 0) + 1;
         ranks.get(runner._id)!.catRank = categoryCounters[catKey];

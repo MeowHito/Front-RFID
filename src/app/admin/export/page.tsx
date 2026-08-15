@@ -288,8 +288,11 @@ export default function ExportPage() {
         return [...runners].sort(compare);
     }, [runners, campaign?.separateOverallNationalityCategories]);
 
+    // Pooled by category — the same key the distance filter below uses — so a runner
+    // whose category was moved without moving eventId still ranks inside the distance
+    // it is exported under (matches /event/[id]).
     const liveRanks = useMemo(
-        () => computeLiveRanks(rankedRunners, canonicalAgeGroupOf),
+        () => computeLiveRanks(rankedRunners, canonicalAgeGroupOf, (r) => r.category || r.eventId || '_'),
         [rankedRunners, canonicalAgeGroupOf],
     );
 

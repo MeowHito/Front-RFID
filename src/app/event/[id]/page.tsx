@@ -311,6 +311,14 @@ function formatDisplayTimeString(value?: string | null, showMilliseconds = false
     return showMilliseconds ? trimmed : trimmed.replace(/(\.\d{1,3})$/, '');
 }
 
+/** Elapsed-time strings only (gun/net), never wall-clock times.
+ *  A manually edited time is stored zero-padded ("00:00:06" — msToHHMMSS pads the
+ *  hour for the edit box) while synced rows render through formatTime() as
+ *  "0:00:06". Drop the padding so an edited row matches the rest of the column. */
+function formatDurationString(value?: string | null, showMilliseconds = false): string {
+    return formatDisplayTimeString(value, showMilliseconds).replace(/^0(\d:\d{2}:\d{2}(?:\.\d+)?)$/, '$1');
+}
+
 function formatStatusScanTime(dateString: string | undefined, showMilliseconds = false): string {
     if (!dateString) return '';
     const d = new Date(dateString);
@@ -1360,9 +1368,18 @@ export default function EventLivePage() {
 
     // Live overall + gender + age-group ranks — see @/lib/live-ranking for the
     // convention (RANK/GEN by GUN time, AGE by NET time, Overall combined).
+    // Ranks are pooled by the SAME key the distance tabs filter on, not by eventId:
+    // a runner whose category was changed without moving eventId is shown in one
+    // distance tab while its eventId belongs to another, which used to restart the
+    // counter and print a duplicate RANK/GEN number inside the table.
+    const rankPoolKeyOf = useCallback(
+        (runner: Runner) => resolveRunnerCategoryKey(runner) || runner.eventId || '_',
+        [resolveRunnerCategoryKey],
+    );
+
     const liveRanks = useMemo(
-        () => computeLiveRanks(allRankedRunners, canonicalAgeGroupOf),
-        [allRankedRunners, canonicalAgeGroupOf],
+        () => computeLiveRanks(allRankedRunners, canonicalAgeGroupOf, rankPoolKeyOf),
+        [allRankedRunners, canonicalAgeGroupOf, rankPoolKeyOf],
     );
 
 
@@ -2660,8 +2677,8 @@ export default function EventLivePage() {
                                                             title={manualFinish ? manualTimeTitle() : undefined}
                                                         >
                                                             {showNetInGunSlot
-                                                                ? (formatDisplayTimeString(runner.netTimeStr, isAdmin) || formatTime(runner.netTime) || '-')
-                                                                : (formatDisplayTimeString(runner.gunTimeStr, isAdmin) || formatTime(runner.gunTime || runner.elapsedTime))}
+                                                                ? (formatDurationString(runner.netTimeStr, isAdmin) || formatTime(runner.netTime) || '-')
+                                                                : (formatDurationString(runner.gunTimeStr, isAdmin) || formatTime(runner.gunTime || runner.elapsedTime))}
                                                         </span>
                                                     </td>
                                                 );
@@ -2675,7 +2692,7 @@ export default function EventLivePage() {
                                                             style={{ color: manualFinish ? MANUAL_TIME_COLOR : (runner.netTimeStr || runner.netTime) ? '#22c55e' : themeStyles.textSecondary }}
                                                             title={manualFinish ? manualTimeTitle() : undefined}
                                                         >
-                                                            {formatDisplayTimeString(runner.netTimeStr, isAdmin) || formatTime(runner.netTime)}
+                                                            {formatDurationString(runner.netTimeStr, isAdmin) || formatTime(runner.netTime)}
                                                         </span>
                                                     </td>
                                                 );
@@ -3659,8 +3676,8 @@ export default function EventLivePage() {
                                     {manualModalRunners.map(runner => {
                                         const isChecked = manualSelectedIds.has(runner._id);
                                         const statusColor: Record<string, string> = { finished: '#22c55e', in_progress: '#f97316', dnf: '#dc2626', dns: '#dc2626', dq: '#7c2d12', not_started: '#94a3b8' };
-                                        const gunStr = formatDisplayTimeString(runner.gunTimeStr) || formatTime(runner.gunTime);
-                                        const netStr = formatDisplayTimeString(runner.netTimeStr) || formatTime(runner.netTime);
+                                        const gunStr = formatDurationString(runner.gunTimeStr) || formatTime(runner.gunTime);
+                                        const netStr = formatDurationString(runner.netTimeStr) || formatTime(runner.netTime);
                                         const cpName = runner.latestCheckpoint || runner.statusCheckpoint || '';
 
                                         // Progress calculation (same logic as main table)

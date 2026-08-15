@@ -92,6 +92,14 @@ export default function ActivityCard({
         ? (locationTh || location)
         : (locationEn || location);
 
+    // Hide the ITRA / INDEX / elevation columns entirely when no category in this
+    // event has a value for them — road races never fill these in, and a table of
+    // dashes just wastes horizontal space.
+    const hasValue = (v?: number | string) => v !== undefined && v !== null && String(v).trim() !== '';
+    const showItra = categories.some(cat => hasValue(cat.itra));
+    const showIndex = categories.some(cat => hasValue(cat.index));
+    const showElevation = categories.some(cat => hasValue(cat.elevation) || hasValue(cat.type));
+
     return (
         <a
             href={link}
@@ -151,16 +159,16 @@ export default function ActivityCard({
                 {/* Categories Table - Mobile */}
                 <div className="border-t border-gray-100 dark:border-gray-700">
                     <div className="overflow-x-auto overflow-y-auto max-h-[280px]">
-                        <table className="w-full text-xs min-w-[550px]">
+                        <table className="w-full text-xs" style={{ minWidth: 340 + (showItra ? 70 : 0) + (showIndex ? 70 : 0) + (showElevation ? 70 : 0) }}>
                             <thead className="sticky top-0 bg-white dark:bg-[#1e1e2a] z-10">
                                 <tr className="border-b-2 border-gray-300 dark:border-gray-600">
                                     <th className="text-left py-2.5 px-3 font-bold text-gray-800 dark:text-gray-200 text-[0.7rem] whitespace-nowrap">{t('card.status')}</th>
                                     <th className="text-left py-2.5 px-2 font-bold text-gray-800 dark:text-gray-200 text-[0.7rem] whitespace-nowrap">{t('card.distance')}</th>
                                     <th className="text-center py-2.5 px-2 font-bold text-gray-800 dark:text-gray-200 text-[0.7rem] whitespace-nowrap">{t('card.start')}</th>
                                     <th className="text-center py-2.5 px-2 font-bold text-gray-800 dark:text-gray-200 text-[0.7rem] whitespace-nowrap">{t('card.cutoff')}</th>
-                                    <th className="text-center py-2.5 px-2 font-bold text-gray-800 dark:text-gray-200 text-[0.7rem] whitespace-nowrap">ITRA</th>
-                                    <th className="text-center py-2.5 px-2 font-bold text-gray-800 dark:text-gray-200 text-[0.7rem] whitespace-nowrap">INDEX</th>
-                                    <th className="text-right py-2.5 px-3 font-bold text-gray-800 dark:text-gray-200 text-[0.7rem] whitespace-nowrap">{t('card.typeElev')}</th>
+                                    {showItra && <th className="text-center py-2.5 px-2 font-bold text-gray-800 dark:text-gray-200 text-[0.7rem] whitespace-nowrap">ITRA</th>}
+                                    {showIndex && <th className="text-center py-2.5 px-2 font-bold text-gray-800 dark:text-gray-200 text-[0.7rem] whitespace-nowrap">INDEX</th>}
+                                    {showElevation && <th className="text-right py-2.5 px-3 font-bold text-gray-800 dark:text-gray-200 text-[0.7rem] whitespace-nowrap">{t('card.typeElev')}</th>}
                                 </tr>
                             </thead>
                             <tbody>
@@ -180,21 +188,27 @@ export default function ActivityCard({
                                         </td>
                                         <td className="py-2.5 px-2 align-middle text-center text-sm text-gray-600 dark:text-gray-400">{formatStartTime(cat.start)}</td>
                                         <td className="py-2.5 px-2 align-middle text-center text-sm text-gray-600 dark:text-gray-400">{cat.cutoff || '-'}</td>
-                                        <td className="py-2.5 px-2 align-middle text-center">
-                                            {cat.itra ? (
-                                                <span className="px-1.5 py-0.5 rounded text-[0.55rem] font-bold text-white bg-[#1a237e]">💎{cat.itra}</span>
-                                            ) : (
-                                                <span className="text-gray-400">-</span>
-                                            )}
-                                        </td>
-                                        <td className="py-2.5 px-2 align-middle text-center">
-                                            {cat.index ? (
-                                                <span className="px-1.5 py-0.5 rounded text-[0.55rem] font-bold text-white bg-[#f57f17]">⚡{cat.index}</span>
-                                            ) : (
-                                                <span className="text-gray-400">-</span>
-                                            )}
-                                        </td>
-                                        <td className="py-2.5 px-3 align-middle text-right text-sm text-gray-600 dark:text-gray-400">{cat.elevation || cat.type || '-'}</td>
+                                        {showItra && (
+                                            <td className="py-2.5 px-2 align-middle text-center">
+                                                {cat.itra ? (
+                                                    <span className="px-1.5 py-0.5 rounded text-[0.55rem] font-bold text-white bg-[#1a237e]">💎{cat.itra}</span>
+                                                ) : (
+                                                    <span className="text-gray-400">-</span>
+                                                )}
+                                            </td>
+                                        )}
+                                        {showIndex && (
+                                            <td className="py-2.5 px-2 align-middle text-center">
+                                                {cat.index ? (
+                                                    <span className="px-1.5 py-0.5 rounded text-[0.55rem] font-bold text-white bg-[#f57f17]">⚡{cat.index}</span>
+                                                ) : (
+                                                    <span className="text-gray-400">-</span>
+                                                )}
+                                            </td>
+                                        )}
+                                        {showElevation && (
+                                            <td className="py-2.5 px-3 align-middle text-right text-sm text-gray-600 dark:text-gray-400">{cat.elevation || cat.type || '-'}</td>
+                                        )}
                                     </tr>
                                 ))}
                             </tbody>
@@ -253,7 +267,7 @@ export default function ActivityCard({
                     </span>
                 </div>
 
-                {/* Right: Stats Table - 7 columns */}
+                {/* Right: Stats Table — 4 base columns + ITRA / INDEX / elevation when present */}
                 <div className="flex-1 bg-white dark:bg-[#1e1e2a]" style={{ overflow: 'hidden' }}>
                     <div className="px-2 overflow-x-auto overflow-y-auto" style={{ maxHeight: '220px' }}>
                         <table className="w-full border-collapse" style={{ tableLayout: 'auto' }}>
@@ -263,9 +277,9 @@ export default function ActivityCard({
                                     <th className="text-left text-[0.55rem] text-gray-800 dark:text-gray-200 font-bold py-1 pr-2 border-b border-gray-300 dark:border-gray-600 whitespace-nowrap">{t('card.distance')}</th>
                                     <th className="text-left text-[0.55rem] text-gray-800 dark:text-gray-200 font-bold py-1 pr-2 border-b border-gray-300 dark:border-gray-600 whitespace-nowrap">{t('card.start')}</th>
                                     <th className="text-left text-[0.55rem] text-gray-800 dark:text-gray-200 font-bold py-1 pr-2 border-b border-gray-300 dark:border-gray-600 whitespace-nowrap">{t('card.cutoff')}</th>
-                                    <th className="text-center text-[0.55rem] text-gray-800 dark:text-gray-200 font-bold py-1 pr-2 border-b border-gray-300 dark:border-gray-600 whitespace-nowrap">ITRA</th>
-                                    <th className="text-center text-[0.55rem] text-gray-800 dark:text-gray-200 font-bold py-1 pr-2 border-b border-gray-300 dark:border-gray-600 whitespace-nowrap">INDEX</th>
-                                    <th className="text-left text-[0.55rem] text-gray-800 dark:text-gray-200 font-bold py-1 border-b border-gray-300 dark:border-gray-600 whitespace-nowrap">{t('card.typeElev')}</th>
+                                    {showItra && <th className="text-center text-[0.55rem] text-gray-800 dark:text-gray-200 font-bold py-1 pr-2 border-b border-gray-300 dark:border-gray-600 whitespace-nowrap">ITRA</th>}
+                                    {showIndex && <th className="text-center text-[0.55rem] text-gray-800 dark:text-gray-200 font-bold py-1 pr-2 border-b border-gray-300 dark:border-gray-600 whitespace-nowrap">INDEX</th>}
+                                    {showElevation && <th className="text-left text-[0.55rem] text-gray-800 dark:text-gray-200 font-bold py-1 border-b border-gray-300 dark:border-gray-600 whitespace-nowrap">{t('card.typeElev')}</th>}
                                 </tr>
                             </thead>
                             <tbody>
@@ -285,27 +299,33 @@ export default function ActivityCard({
                                         </td>
                                         <td className="py-1 pr-2 align-middle text-[0.65rem] text-gray-600 dark:text-gray-400 whitespace-nowrap">{formatStartTime(cat.start)}</td>
                                         <td className="py-1 pr-2 align-middle text-[0.7rem] text-gray-600 dark:text-gray-400 whitespace-nowrap">{cat.cutoff || '-'}</td>
-                                        <td className="py-1 pr-2 align-middle text-center">
-                                            {cat.itra ? (
-                                                <span className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded text-[0.45rem] font-bold text-white bg-[#1a237e]">
-                                                    💎{cat.itra}
-                                                </span>
-                                            ) : (
-                                                <span className="text-gray-400 text-[0.6rem]">-</span>
-                                            )}
-                                        </td>
-                                        <td className="py-1 pr-2 align-middle text-center">
-                                            {cat.index ? (
-                                                <span className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded text-[0.45rem] font-bold text-white bg-[#f57f17]">
-                                                    ⚡{cat.index}
-                                                </span>
-                                            ) : (
-                                                <span className="text-gray-400 text-[0.6rem]">-</span>
-                                            )}
-                                        </td>
-                                        <td className="py-1 align-middle text-[0.7rem] text-gray-600 dark:text-gray-400 whitespace-nowrap">
-                                            {cat.elevation || cat.type || '-'}
-                                        </td>
+                                        {showItra && (
+                                            <td className="py-1 pr-2 align-middle text-center">
+                                                {cat.itra ? (
+                                                    <span className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded text-[0.45rem] font-bold text-white bg-[#1a237e]">
+                                                        💎{cat.itra}
+                                                    </span>
+                                                ) : (
+                                                    <span className="text-gray-400 text-[0.6rem]">-</span>
+                                                )}
+                                            </td>
+                                        )}
+                                        {showIndex && (
+                                            <td className="py-1 pr-2 align-middle text-center">
+                                                {cat.index ? (
+                                                    <span className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded text-[0.45rem] font-bold text-white bg-[#f57f17]">
+                                                        ⚡{cat.index}
+                                                    </span>
+                                                ) : (
+                                                    <span className="text-gray-400 text-[0.6rem]">-</span>
+                                                )}
+                                            </td>
+                                        )}
+                                        {showElevation && (
+                                            <td className="py-1 align-middle text-[0.7rem] text-gray-600 dark:text-gray-400 whitespace-nowrap">
+                                                {cat.elevation || cat.type || '-'}
+                                            </td>
+                                        )}
                                     </tr>
                                 ))}
                             </tbody>
