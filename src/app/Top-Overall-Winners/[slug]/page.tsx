@@ -55,6 +55,23 @@ function formatTime(ms: number | undefined | null): string {
     return `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 }
 
+// Auto-shrinks the name column font as the name gets longer, so short names stay
+// large and readable while long names still fit on one line instead of truncating.
+// Portrait screens (narrower relative to height) get an extra size reduction.
+function getNameFontSize(name: string, isMobile: boolean, isPortrait: boolean): string {
+    const len = name.length;
+    let scale = 1;
+    if (len > 32) scale = 0.62;
+    else if (len > 28) scale = 0.7;
+    else if (len > 24) scale = 0.78;
+    else if (len > 20) scale = 0.87;
+    else if (len > 16) scale = 0.95;
+    if (isPortrait) scale *= 0.85;
+    const base = isMobile ? 12 : 1.55;
+    const value = base * scale;
+    return isMobile ? `${value.toFixed(1)}px` : `${value.toFixed(2)}vh`;
+}
+
 // "Top Overall" board — a single combined ranking of the fastest N finishers for
 // the selected distance, regardless of gender. Distinct from the gender-separated
 // Overall-Winners board, though both share the same admin-configured `overallDisplayCount`.
@@ -76,6 +93,7 @@ export default function TopOverallWinnersBySlugPage() {
     const refreshTimerRef = useRef<NodeJS.Timeout | null>(null);
     const countdownRef = useRef<NodeJS.Timeout | null>(null);
     const [isMobile, setIsMobile] = useState(false);
+    const [isPortrait, setIsPortrait] = useState(false);
     const [autoMode, setAutoMode] = useState(true);
     const [autoCountdown, setAutoCountdown] = useState(5);
     const autoTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -85,12 +103,21 @@ export default function TopOverallWinnersBySlugPage() {
     const [downloading, setDownloading] = useState<string | null>(null);
     const maleColRef = useRef<HTMLDivElement | null>(null);
     const femaleColRef = useRef<HTMLDivElement | null>(null);
+    const [dropdownOpen, setDropdownOpen] = useState(false);
+    const dropdownRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
-        const check = () => setIsMobile(window.innerWidth < 768);
+        const check = () => {
+            setIsMobile(window.innerWidth < 768);
+            setIsPortrait(window.innerHeight > window.innerWidth);
+        };
         check();
         window.addEventListener('resize', check);
-        return () => window.removeEventListener('resize', check);
+        window.addEventListener('orientationchange', check);
+        return () => {
+            window.removeEventListener('resize', check);
+            window.removeEventListener('orientationchange', check);
+        };
     }, []);
 
     useEffect(() => {
@@ -123,8 +150,7 @@ export default function TopOverallWinnersBySlugPage() {
     const loadRunners = useCallback(async (isRefresh = false) => {
         if (!campaign?._id || !selectedCategory) { setDisplayedRunners([]); return; }
 
-        const categoryChanged = displayedCategoryRef.current !== selectedCategory;
-        const hasExistingData = displayedRunners.length > 0 && !categoryChanged;
+        const hasExistingData = displayedRunners.length > 0;
 
         if (!hasExistingData) setInitialLoading(true);
         if (isRefresh || hasExistingData) setRefreshing(true);
@@ -170,6 +196,14 @@ export default function TopOverallWinnersBySlugPage() {
     useEffect(() => {
         campaignCategoriesRef.current = campaign?.categories || [];
     }, [campaign]);
+
+    useEffect(() => {
+        const handler = (e: MouseEvent) => {
+            if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) setDropdownOpen(false);
+        };
+        document.addEventListener('mousedown', handler);
+        return () => document.removeEventListener('mousedown', handler);
+    }, []);
 
     useEffect(() => {
         if (!autoMode) {
@@ -265,7 +299,11 @@ export default function TopOverallWinnersBySlugPage() {
     const rankBg = ['#f59e0b', '#9ca3af', '#92400e', '#e2e8f0', '#e2e8f0'];
     const rankFg = ['#000', '#fff', '#fff', '#475569', '#475569'];
 
-    const renderRunnerRow = (runner: Runner, idx: number) => (
+    const renderRunnerRow = (runner: Runner, idx: number) => {
+        const fullName = language === 'th' && runner.firstNameTh
+            ? `${runner.bib}  ${runner.firstNameTh} ${runner.lastNameTh || ''}`
+            : `${runner.bib}  ${runner.firstName} ${runner.lastName}`;
+        return (
         <div key={runner._id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: isMobile ? '4px 8px' : '0.4vh 10px', borderRadius: 6, background: idx === 0 ? '#fffbeb' : 'transparent', height: isMobile ? 'auto' : '4vh', minHeight: isMobile ? 30 : 30 }}>
             <div style={{ width: isMobile ? 22 : '2.4vh', height: isMobile ? 22 : '2.4vh', minWidth: 18, minHeight: 18, borderRadius: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: isMobile ? 12 : '1.4vh', fontWeight: 900, flexShrink: 0, background: rankBg[idx] || '#e2e8f0', color: rankFg[idx] || '#475569' }}>
                 {idx + 1}
@@ -273,16 +311,15 @@ export default function TopOverallWinnersBySlugPage() {
             <span style={{ width: isMobile ? 16 : '1.8vh', flexShrink: 0, textAlign: 'center', fontSize: isMobile ? 12 : '1.4vh' }}>
                 {runner.gender === 'F' ? '♀' : '♂'}
             </span>
-            <span style={{ fontSize: isMobile ? 12 : '1.55vh', fontWeight: 700, color: '#1e293b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1, textTransform: 'uppercase' }}>
-                {language === 'th' && runner.firstNameTh
-                    ? `${runner.bib}  ${runner.firstNameTh} ${runner.lastNameTh || ''}`
-                    : `${runner.bib}  ${runner.firstName} ${runner.lastName}`}
+            <span style={{ fontSize: getNameFontSize(fullName, isMobile, isPortrait), fontWeight: 700, color: '#1e293b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1, textTransform: 'uppercase' }}>
+                {fullName}
             </span>
             <span style={{ fontFamily: 'monospace', fontWeight: 800, fontSize: isMobile ? 11 : '1.5vh', color: '#1e293b', flexShrink: 0, minWidth: isMobile ? 60 : '7vh', textAlign: 'right' }}>
                 {runner.gunTimeStr || formatTime(runner.gunTime)}
             </span>
         </div>
-    );
+        );
+    };
 
     const renderEmptyRow = (idx: number) => (
         <div key={`empty-${idx}`} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: isMobile ? '4px 8px' : '0.4vh 10px', height: isMobile ? 'auto' : '4vh', minHeight: isMobile ? 30 : 30 }}>
@@ -333,10 +370,10 @@ export default function TopOverallWinnersBySlugPage() {
     );
 
     return (
-        <div style={{ fontFamily: "'Prompt', 'Inter', sans-serif", background: '#f1f5f9', height: isMobile ? 'auto' : '100vh', minHeight: '100vh', overflow: isMobile ? 'auto' : 'hidden', display: 'flex', flexDirection: 'column', padding: isMobile ? '8px' : '0.8vh 1vw' }}>
+        <div style={{ fontFamily: "'Prompt', 'Inter', sans-serif", background: '#0f172a', height: isMobile ? 'auto' : '100vh', minHeight: '100vh', overflow: isMobile ? 'auto' : 'hidden', display: 'flex', flexDirection: 'column', padding: isMobile ? '8px' : '0.8vh 1vw' }}>
             <style>{`@keyframes pulse { 0%,100% { opacity:1 } 50% { opacity:0.3 } }`}</style>
-            {/* Full control header (refresh status, download, language) is admin/organizer-only. */}
-            {isAuthenticated && (
+            {/* On mobile, hide the control header for public viewers who are not logged in. */}
+            {!(isMobile && !isAuthenticated) && (
             <header style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', justifyContent: 'space-between', alignItems: isMobile ? 'stretch' : 'center', padding: isMobile ? '10px 12px' : '0.6vh 1.5vw', background: '#1e293b', borderRadius: 10, marginBottom: isMobile ? 8 : '0.8vh', flexShrink: 0, border: '1px solid #334155', gap: isMobile ? 8 : 0 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <Link href="/" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -351,52 +388,58 @@ export default function TopOverallWinnersBySlugPage() {
                     </div>
                 </div>
 
-                {campaign && !initialLoading && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0, justifyContent: isMobile ? 'flex-end' : undefined }}>
-                        <NameLangToggle value={language} onChange={setLanguage} isMobile={isMobile} />
-                        <button
-                            onClick={() => downloadGroup(maleWinners, femaleWinners, 'both')}
-                            disabled={!!downloading}
-                            title="Download Top Overall Winners (Excel)"
-                            style={{ display: 'flex', alignItems: 'center', gap: 5, padding: isMobile ? '5px 10px' : '0.35vh 0.7vw', background: '#4f46e5', border: '1px solid #4338ca', borderRadius: 7, color: 'white', fontSize: isMobile ? 11 : '1.15vh', fontWeight: 800, cursor: 'pointer', whiteSpace: 'nowrap', opacity: downloading ? 0.6 : 1, transition: 'opacity 0.15s', fontFamily: "'Prompt','Inter',sans-serif" }}
-                        >
-                            {dlIcon(11)}
-                            Download
-                        </button>
-                    </div>
-                )}
-            </header>
-            )}
-
-            {/* Public info + distance-selector bar — visible to everyone, white theme. */}
-            {campaign && (
-                <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', alignItems: 'center', justifyContent: 'space-between', gap: isMobile ? 10 : '1vw', padding: isMobile ? '10px 12px' : '0.7vh 1.5vw', background: '#ffffff', borderRadius: 10, marginBottom: isMobile ? 8 : '0.8vh', border: '1px solid #e2e8f0', boxShadow: '0 1px 3px rgba(15,23,42,0.06)', flexShrink: 0 }}>
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: isMobile ? 'center' : 'flex-start', gap: 2, textAlign: isMobile ? 'center' : 'left' }}>
-                        <span style={{ fontSize: isMobile ? 13 : '1.7vh', fontWeight: 700, color: '#475569', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: isMobile ? '100%' : '28vw' }}>
+                <div style={{ display: 'flex', alignItems: isMobile ? 'stretch' : 'center', gap: isMobile ? 6 : '1vw', flexDirection: isMobile ? 'column' : 'row' }}>
+                    {campaign && (
+                        <span style={{ fontSize: isMobile ? 11 : '1.3vh', fontWeight: 700, color: '#94a3b8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: isMobile ? '100%' : '20vw' }}>
                             {campaign.name}
                         </span>
-                        <span style={{ fontSize: isMobile ? 13 : '1.6vh', fontWeight: 900, color: '#4f46e5', letterSpacing: 1, textTransform: 'uppercase', whiteSpace: 'nowrap' }}>
-                            Top Overall {topN}
-                        </span>
-                    </div>
+                    )}
 
-                    {campaign.categories && campaign.categories.length > 0 && (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 6 : '0.4vw', flexWrap: 'wrap', justifyContent: 'center' }}>
-                            <div style={{ display: 'flex', gap: isMobile ? 6 : '0.4vw', overflowX: 'auto', WebkitOverflowScrolling: 'touch', paddingBottom: isMobile ? 2 : 0 }}>
-                                {campaign.categories.map(cat => (
-                                    <button
-                                        key={cat.name}
-                                        onClick={() => { setSelectedCategory(cat.name); setAutoMode(false); }}
-                                        style={{ padding: isMobile ? '6px 12px' : '0.4vh 1vw', borderRadius: 6, fontSize: isMobile ? 12 : '1.3vh', fontWeight: 700, border: selectedCategory === cat.name ? '2px solid #4f46e5' : '1px solid #cbd5e1', background: selectedCategory === cat.name ? '#4f46e5' : '#f8fafc', color: selectedCategory === cat.name ? '#ffffff' : '#94a3b8', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0, transition: 'background 0.15s, color 0.15s, border-color 0.15s' }}
-                                    >
-                                        {cat.name}{cat.distance ? ` (${cat.distance})` : ''}
-                                    </button>
-                                ))}
+                    {campaign && !initialLoading && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                            <NameLangToggle value={language} onChange={setLanguage} isMobile={isMobile} />
+                            <button
+                                onClick={() => downloadGroup(maleWinners, femaleWinners, 'both')}
+                                disabled={!!downloading}
+                                title="Download Top Overall Winners (Excel)"
+                                style={{ display: 'flex', alignItems: 'center', gap: 5, padding: isMobile ? '5px 10px' : '0.35vh 0.7vw', background: '#4f46e5', border: '1px solid #4338ca', borderRadius: 7, color: 'white', fontSize: isMobile ? 11 : '1.15vh', fontWeight: 800, cursor: 'pointer', whiteSpace: 'nowrap', opacity: downloading ? 0.6 : 1, transition: 'opacity 0.15s', fontFamily: "'Prompt','Inter',sans-serif" }}
+                            >
+                                {dlIcon(11)}
+                                Download
+                            </button>
+                        </div>
+                    )}
+
+                    {campaign?.categories && campaign.categories.length > 0 && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                            <div ref={dropdownRef} style={{ position: 'relative' }}>
+                                <button
+                                    onClick={() => setDropdownOpen(d => !d)}
+                                    style={{ display: 'flex', alignItems: 'center', gap: 8, padding: isMobile ? '6px 12px' : '0.4vh 0.8vw', background: '#0f172a', border: `1px solid ${dropdownOpen ? '#4f46e5' : '#475569'}`, borderRadius: 8, color: '#f1f5f9', fontSize: isMobile ? 12 : '1.3vh', fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: "'Prompt', 'Inter', sans-serif" }}
+                                >
+                                    {selectedCategory
+                                        ? `${selectedCategory}${campaign.categories.find(c => c.name === selectedCategory)?.distance ? ` (${campaign.categories.find(c => c.name === selectedCategory)!.distance})` : ''}`
+                                        : 'เลือกระยะ'}
+                                    <span style={{ fontSize: 10, opacity: 0.6, transform: dropdownOpen ? 'rotate(180deg)' : 'none', display: 'inline-block', transition: 'transform 0.15s' }}>▾</span>
+                                </button>
+                                {dropdownOpen && (
+                                    <div style={{ position: 'absolute', top: 'calc(100% + 4px)', right: 0, background: '#1e293b', border: '1px solid #475569', borderRadius: 8, overflow: 'hidden', zIndex: 100, minWidth: 180, boxShadow: '0 8px 24px rgba(0,0,0,0.5)' }}>
+                                        {campaign.categories.map((cat, i) => (
+                                            <button
+                                                key={cat.name}
+                                                onClick={() => { setSelectedCategory(cat.name); setAutoMode(false); setDropdownOpen(false); }}
+                                                style={{ display: 'block', width: '100%', textAlign: 'left', padding: '10px 16px', background: selectedCategory === cat.name ? 'rgba(79,70,229,0.15)' : 'transparent', border: 'none', borderBottom: i < campaign.categories!.length - 1 ? '1px solid #334155' : 'none', color: selectedCategory === cat.name ? '#4f46e5' : '#cbd5e1', fontSize: isMobile ? 13 : '1.3vh', fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: "'Prompt', 'Inter', sans-serif" }}
+                                            >
+                                                {cat.name}{cat.distance ? ` (${cat.distance})` : ''}
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
                             </div>
                             {campaign.categories.length > 1 && (
                                 <button
                                     onClick={() => setAutoMode(m => !m)}
-                                    style={{ display: 'flex', alignItems: 'center', gap: 6, padding: isMobile ? '6px 12px' : '0.4vh 0.8vw', background: autoMode ? '#4f46e5' : '#f8fafc', border: `1px solid ${autoMode ? '#4f46e5' : '#cbd5e1'}`, borderRadius: 6, color: autoMode ? '#ffffff' : '#94a3b8', fontSize: isMobile ? 12 : '1.3vh', fontWeight: 800, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0, minWidth: isMobile ? 80 : 72, justifyContent: 'center', transition: 'background 0.2s, color 0.2s, border-color 0.2s' }}
+                                    style={{ display: 'flex', alignItems: 'center', gap: 6, padding: isMobile ? '6px 12px' : '0.4vh 0.8vw', background: autoMode ? '#4f46e5' : 'transparent', border: `1px solid ${autoMode ? '#4f46e5' : '#475569'}`, borderRadius: 8, color: autoMode ? '#fff' : '#94a3b8', fontSize: isMobile ? 12 : '1.3vh', fontWeight: 800, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0, minWidth: isMobile ? 80 : 72, justifyContent: 'center', transition: 'background 0.2s, color 0.2s, border-color 0.2s' }}
                                 >
                                     {autoMode ? `⏸ ${autoCountdown}s` : '▶ AUTO'}
                                 </button>
@@ -404,10 +447,24 @@ export default function TopOverallWinnersBySlugPage() {
                         </div>
                     )}
                 </div>
+            </header>
+            )}
+
+            {!(isMobile && !isAuthenticated) && campaign && (
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: isMobile ? 4 : '0.8vw', padding: isMobile ? '8px 12px' : '0.5vh 1.5vw', background: '#1e293b', borderRadius: 10, marginBottom: isMobile ? 8 : '0.8vh', border: '1px solid #334155', flexShrink: 0, textAlign: 'center' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+                        <span style={{ fontSize: isMobile ? 15 : '2.2vh', fontWeight: 900, color: '#f1f5f9', letterSpacing: 0.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: isMobile ? '100%' : '55vw' }}>
+                            {campaign.name}
+                        </span>
+                        <span style={{ color: '#4f46e5', fontWeight: 900, fontSize: isMobile ? 11 : '1.4vh', letterSpacing: 1.5, textTransform: 'uppercase', whiteSpace: 'nowrap' }}>
+                            Top Overall {topN}
+                        </span>
+                    </div>
+                </div>
             )}
 
             {initialLoading && displayedRunners.length === 0 ? (
-                <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b', fontSize: isMobile ? 16 : '2vh' }}>
+                <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', fontSize: isMobile ? 16 : '2vh' }}>
                     Loading...
                 </div>
             ) : (

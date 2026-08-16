@@ -106,6 +106,8 @@ export default function OverallWinnersBySlugPage() {
     const [downloading, setDownloading] = useState<string | null>(null);
     const maleColRef = useRef<HTMLDivElement | null>(null);
     const femaleColRef = useRef<HTMLDivElement | null>(null);
+    const [dropdownOpen, setDropdownOpen] = useState(false);
+    const dropdownRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
         const check = () => {
@@ -197,6 +199,14 @@ export default function OverallWinnersBySlugPage() {
     useEffect(() => {
         campaignCategoriesRef.current = campaign?.categories || [];
     }, [campaign]);
+
+    useEffect(() => {
+        const handler = (e: MouseEvent) => {
+            if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) setDropdownOpen(false);
+        };
+        document.addEventListener('mousedown', handler);
+        return () => document.removeEventListener('mousedown', handler);
+    }, []);
 
     useEffect(() => {
         if (!autoMode) {
@@ -427,36 +437,35 @@ export default function OverallWinnersBySlugPage() {
                     )}
 
                     {campaign?.categories && campaign.categories.length > 0 && (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 6 : '0.4vw', flexWrap: 'wrap' }}>
-                            {isPortrait ? (
-                                <select
-                                    value={selectedCategory}
-                                    onChange={e => { setSelectedCategory(e.target.value); setAutoMode(false); }}
-                                    style={{ padding: '8px 12px', borderRadius: 6, fontSize: 14, fontWeight: 700, border: '2px solid #38bdf8', background: '#38bdf8', color: '#082f49', cursor: 'pointer', flexShrink: 0, fontFamily: "'Prompt','Inter',sans-serif" }}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                            <div ref={dropdownRef} style={{ position: 'relative' }}>
+                                <button
+                                    onClick={() => setDropdownOpen(d => !d)}
+                                    style={{ display: 'flex', alignItems: 'center', gap: 8, padding: isMobile ? '6px 12px' : '0.4vh 0.8vw', background: '#0f172a', border: `1px solid ${dropdownOpen ? '#38bdf8' : '#475569'}`, borderRadius: 8, color: '#f1f5f9', fontSize: isMobile ? 12 : '1.3vh', fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: "'Prompt', 'Inter', sans-serif" }}
                                 >
-                                    {campaign.categories.map(cat => (
-                                        <option key={cat.name} value={cat.name}>
-                                            {cat.name}{cat.distance ? ` (${cat.distance})` : ''}
-                                        </option>
-                                    ))}
-                                </select>
-                            ) : (
-                                <div style={{ display: 'flex', gap: isMobile ? 6 : '0.4vw', overflowX: 'auto', WebkitOverflowScrolling: 'touch', paddingBottom: isMobile ? 2 : 0 }}>
-                                    {campaign.categories.map(cat => (
-                                        <button
-                                            key={cat.name}
-                                            onClick={() => { setSelectedCategory(cat.name); setAutoMode(false); }}
-                                            style={{ padding: isMobile ? '6px 12px' : '0.4vh 1vw', borderRadius: 6, fontSize: isMobile ? 12 : '1.3vh', fontWeight: 700, border: selectedCategory === cat.name ? '2px solid #38bdf8' : '1px solid #475569', background: selectedCategory === cat.name ? '#38bdf8' : 'transparent', color: selectedCategory === cat.name ? '#082f49' : '#cbd5e1', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }}
-                                        >
-                                            {cat.name}{cat.distance ? ` (${cat.distance})` : ''}
-                                        </button>
-                                    ))}
-                                </div>
-                            )}
+                                    {selectedCategory
+                                        ? `${selectedCategory}${campaign.categories.find(c => c.name === selectedCategory)?.distance ? ` (${campaign.categories.find(c => c.name === selectedCategory)!.distance})` : ''}`
+                                        : 'เลือกระยะ'}
+                                    <span style={{ fontSize: 10, opacity: 0.6, transform: dropdownOpen ? 'rotate(180deg)' : 'none', display: 'inline-block', transition: 'transform 0.15s' }}>▾</span>
+                                </button>
+                                {dropdownOpen && (
+                                    <div style={{ position: 'absolute', top: 'calc(100% + 4px)', right: 0, background: '#1e293b', border: '1px solid #475569', borderRadius: 8, overflow: 'hidden', zIndex: 100, minWidth: 180, boxShadow: '0 8px 24px rgba(0,0,0,0.5)' }}>
+                                        {campaign.categories.map((cat, i) => (
+                                            <button
+                                                key={cat.name}
+                                                onClick={() => { setSelectedCategory(cat.name); setAutoMode(false); setDropdownOpen(false); }}
+                                                style={{ display: 'block', width: '100%', textAlign: 'left', padding: '10px 16px', background: selectedCategory === cat.name ? 'rgba(56,189,248,0.15)' : 'transparent', border: 'none', borderBottom: i < campaign.categories!.length - 1 ? '1px solid #334155' : 'none', color: selectedCategory === cat.name ? '#38bdf8' : '#cbd5e1', fontSize: isMobile ? 13 : '1.3vh', fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: "'Prompt', 'Inter', sans-serif" }}
+                                            >
+                                                {cat.name}{cat.distance ? ` (${cat.distance})` : ''}
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
                             {campaign.categories.length > 1 && (
                                 <button
                                     onClick={() => setAutoMode(m => !m)}
-                                    style={{ display: 'flex', alignItems: 'center', gap: 6, padding: isMobile ? '6px 12px' : '0.4vh 0.8vw', background: autoMode ? '#38bdf8' : 'transparent', border: `1px solid ${autoMode ? '#38bdf8' : '#475569'}`, borderRadius: 6, color: autoMode ? '#082f49' : '#94a3b8', fontSize: isMobile ? 12 : '1.3vh', fontWeight: 800, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0, minWidth: isMobile ? 80 : 72, justifyContent: 'center', transition: 'background 0.2s, color 0.2s, border-color 0.2s' }}
+                                    style={{ display: 'flex', alignItems: 'center', gap: 6, padding: isMobile ? '6px 12px' : '0.4vh 0.8vw', background: autoMode ? '#38bdf8' : 'transparent', border: `1px solid ${autoMode ? '#38bdf8' : '#475569'}`, borderRadius: 8, color: autoMode ? '#082f49' : '#94a3b8', fontSize: isMobile ? 12 : '1.3vh', fontWeight: 800, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0, minWidth: isMobile ? 80 : 72, justifyContent: 'center', transition: 'background 0.2s, color 0.2s, border-color 0.2s' }}
                                 >
                                     {autoMode ? `⏸ ${autoCountdown}s` : '▶ AUTO'}
                                 </button>
@@ -467,22 +476,14 @@ export default function OverallWinnersBySlugPage() {
             </header>
             )}
 
-            {campaign && (
-                <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', alignItems: 'center', justifyContent: 'center', gap: isMobile ? 4 : '0.8vw', padding: isMobile ? '8px 12px' : '0.5vh 1.5vw', background: '#1e293b', borderRadius: 10, marginBottom: isMobile ? 8 : '0.8vh', border: '1px solid #334155', flexShrink: 0, textAlign: 'center' }}>
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: isMobile ? 2 : '0.2vh' }}>
+            {!(isMobile && !isAuthenticated) && campaign && (
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: isMobile ? 4 : '0.8vw', padding: isMobile ? '8px 12px' : '0.5vh 1.5vw', background: '#1e293b', borderRadius: 10, marginBottom: isMobile ? 8 : '0.8vh', border: '1px solid #334155', flexShrink: 0, textAlign: 'center' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
                         <span style={{ fontSize: isMobile ? 15 : '2.2vh', fontWeight: 900, color: '#f1f5f9', letterSpacing: 0.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: isMobile ? '100%' : '55vw' }}>
                             {campaign.name}
                         </span>
                         <span style={{ color: '#38bdf8', fontWeight: 900, fontSize: isMobile ? 11 : '1.4vh', letterSpacing: 1.5, textTransform: 'uppercase', whiteSpace: 'nowrap' }}>Overall Winners {topN}</span>
                     </div>
-                    {selectedCategory && (
-                        <span style={{ display: 'inline-flex', alignItems: 'center', padding: isMobile ? '3px 14px' : '0.2vh 1.2vw', background: '#38bdf8', color: '#082f49', borderRadius: 999, fontWeight: 900, fontSize: isMobile ? 13 : '1.8vh', letterSpacing: 1, whiteSpace: 'nowrap', flexShrink: 0 }}>
-                            {selectedCategory}
-                            {campaign.categories?.find(c => c.name === selectedCategory)?.distance
-                                ? ` · ${campaign.categories!.find(c => c.name === selectedCategory)!.distance}`
-                                : ''}
-                        </span>
-                    )}
                 </div>
             )}
 

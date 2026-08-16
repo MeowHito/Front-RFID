@@ -119,6 +119,8 @@ export default function BestOfWinnersBySlugPage() {
     const campaignCategoriesRef = useRef<CampaignCategory[]>([]);
     const displayedCategoryRef = useRef<string>('');
     const [downloading, setDownloading] = useState<string | null>(null);
+    const [dropdownOpen, setDropdownOpen] = useState(false);
+    const dropdownRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
         const check = () => {
@@ -210,6 +212,14 @@ export default function BestOfWinnersBySlugPage() {
     useEffect(() => {
         campaignCategoriesRef.current = campaign?.categories || [];
     }, [campaign]);
+
+    useEffect(() => {
+        const handler = (e: MouseEvent) => {
+            if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) setDropdownOpen(false);
+        };
+        document.addEventListener('mousedown', handler);
+        return () => document.removeEventListener('mousedown', handler);
+    }, []);
 
     useEffect(() => {
         if (!autoMode) {
@@ -388,7 +398,7 @@ export default function BestOfWinnersBySlugPage() {
     );
 
     return (
-        <div style={{ fontFamily: "'Prompt', 'Inter', sans-serif", background: '#0f172a', minHeight: '100vh', display: 'flex', flexDirection: 'column', padding: isMobile ? '8px' : '10px 16px' }}>
+        <div style={{ fontFamily: "'Prompt', 'Inter', sans-serif", background: '#0f172a', height: isMobile ? 'auto' : '100vh', minHeight: '100vh', overflow: isMobile ? 'auto' : 'hidden', display: 'flex', flexDirection: 'column', padding: isMobile ? '8px' : '10px 16px' }}>
             <style>{`@keyframes pulse { 0%,100% { opacity:1 } 50% { opacity:0.3 } }`}</style>
             {/* On mobile, hide the control header for public viewers who are not logged in. */}
             {!(isMobile && !isAuthenticated) && (
@@ -420,22 +430,35 @@ export default function BestOfWinnersBySlugPage() {
                     )}
 
                     {campaign?.categories && campaign.categories.length > 0 && (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 6 : 8, flexWrap: 'wrap' }}>
-                            <div style={{ display: 'flex', gap: isMobile ? 6 : 8, overflowX: 'auto', WebkitOverflowScrolling: 'touch', paddingBottom: isMobile ? 2 : 0 }}>
-                                {campaign.categories.map(cat => (
-                                    <button
-                                        key={cat.name}
-                                        onClick={() => { setSelectedCategory(cat.name); setAutoMode(false); }}
-                                        style={{ padding: isMobile ? '6px 12px' : '5px 14px', borderRadius: 6, fontSize: isMobile ? 12 : 13, fontWeight: 700, border: selectedCategory === cat.name ? '2px solid #f59e0b' : '1px solid #475569', background: selectedCategory === cat.name ? '#f59e0b' : 'transparent', color: selectedCategory === cat.name ? '#1c1917' : '#cbd5e1', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }}
-                                    >
-                                        {cat.name}{cat.distance ? ` (${cat.distance})` : ''}
-                                    </button>
-                                ))}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                            <div ref={dropdownRef} style={{ position: 'relative' }}>
+                                <button
+                                    onClick={() => setDropdownOpen(d => !d)}
+                                    style={{ display: 'flex', alignItems: 'center', gap: 8, padding: isMobile ? '6px 12px' : '5px 14px', background: '#0f172a', border: `1px solid ${dropdownOpen ? '#f59e0b' : '#475569'}`, borderRadius: 8, color: '#f1f5f9', fontSize: isMobile ? 12 : 13, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: "'Prompt', 'Inter', sans-serif" }}
+                                >
+                                    {selectedCategory
+                                        ? `${selectedCategory}${campaign.categories.find(c => c.name === selectedCategory)?.distance ? ` (${campaign.categories.find(c => c.name === selectedCategory)!.distance})` : ''}`
+                                        : 'เลือกระยะ'}
+                                    <span style={{ fontSize: 10, opacity: 0.6, transform: dropdownOpen ? 'rotate(180deg)' : 'none', display: 'inline-block', transition: 'transform 0.15s' }}>▾</span>
+                                </button>
+                                {dropdownOpen && (
+                                    <div style={{ position: 'absolute', top: 'calc(100% + 4px)', right: 0, background: '#1e293b', border: '1px solid #475569', borderRadius: 8, overflow: 'hidden', zIndex: 100, minWidth: 180, boxShadow: '0 8px 24px rgba(0,0,0,0.5)' }}>
+                                        {campaign.categories.map((cat, i) => (
+                                            <button
+                                                key={cat.name}
+                                                onClick={() => { setSelectedCategory(cat.name); setAutoMode(false); setDropdownOpen(false); }}
+                                                style={{ display: 'block', width: '100%', textAlign: 'left', padding: '10px 16px', background: selectedCategory === cat.name ? 'rgba(245,158,11,0.15)' : 'transparent', border: 'none', borderBottom: i < campaign.categories!.length - 1 ? '1px solid #334155' : 'none', color: selectedCategory === cat.name ? '#f59e0b' : '#cbd5e1', fontSize: isMobile ? 13 : 13, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: "'Prompt', 'Inter', sans-serif" }}
+                                            >
+                                                {cat.name}{cat.distance ? ` (${cat.distance})` : ''}
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
                             </div>
                             {campaign.categories.length > 1 && (
                                 <button
                                     onClick={() => setAutoMode(m => !m)}
-                                    style={{ display: 'flex', alignItems: 'center', gap: 6, padding: isMobile ? '6px 12px' : '5px 12px', background: autoMode ? '#f59e0b' : 'transparent', border: `1px solid ${autoMode ? '#f59e0b' : '#475569'}`, borderRadius: 6, color: autoMode ? '#1c1917' : '#94a3b8', fontSize: isMobile ? 12 : 13, fontWeight: 800, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0, minWidth: isMobile ? 80 : 72, justifyContent: 'center' }}
+                                    style={{ display: 'flex', alignItems: 'center', gap: 6, padding: isMobile ? '6px 12px' : '5px 12px', background: autoMode ? '#f59e0b' : 'transparent', border: `1px solid ${autoMode ? '#f59e0b' : '#475569'}`, borderRadius: 8, color: autoMode ? '#1c1917' : '#94a3b8', fontSize: isMobile ? 12 : 13, fontWeight: 800, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0, minWidth: isMobile ? 80 : 72, justifyContent: 'center', transition: 'background 0.2s, color 0.2s, border-color 0.2s' }}
                                 >
                                     {autoMode ? `⏸ ${autoCountdown}s` : '▶ AUTO'}
                                 </button>
@@ -446,20 +469,14 @@ export default function BestOfWinnersBySlugPage() {
             </header>
             )}
 
-            {campaign && selectedCategory && (
-                <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', alignItems: 'center', justifyContent: 'center', gap: isMobile ? 4 : 10, padding: isMobile ? '8px 12px' : '8px 20px', background: '#1e293b', borderRadius: 10, marginBottom: isMobile ? 8 : 10, border: '1px solid #334155', flexShrink: 0, textAlign: 'center' }}>
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: isMobile ? 2 : 2 }}>
+            {!(isMobile && !isAuthenticated) && campaign && (
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: isMobile ? 4 : 10, padding: isMobile ? '8px 12px' : '8px 20px', background: '#1e293b', borderRadius: 10, marginBottom: isMobile ? 8 : 10, border: '1px solid #334155', flexShrink: 0, textAlign: 'center' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
                         <span style={{ fontSize: isMobile ? 15 : 20, fontWeight: 900, color: '#f1f5f9', letterSpacing: 0.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: isMobile ? '100%' : '55vw' }}>
                             {campaign.name}
                         </span>
                         <span style={{ color: '#0d9488', fontWeight: 900, fontSize: isMobile ? 11 : 14, letterSpacing: 1.5, textTransform: 'uppercase', whiteSpace: 'nowrap' }}>Best of Province</span>
                     </div>
-                    <span style={{ display: 'inline-flex', alignItems: 'center', padding: isMobile ? '3px 14px' : '3px 18px', background: '#f59e0b', color: '#1c1917', borderRadius: 999, fontWeight: 900, fontSize: isMobile ? 13 : 16, letterSpacing: 1, whiteSpace: 'nowrap', flexShrink: 0 }}>
-                        {selectedCategory}
-                        {campaign.categories?.find(c => c.name === selectedCategory)?.distance
-                            ? ` · ${campaign.categories!.find(c => c.name === selectedCategory)!.distance}`
-                            : ''}
-                    </span>
                 </div>
             )}
 
@@ -480,7 +497,7 @@ export default function BestOfWinnersBySlugPage() {
                     </div>
                 </div>
             ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: isMobile ? 12 : 14, paddingBottom: isMobile ? 16 : 8 }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: isMobile ? 12 : 14, paddingBottom: isMobile ? 16 : 8, flex: isMobile ? undefined : 1, minHeight: 0, overflowY: isMobile ? 'visible' : 'auto' }}>
                     {provinceBoards.map(renderProvinceBoard)}
                 </div>
             )}
