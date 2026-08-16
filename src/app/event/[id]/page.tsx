@@ -3364,6 +3364,22 @@ export default function EventLivePage() {
                                                         ? `บันทึกเวลา ${savedCount} จุด เรียบร้อย`
                                                         : `Saved ${savedCount} checkpoint time(s)`
                                                 );
+                                                // Saving a START/FINISH time makes the backend recompute
+                                                // net/gun time, so pull the runner back in — otherwise the
+                                                // boxes above keep showing the pre-edit (wrong) times.
+                                                if (editingRunner?._id) {
+                                                    try {
+                                                        const rRes = await fetch(`/api/runners/${editingRunner._id}`, { cache: 'no-store' });
+                                                        if (rRes.ok) {
+                                                            const fresh = await rRes.json();
+                                                            if (fresh?._id) {
+                                                                setEditingRunner(prev => (prev ? { ...prev, ...fresh } : prev));
+                                                                setEditGunTime(msToHHMMSS(fresh.gunTime) || fresh.gunTimeStr || '');
+                                                                setEditChipTime(msToHHMMSS(fresh.netTime) || fresh.netTimeStr || '');
+                                                            }
+                                                        }
+                                                    } catch { /* ignore */ }
+                                                }
                                                 // Re-fetch timing records
                                                 if (editingRunner?.eventId) {
                                                     try {

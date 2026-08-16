@@ -610,7 +610,13 @@ export default function RunnerProfilePage() {
     // Gender/Category rank: prefer the gun-time placings computed from the category pool
     // (Gender + Age-group = gun time now), then fall back to the stored fields.
     const genderRank = gunGenderRank || runner.genderRank || runner.genderNetRank || 0;
-    const categoryRank = gunAgeGroupRank || runner.ageGroupRank || runner.ageGroupNetRank || runner.categoryRank || runner.categoryNetRank || 0;
+    // Prefer the backend's ageGroupRank — it's computed event+category+gender-scoped
+    // with canonicalized age-group labels (public-api buildScopedPublicRankMaps),
+    // the exact same value the e-slip shows as CATEGORY. The locally-recomputed
+    // gunAgeGroupRank pools by campaignId+category string, which can silently
+    // diverge from the backend's event-scoped pool, so only fall back to it when
+    // the backend hasn't provided a value.
+    const categoryRank = runner.ageGroupRank || gunAgeGroupRank || runner.ageGroupNetRank || runner.categoryRank || runner.categoryNetRank || 0;
 
     const runnerHitMap = new Map(runnerHits.map(hit => [normalizeCheckpoint(hit.checkpoint), hit]));
     const availableVideoCount = runnerHits.filter(hit => hit.recording).length;

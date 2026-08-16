@@ -727,6 +727,7 @@ export default function ResultsPage() {
                             checkpoint: cpName,
                             scanTime: isoDate,
                             note: 'Admin manual entry',
+                            isManual: true,
                         }),
                     });
                     if (res.ok) savedCount++;
@@ -735,7 +736,17 @@ export default function ResultsPage() {
 
             setEditTimingChanges({});
             setEditTimingSaveMsg(language === 'th' ? `บันทึกเวลา ${savedCount} จุด เรียบร้อย` : `Saved ${savedCount} checkpoint time(s)`);
-            await loadEditData(editingRunner);
+            // Saving a START/FINISH time makes the backend recompute net/gun time, so reload the
+            // runner itself — reusing the in-memory copy would redisplay the pre-edit times.
+            let refreshed = editingRunner;
+            try {
+                const rRes = await fetch(`/api/runners/${editingRunner._id}`, { cache: 'no-store' });
+                if (rRes.ok) {
+                    const fresh = await rRes.json();
+                    if (fresh?._id) refreshed = { ...editingRunner, ...fresh };
+                }
+            } catch { /* fall back to the in-memory runner */ }
+            await loadEditData(refreshed);
             await fetchAllData(true);
             // Backend caches checkpoint-by-campaign for 5s — schedule a second
             // refresh just past the TTL so newly-saved scan times reliably show
