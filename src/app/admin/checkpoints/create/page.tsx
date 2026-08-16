@@ -11,6 +11,13 @@ interface RaceCategory {
     name: string;
     distance?: string;
     startTime?: string;
+    remoteEventNo?: string;
+}
+
+interface CampaignEvent {
+    _id: string;
+    name?: string;
+    rfidEventId?: number;
 }
 
 interface Campaign {
@@ -62,6 +69,7 @@ export default function RouteMappingPage() {
     const [categories, setCategories] = useState<RaceCategory[]>([]);
     const [selectedCategory, setSelectedCategory] = useState<string>('');
     const [checkpoints, setCheckpoints] = useState<Checkpoint[]>([]);
+    const [events, setEvents] = useState<CampaignEvent[]>([]);
     const [loading, setLoading] = useState(true);
     const [loadingCps, setLoadingCps] = useState(false);
     const [saving, setSaving] = useState(false);
@@ -120,29 +128,40 @@ export default function RouteMappingPage() {
         setDirtyIds(prev => { const n = new Set(prev); n.add(cpId); return n; });
     }, []);
 
-    // Sync checkpoints from RaceTiger (pulls actual_distance → kmCumulative).
-    // scope=checkpoints keeps this to checkpoints + their event mappings only —
-    // no runner re-import, no event/category or timing-record changes.
+    // Sync checkpoints from RaceTiger for the ONE distance being configured.
+    // scope=checkpoints + category means: no runner re-import, no event/category writes,
+    // no timing-record changes, and no other distance's checkpoint layout is touched.
     const handleSyncFromRaceTiger = async () => {
         if (!campaign?._id) return;
-        if (hasUnsavedChanges && !confirm(language === 'th' ? 'มีการเปลี่ยนแปลงที่ยังไม่บันทึก ต้องการ Sync หรือไม่?' : 'Unsaved changes will be overwritten. Sync anyway?')) return;
+        if (!selectedCategory) {
+            showToast(language === 'th' ? 'กรุณาเลือกระยะทางก่อน' : 'Please select a distance first', 'error');
+            return;
+        }
+        if (hasUnsavedChanges && !confirm(
+            language === 'th'
+                ? `มีการเปลี่ยนแปลงที่ยังไม่บันทึก การ Sync จะทับค่าของระยะ ${selectedCategory} ต้องการ Sync หรือไม่?`
+                : `Unsaved changes for ${selectedCategory} will be overwritten. Sync anyway?`
+        )) return;
         setSyncing(true);
         try {
-            const res = await fetch(`/api/sync/import-events?id=${campaign._id}&scope=checkpoints`, { method: 'POST', headers: authHeaders() });
-            if (!res.ok) throw new Error('Sync failed');
-            const result = await res.json();
-            const data = result?.data || result;
-            const cpCount = data?.checkpoints?.created ?? 0;
+            const q = new URLSearchParams({ id: campaign._id, scope: 'checkpoints', category: selectedCategory });
+            const res = await fetch(`/api/sync/import-events?${q.toString()}`, { method: 'POST', headers: authHeaders() });
+            const result = await res.json().catch(() => null);
+            if (!res.ok) throw new Error(result?.error || 'Sync failed');
+            const cp = (result?.data || result)?.checkpoints;
+            const names: string[] = Array.isArray(cp?.checkpoints) ? cp.checkpoints : [];
             showToast(
                 language === 'th'
-                    ? `Sync สำเร็จ! Checkpoint ${cpCount > 0 ? `สร้าง ${cpCount} จุด` : 'อัพเดต KM แล้ว'}`
-                    : `Sync complete! ${cpCount > 0 ? `${cpCount} checkpoints created` : 'KM updated'}`,
+                    ? `Sync ระยะ ${selectedCategory} สำเร็จ! ${names.length} จุด: ${names.join(' → ')}`
+                    : `Synced ${selectedCategory}! ${names.length} checkpoints: ${names.join(' → ')}`,
                 'success'
             );
-            // Reload checkpoints to get updated kmCumulative
             await loadCheckpoints(campaign._id);
-        } catch {
-            showToast(language === 'th' ? 'Sync ไม่สำเร็จ' : 'Sync failed', 'error');
+        } catch (err) {
+            showToast(
+                (err as Error)?.message || (language === 'th' ? 'Sync ไม่สำเร็จ' : 'Sync failed'),
+                'error'
+            );
         } finally {
             setSyncing(false);
         }
@@ -424,6 +443,34 @@ export default function RouteMappingPage() {
         }
     }, [campaign, loadCheckpoints]);
 
+    // Events are needed to unlink a checkpoint from a single distance — the checkpoint-to-event
+    // mapping rows are what /event and the timing pipeline actually read.
+    useEffect(() => {
+        if (!campaign?._id) return;
+        (async () => {
+            try {
+                const res = await fetch(`/api/events/by-campaign/${campaign._id}`, { cache: 'no-store' });
+                const json = await res.json();
+                setEvents(Array.isArray(json) ? json : (json?.data || []));
+            } catch {
+                setEvents([]);
+            }
+        })();
+    }, [campaign]);
+
+    // The Event doc backing the distance currently being configured.
+    // Matched on the RaceTiger event number first (exact), falling back to the name.
+    const selectedEventId = (() => {
+        if (!selectedCategory) return '';
+        const cat = categories.find(c => c.name === selectedCategory);
+        const remoteNo = cat?.remoteEventNo ? String(cat.remoteEventNo) : '';
+        const byRemote = remoteNo
+            ? events.find(e => e.rfidEventId !== undefined && String(e.rfidEventId) === remoteNo)
+            : undefined;
+        const ev = byRemote || events.find(e => (e.name || '').trim() === selectedCategory.trim());
+        return ev ? String(ev._id) : '';
+    })();
+
     // Local update helper
     const updateCheckpoint = (cpId: string, field: Partial<Checkpoint>) => {
         setCheckpoints(prev => prev.map(cp =>
@@ -456,17 +503,72 @@ export default function RouteMappingPage() {
         setDeleteConfirm({ open: true, checkpoint: cp });
     };
 
-    // Confirm delete and execute
+    // How many distances still use this checkpoint. A Checkpoint doc is shared campaign-wide,
+    // so a checkpoint used by 15K and 25K must survive being removed from 15K.
+    const distancesUsing = (cp: Checkpoint) =>
+        (cp.distanceMappings || []).filter(name => categories.some(c => c.name === name));
+
+    // Confirm delete and execute — scoped to the distance currently being configured.
+    // Removes this distance from the checkpoint (and drops its checkpoint↔event mapping);
+    // only when no other distance is left does the checkpoint doc itself get deleted.
     const handleDeleteConfirm = async () => {
         if (!deleteConfirm.checkpoint) return;
         const cp = deleteConfirm.checkpoint;
         setDeleteConfirm({ open: false, checkpoint: null });
 
+        const others = distancesUsing(cp).filter(name => name !== selectedCategory);
+        const removeWholeCheckpoint = !selectedCategory || others.length === 0;
+
         try {
-            const res = await fetch(`/api/checkpoints/${cp._id}`, { method: 'DELETE', headers: authHeaders() });
+            if (removeWholeCheckpoint) {
+                const res = await fetch(`/api/checkpoints/${cp._id}`, { method: 'DELETE', headers: authHeaders() });
+                if (!res.ok) throw new Error('Failed');
+                setCheckpoints(prev => prev.filter(c => c._id !== cp._id));
+                showToast(language === 'th' ? 'ลบสำเร็จ' : 'Deleted', 'success');
+                return;
+            }
+
+            const nextMappings = (cp.distanceMappings || []).filter(name => name !== selectedCategory);
+            const nextKm = { ...(cp.kmCumulativeByDistance || {}) };
+            delete nextKm[selectedCategory];
+            const nextCutoffs = { ...(cp.cutoffTimes || {}) };
+            delete nextCutoffs[selectedCategory];
+
+            const res = await fetch(`/api/checkpoints/${cp._id}`, {
+                method: 'PUT',
+                headers: authHeaders(),
+                body: JSON.stringify({
+                    name: cp.name,
+                    type: cp.type,
+                    orderNum: cp.orderNum,
+                    active: cp.active,
+                    description: cp.description,
+                    readerId: cp.readerId || '',
+                    kmCumulative: cp.kmCumulative,
+                    kmCumulativeByDistance: nextKm,
+                    cutoffTime: cp.cutoffTime,
+                    cutoffTimes: nextCutoffs,
+                    distanceMappings: nextMappings,
+                }),
+            });
             if (!res.ok) throw new Error('Failed');
-            setCheckpoints(prev => prev.filter(c => c._id !== cp._id));
-            showToast(language === 'th' ? 'ลบสำเร็จ' : 'Deleted', 'success');
+
+            if (selectedEventId) {
+                await fetch(`/api/checkpoints/mapping/unlink/${cp._id}/${selectedEventId}`, {
+                    method: 'DELETE',
+                    headers: authHeaders(),
+                });
+            }
+
+            setCheckpoints(prev => prev.map(c => c._id === cp._id
+                ? { ...c, distanceMappings: nextMappings, kmCumulativeByDistance: nextKm, cutoffTimes: nextCutoffs }
+                : c));
+            showToast(
+                language === 'th'
+                    ? `เอา "${cp.name}" ออกจากระยะ ${selectedCategory} แล้ว (ระยะอื่นยังใช้อยู่)`
+                    : `Removed "${cp.name}" from ${selectedCategory} (still used by other distances)`,
+                'success'
+            );
         } catch {
             showToast(language === 'th' ? 'ลบไม่สำเร็จ' : 'Delete failed', 'error');
         }
@@ -855,18 +957,32 @@ export default function RouteMappingPage() {
                         <h3 style={{ margin: '0 0 12px', fontSize: 18, fontWeight: 600, color: '#333' }}>
                             {language === 'th' ? 'ยืนยันการลบ' : 'Confirm Delete'}
                         </h3>
-                        <p style={{ margin: '0 0 20px', fontSize: 14, color: '#666', lineHeight: 1.6 }}>
-                            {language === 'th'
-                                ? `คุณแน่ใจหรือไม่ว่าต้องการลบจุด Checkpoint "${deleteConfirm.checkpoint.name}"?`
-                                : `Are you sure you want to delete checkpoint "${deleteConfirm.checkpoint.name}"?`
-                            }
-                        </p>
-                        <p style={{ margin: '0 0 20px', fontSize: 13, color: '#ef4444', fontWeight: 500 }}>
-                            {language === 'th'
-                                ? '⚠️ การลบนี้ไม่สามารถยกเลิกได้'
-                                : '⚠️ This action cannot be undone'
-                            }
-                        </p>
+                        {(() => {
+                            const others = distancesUsing(deleteConfirm.checkpoint).filter(n => n !== selectedCategory);
+                            const wholeDelete = !selectedCategory || others.length === 0;
+                            return (
+                                <>
+                                    <p style={{ margin: '0 0 20px', fontSize: 14, color: '#666', lineHeight: 1.6 }}>
+                                        {wholeDelete
+                                            ? (language === 'th'
+                                                ? `คุณแน่ใจหรือไม่ว่าต้องการลบจุด Checkpoint "${deleteConfirm.checkpoint.name}"? (ไม่มีระยะอื่นใช้จุดนี้แล้ว)`
+                                                : `Are you sure you want to delete checkpoint "${deleteConfirm.checkpoint.name}"? (No other distance uses it)`)
+                                            : (language === 'th'
+                                                ? `เอาจุด "${deleteConfirm.checkpoint.name}" ออกจากระยะ ${selectedCategory} เท่านั้น`
+                                                : `Remove "${deleteConfirm.checkpoint.name}" from ${selectedCategory} only`)
+                                        }
+                                    </p>
+                                    <p style={{ margin: '0 0 20px', fontSize: 13, color: wholeDelete ? '#ef4444' : '#0891b2', fontWeight: 500 }}>
+                                        {wholeDelete
+                                            ? (language === 'th' ? '⚠️ การลบนี้ไม่สามารถยกเลิกได้' : '⚠️ This action cannot be undone')
+                                            : (language === 'th'
+                                                ? `ℹ️ ระยะ ${others.join(', ')} ยังใช้จุดนี้อยู่ และจะไม่ถูกแตะต้อง`
+                                                : `ℹ️ ${others.join(', ')} still use this checkpoint and will not be affected`)
+                                        }
+                                    </p>
+                                </>
+                            );
+                        })()}
                         <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
                             <button
                                 onClick={handleDeleteCancel}
@@ -1401,19 +1517,24 @@ export default function RouteMappingPage() {
                             </button>
                             <button
                                 onClick={handleSyncFromRaceTiger}
-                                disabled={syncing}
+                                disabled={syncing || !selectedCategory}
+                                title={language === 'th'
+                                    ? 'ดึงเฉพาะ Checkpoint ของระยะที่เลือก ระยะอื่นไม่ถูกแตะ'
+                                    : 'Pulls checkpoints for the selected distance only — other distances are untouched'}
                                 className="btn btn-query"
                                 style={{
                                     background: '#f39c12', marginLeft: 'auto', fontSize: 13,
                                     display: 'inline-flex', alignItems: 'center', gap: 5,
-                                    opacity: syncing ? 0.7 : 1,
-                                    cursor: syncing ? 'not-allowed' : 'pointer',
+                                    opacity: (syncing || !selectedCategory) ? 0.7 : 1,
+                                    cursor: (syncing || !selectedCategory) ? 'not-allowed' : 'pointer',
                                 }}
                             >
                                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" /></svg>
                                 {syncing
                                     ? (language === 'th' ? 'กำลัง Sync...' : 'Syncing...')
-                                    : (language === 'th' ? 'Sync Checkpoint จาก RaceTiger' : 'Sync Checkpoints from RaceTiger')
+                                    : (language === 'th'
+                                        ? `Sync Checkpoint ${selectedCategory || ''}`.trim()
+                                        : `Sync Checkpoints${selectedCategory ? ` — ${selectedCategory}` : ''}`)
                                 }
                             </button>
                             <button

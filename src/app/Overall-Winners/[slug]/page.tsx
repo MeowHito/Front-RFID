@@ -79,8 +79,9 @@ export default function OverallWinnersBySlugPage() {
     const refreshTimerRef = useRef<NodeJS.Timeout | null>(null);
     const countdownRef = useRef<NodeJS.Timeout | null>(null);
     const [isMobile, setIsMobile] = useState(false);
+    const [isPortrait, setIsPortrait] = useState(false);
     const [autoMode, setAutoMode] = useState(false);
-    const [autoCountdown, setAutoCountdown] = useState(5);
+    const [autoCountdown, setAutoCountdown] = useState(10);
     const autoTimerRef = useRef<NodeJS.Timeout | null>(null);
     const autoCountdownRef = useRef<NodeJS.Timeout | null>(null);
     const campaignCategoriesRef = useRef<CampaignCategory[]>([]);
@@ -90,10 +91,17 @@ export default function OverallWinnersBySlugPage() {
     const femaleColRef = useRef<HTMLDivElement | null>(null);
 
     useEffect(() => {
-        const check = () => setIsMobile(window.innerWidth < 768);
+        const check = () => {
+            setIsMobile(window.innerWidth < 768);
+            setIsPortrait(window.innerHeight > window.innerWidth);
+        };
         check();
         window.addEventListener('resize', check);
-        return () => window.removeEventListener('resize', check);
+        window.addEventListener('orientationchange', check);
+        return () => {
+            window.removeEventListener('resize', check);
+            window.removeEventListener('orientationchange', check);
+        };
     }, []);
 
     useEffect(() => {
@@ -180,19 +188,19 @@ export default function OverallWinnersBySlugPage() {
             if (autoCountdownRef.current) clearInterval(autoCountdownRef.current);
             return;
         }
-        setAutoCountdown(5);
+        setAutoCountdown(10);
         autoCountdownRef.current = setInterval(() => {
             setAutoCountdown(prev => (prev <= 1 ? 1 : prev - 1));
         }, 1000);
         autoTimerRef.current = setInterval(() => {
-            setAutoCountdown(5);
+            setAutoCountdown(10);
             setSelectedCategory(prev => {
                 const cats = campaignCategoriesRef.current;
                 if (!cats.length) return prev;
                 const idx = cats.findIndex(c => c.name === prev);
                 return cats[(idx + 1) % cats.length].name;
             });
-        }, 5000);
+        }, 10000);
         return () => {
             if (autoTimerRef.current) clearInterval(autoTimerRef.current);
             if (autoCountdownRef.current) clearInterval(autoCountdownRef.current);
@@ -407,17 +415,31 @@ export default function OverallWinnersBySlugPage() {
 
                     {campaign?.categories && campaign.categories.length > 0 && (
                         <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 6 : '0.4vw', flexWrap: 'wrap' }}>
-                            <div style={{ display: 'flex', gap: isMobile ? 6 : '0.4vw', overflowX: 'auto', WebkitOverflowScrolling: 'touch', paddingBottom: isMobile ? 2 : 0 }}>
-                                {campaign.categories.map(cat => (
-                                    <button
-                                        key={cat.name}
-                                        onClick={() => { setSelectedCategory(cat.name); setAutoMode(false); }}
-                                        style={{ padding: isMobile ? '6px 12px' : '0.4vh 1vw', borderRadius: 6, fontSize: isMobile ? 12 : '1.3vh', fontWeight: 700, border: selectedCategory === cat.name ? '2px solid #38bdf8' : '1px solid #475569', background: selectedCategory === cat.name ? '#38bdf8' : 'transparent', color: selectedCategory === cat.name ? '#082f49' : '#cbd5e1', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }}
-                                    >
-                                        {cat.name}{cat.distance ? ` (${cat.distance})` : ''}
-                                    </button>
-                                ))}
-                            </div>
+                            {isPortrait ? (
+                                <select
+                                    value={selectedCategory}
+                                    onChange={e => { setSelectedCategory(e.target.value); setAutoMode(false); }}
+                                    style={{ padding: '8px 12px', borderRadius: 6, fontSize: 14, fontWeight: 700, border: '2px solid #38bdf8', background: '#38bdf8', color: '#082f49', cursor: 'pointer', flexShrink: 0, fontFamily: "'Prompt','Inter',sans-serif" }}
+                                >
+                                    {campaign.categories.map(cat => (
+                                        <option key={cat.name} value={cat.name}>
+                                            {cat.name}{cat.distance ? ` (${cat.distance})` : ''}
+                                        </option>
+                                    ))}
+                                </select>
+                            ) : (
+                                <div style={{ display: 'flex', gap: isMobile ? 6 : '0.4vw', overflowX: 'auto', WebkitOverflowScrolling: 'touch', paddingBottom: isMobile ? 2 : 0 }}>
+                                    {campaign.categories.map(cat => (
+                                        <button
+                                            key={cat.name}
+                                            onClick={() => { setSelectedCategory(cat.name); setAutoMode(false); }}
+                                            style={{ padding: isMobile ? '6px 12px' : '0.4vh 1vw', borderRadius: 6, fontSize: isMobile ? 12 : '1.3vh', fontWeight: 700, border: selectedCategory === cat.name ? '2px solid #38bdf8' : '1px solid #475569', background: selectedCategory === cat.name ? '#38bdf8' : 'transparent', color: selectedCategory === cat.name ? '#082f49' : '#cbd5e1', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }}
+                                        >
+                                            {cat.name}{cat.distance ? ` (${cat.distance})` : ''}
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
                             {campaign.categories.length > 1 && (
                                 <button
                                     onClick={() => setAutoMode(m => !m)}
