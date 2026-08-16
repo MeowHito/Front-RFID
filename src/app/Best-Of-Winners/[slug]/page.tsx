@@ -375,7 +375,6 @@ export default function BestOfWinnersBySlugPage() {
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <Link href="/" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                         <Image src="/logo-white.png" alt="ACTION" width={120} height={40} style={{ height: isMobile ? 28 : 34, width: 'auto' }} />
-                        <span style={{ color: '#0d9488', fontWeight: 900, fontSize: isMobile ? 14 : 18, letterSpacing: 2, textTransform: 'uppercase' }}>Best of Province</span>
                     </Link>
 
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -427,10 +426,13 @@ export default function BestOfWinnersBySlugPage() {
             )}
 
             {campaign && selectedCategory && (
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: isMobile ? 4 : 10, padding: isMobile ? '8px 12px' : '8px 20px', background: '#1e293b', borderRadius: 10, marginBottom: isMobile ? 8 : 10, border: '1px solid #334155', flexShrink: 0, textAlign: 'center' }}>
-                    <span style={{ fontSize: isMobile ? 15 : 20, fontWeight: 900, color: '#f1f5f9', letterSpacing: 0.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        Best of Province
-                    </span>
+                <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', alignItems: 'center', justifyContent: 'center', gap: isMobile ? 4 : 10, padding: isMobile ? '8px 12px' : '8px 20px', background: '#1e293b', borderRadius: 10, marginBottom: isMobile ? 8 : 10, border: '1px solid #334155', flexShrink: 0, textAlign: 'center' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: isMobile ? 2 : 2 }}>
+                        <span style={{ fontSize: isMobile ? 15 : 20, fontWeight: 900, color: '#f1f5f9', letterSpacing: 0.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: isMobile ? '100%' : '55vw' }}>
+                            {campaign.name}
+                        </span>
+                        <span style={{ color: '#0d9488', fontWeight: 900, fontSize: isMobile ? 11 : 14, letterSpacing: 1.5, textTransform: 'uppercase', whiteSpace: 'nowrap' }}>Best of Province</span>
+                    </div>
                     <span style={{ display: 'inline-flex', alignItems: 'center', padding: isMobile ? '3px 14px' : '3px 18px', background: '#f59e0b', color: '#1c1917', borderRadius: 999, fontWeight: 900, fontSize: isMobile ? 13 : 16, letterSpacing: 1, whiteSpace: 'nowrap', flexShrink: 0 }}>
                         {selectedCategory}
                         {campaign.categories?.find(c => c.name === selectedCategory)?.distance

@@ -215,7 +215,6 @@ export default function TargetTimeWinnersBySlugPage() {
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <Link href="/" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                         <Image src="/logo-white.png" alt="ACTION" width={120} height={40} style={{ height: isMobile ? 28 : '3.5vh', width: 'auto' }} />
-                        <span style={{ color: '#34d399', fontWeight: 900, fontSize: isMobile ? 13 : '1.9vh', letterSpacing: 1.5, textTransform: 'uppercase' }}>Target Time</span>
                     </Link>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                         {refreshing && <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#34d399', animation: 'pulse 0.8s ease-in-out infinite' }} />}
@@ -261,9 +260,12 @@ export default function TargetTimeWinnersBySlugPage() {
 
             {campaign && (
                 <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', alignItems: 'center', justifyContent: 'center', gap: isMobile ? 6 : '1.2vw', padding: isMobile ? '10px 16px' : '0.7vh 1.5vw', background: '#1e293b', borderRadius: 10, marginBottom: isMobile ? 8 : '0.8vh', border: '1px solid #334155', textAlign: 'center' }}>
-                    <span style={{ fontSize: isMobile ? 15 : '2.2vh', fontWeight: 900, color: '#f1f5f9', letterSpacing: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: isMobile ? '100%' : '50vw' }}>
-                        {campaign.name}
-                    </span>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+                        <span style={{ fontSize: isMobile ? 15 : '2.2vh', fontWeight: 900, color: '#f1f5f9', letterSpacing: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: isMobile ? '100%' : '50vw' }}>
+                            {campaign.name}
+                        </span>
+                        <span style={{ color: '#34d399', fontWeight: 900, fontSize: isMobile ? 11 : '1.4vh', letterSpacing: 1.5, textTransform: 'uppercase', whiteSpace: 'nowrap' }}>Target Time</span>
+                    </div>
                     {selectedCategory && (
                         <span style={{ display: 'inline-flex', alignItems: 'center', background: '#34d399', color: '#052e16', borderRadius: 999, fontWeight: 900, fontSize: isMobile ? 13 : '1.8vh', padding: isMobile ? '3px 14px' : '0.2vh 1.2vw', whiteSpace: 'nowrap' }}>
                             {selectedCategory}{selDistance ? ` · ${selDistance}` : ''}

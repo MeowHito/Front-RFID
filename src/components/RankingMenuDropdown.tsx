@@ -135,10 +135,10 @@ export default function RankingMenuDropdown({
                 aria-label={language === 'th' ? 'อันดับ/รางวัล' : 'Rankings'}
                 title={iconOnly ? (language === 'th' ? 'อันดับ/รางวัล' : 'Rankings') : undefined}
                 className={`flex items-center whitespace-nowrap rounded-full text-xs font-bold text-[var(--muted-foreground)] ${iconOnly
-                    ? 'h-[29px] w-[34px] justify-center border-none bg-transparent'
+                    ? 'h-[24px] w-[24px] justify-center border-none bg-transparent'
                     : 'gap-1.5 border border-[var(--border)] bg-[var(--card-solid)] px-3.5 py-1.5'}`}
             >
-                <svg aria-hidden width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#eab308" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
+                <svg aria-hidden width={iconOnly ? '12' : '14'} height={iconOnly ? '12' : '14'} viewBox="0 0 24 24" fill="none" stroke="#eab308" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
                     <path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6" />
                     <path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18" />
                     <path d="M4 22h16" />

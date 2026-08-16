@@ -371,12 +371,12 @@ export default function TopOverallWinnersBySlugPage() {
             {/* Public info + distance-selector bar — visible to everyone, white theme. */}
             {campaign && (
                 <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', alignItems: 'center', justifyContent: 'space-between', gap: isMobile ? 10 : '1vw', padding: isMobile ? '10px 12px' : '0.7vh 1.5vw', background: '#ffffff', borderRadius: 10, marginBottom: isMobile ? 8 : '0.8vh', border: '1px solid #e2e8f0', boxShadow: '0 1px 3px rgba(15,23,42,0.06)', flexShrink: 0 }}>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: isMobile ? 'center' : 'flex-start', gap: isMobile ? 6 : '0.7vw', textAlign: isMobile ? 'center' : 'left' }}>
-                        <span style={{ fontSize: isMobile ? 15 : '2.1vh', fontWeight: 900, color: '#1e293b', letterSpacing: 1, textTransform: 'uppercase', whiteSpace: 'nowrap' }}>
-                            Top Overall {topN}
-                        </span>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: isMobile ? 'center' : 'flex-start', gap: 2, textAlign: isMobile ? 'center' : 'left' }}>
                         <span style={{ fontSize: isMobile ? 13 : '1.7vh', fontWeight: 700, color: '#475569', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: isMobile ? '100%' : '28vw' }}>
                             {campaign.name}
+                        </span>
+                        <span style={{ fontSize: isMobile ? 13 : '1.6vh', fontWeight: 900, color: '#4f46e5', letterSpacing: 1, textTransform: 'uppercase', whiteSpace: 'nowrap' }}>
+                            Top Overall {topN}
                         </span>
                     </div>
 

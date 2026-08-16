@@ -509,7 +509,6 @@ export default function ResultWinnersBySlugPage() {
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <Link href="/" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                         <Image src="/logo-white.png" alt="ACTION" width={120} height={40} style={{ height: isMobile ? 28 : '3.5vmin', width: 'auto' }} />
-                        <span style={{ color: '#22c55e', fontWeight: 900, fontSize: isMobile ? 14 : '2vmin', letterSpacing: 2, textTransform: 'uppercase' }}>Age Group Rankings</span>
                     </Link>
 
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -593,6 +592,17 @@ export default function ResultWinnersBySlugPage() {
                     )}
                 </div>
             </header>
+            )}
+
+            {!(isMobile && !isAuthenticated) && campaign && (
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: isMobile ? 4 : '0.8vw', padding: isMobile ? '8px 12px' : '0.5vmin 1.5vw', background: '#1e293b', borderRadius: 10, marginBottom: isMobile ? 8 : '0.8vmin', border: '1px solid #334155', flexShrink: 0, textAlign: 'center' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+                        <span style={{ fontSize: isMobile ? 15 : '2.2vmin', fontWeight: 900, color: '#f1f5f9', letterSpacing: 0.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: isMobile ? '100%' : '55vw' }}>
+                            {campaign.name}
+                        </span>
+                        <span style={{ color: '#22c55e', fontWeight: 900, fontSize: isMobile ? 11 : '1.4vmin', letterSpacing: 1.5, textTransform: 'uppercase', whiteSpace: 'nowrap' }}>Age Group Rankings</span>
+                    </div>
+                </div>
             )}
 
             {/* Show loading only on very first load — never blank the screen on refresh */}
