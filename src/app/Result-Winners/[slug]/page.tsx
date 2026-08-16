@@ -79,6 +79,23 @@ function formatTime(ms: number | undefined | null): string {
     return `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 }
 
+// Auto-shrinks the name column font as the name gets longer, so short names stay
+// large and readable while long names still fit on one line instead of truncating.
+// Portrait screens (narrower relative to height) get an extra size reduction.
+function getNameFontSize(name: string, isMobile: boolean, isPortrait: boolean): string {
+    const len = name.length;
+    let scale = 1;
+    if (len > 32) scale = 0.62;
+    else if (len > 28) scale = 0.7;
+    else if (len > 24) scale = 0.78;
+    else if (len > 20) scale = 0.87;
+    else if (len > 16) scale = 0.95;
+    if (isPortrait) scale *= 0.85;
+    const base = isMobile ? 12 : 1.35;
+    const value = base * scale;
+    return isMobile ? `${value.toFixed(1)}px` : `${value.toFixed(2)}vmin`;
+}
+
 
 const REFRESH_INTERVAL = 10;
 
@@ -101,6 +118,7 @@ export default function ResultWinnersBySlugPage() {
     const refreshTimerRef = useRef<NodeJS.Timeout | null>(null);
     const countdownRef = useRef<NodeJS.Timeout | null>(null);
     const [isMobile, setIsMobile] = useState(false);
+    const [isPortrait, setIsPortrait] = useState(false);
     const [autoMode, setAutoMode] = useState(false);
     const [autoCountdown, setAutoCountdown] = useState(5);
     const autoTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -121,10 +139,17 @@ export default function ResultWinnersBySlugPage() {
     const displayedCategoryRef = useRef<string>('');
 
     useEffect(() => {
-        const check = () => setIsMobile(window.innerWidth < 768);
+        const check = () => {
+            setIsMobile(window.innerWidth < 768);
+            setIsPortrait(window.innerHeight > window.innerWidth);
+        };
         check();
         window.addEventListener('resize', check);
-        return () => window.removeEventListener('resize', check);
+        window.addEventListener('orientationchange', check);
+        return () => {
+            window.removeEventListener('resize', check);
+            window.removeEventListener('orientationchange', check);
+        };
     }, []);
 
     useEffect(() => {
@@ -157,9 +182,7 @@ export default function ResultWinnersBySlugPage() {
     const loadRunners = useCallback(async (isRefresh = false) => {
         if (!campaign?._id || !selectedCategory) { setDisplayedRunners([]); return; }
 
-        // Only show full loading screen when switching to a new category with no data yet
-        const categoryChanged = displayedCategoryRef.current !== selectedCategory;
-        const hasExistingData = displayedRunners.length > 0 && !categoryChanged;
+        const hasExistingData = displayedRunners.length > 0;
 
         if (!hasExistingData) setInitialLoading(true);
         if (isRefresh || hasExistingData) setRefreshing(true);
@@ -424,21 +447,24 @@ export default function ResultWinnersBySlugPage() {
         );
     }
 
-    const renderRunnerRow = (runner: Runner, idx: number) => (
+    const renderRunnerRow = (runner: Runner, idx: number) => {
+        const fullName = language === 'th' && runner.firstNameTh
+            ? `${runner.bib}  ${runner.firstNameTh} ${runner.lastNameTh || ''}`
+            : `${runner.bib}  ${runner.firstName} ${runner.lastName}`;
+        return (
         <div key={runner._id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: isMobile ? '4px 8px' : '0.3vmin 8px', borderRadius: 5, background: idx === 0 ? '#fffbeb' : 'transparent', height: isMobile ? 'auto' : '2.8vmin', minHeight: isMobile ? 28 : 22 }}>
             <div style={{ width: isMobile ? 22 : '2.2vmin', height: isMobile ? 22 : '2.2vmin', minWidth: 18, minHeight: 18, borderRadius: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: isMobile ? 12 : '1.3vmin', fontWeight: 900, flexShrink: 0, background: rankBg[idx] || '#e2e8f0', color: rankFg[idx] || '#475569' }}>
                 {idx + 1}
             </div>
-            <span style={{ fontSize: isMobile ? 12 : '1.35vmin', fontWeight: 700, color: '#1e293b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1, textTransform: 'uppercase' }}>
-                {language === 'th' && runner.firstNameTh
-                    ? `${runner.bib}  ${runner.firstNameTh} ${runner.lastNameTh || ''}`
-                    : `${runner.bib}  ${runner.firstName} ${runner.lastName}`}
+            <span style={{ fontSize: getNameFontSize(fullName, isMobile, isPortrait), fontWeight: 700, color: '#1e293b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1, textTransform: 'uppercase' }}>
+                {fullName}
             </span>
             <span style={{ fontFamily: 'monospace', fontWeight: 800, fontSize: isMobile ? 11 : '1.35vmin', color: '#1e293b', flexShrink: 0, minWidth: isMobile ? 60 : '6.5vmin', textAlign: 'right' }}>
                 {runner.netTimeStr || formatTime(runner.netTime)}
             </span>
         </div>
-    );
+        );
+    };
 
     const renderEmptyRow = (idx: number) => (
         <div key={`empty-${idx}`} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: isMobile ? '4px 8px' : '0.3vmin 8px', height: isMobile ? 'auto' : '2.8vmin', minHeight: isMobile ? 28 : 22 }}>

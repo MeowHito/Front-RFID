@@ -60,6 +60,23 @@ function formatTime(ms: number | undefined | null): string {
     return `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 }
 
+// Auto-shrinks the name column font as the name gets longer, so short names stay
+// large and readable while long names still fit on one line instead of truncating.
+// Portrait screens (narrower relative to height) get an extra size reduction.
+function getNameFontSize(name: string, isMobile: boolean, isPortrait: boolean): string {
+    const len = name.length;
+    let scale = 1;
+    if (len > 32) scale = 0.62;
+    else if (len > 28) scale = 0.7;
+    else if (len > 24) scale = 0.78;
+    else if (len > 20) scale = 0.87;
+    else if (len > 16) scale = 0.95;
+    if (isPortrait) scale *= 0.85;
+    const base = isMobile ? 12 : 1.55;
+    const value = base * scale;
+    return isMobile ? `${value.toFixed(1)}px` : `${value.toFixed(2)}vh`;
+}
+
 export default function OverallWinnersBySlugPage() {
     const { language, setLanguage } = useLanguage();
     const { isAuthenticated } = useAuth();
@@ -134,8 +151,7 @@ export default function OverallWinnersBySlugPage() {
     const loadRunners = useCallback(async (isRefresh = false) => {
         if (!campaign?._id || !selectedCategory) { setDisplayedRunners([]); return; }
 
-        const categoryChanged = displayedCategoryRef.current !== selectedCategory;
-        const hasExistingData = displayedRunners.length > 0 && !categoryChanged;
+        const hasExistingData = displayedRunners.length > 0;
 
         if (!hasExistingData) setInitialLoading(true);
         if (isRefresh || hasExistingData) setRefreshing(true);
@@ -306,24 +322,24 @@ export default function OverallWinnersBySlugPage() {
         );
     }
 
-    const renderRunnerRow = (runner: Runner, idx: number) => (
+    const renderRunnerRow = (runner: Runner, idx: number) => {
+        const fullName = language === 'th' && runner.firstNameTh
+            ? `${runner.bib}  ${runner.firstNameTh} ${runner.lastNameTh || ''}`
+            : `${runner.bib}  ${runner.firstName} ${runner.lastName}`;
+        return (
         <div key={runner._id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: isMobile ? '4px 8px' : '0.4vh 10px', borderRadius: 6, background: idx === 0 ? '#fffbeb' : 'transparent', height: isMobile ? 'auto' : '4vh', minHeight: isMobile ? 30 : 30 }}>
             <div style={{ width: isMobile ? 22 : '2.4vh', height: isMobile ? 22 : '2.4vh', minWidth: 18, minHeight: 18, borderRadius: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: isMobile ? 12 : '1.4vh', fontWeight: 900, flexShrink: 0, background: rankBg[idx] || '#e2e8f0', color: rankFg[idx] || '#475569' }}>
                 {idx + 1}
             </div>
-            <span style={{ fontSize: isMobile ? 12 : '1.55vh', fontWeight: 700, color: '#1e293b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1, textTransform: 'uppercase' }}>
-                {language === 'th' && runner.firstNameTh
-                    ? `${runner.bib}  ${runner.firstNameTh} ${runner.lastNameTh || ''}`
-                    : `${runner.bib}  ${runner.firstName} ${runner.lastName}`}
+            <span style={{ fontSize: getNameFontSize(fullName, isMobile, isPortrait), fontWeight: 700, color: '#1e293b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1, textTransform: 'uppercase' }}>
+                {fullName}
             </span>
             <span style={{ fontFamily: 'monospace', fontWeight: 800, fontSize: isMobile ? 11 : '1.5vh', color: '#1e293b', flexShrink: 0, minWidth: isMobile ? 60 : '7vh', textAlign: 'right' }}>
                 {runner.gunTimeStr || formatTime(runner.gunTime)}
             </span>
-            <span style={{ fontFamily: 'monospace', fontWeight: 800, fontSize: isMobile ? 11 : '1.5vh', color: '#1e293b', flexShrink: 0, minWidth: isMobile ? 60 : '7vh', textAlign: 'right', marginLeft: isMobile ? 10 : 14 }}>
-                {runner.netTimeStr || formatTime(runner.netTime)}
-            </span>
         </div>
-    );
+        );
+    };
 
     const renderEmptyRow = (idx: number) => (
         <div key={`empty-${idx}`} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: isMobile ? '4px 8px' : '0.4vh 10px', height: isMobile ? 'auto' : '4vh', minHeight: isMobile ? 30 : 30 }}>
@@ -332,7 +348,6 @@ export default function OverallWinnersBySlugPage() {
             </div>
             <span style={{ fontSize: isMobile ? 11 : '1.2vh', color: '#cbd5e1', fontStyle: 'italic', flex: 1 }}>—</span>
             <span style={{ minWidth: isMobile ? 60 : '7vh' }} />
-            <span style={{ minWidth: isMobile ? 60 : '7vh', marginLeft: isMobile ? 10 : 14 }} />
         </div>
     );
 
@@ -362,7 +377,6 @@ export default function OverallWinnersBySlugPage() {
                         <div style={{ width: isMobile ? 22 : '2.4vh', minWidth: 18, flexShrink: 0 }} />
                         <span style={{ fontSize: isMobile ? 9 : '1.1vh', fontWeight: 700, color: '#94a3b8', flex: 1, textTransform: 'uppercase', letterSpacing: 0.5 }}>Name</span>
                         <span style={{ fontSize: isMobile ? 9 : '1.1vh', fontWeight: 700, color: '#94a3b8', flexShrink: 0, minWidth: isMobile ? 60 : '7vh', textAlign: 'right', letterSpacing: 0.5 }}>GunTime</span>
-                        <span style={{ fontSize: isMobile ? 9 : '1.1vh', fontWeight: 700, color: '#94a3b8', flexShrink: 0, minWidth: isMobile ? 60 : '7vh', textAlign: 'right', letterSpacing: 0.5, marginLeft: isMobile ? 10 : 14 }}>NetTime</span>
                     </div>
                     {Array.from({ length: rankCount }, (_, i) => i).map(i => list[i] ? renderRunnerRow(list[i], i) : renderEmptyRow(i))}
                 </div>

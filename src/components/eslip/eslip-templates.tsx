@@ -285,7 +285,7 @@ export function Template1({ runner, timings, campaign, bgImage, slipRef, showFie
                                     {[
                                         { key: 'overallRank', label: 'Overall', val: runner.overallRank || '-' },
                                         { key: 'genderRank', label: 'Gender', val: runner.genderRank || runner.genderNetRank || '-' },
-                                        { key: 'categoryRank', label: 'Category', val: runner.categoryRank || runner.categoryNetRank || '-' },
+                                        { key: 'categoryRank', label: 'Age Group', val: runner.categoryRank || runner.categoryNetRank || '-' },
                                     ].filter(r => showField(r.key)).map((r, i) => (
                                         <div key={i} className="text-center min-w-[60px]">
                                             <div className="text-[10px] font-black text-white uppercase">{r.label}</div>
@@ -495,7 +495,7 @@ export function Template2({ runner, timings, campaign, bgImage, slipRef, showFie
                                 {[
                                     { key: 'overallRank', label: 'Overall', val: runner.overallRank || '-' },
                                     { key: 'genderRank', label: 'Gender', val: runner.genderRank || runner.genderNetRank || '-' },
-                                    { key: 'categoryRank', label: 'Category', val: runner.categoryRank || runner.categoryNetRank || '-' },
+                                    { key: 'categoryRank', label: 'Age Group', val: runner.categoryRank || runner.categoryNetRank || '-' },
                                 ].filter(r => showField(r.key)).map((r, i, arr) => (
                                     <div key={i} className="flex-1 text-center relative flex flex-col justify-center px-3 py-1.5">
                                         {i < arr.length - 1 && <div className={`absolute right-0 top-[18%] h-[64%] w-px ${dividerClass}`} />}
@@ -646,7 +646,7 @@ function DefaultCard({ runner, timings, campaign, slipRef, showField, awardLabel
                         {[
                             { key: 'overallRank', label: 'Overall', val: runner.overallRank || '-' },
                             { key: 'genderRank', label: 'Gender', val: runner.genderRank || runner.genderNetRank || '-' },
-                            { key: 'categoryRank', label: 'Category', val: runner.categoryRank || runner.categoryNetRank || '-' },
+                            { key: 'categoryRank', label: 'Age Group', val: runner.categoryRank || runner.categoryNetRank || '-' },
                         ].filter(r => showField(r.key)).map((r, i) => (
                             <div key={i} className="bg-slate-50 rounded-xl py-2.5 px-3 text-center border border-slate-100 min-w-[80px]">
                                 <div className="text-base font-black text-slate-900">{r.val}</div>
