@@ -11,6 +11,9 @@ export async function POST(request: NextRequest) {
         }
 
         const query = new URLSearchParams({ id });
+        // scope=checkpoints → refresh only checkpoints/mappings, leave runners & events alone
+        const scope = searchParams.get('scope');
+        if (scope) query.set('scope', scope);
         const res = await fetch(`${BACKEND_URL}/api/sync/import-events?${query.toString()}`, {
             method: 'POST',
             headers: proxyHeaders(request),

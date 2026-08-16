@@ -120,13 +120,15 @@ export default function RouteMappingPage() {
         setDirtyIds(prev => { const n = new Set(prev); n.add(cpId); return n; });
     }, []);
 
-    // Sync checkpoints from RaceTiger (pulls actual_distance → kmCumulative)
+    // Sync checkpoints from RaceTiger (pulls actual_distance → kmCumulative).
+    // scope=checkpoints keeps this to checkpoints + their event mappings only —
+    // no runner re-import, no event/category or timing-record changes.
     const handleSyncFromRaceTiger = async () => {
         if (!campaign?._id) return;
         if (hasUnsavedChanges && !confirm(language === 'th' ? 'มีการเปลี่ยนแปลงที่ยังไม่บันทึก ต้องการ Sync หรือไม่?' : 'Unsaved changes will be overwritten. Sync anyway?')) return;
         setSyncing(true);
         try {
-            const res = await fetch(`/api/sync/import-events?id=${campaign._id}`, { method: 'POST', headers: authHeaders() });
+            const res = await fetch(`/api/sync/import-events?id=${campaign._id}&scope=checkpoints`, { method: 'POST', headers: authHeaders() });
             if (!res.ok) throw new Error('Sync failed');
             const result = await res.json();
             const data = result?.data || result;
@@ -1411,7 +1413,7 @@ export default function RouteMappingPage() {
                                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" /></svg>
                                 {syncing
                                     ? (language === 'th' ? 'กำลัง Sync...' : 'Syncing...')
-                                    : (language === 'th' ? 'Sync from RaceTiger' : 'Sync from RaceTiger')
+                                    : (language === 'th' ? 'Sync Checkpoint จาก RaceTiger' : 'Sync Checkpoints from RaceTiger')
                                 }
                             </button>
                             <button
