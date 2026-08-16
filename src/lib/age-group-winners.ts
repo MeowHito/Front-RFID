@@ -56,11 +56,15 @@ export function computeAgeGroupWinners<T extends AgeGroupWinnerRunner>(
     const excludeOv = Math.max(0, Number(cfg.excludeOverallFromAgeGroup) || 0);
     const excludeAG = Math.max(0, Number(cfg.excludeAgeGroupTop) || 0);
     const excludedBibs = new Set<string>();
-    const byTime = (a: T, b: T) =>
-        (a.netTime || a.gunTime || a.elapsedTime || Infinity) - (b.netTime || b.gunTime || b.elapsedTime || Infinity);
+    // Overall boards rank by gun time (see Overall-Winners page), so the
+    // exclusion here must match that order — sorting by net time first would
+    // pick a different "top N" than what's actually shown as Overall winners,
+    // letting an Overall winner slip through into the age-group board.
+    const byOverallTime = (a: T, b: T) =>
+        (a.gunTime || a.netTime || a.elapsedTime || Infinity) - (b.gunTime || b.netTime || b.elapsedTime || Infinity);
     if (excludeOv > 0) {
-        finished.filter(r => r.gender !== 'F').sort(byTime).slice(0, excludeOv).forEach(r => excludedBibs.add(r.bib));
-        finished.filter(r => r.gender === 'F').sort(byTime).slice(0, excludeOv).forEach(r => excludedBibs.add(r.bib));
+        finished.filter(r => r.gender !== 'F').sort(byOverallTime).slice(0, excludeOv).forEach(r => excludedBibs.add(r.bib));
+        finished.filter(r => r.gender === 'F').sort(byOverallTime).slice(0, excludeOv).forEach(r => excludedBibs.add(r.bib));
     }
 
     const natSplit = isNationalitySplitCategory(cfg.separateOverallNationalityCategories, selectedCategory);
@@ -74,7 +78,7 @@ export function computeAgeGroupWinners<T extends AgeGroupWinnerRunner>(
             for (const thai of [true, false]) {
                 finished
                     .filter(r => (r.gender === 'F') === female && isThaiNationality(r.nationality) === thai)
-                    .sort(byTime)
+                    .sort(byOverallTime)
                     .slice(0, excludeNatCount[thai ? 'thai' : 'foreign'])
                     .forEach(r => excludedBibs.add(r.bib));
             }

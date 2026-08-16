@@ -171,6 +171,18 @@ export default function AgeGroupRankingPage() {
             });
     }, [previewRunners]);
 
+    // Overall boards (Overall-Winners page) rank by gun time, so the "exclude
+    // top N overall" step here must pick the same runners those boards show —
+    // sorting by net time (like the age-group order above) can pick a different
+    // top N, letting an Overall winner slip through into the age-group board.
+    const sortedByOverallTime = useMemo(() => {
+        return [...sortedFinishedRunners].sort((a, b) => {
+            const at = a.gunTime || a.netTime || a.elapsedTime || Infinity;
+            const bt = b.gunTime || b.netTime || b.elapsedTime || Infinity;
+            return at - bt;
+        });
+    }, [sortedFinishedRunners]);
+
     const canonicalAgeGroups = useMemo(() => buildCanonicalAgeGroups(previewRunners.map(r => r.ageGroup)), [previewRunners]);
 
     const activeAgeGroups = useMemo(() => {
@@ -196,8 +208,8 @@ export default function AgeGroupRankingPage() {
         // Exclude top N male + top N female by overall time
         const excludedBibs = new Set<string>();
         if (excludeTop > 0) {
-            sortedFinishedRunners.filter(r => r.gender !== 'F').slice(0, excludeTop).forEach(r => excludedBibs.add(r.bib));
-            sortedFinishedRunners.filter(r => r.gender === 'F').slice(0, excludeTop).forEach(r => excludedBibs.add(r.bib));
+            sortedByOverallTime.filter(r => r.gender !== 'F').slice(0, excludeTop).forEach(r => excludedBibs.add(r.bib));
+            sortedByOverallTime.filter(r => r.gender === 'F').slice(0, excludeTop).forEach(r => excludedBibs.add(r.bib));
         }
         // Nationality-split categories: top Thai / foreign overall winners (per
         // gender) are excluded from age-group awards, each with its own count
@@ -205,7 +217,7 @@ export default function AgeGroupRankingPage() {
         if (selectedCategorySplit) {
             for (const female of [false, true]) {
                 for (const thai of [true, false]) {
-                    sortedFinishedRunners
+                    sortedByOverallTime
                         .filter(r => (r.gender === 'F') === female && isThaiNationality(r.nationality) === thai)
                         .slice(0, thai ? excludeThaiTop : excludeForeignTop)
                         .forEach(r => excludedBibs.add(r.bib));
@@ -233,7 +245,7 @@ export default function AgeGroupRankingPage() {
         }
 
         return { maleWinners: male, femaleWinners: female };
-    }, [sortedFinishedRunners, activeAgeGroups, canonicalAgeGroups, disableAgeGroupRanking, excludeTop, ageGroupDisplayCount, selectedCategorySplit, excludeThaiTop, excludeForeignTop]);
+    }, [sortedFinishedRunners, sortedByOverallTime, activeAgeGroups, canonicalAgeGroups, disableAgeGroupRanking, excludeTop, ageGroupDisplayCount, selectedCategorySplit, excludeThaiTop, excludeForeignTop]);
 
     // Nationality-split overall winners — Thai count follows excludeThaiTop,
     // foreign count follows excludeForeignTop, so display always matches the
