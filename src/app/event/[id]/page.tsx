@@ -1922,7 +1922,7 @@ export default function EventLivePage() {
             value={filterAgeGroup}
             onChange={(e) => setFilterAgeGroup(e.target.value)}
             title={language === 'th' ? 'ช่วงอายุ' : 'Age group'}
-            className={`shrink-0 cursor-pointer appearance-none rounded-full border font-bold outline-none transition-all duration-200 ${isMobile ? 'px-2 py-1 text-[10px]' : 'px-3.5 py-1.5 text-[11px]'} ${filterAgeGroup
+            className={`shrink-0 cursor-pointer appearance-none rounded-full border font-bold outline-none transition-all duration-200 ${isMobile ? 'px-1.5 py-0.5 text-[9px]' : 'px-3.5 py-1.5 text-[11px]'} ${filterAgeGroup
                 ? 'border-[var(--foreground)] bg-[var(--foreground)] text-[var(--background)]'
                 : 'border-[var(--border)] bg-transparent text-[var(--muted-foreground)]'}`}
         >
@@ -2136,9 +2136,8 @@ export default function EventLivePage() {
             <div className="border-b border-[var(--border)] bg-[var(--card-solid)] px-4 py-2.5">
                 {isMobile ? (
                     <>
-                        {/* Row 1: Search + Distance — half & half */}
+                        {/* Row 1: Distance + Search — half & half (distance first on mobile) */}
                         <div className="flex items-center gap-2">
-                            {searchBoxEl}
                             <div className="relative min-w-0 flex-1">
                                 <select
                                     value={filterCategory}
@@ -2154,15 +2153,16 @@ export default function EventLivePage() {
                                     <path d="M6 9l6 6 6-6" />
                                 </svg>
                             </div>
+                            {searchBoxEl}
                         </div>
 
                         {/* Row 2: Gender box + Age group + course/checkpoint charts + ranking trophy + column toggle — wraps instead of clipping */}
-                        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                        <div className="mt-2 flex flex-wrap items-center gap-1">
                             {genderBoxEl}
                             {ageSelectEl}
                             {courseProfileEl}
                             {checkpointBarsEl}
-                            <div className="ml-auto flex items-center gap-1">
+                            <div className="ml-auto flex items-center gap-0.5">
                                 {rankingMenuEl}
                                 {slidersEl}
                             </div>
