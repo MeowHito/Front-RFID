@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
+import { dedupeTimings } from '@/lib/timing-dedupe';
 
 // ─── Shared E-Slip types ──────────────────────────────────────────────────────
 
@@ -227,12 +228,12 @@ export function Template1({ runner, timings, campaign, bgImage, slipRef, showFie
     const netTimeStr = runner.netTimeStr || formatTime(runner.netTime);
     // Sort by scanTime ascending — order is unreliable when admin manually adds a
     // checkpoint (the new record's `order` may slot in front of RaceTiger-synced rows).
-    const sortedTimings = [...timings].sort((a, b) => {
+    const sortedTimings = dedupeTimings([...timings].sort((a, b) => {
         const ta = a.scanTime ? new Date(a.scanTime).getTime() : 0;
         const tb = b.scanTime ? new Date(b.scanTime).getTime() : 0;
         if (ta !== tb) return ta - tb;
         return (a.order || 0) - (b.order || 0);
-    });
+    }));
     const displayTimings = sortedTimings.slice(-6);
 
     return (
@@ -285,7 +286,7 @@ export function Template1({ runner, timings, campaign, bgImage, slipRef, showFie
                                     {[
                                         { key: 'overallRank', label: 'Overall', val: runner.overallRank || '-' },
                                         { key: 'genderRank', label: 'Gender', val: runner.genderRank || runner.genderNetRank || '-' },
-                                        { key: 'categoryRank', label: 'Age Group', sub: 'อายุ', val: runner.categoryRank || runner.categoryNetRank || '-' },
+                                        { key: 'categoryRank', label: 'Age Group', sub: 'ช่วงอายุ', val: runner.categoryRank || runner.categoryNetRank || '-' },
                                     ].filter(r => showField(r.key)).map((r, i) => (
                                         <div key={i} className="text-center min-w-[60px]">
                                             <div className="text-[10px] font-black text-white uppercase">{r.label}{r.sub && <span className="text-[8px] font-bold normal-case opacity-80"> ({r.sub})</span>}</div>
@@ -379,12 +380,12 @@ export function Template2({ runner, timings, campaign, bgImage, slipRef, showFie
     const netTimeStr = runner.netTimeStr || formatTime(runner.netTime);
     // Sort by scanTime ascending — order is unreliable when admin manually adds a
     // checkpoint (the new record's `order` may slot in front of RaceTiger-synced rows).
-    const sortedTimings = [...timings].sort((a, b) => {
+    const sortedTimings = dedupeTimings([...timings].sort((a, b) => {
         const ta = a.scanTime ? new Date(a.scanTime).getTime() : 0;
         const tb = b.scanTime ? new Date(b.scanTime).getTime() : 0;
         if (ta !== tb) return ta - tb;
         return (a.order || 0) - (b.order || 0);
-    });
+    }));
     const displayTimings = sortedTimings.slice(-7);
     const isLightText = textColorMode === 'light';
     const primaryTextClass = isLightText ? 'text-white' : 'text-black';
@@ -495,7 +496,7 @@ export function Template2({ runner, timings, campaign, bgImage, slipRef, showFie
                                 {[
                                     { key: 'overallRank', label: 'Overall', val: runner.overallRank || '-' },
                                     { key: 'genderRank', label: 'Gender', val: runner.genderRank || runner.genderNetRank || '-' },
-                                    { key: 'categoryRank', label: 'Age Group', sub: 'อายุ', val: runner.categoryRank || runner.categoryNetRank || '-' },
+                                    { key: 'categoryRank', label: 'Age Group', sub: 'ช่วงอายุ', val: runner.categoryRank || runner.categoryNetRank || '-' },
                                 ].filter(r => showField(r.key)).map((r, i, arr) => (
                                     <div key={i} className="flex-1 text-center relative flex flex-col justify-center px-3 py-1.5">
                                         {i < arr.length - 1 && <div className={`absolute right-0 top-[18%] h-[64%] w-px ${dividerClass}`} />}
@@ -549,12 +550,12 @@ function DefaultCard({ runner, timings, campaign, slipRef, showField, awardLabel
     const netTimeStr = runner.netTimeStr || formatTime(runner.netTime);
     // Sort by scanTime ascending — order is unreliable when admin manually adds a
     // checkpoint (the new record's `order` may slot in front of RaceTiger-synced rows).
-    const sortedTimings = [...timings].sort((a, b) => {
+    const sortedTimings = dedupeTimings([...timings].sort((a, b) => {
         const ta = a.scanTime ? new Date(a.scanTime).getTime() : 0;
         const tb = b.scanTime ? new Date(b.scanTime).getTime() : 0;
         if (ta !== tb) return ta - tb;
         return (a.order || 0) - (b.order || 0);
-    });
+    }));
     const displayTimings = sortedTimings.slice(-7);
     const showBanner = withLogo && !!campaign?.eslipLogoUrl;
 
@@ -646,7 +647,7 @@ function DefaultCard({ runner, timings, campaign, slipRef, showField, awardLabel
                         {[
                             { key: 'overallRank', label: 'Overall', val: runner.overallRank || '-' },
                             { key: 'genderRank', label: 'Gender', val: runner.genderRank || runner.genderNetRank || '-' },
-                            { key: 'categoryRank', label: 'Age Group', sub: 'อายุ', val: runner.categoryRank || runner.categoryNetRank || '-' },
+                            { key: 'categoryRank', label: 'Age Group', sub: 'ช่วงอายุ', val: runner.categoryRank || runner.categoryNetRank || '-' },
                         ].filter(r => showField(r.key)).map((r, i) => (
                             <div key={i} className="bg-slate-50 rounded-xl py-2.5 px-3 text-center border border-slate-100 min-w-[80px]">
                                 <div className="text-base font-black text-slate-900">{r.val}</div>
@@ -748,12 +749,12 @@ export function checkpointLabelFor(t: TimingRecord): string {
 }
 
 export function ESlipV2SplitsTable({ el, timings }: { el: ESlipV2Element; timings: TimingRecord[] }) {
-    const sorted = [...timings].sort((a, b) => {
+    const sorted = dedupeTimings([...timings].sort((a, b) => {
         const ta = a.scanTime ? new Date(a.scanTime).getTime() : 0;
         const tb = b.scanTime ? new Date(b.scanTime).getTime() : 0;
         if (ta !== tb) return ta - tb;
         return (a.order || 0) - (b.order || 0);
-    });
+    }));
     const rows = sorted.filter(t => !((t.checkpoint || '').toLowerCase().includes('start')));
 
     const gap = el.rowGap ?? 6;

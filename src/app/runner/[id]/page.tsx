@@ -8,6 +8,7 @@ import { isRunnerFollowed, loadFollowedRunners, saveFollowedRunners, subscribeFo
 import { computeAwardsForCategory, computeOverallRanks, computeGenderRanks, computeAgeGroupRanks, formatOverallAwardLabel, type AwardResult } from '@/lib/awards';
 import { bestOfProvinceAwardFor } from '@/lib/thai-provinces';
 import { isNationalitySplitCategory } from '@/lib/nationality';
+import { dedupeTimings } from '@/lib/timing-dedupe';
 import { useLanguage } from '@/lib/language-context';
 
 
@@ -564,12 +565,14 @@ export default function RunnerProfilePage() {
     // `order` is unreliable when admin manually adds a checkpoint (the new record
     // gets a fresh sequence number that may slot in front of RaceTiger-synced rows
     // whose `order` starts at 1000+). Fall back to `order` only when scanTimes tie.
-    const sortedTimings = [...timings].sort((a, b) => {
+    // Duplicate reads at the same mat (double scan / re-sync) are collapsed so a
+    // checkpoint like FINISH is never listed twice.
+    const sortedTimings = dedupeTimings([...timings].sort((a, b) => {
         const ta = a.scanTime ? new Date(a.scanTime).getTime() : 0;
         const tb = b.scanTime ? new Date(b.scanTime).getTime() : 0;
         if (ta !== tb) return ta - tb;
         return (a.order || 0) - (b.order || 0);
-    });
+    }));
 
     // Build a checkpoint-name → distanceFromStart lookup from the event mappings,
     // since RaceTiger does NOT store per-record distance on the timing entries.

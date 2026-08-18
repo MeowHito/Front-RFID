@@ -443,7 +443,7 @@ export default function Home() {
       </header>
 
       {/* Hero Section */}
-      <section className="relative z-10 px-4 sm:px-6 overflow-hidden min-h-[50vh] flex items-center justify-center" style={{ background: 'var(--background)' }}>
+      <section className="relative z-10 px-4 sm:px-6 py-10 sm:py-16 overflow-hidden min-h-0 sm:min-h-[40vh] flex items-center justify-center" style={{ background: 'var(--background)' }}>
         <div className="max-w-4xl mx-auto w-full text-center flex flex-col items-center justify-center">
           <h1 className="text-3xl sm:text-5xl font-bold mb-4 tracking-tight" style={{ color: 'var(--foreground)' }}>
             {t('hero.title1')} <span style={{ color: 'var(--accent)' }}>RFID</span> {t('hero.title2')}

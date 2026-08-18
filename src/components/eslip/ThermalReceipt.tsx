@@ -1,5 +1,7 @@
 'use client';
 
+import { dedupeTimings } from '@/lib/timing-dedupe';
+
 import {
     RunnerData,
     TimingRecord,
@@ -42,13 +44,13 @@ export default function ThermalReceipt({
     const netTimeStr = runner.netTimeStr || formatTime(runner.netTime);
 
     // Sort by scanTime ascending (same tie-break as Template3), drop START markers.
-    const rows = [...timings]
+    const rows = dedupeTimings([...timings]
         .sort((a, b) => {
             const ta = a.scanTime ? new Date(a.scanTime).getTime() : 0;
             const tb = b.scanTime ? new Date(b.scanTime).getTime() : 0;
             if (ta !== tb) return ta - tb;
             return (a.order || 0) - (b.order || 0);
-        })
+        }))
         .filter(t => !((t.checkpoint || '').toLowerCase().includes('start')));
 
     const printedAt = new Date().toLocaleString('th-TH', {
