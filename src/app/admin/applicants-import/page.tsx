@@ -48,6 +48,11 @@ const EN_HEADER_MAP: { field: FieldKey; keywords: string[] }[] = [
     { field: 'firstNameEn', keywords: ['ชื่อจริง', 'ชื่อ', 'firstname', 'first name', 'name'] },
 ];
 const EN_NAME_EXCLUDE = ['ทีม', 'team', 'club', 'อีเว้นท์', 'อีเวนท์', 'event', 'อีเมล', 'email'];
+const THAI_CHAR_RE = /[\u0E00-\u0E7F]/;
+// Latin-only name headers ("First Name", "Last Name", "Full Name") are the
+// English spelling columns — the Thai ones are always labelled in Thai.
+// A bare "Name" is left to the normal map, it's too generic to claim.
+const LATIN_EN_NAME_KEYWORDS = ['firstname', 'first name', 'lastname', 'last name', 'surname', 'fullname', 'full name'];
 
 // Header keyword → field. Checked in order, so more specific entries come first.
 // `exclude` lets a field bow out for look-alike headers (e.g. "หมายเลขออเดอร์"
@@ -72,7 +77,10 @@ function detectField(header: string): FieldKey | null {
     const h = header.toLowerCase().replace(/\s+/g, ' ').trim();
     // A header marked as English maps to the *En name fields when it names a
     // person; otherwise it falls through to the normal map.
-    if (EN_MARKER_RE.test(h) && !EN_NAME_EXCLUDE.some(k => h.includes(k))) {
+    const looksEnglishName =
+        EN_MARKER_RE.test(h) ||
+        (!THAI_CHAR_RE.test(h) && LATIN_EN_NAME_KEYWORDS.some(k => h.includes(k)));
+    if (looksEnglishName && !EN_NAME_EXCLUDE.some(k => h.includes(k))) {
         for (const { field, keywords } of EN_HEADER_MAP) {
             if (keywords.some(k => h.includes(k.toLowerCase()))) return field;
         }
@@ -338,7 +346,7 @@ export default function ApplicantsImportPage() {
 
     const downloadTemplate = () => {
         const ws = XLSX.utils.aoa_to_sheet([
-            ['เลขบัตรประชาชน', 'BIB', 'ชื่อ', 'นามสกุล', 'ชื่อ (ภาษาอังกฤษ)', 'นามสกุล (ภาษาอังกฤษ)', 'เบอร์โทร', 'อายุ', 'เพศ', 'กลุ่มอายุ', 'ขนาดเสื้อ', 'ประเภท'],
+            ['เลขบัตรประชาชน', 'BIB', 'ชื่อ', 'นามสกุล', 'First Name', 'Last Name', 'เบอร์โทร', 'อายุ', 'เพศ', 'กลุ่มอายุ', 'ขนาดเสื้อ', 'ประเภท'],
             ['1234567890123', '001', 'ดีใจ', 'ใจดี', 'Deejai', 'Jaidee', '0812345678', '38', 'ชาย', '35-39 ปี', '2XL', '10K'],
         ]);
         const wb = XLSX.utils.book_new();
@@ -447,7 +455,7 @@ export default function ApplicantsImportPage() {
                                 {fileName || (language === 'th' ? 'ลากไฟล์ Excel มาวาง หรือคลิกเพื่อเลือกไฟล์' : 'Drag an Excel file here or click to choose')}
                             </div>
                             <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 4 }}>
-                                {language === 'th' ? 'รองรับ .xlsx .xls .csv — คอลัมน์: เลขบัตรประชาชน, BIB, ชื่อ, นามสกุล, ชื่อ/นามสกุล (ภาษาอังกฤษ), เบอร์โทร, อายุ, เพศ, กลุ่มอายุ, ขนาดเสื้อ' : 'Supports .xlsx .xls .csv'}
+                                {language === 'th' ? 'รองรับ .xlsx .xls .csv — คอลัมน์: เลขบัตรประชาชน, BIB, ชื่อ, นามสกุล, First Name, Last Name, เบอร์โทร, อายุ, เพศ, กลุ่มอายุ, ขนาดเสื้อ' : 'Supports .xlsx .xls .csv'}
                             </div>
                             <input ref={fileInputRef} type="file" accept=".xlsx,.xls,.csv" onChange={handleFileChange} style={{ display: 'none' }} />
                         </div>
