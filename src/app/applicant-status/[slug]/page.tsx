@@ -10,6 +10,9 @@ interface Applicant {
     firstName?: string;
     lastName?: string;
     fullName?: string;
+    firstNameEn?: string;
+    lastNameEn?: string;
+    fullNameEn?: string;
     phone?: string;
     age?: number | null;
     gender?: string;
@@ -36,6 +39,15 @@ function ageGroupLabel(g?: string): string {
     if (range) return `${range[0].replace(/\s+/g, '')} ปี`;
     if (/ไม่มี/.test(g)) return '-';
     return g.replace(/[()]/g, '').replace(/กลุ่มอายุ/g, '').replace(/ชาย|หญิง|male|female/gi, '').trim() || '-';
+}
+
+/** Thai (primary) and English (secondary) name lines for a result row. */
+function nameLines(r: Applicant): { th: string; en: string } {
+    const th = (r.fullName || `${r.firstName || ''} ${r.lastName || ''}`.trim()).trim();
+    const en = (r.fullNameEn || `${r.firstNameEn || ''} ${r.lastNameEn || ''}`.trim()).trim();
+    // Rosters with only an English name still get one visible line
+    if (!th && en) return { th: en, en: '' };
+    return { th: th || '-', en };
 }
 
 const COLORS = {
@@ -244,11 +256,14 @@ export default function ApplicantStatusPage() {
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {results.map((r, idx) => (
+                                    {results.map((r, idx) => {
+                                        const nm = nameLines(r);
+                                        return (
                                         <tr key={r._id || idx} style={{ borderBottom: `1px solid #f1f5f9` }}>
                                             <td style={{ ...tdStyle, fontWeight: 700, color: COLORS.primary, textAlign: 'center' }}>{r.bib || '-'}</td>
                                             <td style={{ ...tdStyle, textAlign: 'left', fontWeight: 600, color: COLORS.text }}>
-                                                {r.fullName || `${r.firstName || ''} ${r.lastName || ''}`.trim() || '-'}
+                                                {nm.th}
+                                                {nm.en ? <span style={{ display: 'block', fontSize: 13, color: COLORS.textMuted, fontWeight: 500 }}>{nm.en}</span> : null}
                                                 {r.team ? <span style={{ display: 'block', fontSize: 12, color: COLORS.label, fontWeight: 400 }}>{r.team}</span> : null}
                                             </td>
                                             {hasCategory && <td style={{ ...tdStyle, textAlign: 'center', fontWeight: 600 }}>{r.category || '-'}</td>}
@@ -266,7 +281,8 @@ export default function ApplicantStatusPage() {
                                             <td style={{ ...tdStyle, textAlign: 'center', fontWeight: 600 }}>{r.shirtSize || '-'}</td>
                                             {hasChallenge && <td style={{ ...tdStyle, textAlign: 'center', fontWeight: 600 }}>{r.challenge || '-'}</td>}
                                         </tr>
-                                    ))}
+                                        );
+                                    })}
                                 </tbody>
                             </table>
                         </div>
@@ -274,7 +290,7 @@ export default function ApplicantStatusPage() {
                         {/* Mobile — vertical key/value table per result, fits one screen, no scroll */}
                         <div className="aps-mobile-table" style={{ display: 'none', flexDirection: 'column', gap: 14 }}>
                             {results.map((r, idx) => {
-                                const name = r.fullName || `${r.firstName || ''} ${r.lastName || ''}`.trim() || '-';
+                                const { th: nameTh, en: nameEn } = nameLines(r);
                                 const female = genderLabel(r.gender) === 'หญิง';
                                 const rows: { label: string; value: React.ReactNode }[] = [
                                     { label: 'BIB', value: <span style={{ color: COLORS.primary, fontWeight: 800 }}>{r.bib || '-'}</span> },
@@ -295,7 +311,8 @@ export default function ApplicantStatusPage() {
                                     <div key={r._id || idx} style={{ background: COLORS.card, border: `1px solid ${COLORS.border}`, borderRadius: 16, overflow: 'hidden', boxShadow: '0 4px 20px -10px rgba(0,0,0,0.1)' }}>
                                         {/* Name band */}
                                         <div style={{ background: 'rgba(0,63,177,0.06)', padding: 'clamp(10px,3vw,14px) 14px', borderBottom: `1px solid ${COLORS.border}` }}>
-                                            <div style={{ fontWeight: 800, fontSize: 'clamp(15px,4.4vw,18px)', color: COLORS.text, lineHeight: 1.3, wordBreak: 'break-word' }}>{name}</div>
+                                            <div style={{ fontWeight: 800, fontSize: 'clamp(15px,4.4vw,18px)', color: COLORS.text, lineHeight: 1.3, wordBreak: 'break-word' }}>{nameTh}</div>
+                                            {nameEn ? <div style={{ fontWeight: 600, fontSize: 'clamp(13px,3.8vw,15px)', color: COLORS.textMuted, lineHeight: 1.3, marginTop: 2, wordBreak: 'break-word' }}>{nameEn}</div> : null}
                                             {r.team ? <div style={{ fontSize: 'clamp(12px,3.4vw,13px)', color: COLORS.label, marginTop: 2 }}>{r.team}</div> : null}
                                         </div>
                                         {/* Field rows */}

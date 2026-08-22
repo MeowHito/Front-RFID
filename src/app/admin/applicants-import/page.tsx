@@ -20,6 +20,9 @@ interface ApplicantRow {
     firstName: string;
     lastName: string;
     fullName: string;
+    firstNameEn: string;
+    lastNameEn: string;
+    fullNameEn: string;
     phone: string;
     age: string;
     gender: string;
@@ -33,15 +36,28 @@ interface ApplicantRow {
 
 type FieldKey = keyof Omit<ApplicantRow, 'extra'>;
 
+// Markers that flag a column as the English-language spelling of a name
+// (rosters use "(ภาษาอังกฤษ)", "(Eng)", "Name EN", …).
+const EN_MARKER_RE = /ภาษาอังกฤษ|อังกฤษ|english|\ben\b|\beng\b/i;
+
+// English-name columns, checked before everything else when the header carries
+// an English marker.
+const EN_HEADER_MAP: { field: FieldKey; keywords: string[] }[] = [
+    { field: 'fullNameEn', keywords: ['ชื่อ-นามสกุล', 'ชื่อ - นามสกุล', 'ชื่อ นามสกุล', 'ชื่อสกุล', 'ชื่อ-สกุล', 'fullname', 'full name'] },
+    { field: 'lastNameEn', keywords: ['นามสกุล', 'สกุล', 'lastname', 'last name', 'surname'] },
+    { field: 'firstNameEn', keywords: ['ชื่อจริง', 'ชื่อ', 'firstname', 'first name', 'name'] },
+];
+const EN_NAME_EXCLUDE = ['ทีม', 'team', 'club', 'อีเว้นท์', 'อีเวนท์', 'event', 'อีเมล', 'email'];
+
 // Header keyword → field. Checked in order, so more specific entries come first.
 // `exclude` lets a field bow out for look-alike headers (e.g. "หมายเลขออเดอร์"
 // is an order number, not a BIB; "ชื่อทีม"/"ชื่ออีเว้นท์" are not a person's name).
 const HEADER_MAP: { field: FieldKey; keywords: string[]; exclude?: string[] }[] = [
     { field: 'challenge', keywords: ['challenge', 'เลือกเวลาในการลงแข่งขัน'] },
     { field: 'idCard', keywords: ['เลขบัตร', 'บัตรประชาชน', 'ประชาชน', 'เลขประจำตัว', 'idcard', 'id card', 'citizen', 'cid', 'national'] },
-    { field: 'fullName', keywords: ['ชื่อ-นามสกุล', 'ชื่อ - นามสกุล', 'ชื่อ นามสกุล', 'ชื่อสกุล', 'ชื่อ-สกุล', 'fullname', 'full name'] },
-    { field: 'lastName', keywords: ['นามสกุล', 'สกุล', 'lastname', 'last name', 'surname'] },
-    { field: 'firstName', keywords: ['ชื่อจริง', 'ชื่อ', 'firstname', 'first name', 'name'], exclude: ['ทีม', 'team', 'อีเว้นท์', 'อีเวนท์', 'event', 'อีเมล'] },
+    { field: 'fullName', keywords: ['ชื่อ-นามสกุล', 'ชื่อ - นามสกุล', 'ชื่อ นามสกุล', 'ชื่อสกุล', 'ชื่อ-สกุล', 'fullname', 'full name'], exclude: ['อังกฤษ', 'english'] },
+    { field: 'lastName', keywords: ['นามสกุล', 'สกุล', 'lastname', 'last name', 'surname'], exclude: ['อังกฤษ', 'english'] },
+    { field: 'firstName', keywords: ['ชื่อจริง', 'ชื่อ', 'firstname', 'first name', 'name'], exclude: ['ทีม', 'team', 'อีเว้นท์', 'อีเวนท์', 'event', 'อีเมล', 'อังกฤษ', 'english'] },
     { field: 'bib', keywords: ['bib', 'บิบ', 'หมายเลข', 'เลขวิ่ง', 'เบอร์วิ่ง', 'เบอร์เสื้อ', 'number', 'no.'], exclude: ['ออเดอร์', 'order', 'โทร'] },
     { field: 'phone', keywords: ['เบอร์โทร', 'เบอร์', 'โทรศัพท์', 'โทร', 'phone', 'mobile', 'tel'], exclude: ['ฉุกเฉิน', 'ติดต่อฉุกเฉิน'] },
     { field: 'ageGroup', keywords: ['กลุ่มอายุ', 'รุ่นอายุ', 'age group', 'agegroup', 'รุ่น'] },
@@ -54,6 +70,13 @@ const HEADER_MAP: { field: FieldKey; keywords: string[]; exclude?: string[] }[] 
 
 function detectField(header: string): FieldKey | null {
     const h = header.toLowerCase().replace(/\s+/g, ' ').trim();
+    // A header marked as English maps to the *En name fields when it names a
+    // person; otherwise it falls through to the normal map.
+    if (EN_MARKER_RE.test(h) && !EN_NAME_EXCLUDE.some(k => h.includes(k))) {
+        for (const { field, keywords } of EN_HEADER_MAP) {
+            if (keywords.some(k => h.includes(k.toLowerCase()))) return field;
+        }
+    }
     for (const { field, keywords, exclude } of HEADER_MAP) {
         if (exclude && exclude.some(k => h.includes(k.toLowerCase()))) continue;
         if (keywords.some(k => h.includes(k.toLowerCase()))) return field;
@@ -83,13 +106,14 @@ function detectHeaderRow(aoa: unknown[][]): number {
 }
 
 function blankRow(): ApplicantRow {
-    return { idCard: '', bib: '', firstName: '', lastName: '', fullName: '', phone: '', age: '', gender: '', ageGroup: '', shirtSize: '', category: '', team: '', challenge: '', extra: {} };
+    return { idCard: '', bib: '', firstName: '', lastName: '', fullName: '', firstNameEn: '', lastNameEn: '', fullNameEn: '', phone: '', age: '', gender: '', ageGroup: '', shirtSize: '', category: '', team: '', challenge: '', extra: {} };
 }
 
 const PREVIEW_COLS: { field: FieldKey; th: string; en: string }[] = [
     { field: 'bib', th: 'BIB', en: 'BIB' },
     { field: 'idCard', th: 'เลขบัตรประชาชน', en: 'ID Card' },
-    { field: 'fullName', th: 'ชื่อ-นามสกุล', en: 'Full Name' },
+    { field: 'fullName', th: 'ชื่อ-นามสกุล (ไทย)', en: 'Full Name (TH)' },
+    { field: 'fullNameEn', th: 'ชื่อ-นามสกุล (อังกฤษ)', en: 'Full Name (EN)' },
     { field: 'phone', th: 'เบอร์โทร', en: 'Phone' },
     { field: 'age', th: 'อายุ', en: 'Age' },
     { field: 'gender', th: 'เพศ', en: 'Gender' },
@@ -192,7 +216,15 @@ export default function ApplicantsImportPage() {
                     row.firstName = parts.shift() || '';
                     row.lastName = parts.join(' ');
                 }
-                if (row.fullName || row.idCard || row.bib || row.phone) allRows.push(row);
+                if (!row.fullNameEn && (row.firstNameEn || row.lastNameEn)) {
+                    row.fullNameEn = `${row.firstNameEn} ${row.lastNameEn}`.trim();
+                }
+                if (row.fullNameEn && !row.firstNameEn && !row.lastNameEn) {
+                    const partsEn = row.fullNameEn.split(/\s+/);
+                    row.firstNameEn = partsEn.shift() || '';
+                    row.lastNameEn = partsEn.join(' ');
+                }
+                if (row.fullName || row.fullNameEn || row.idCard || row.bib || row.phone) allRows.push(row);
             }
         }
 
@@ -248,7 +280,8 @@ export default function ApplicantsImportPage() {
             // columns push the payload past the reverse-proxy body limit → HTTP 413.
             const slim = rows.map(r => ({
                 idCard: r.idCard, bib: r.bib, firstName: r.firstName, lastName: r.lastName,
-                fullName: r.fullName, phone: r.phone, age: r.age, gender: r.gender,
+                fullName: r.fullName, firstNameEn: r.firstNameEn, lastNameEn: r.lastNameEn,
+                fullNameEn: r.fullNameEn, phone: r.phone, age: r.age, gender: r.gender,
                 ageGroup: r.ageGroup, shirtSize: r.shirtSize, category: r.category,
                 team: r.team, challenge: r.challenge,
             }));
@@ -305,8 +338,8 @@ export default function ApplicantsImportPage() {
 
     const downloadTemplate = () => {
         const ws = XLSX.utils.aoa_to_sheet([
-            ['เลขบัตรประชาชน', 'BIB', 'ชื่อ', 'นามสกุล', 'เบอร์โทร', 'อายุ', 'เพศ', 'กลุ่มอายุ', 'ขนาดเสื้อ', 'ประเภท'],
-            ['1234567890123', '001', 'ดีใจ', 'ใจดี', '0812345678', '38', 'ชาย', '35-39 ปี', '2XL', '10K'],
+            ['เลขบัตรประชาชน', 'BIB', 'ชื่อ', 'นามสกุล', 'ชื่อ (ภาษาอังกฤษ)', 'นามสกุล (ภาษาอังกฤษ)', 'เบอร์โทร', 'อายุ', 'เพศ', 'กลุ่มอายุ', 'ขนาดเสื้อ', 'ประเภท'],
+            ['1234567890123', '001', 'ดีใจ', 'ใจดี', 'Deejai', 'Jaidee', '0812345678', '38', 'ชาย', '35-39 ปี', '2XL', '10K'],
         ]);
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, 'Applicants');
@@ -414,7 +447,7 @@ export default function ApplicantsImportPage() {
                                 {fileName || (language === 'th' ? 'ลากไฟล์ Excel มาวาง หรือคลิกเพื่อเลือกไฟล์' : 'Drag an Excel file here or click to choose')}
                             </div>
                             <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 4 }}>
-                                {language === 'th' ? 'รองรับ .xlsx .xls .csv — คอลัมน์: เลขบัตรประชาชน, BIB, ชื่อ, นามสกุล, เบอร์โทร, อายุ, เพศ, กลุ่มอายุ, ขนาดเสื้อ' : 'Supports .xlsx .xls .csv'}
+                                {language === 'th' ? 'รองรับ .xlsx .xls .csv — คอลัมน์: เลขบัตรประชาชน, BIB, ชื่อ, นามสกุล, ชื่อ/นามสกุล (ภาษาอังกฤษ), เบอร์โทร, อายุ, เพศ, กลุ่มอายุ, ขนาดเสื้อ' : 'Supports .xlsx .xls .csv'}
                             </div>
                             <input ref={fileInputRef} type="file" accept=".xlsx,.xls,.csv" onChange={handleFileChange} style={{ display: 'none' }} />
                         </div>
