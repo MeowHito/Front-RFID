@@ -144,6 +144,16 @@ export interface ESlipV2Layout {
     elements: ESlipV2Element[];
 }
 
+/** Rank grid rows shared by every template: Overall / Gender carry a "/ field size"
+ *  suffix, Age Group carries the runner's own age band (e.g. "(50 - 59)"). */
+export function rankRows(runner: RunnerData) {
+    return [
+        { key: 'overallRank', label: 'Overall', val: runner.overallRank || '-', suffix: runner.totalFinishers ? `/ ${runner.totalFinishers}` : '' },
+        { key: 'genderRank', label: 'Gender', val: runner.genderRank || runner.genderNetRank || '-', suffix: runner.genderFinishers ? `/ ${runner.genderFinishers}` : '' },
+        { key: 'categoryRank', label: 'Age Group', val: runner.categoryRank || runner.categoryNetRank || '-', suffix: runner.ageGroup ? `(${runner.ageGroup})` : '' },
+    ];
+}
+
 export function formatTime(ms?: number | null): string {
     if (!ms || ms <= 0) return '--:--:--';
     const totalSeconds = Math.floor(ms / 1000);
@@ -283,14 +293,10 @@ export function Template1({ runner, timings, campaign, bgImage, slipRef, showFie
                             {/* Top row: Overall / Gender / Category */}
                             {(showField('overallRank') || showField('genderRank') || showField('categoryRank')) && (
                                 <div className={`flex justify-center gap-8 ${(showField('gunTime') || showField('netTime')) ? 'pb-3 border-b border-white/10' : ''}`}>
-                                    {[
-                                        { key: 'overallRank', label: 'Overall', val: runner.overallRank || '-' },
-                                        { key: 'genderRank', label: 'Gender', val: runner.genderRank || runner.genderNetRank || '-' },
-                                        { key: 'categoryRank', label: 'Age Group', sub: runner.ageGroup, val: runner.categoryRank || runner.categoryNetRank || '-' },
-                                    ].filter(r => showField(r.key)).map((r, i) => (
+                                    {rankRows(runner).filter(r => showField(r.key)).map((r, i) => (
                                         <div key={i} className="text-center min-w-[60px]">
-                                            <div className="text-[10px] font-black text-white uppercase">{r.label}{r.sub && <span className="text-[8px] font-bold normal-case opacity-80"> ({r.sub})</span>}</div>
-                                            <div className="text-xl font-black text-white">{r.val}</div>
+                                            <div className="text-[10px] font-black text-white uppercase">{r.label}</div>
+                                            <div className="text-xl font-black text-white">{r.val}{r.suffix && <span className="text-[10px] font-bold opacity-70"> {r.suffix}</span>}</div>
                                         </div>
                                     ))}
                                 </div>
@@ -493,15 +499,11 @@ export function Template2({ runner, timings, campaign, bgImage, slipRef, showFie
                         <>
                             {/* Old boxed rank grid: <div className="bg-white/50 backdrop-blur-md rounded-[20px] border border-white/55 px-1 py-3 mb-5 flex justify-around items-stretch"> */}
                             <div className="px-1 py-3 mb-5 flex justify-around items-stretch">
-                                {[
-                                    { key: 'overallRank', label: 'Overall', val: runner.overallRank || '-' },
-                                    { key: 'genderRank', label: 'Gender', val: runner.genderRank || runner.genderNetRank || '-' },
-                                    { key: 'categoryRank', label: 'Age Group', sub: runner.ageGroup, val: runner.categoryRank || runner.categoryNetRank || '-' },
-                                ].filter(r => showField(r.key)).map((r, i, arr) => (
+                                {rankRows(runner).filter(r => showField(r.key)).map((r, i, arr) => (
                                     <div key={i} className="flex-1 text-center relative flex flex-col justify-center px-3 py-1.5">
                                         {i < arr.length - 1 && <div className={`absolute right-0 top-[18%] h-[64%] w-px ${dividerClass}`} />}
-                                        <div className={`text-base font-black ${primaryTextClass}`}>{r.val}</div>
-                                        <div className={`text-[8px] font-extrabold uppercase ${mutedTextClass}`}>{r.label}{r.sub && <span className="normal-case opacity-80"> ({r.sub})</span>}</div>
+                                        <div className={`text-base font-black ${primaryTextClass}`}>{r.val}{r.suffix && <span className={`text-[9px] font-bold ${mutedTextClass}`}> {r.suffix}</span>}</div>
+                                        <div className={`text-[8px] font-extrabold uppercase ${mutedTextClass}`}>{r.label}</div>
                                     </div>
                                 ))}
                             </div>
@@ -644,14 +646,10 @@ function DefaultCard({ runner, timings, campaign, slipRef, showField, awardLabel
                 {/* Rank Grid */}
                 {(showField('overallRank') || showField('genderRank') || showField('categoryRank')) && (
                     <div className="flex justify-center gap-1.5 mb-5">
-                        {[
-                            { key: 'overallRank', label: 'Overall', val: runner.overallRank || '-' },
-                            { key: 'genderRank', label: 'Gender', val: runner.genderRank || runner.genderNetRank || '-' },
-                            { key: 'categoryRank', label: 'Age Group', sub: runner.ageGroup, val: runner.categoryRank || runner.categoryNetRank || '-' },
-                        ].filter(r => showField(r.key)).map((r, i) => (
+                        {rankRows(runner).filter(r => showField(r.key)).map((r, i) => (
                             <div key={i} className="bg-slate-50 rounded-xl py-2.5 px-3 text-center border border-slate-100 min-w-[80px]">
-                                <div className="text-base font-black text-slate-900">{r.val}</div>
-                                <div className="text-[8px] font-extrabold text-slate-500 uppercase">{r.label}{r.sub && <span className="normal-case opacity-80"> ({r.sub})</span>}</div>
+                                <div className="text-base font-black text-slate-900">{r.val}{r.suffix && <span className="text-[9px] font-bold text-slate-400"> {r.suffix}</span>}</div>
+                                <div className="text-[8px] font-extrabold text-slate-500 uppercase">{r.label}</div>
                             </div>
                         ))}
                     </div>
