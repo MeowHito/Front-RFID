@@ -178,7 +178,7 @@ export default function ScanningBySlugPage() {
         setLoading(true);
         setPhotoUploaded(false);
         try {
-            const params = new URLSearchParams({ campaignId: campaign?._id || '', code });
+            const params = new URLSearchParams({ campaignId: campaign?._id || '', code, checkIn: '1' });
             const res = await fetch(`/api/runners/lookup?${params.toString()}`);
             const data = await res.json();
             const foundRunner = data.runner || null;

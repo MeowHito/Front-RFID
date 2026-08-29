@@ -167,7 +167,7 @@ export default function ScanningSlipPage() {
         setLoading(true);
         setPhotoUrl(null);
         try {
-            const lookupParams = new URLSearchParams({ campaignId: campaign?._id || '', code });
+            const lookupParams = new URLSearchParams({ campaignId: campaign?._id || '', code, checkIn: '1' });
             const lookupRes = await fetch(`/api/runners/lookup?${lookupParams.toString()}`);
             const lookup = await lookupRes.json();
             const found = lookup.runner || null;

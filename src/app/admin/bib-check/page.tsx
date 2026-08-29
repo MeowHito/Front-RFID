@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import AdminLayout from '../AdminLayout';
 import { authHeaders } from '@/lib/authHeaders';
+import CheckedInPanel from './CheckedInPanel';
 
 interface Campaign {
     _id: string;
@@ -164,6 +165,9 @@ export default function BibCheckPage() {
                     </div>
                 ) : (
                     <>
+                        {/* Bib-check counter + drill-down list */}
+                        <CheckedInPanel campaignId={campaign._id} />
+
                         {/* Single Template Preview */}
                         <div style={{ marginBottom: 32 }}>
                             <div

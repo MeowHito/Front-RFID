@@ -130,6 +130,25 @@ const PREVIEW_COLS: { field: FieldKey; th: string; en: string }[] = [
     { field: 'challenge', th: 'Challenge', en: 'Challenge' },
 ];
 
+// Columns written by "ดาวน์โหลดข้อมูลเดิม". Header names are the ones the
+// importer detects, so an exported file re-imports cleanly after editing.
+const EXPORT_COLS: { field: FieldKey; th: string; width: number }[] = [
+    { field: 'idCard', th: 'เลขบัตรประชาชน', width: 18 },
+    { field: 'bib', th: 'BIB', width: 10 },
+    { field: 'firstName', th: 'ชื่อ', width: 18 },
+    { field: 'lastName', th: 'นามสกุล', width: 18 },
+    { field: 'firstNameEn', th: 'ชื่อ (ภาษาอังกฤษ)', width: 18 },
+    { field: 'lastNameEn', th: 'นามสกุล (ภาษาอังกฤษ)', width: 18 },
+    { field: 'phone', th: 'เบอร์โทร', width: 14 },
+    { field: 'age', th: 'อายุ', width: 8 },
+    { field: 'gender', th: 'เพศ', width: 8 },
+    { field: 'ageGroup', th: 'กลุ่มอายุ', width: 16 },
+    { field: 'shirtSize', th: 'ขนาดเสื้อ', width: 10 },
+    { field: 'category', th: 'ประเภท', width: 12 },
+    { field: 'team', th: 'ทีม', width: 16 },
+    { field: 'challenge', th: 'Challenge', width: 16 },
+];
+
 export default function ApplicantsImportPage() {
     const { language } = useLanguage();
     const [campaign, setCampaign] = useState<Campaign | null>(null);
@@ -354,6 +373,42 @@ export default function ApplicantsImportPage() {
         XLSX.writeFile(wb, 'applicants-template.xlsx');
     };
 
+    // Export the roster that is already in the system back to .xlsx, using the
+    // exact header names the importer detects — so the admin can download it,
+    // edit it, and upload the same file straight back.
+    const [exporting, setExporting] = useState(false);
+    const downloadExisting = async () => {
+        if (!campaign?._id || exporting) return;
+        setExporting(true);
+        try {
+            const res = await fetch(`/api/applicants?campaignId=${campaign._id}`, { headers: authHeaders(), cache: 'no-store' });
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const data = await res.json();
+            const list: Record<string, unknown>[] = data?.data || [];
+            if (list.length === 0) {
+                showToast(language === 'th' ? 'ยังไม่มีข้อมูลในระบบ' : 'No data to export', 'error');
+                return;
+            }
+            const header = EXPORT_COLS.map(c => c.th);
+            const body = list.map(r => EXPORT_COLS.map(c => {
+                const v = r[c.field];
+                return v === null || v === undefined ? '' : String(v);
+            }));
+            const ws = XLSX.utils.aoa_to_sheet([header, ...body]);
+            ws['!cols'] = EXPORT_COLS.map(c => ({ wch: c.width }));
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, 'Applicants');
+            const safeName = (campaign.nameTh || campaign.nameEn || campaign.name || 'campaign').replace(/[\\/:*?"<>|]/g, '-').trim();
+            XLSX.writeFile(wb, `applicants-${safeName}-${list.length}.xlsx`);
+            showToast(language === 'th' ? `ดาวน์โหลด ${list.length.toLocaleString()} รายการ` : `Exported ${list.length.toLocaleString()} rows`, 'success');
+        } catch (e: unknown) {
+            const msg = e instanceof Error ? e.message : 'Unknown error';
+            showToast(language === 'th' ? `ดาวน์โหลดไม่สำเร็จ: ${msg}` : `Export failed: ${msg}`, 'error');
+        } finally {
+            setExporting(false);
+        }
+    };
+
     const publicUrl = campaign
         ? `${typeof window !== 'undefined' ? window.location.origin : ''}/applicant-status/${campaign.slug || campaign._id}`
         : '';
@@ -409,6 +464,13 @@ export default function ApplicantsImportPage() {
                                 <button onClick={downloadTemplate} style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid #d1d5db', background: '#fff', cursor: 'pointer', fontSize: 13, fontWeight: 600, color: '#475569' }}>
                                     ⬇️ {language === 'th' ? 'เทมเพลต' : 'Template'}
                                 </button>
+                                {existingCount ? (
+                                    <button onClick={downloadExisting} disabled={exporting} style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid #bae6fd', background: '#f0f9ff', cursor: exporting ? 'wait' : 'pointer', fontSize: 13, fontWeight: 600, color: '#0369a1' }}>
+                                        📥 {exporting
+                                            ? (language === 'th' ? 'กำลังดาวน์โหลด...' : 'Exporting...')
+                                            : (language === 'th' ? 'ดาวน์โหลดข้อมูลเดิม' : 'Export current data')}
+                                    </button>
+                                ) : null}
                                 {existingCount ? (
                                     <button onClick={handleClear} style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid #fecaca', background: '#fef2f2', cursor: 'pointer', fontSize: 13, fontWeight: 600, color: '#dc2626' }}>
                                         🗑️ {language === 'th' ? 'ล้างทั้งหมด' : 'Clear all'}

@@ -133,7 +133,7 @@ export default function ScanningCustomPage() {
         setLoading(true);
         setPhotoUploaded(false);
         try {
-            const qs = new URLSearchParams({ campaignId: campaign?._id || '', code });
+            const qs = new URLSearchParams({ campaignId: campaign?._id || '', code, checkIn: '1' });
             const res = await fetch(`/api/runners/lookup?${qs.toString()}`);
             const data = await res.json();
             const foundRunner = data.runner || null;

@@ -137,7 +137,7 @@ export default function Scanning2BySlugPage() {
         if (!code || loading) return;
         setLoading(true);
         try {
-            const p = new URLSearchParams({ campaignId: campaign?._id || '', code });
+            const p = new URLSearchParams({ campaignId: campaign?._id || '', code, checkIn: '1' });
             const res = await fetch(`/api/runners/lookup?${p.toString()}`);
             const data = await res.json();
             setRunner(data.runner || null);

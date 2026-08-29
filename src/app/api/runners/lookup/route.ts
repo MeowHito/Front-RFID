@@ -6,6 +6,8 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const campaignId = searchParams.get('campaignId');
     const code = searchParams.get('code');
+    // Bib-check scanning screens pass checkIn=1 so the scan is recorded
+    const checkIn = searchParams.get('checkIn');
 
     if (!campaignId || !code) {
         return NextResponse.json(
@@ -16,6 +18,7 @@ export async function GET(request: NextRequest) {
 
     try {
         const params = new URLSearchParams({ campaignId, code });
+        if (checkIn === '1') params.set('checkIn', '1');
         const res = await fetch(
             `${BACKEND_URL}/runners/lookup?${params.toString()}`,
             {
