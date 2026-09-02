@@ -586,8 +586,8 @@ export default function ApplicantsImportPage() {
                         </div>
                     </div>
 
-                    {/* Drop zone */}
-                    <div className="content-box" style={{ padding: 24, marginBottom: 16 }}>
+                    {/* Drop zone — compact, this is a rarely-used fallback */}
+                    <div className="content-box" style={{ padding: 12, marginBottom: 16 }}>
                         <div
                             onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
                             onDragLeave={() => setDragging(false)}
@@ -595,24 +595,26 @@ export default function ApplicantsImportPage() {
                             onClick={() => fileInputRef.current?.click()}
                             style={{
                                 border: `2px dashed ${dragging ? '#3b82f6' : '#cbd5e1'}`,
-                                borderRadius: 12, padding: '36px 20px', textAlign: 'center',
+                                borderRadius: 10, padding: '10px 16px', textAlign: 'left',
                                 cursor: 'pointer', background: dragging ? '#eff6ff' : '#f8fafc',
-                                transition: 'all 0.15s',
+                                transition: 'all 0.15s', display: 'flex', alignItems: 'center', gap: 12,
                             }}
                         >
-                            <div style={{ fontSize: 40, marginBottom: 8 }}>📂</div>
-                            <div style={{ fontSize: 15, fontWeight: 700, color: '#334155' }}>
-                                {fileName || (language === 'th' ? 'ลากไฟล์ Excel มาวาง หรือคลิกเพื่อเลือกไฟล์' : 'Drag an Excel file here or click to choose')}
-                            </div>
-                            <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 4 }}>
-                                {language === 'th' ? 'รองรับ .xlsx .xls .csv — คอลัมน์: เลขบัตรประชาชน, BIB, ชื่อ, นามสกุล, First Name, Last Name, เบอร์โทร, อายุ, เพศ, กลุ่มอายุ, ขนาดเสื้อ' : 'Supports .xlsx .xls .csv'}
+                            <div style={{ fontSize: 22 }}>📂</div>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ fontSize: 13, fontWeight: 700, color: '#334155' }}>
+                                    {fileName || (language === 'th' ? 'ลากไฟล์ Excel มาวาง หรือคลิกเพื่อเลือกไฟล์' : 'Drag an Excel file here or click to choose')}
+                                </div>
+                                <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>
+                                    {language === 'th' ? 'รองรับ .xlsx .xls .csv' : 'Supports .xlsx .xls .csv'}
+                                </div>
                             </div>
                             <input ref={fileInputRef} type="file" accept=".xlsx,.xls,.csv" onChange={handleFileChange} style={{ display: 'none' }} />
                         </div>
 
                         {/* Detected header mapping */}
                         {detectedHeaders.length > 0 && (
-                            <div style={{ marginTop: 16, fontSize: 12, color: '#475569' }}>
+                            <div style={{ marginTop: 12, fontSize: 12, color: '#475569' }}>
                                 <strong>{language === 'th' ? 'จับคู่คอลัมน์:' : 'Detected columns:'}</strong>
                                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
                                     {detectedHeaders.map((h, i) => (
@@ -654,13 +656,17 @@ export default function ApplicantsImportPage() {
                             </div>
                         ) : (
                             <>
-                                <div style={{ overflowX: 'auto' }}>
-                                    <table className="data-table" style={{ width: '100%', fontSize: 13 }}>
+                                <div style={{ overflow: 'auto', maxHeight: 560 }}>
+                                    <table className="data-table" style={{ width: '100%', fontSize: 13, borderCollapse: 'separate', borderSpacing: 0 }}>
                                         <thead>
                                             <tr>
-                                                <th>#</th>
-                                                {PREVIEW_COLS.map(c => <th key={c.field}>{language === 'th' ? c.th : c.en}</th>)}
-                                                <th></th>
+                                                <th style={{ position: 'sticky', top: 0, zIndex: 2, background: '#f1f5f9' }}>#</th>
+                                                {PREVIEW_COLS.map(c => (
+                                                    <th key={c.field} style={{ position: 'sticky', top: 0, zIndex: 2, background: '#f1f5f9' }}>
+                                                        {language === 'th' ? c.th : c.en}
+                                                    </th>
+                                                ))}
+                                                <th style={{ position: 'sticky', top: 0, zIndex: 2, background: '#f1f5f9' }}></th>
                                             </tr>
                                         </thead>
                                         <tbody>
