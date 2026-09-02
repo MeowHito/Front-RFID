@@ -178,6 +178,9 @@ export default function CheckedInPanel({ campaignId }: { campaignId: string }) {
                 <div style={{ flex: 1 }}>
                     <div style={{ fontSize: 13, fontWeight: 700, color: '#475569', letterSpacing: 0.3 }}>
                         นักกีฬาที่เช็คบิบแล้ว
+                        <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 600, color: '#94a3b8' }}>
+                            นับรวมทุกหน้าสแกน (Check BIB 1 + 2 + สลิป)
+                        </span>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginTop: 2 }}>
                         <span style={{ fontSize: 34, fontWeight: 900, color: '#0f172a', lineHeight: 1 }}>

@@ -36,6 +36,10 @@ interface ApplicantRow {
 
 type FieldKey = keyof Omit<ApplicantRow, 'extra'>;
 
+interface ExistingApplicant extends ApplicantRow {
+    _id: string;
+}
+
 // Markers that flag a column as the English-language spelling of a name
 // (rosters use "(ภาษาอังกฤษ)", "(Eng)", "Name EN", …).
 const EN_MARKER_RE = /ภาษาอังกฤษ|อังกฤษ|english|\ben\b|\beng\b/i;
@@ -154,6 +158,13 @@ export default function ApplicantsImportPage() {
     const [campaign, setCampaign] = useState<Campaign | null>(null);
     const [loading, setLoading] = useState(true);
     const [existingCount, setExistingCount] = useState<number | null>(null);
+    const [existingRows, setExistingRows] = useState<ExistingApplicant[]>([]);
+    const [existingLoading, setExistingLoading] = useState(false);
+    const [existingSearch, setExistingSearch] = useState('');
+    const [existingPage, setExistingPage] = useState(0);
+    const [editingCell, setEditingCell] = useState<{ id: string; field: FieldKey } | null>(null);
+    const [editingValue, setEditingValue] = useState('');
+    const [savingCellId, setSavingCellId] = useState<string | null>(null);
     const [fileName, setFileName] = useState('');
     const [rows, setRows] = useState<ApplicantRow[]>([]);
     const [detectedHeaders, setDetectedHeaders] = useState<{ raw: string; field: FieldKey | null }[]>([]);
@@ -185,6 +196,19 @@ export default function ApplicantsImportPage() {
         } catch { /* */ }
     }, [authHeaders]);
 
+    const loadExisting = useCallback(async (campaignId: string) => {
+        setExistingLoading(true);
+        try {
+            const res = await fetch(`/api/applicants?campaignId=${campaignId}`, { headers: authHeaders(), cache: 'no-store' });
+            if (res.ok) {
+                const data = await res.json();
+                setExistingRows(data.data || []);
+                setExistingCount(data.total ?? (data.data || []).length);
+            }
+        } catch { /* */ }
+        finally { setExistingLoading(false); }
+    }, [authHeaders]);
+
     useEffect(() => {
         (async () => {
             try {
@@ -194,12 +218,13 @@ export default function ApplicantsImportPage() {
                     if (data?._id) {
                         setCampaign(data);
                         loadCount(data._id);
+                        loadExisting(data._id);
                     }
                 }
             } catch { /* */ }
             finally { setLoading(false); }
         })();
-    }, [loadCount]);
+    }, [loadCount, loadExisting]);
 
     // Parse every sheet in the workbook (rosters often split distances across
     // sheets, e.g. 100K / 50K / 25K / 10K) and merge them into one roster.
@@ -340,7 +365,7 @@ export default function ApplicantsImportPage() {
             setRows([]);
             setFileName('');
             setDetectedHeaders([]);
-            loadCount(campaign._id);
+            loadExisting(campaign._id);
         } catch (e: unknown) {
             const msg = e instanceof Error ? e.message : 'Unknown error';
             showToast(language === 'th' ? `บันทึกไม่สำเร็จ: ${msg}` : `Failed: ${msg}`, 'error');
@@ -357,11 +382,72 @@ export default function ApplicantsImportPage() {
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
             const data = await res.json();
             showToast(language === 'th' ? `ลบแล้ว ${data.deleted} รายการ` : `Deleted ${data.deleted} rows`, 'success');
-            loadCount(campaign._id);
+            loadExisting(campaign._id);
         } catch {
             showToast(language === 'th' ? 'ลบไม่สำเร็จ' : 'Delete failed', 'error');
         }
     };
+
+    // ─── Inline edit / delete on the already-uploaded roster ─────────
+
+    const startEdit = (row: ExistingApplicant, field: FieldKey) => {
+        setEditingCell({ id: row._id, field });
+        setEditingValue(row[field] || '');
+    };
+
+    const cancelEdit = () => { setEditingCell(null); setEditingValue(''); };
+
+    const commitEdit = async () => {
+        if (!editingCell) return;
+        const { id, field } = editingCell;
+        const prevRow = existingRows.find(r => r._id === id);
+        const prevValue = prevRow ? prevRow[field] : '';
+        if (prevValue === editingValue) { cancelEdit(); return; }
+        setSavingCellId(id);
+        setExistingRows(rs => rs.map(r => (r._id === id ? { ...r, [field]: editingValue } : r)));
+        setEditingCell(null);
+        try {
+            const res = await fetch(`/api/applicants/${id}`, {
+                method: 'PATCH',
+                headers: authHeaders(),
+                body: JSON.stringify({ [field]: editingValue }),
+            });
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const updated = await res.json();
+            setExistingRows(rs => rs.map(r => (r._id === id ? { ...r, ...updated } : r)));
+        } catch {
+            showToast(language === 'th' ? 'บันทึกไม่สำเร็จ' : 'Save failed', 'error');
+            if (prevRow) setExistingRows(rs => rs.map(r => (r._id === id ? prevRow : r)));
+        } finally {
+            setSavingCellId(null);
+            setEditingValue('');
+        }
+    };
+
+    const deleteExistingRow = async (row: ExistingApplicant) => {
+        if (!confirm(language === 'th' ? `ลบ ${row.fullName || row.bib || 'รายการนี้'}?` : `Delete ${row.fullName || row.bib || 'this row'}?`)) return;
+        const prev = existingRows;
+        setExistingRows(rs => rs.filter(r => r._id !== row._id));
+        try {
+            const res = await fetch(`/api/applicants/${row._id}`, { method: 'DELETE', headers: authHeaders() });
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            setExistingCount(c => (c !== null ? Math.max(0, c - 1) : c));
+        } catch {
+            showToast(language === 'th' ? 'ลบไม่สำเร็จ' : 'Delete failed', 'error');
+            setExistingRows(prev);
+        }
+    };
+
+    const filteredExisting = existingSearch.trim()
+        ? existingRows.filter(r => {
+            const q = existingSearch.trim().toLowerCase();
+            return [r.bib, r.idCard, r.fullName, r.fullNameEn, r.phone].some(v => (v || '').toLowerCase().includes(q));
+        })
+        : existingRows;
+    const EXISTING_PAGE_SIZE = 50;
+    const existingPageCount = Math.max(1, Math.ceil(filteredExisting.length / EXISTING_PAGE_SIZE));
+    const existingPageClamped = Math.min(existingPage, existingPageCount - 1);
+    const pagedExisting = filteredExisting.slice(existingPageClamped * EXISTING_PAGE_SIZE, (existingPageClamped + 1) * EXISTING_PAGE_SIZE);
 
     const downloadTemplate = () => {
         const ws = XLSX.utils.aoa_to_sheet([
@@ -408,6 +494,8 @@ export default function ApplicantsImportPage() {
             setExporting(false);
         }
     };
+
+    useEffect(() => { setExistingPage(0); }, [existingSearch]);
 
     const publicUrl = campaign
         ? `${typeof window !== 'undefined' ? window.location.origin : ''}/applicant-status/${campaign.slug || campaign._id}`
@@ -539,6 +627,115 @@ export default function ApplicantsImportPage() {
                                     ))}
                                 </div>
                             </div>
+                        )}
+                    </div>
+
+                    {/* Existing roster — editable in place, no need to re-upload for small updates */}
+                    <div className="content-box" style={{ padding: 20, marginBottom: 16 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12, marginBottom: 12 }}>
+                            <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: '#1e293b' }}>
+                                📑 {language === 'th' ? `รายชื่อที่มีอยู่แล้ว (${existingCount ?? 0})` : `Existing roster (${existingCount ?? 0})`}
+                            </h3>
+                            <input
+                                type="text"
+                                value={existingSearch}
+                                onChange={(e) => setExistingSearch(e.target.value)}
+                                placeholder={language === 'th' ? 'ค้นหา BIB, ชื่อ, เบอร์โทร...' : 'Search BIB, name, phone...'}
+                                style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #d1d5db', fontSize: 13, minWidth: 220 }}
+                            />
+                        </div>
+                        {existingLoading ? (
+                            <div style={{ padding: 30, textAlign: 'center', color: '#999', fontSize: 13 }}>
+                                {language === 'th' ? 'กำลังโหลด...' : 'Loading...'}
+                            </div>
+                        ) : existingRows.length === 0 ? (
+                            <div style={{ padding: 30, textAlign: 'center', color: '#94a3b8', fontSize: 13 }}>
+                                {language === 'th' ? 'ยังไม่มีรายชื่อในระบบ อัพโหลดไฟล์ด้านบนเพื่อเริ่มต้น' : 'No applicants yet. Upload a file above to get started.'}
+                            </div>
+                        ) : (
+                            <>
+                                <div style={{ overflowX: 'auto' }}>
+                                    <table className="data-table" style={{ width: '100%', fontSize: 13 }}>
+                                        <thead>
+                                            <tr>
+                                                <th>#</th>
+                                                {PREVIEW_COLS.map(c => <th key={c.field}>{language === 'th' ? c.th : c.en}</th>)}
+                                                <th></th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {pagedExisting.map((r, idx) => (
+                                                <tr key={r._id}>
+                                                    <td>{existingPageClamped * EXISTING_PAGE_SIZE + idx + 1}</td>
+                                                    {PREVIEW_COLS.map(c => {
+                                                        const isEditing = editingCell?.id === r._id && editingCell.field === c.field;
+                                                        return (
+                                                            <td
+                                                                key={c.field}
+                                                                onClick={() => !isEditing && startEdit(r, c.field)}
+                                                                style={{
+                                                                    cursor: 'pointer',
+                                                                    fontWeight: c.field === 'bib' ? 700 : undefined,
+                                                                    color: c.field === 'bib' && !isEditing ? '#2563eb' : undefined,
+                                                                    opacity: savingCellId === r._id ? 0.6 : 1,
+                                                                    minWidth: 70,
+                                                                }}
+                                                                title={language === 'th' ? 'คลิกเพื่อแก้ไข' : 'Click to edit'}
+                                                            >
+                                                                {isEditing ? (
+                                                                    <input
+                                                                        autoFocus
+                                                                        value={editingValue}
+                                                                        onChange={(e) => setEditingValue(e.target.value)}
+                                                                        onBlur={commitEdit}
+                                                                        onKeyDown={(e) => {
+                                                                            if (e.key === 'Enter') commitEdit();
+                                                                            if (e.key === 'Escape') cancelEdit();
+                                                                        }}
+                                                                        style={{ width: '100%', minWidth: 70, padding: '2px 6px', fontSize: 13, border: '1px solid #3b82f6', borderRadius: 4 }}
+                                                                    />
+                                                                ) : (
+                                                                    r[c.field] || '-'
+                                                                )}
+                                                            </td>
+                                                        );
+                                                    })}
+                                                    <td>
+                                                        <button
+                                                            onClick={() => deleteExistingRow(r)}
+                                                            title={language === 'th' ? 'ลบ' : 'Delete'}
+                                                            style={{ border: 'none', background: 'transparent', color: '#dc2626', cursor: 'pointer', fontSize: 14 }}
+                                                        >
+                                                            🗑️
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                                {existingPageCount > 1 && (
+                                    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 10, marginTop: 12 }}>
+                                        <button
+                                            onClick={() => setExistingPage(p => Math.max(0, p - 1))}
+                                            disabled={existingPageClamped === 0}
+                                            style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid #d1d5db', background: '#fff', cursor: existingPageClamped === 0 ? 'not-allowed' : 'pointer', fontSize: 13 }}
+                                        >
+                                            ‹ {language === 'th' ? 'ก่อนหน้า' : 'Prev'}
+                                        </button>
+                                        <span style={{ fontSize: 13, color: '#64748b' }}>
+                                            {existingPageClamped + 1} / {existingPageCount}
+                                        </span>
+                                        <button
+                                            onClick={() => setExistingPage(p => Math.min(existingPageCount - 1, p + 1))}
+                                            disabled={existingPageClamped >= existingPageCount - 1}
+                                            style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid #d1d5db', background: '#fff', cursor: existingPageClamped >= existingPageCount - 1 ? 'not-allowed' : 'pointer', fontSize: 13 }}
+                                        >
+                                            {language === 'th' ? 'ถัดไป' : 'Next'} ›
+                                        </button>
+                                    </div>
+                                )}
+                            </>
                         )}
                     </div>
 
