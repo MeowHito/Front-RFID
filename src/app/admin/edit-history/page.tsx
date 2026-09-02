@@ -56,6 +56,44 @@ interface Campaign {
     name: string;
 }
 
+// Applicant roster log (/admin/applicants-import) — no drift/restore, just a plain change log.
+interface ApplicantEditLogEntry {
+    _id: string;
+    bib: string;
+    applicantName: string;
+    changedBy: string;
+    changedAt: string;
+    source: 'edit' | 'delete' | 'bulk-import' | 'clear-all';
+    note?: string;
+    changes: { field: string; oldValue: string; newValue: string }[];
+}
+
+const APPLICANT_FIELD_LABELS: Record<string, { th: string; en: string }> = {
+    idCard: { th: 'เลขบัตรประชาชน', en: 'ID Card' },
+    bib: { th: 'BIB', en: 'BIB' },
+    firstName: { th: 'ชื่อ', en: 'First Name' },
+    lastName: { th: 'นามสกุล', en: 'Last Name' },
+    fullName: { th: 'ชื่อ-นามสกุล', en: 'Full Name' },
+    firstNameEn: { th: 'ชื่อ (EN)', en: 'First Name (EN)' },
+    lastNameEn: { th: 'นามสกุล (EN)', en: 'Last Name (EN)' },
+    fullNameEn: { th: 'ชื่อ-นามสกุล (EN)', en: 'Full Name (EN)' },
+    phone: { th: 'เบอร์โทร', en: 'Phone' },
+    age: { th: 'อายุ', en: 'Age' },
+    gender: { th: 'เพศ', en: 'Gender' },
+    ageGroup: { th: 'กลุ่มอายุ', en: 'Age Group' },
+    shirtSize: { th: 'ขนาดเสื้อ', en: 'Shirt Size' },
+    category: { th: 'ประเภท', en: 'Category' },
+    team: { th: 'ทีม', en: 'Team' },
+    challenge: { th: 'Challenge', en: 'Challenge' },
+};
+
+const APPLICANT_SOURCE_LABELS: Record<string, { th: string; en: string; bg: string; color: string }> = {
+    edit: { th: 'แก้ไข', en: 'Edit', bg: '#e0e7ff', color: '#3730a3' },
+    delete: { th: 'ลบรายการ', en: 'Delete', bg: '#fee2e2', color: '#b91c1c' },
+    'bulk-import': { th: 'นำเข้าไฟล์', en: 'Bulk import', bg: '#fef3c7', color: '#92400e' },
+    'clear-all': { th: 'ล้างทั้งหมด', en: 'Clear all', bg: '#fee2e2', color: '#b91c1c' },
+};
+
 // ---------------------------------------------------------------------------
 // Display helpers
 // ---------------------------------------------------------------------------
@@ -190,9 +228,11 @@ export default function EditHistoryPage() {
     }, [th]);
 
     // ── State ──
+    const [dataType, setDataType] = useState<'runners' | 'applicants'>('runners');
     const [campaign, setCampaign] = useState<Campaign | null>(null);
     const [rows, setRows] = useState<EditSummaryRow[]>([]);
     const [logs, setLogs] = useState<EditLogEntry[]>([]);
+    const [applicantLogs, setApplicantLogs] = useState<ApplicantEditLogEntry[]>([]);
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
     const [onlyDrifted, setOnlyDrifted] = useState(false);
@@ -217,15 +257,18 @@ export default function EditHistoryPage() {
     const load = useCallback(async (campaignId: string) => {
         setLoading(true);
         try {
-            const [summaryRes, logsRes] = await Promise.all([
+            const [summaryRes, logsRes, applicantLogsRes] = await Promise.all([
                 fetch(`/api/runners/edit-summary?campaignId=${campaignId}`, { headers: authHeaders(), cache: 'no-store' }),
                 fetch(`/api/runners/edit-logs?campaignId=${campaignId}&limit=3000`, { headers: authHeaders(), cache: 'no-store' }),
+                fetch(`/api/applicants/edit-logs?campaignId=${campaignId}&limit=3000`, { headers: authHeaders(), cache: 'no-store' }),
             ]);
             setRows(summaryRes.ok ? (await summaryRes.json()) || [] : []);
             setLogs(logsRes.ok ? (await logsRes.json()) || [] : []);
+            setApplicantLogs(applicantLogsRes.ok ? (await applicantLogsRes.json()) || [] : []);
         } catch {
             setRows([]);
             setLogs([]);
+            setApplicantLogs([]);
         } finally {
             setLoading(false);
         }
@@ -275,6 +318,25 @@ export default function EditHistoryPage() {
         edits: rows.reduce((sum, r) => sum + r.editCount, 0),
         statusEdits: rows.filter(r => r.fields.some(f => f.field === 'status')).length,
     }), [rows]);
+
+    const filteredApplicantLogs = useMemo(() => {
+        const q = search.trim().toLowerCase();
+        return applicantLogs
+            .filter(l => {
+                if (!q) return true;
+                return String(l.bib || '').toLowerCase().includes(q)
+                    || (l.applicantName || '').toLowerCase().includes(q)
+                    || (l.changedBy || '').toLowerCase().includes(q);
+            })
+            .sort((a, b) => new Date(b.changedAt).getTime() - new Date(a.changedAt).getTime());
+    }, [applicantLogs, search]);
+
+    const applicantStats = useMemo(() => ({
+        total: applicantLogs.length,
+        editors: new Set(applicantLogs.map(l => l.changedBy)).size,
+        edits: applicantLogs.filter(l => l.source === 'edit').length,
+        imports: applicantLogs.filter(l => l.source === 'bulk-import' || l.source === 'clear-all').length,
+    }), [applicantLogs]);
 
     const logsByRow = useCallback((row: EditSummaryRow) => (
         logs
@@ -395,7 +457,8 @@ export default function EditHistoryPage() {
         try {
             const qs = new URLSearchParams({ campaignId: campaign._id });
             if (eventFilter) qs.set('eventId', eventFilter);
-            const res = await fetch(`/api/runners/edit-logs?${qs.toString()}`, {
+            const endpoint = dataType === 'applicants' ? '/api/applicants/edit-logs' : '/api/runners/edit-logs';
+            const res = await fetch(`${endpoint}?${qs.toString()}`, {
                 method: 'DELETE',
                 headers: authHeaders(),
             });
@@ -409,6 +472,50 @@ export default function EditHistoryPage() {
         } finally {
             setDeleting(false);
         }
+    };
+
+    const applicantFieldLabel = useCallback((field: string) => {
+        const l = APPLICANT_FIELD_LABELS[field];
+        return l ? (th ? l.th : l.en) : field;
+    }, [th]);
+
+    const exportApplicantCsv = () => {
+        const header = [
+            t('เวลาที่แก้ไข', 'Changed At'), 'BIB', t('ชื่อ-นามสกุล', 'Name'),
+            t('ที่มา', 'Source'), t('ช่องที่แก้', 'Field'), t('ค่าเดิม', 'Old Value'), t('ค่าใหม่', 'New Value'),
+            t('แก้ไขโดย', 'Changed By'), t('หมายเหตุ', 'Note'),
+        ];
+        const lines = [header.map(escapeCsv).join(',')];
+        for (const entry of filteredApplicantLogs) {
+            const srcLabel = APPLICANT_SOURCE_LABELS[entry.source];
+            const rowsForEntry = entry.changes.length > 0 ? entry.changes : [{ field: '', oldValue: '', newValue: '' }];
+            for (const change of rowsForEntry) {
+                lines.push([
+                    csvTimestamp(entry.changedAt),
+                    String(entry.bib ?? ''),
+                    entry.applicantName || '',
+                    srcLabel ? (th ? srcLabel.th : srcLabel.en) : entry.source,
+                    change.field ? applicantFieldLabel(change.field) : '',
+                    change.oldValue || '',
+                    change.newValue || '',
+                    entry.changedBy || '',
+                    entry.note || '',
+                ].map(escapeCsv).join(','));
+            }
+        }
+        if (lines.length === 1) {
+            showToast(t('ไม่มี log ให้ดาวน์โหลด', 'No log entries to download'), 'error');
+            return;
+        }
+        const blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        const slug = (campaign?.name || 'campaign').replace(/[^\p{L}\p{N}]+/gu, '-').slice(0, 60);
+        a.href = url;
+        a.download = `applicants-edit-history-${slug}-${new Date().toISOString().slice(0, 10)}.csv`;
+        a.click();
+        URL.revokeObjectURL(url);
+        showToast(t(`ดาวน์โหลด ${lines.length - 1} รายการแล้ว`, `Downloaded ${lines.length - 1} rows`), 'success');
     };
 
     // ── Render ──
@@ -426,6 +533,29 @@ export default function EditHistoryPage() {
                 }}>{toast.message}</div>
             )}
 
+            {/* ── Data type tabs ── */}
+            <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
+                {([
+                    { key: 'runners' as const, label: t('นักวิ่ง (Runners)', 'Runners') },
+                    { key: 'applicants' as const, label: t('รายชื่อผู้สมัคร (Applicants)', 'Applicants') },
+                ]).map(tab => (
+                    <button
+                        key={tab.key}
+                        onClick={() => { setDataType(tab.key); setSearch(''); }}
+                        style={{
+                            padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer',
+                            border: `1px solid ${dataType === tab.key ? '#2563eb' : '#cbd5e1'}`,
+                            background: dataType === tab.key ? '#2563eb' : '#fff',
+                            color: dataType === tab.key ? '#fff' : '#475569',
+                        }}
+                    >
+                        {tab.label}
+                    </button>
+                ))}
+            </div>
+
+            {dataType === 'runners' && (
+            <>
             {/* ── Explainer ── */}
             <div style={{
                 background: '#eff6ff', border: '1px solid #bfdbfe', borderLeft: '4px solid #2563eb',
@@ -796,6 +926,201 @@ export default function EditHistoryPage() {
                     </table>
                 </div>
             </div>
+            </>
+            )}
+
+            {dataType === 'applicants' && (
+            <>
+            {/* ── Explainer ── */}
+            <div style={{
+                background: '#eff6ff', border: '1px solid #bfdbfe', borderLeft: '4px solid #2563eb',
+                borderRadius: 8, padding: '12px 16px', marginBottom: 14, fontSize: 13, color: '#1e3a5f', lineHeight: 1.7,
+            }}>
+                <strong style={{ display: 'block', marginBottom: 4, fontSize: 13.5 }}>
+                    {t('บันทึกการแก้ไขทุกครั้งของแอดมินในหน้า "นำเข้ารายชื่อผู้สมัคร" — ไม่หายจนกว่าจะกดลบเอง',
+                        'Permanent record of every admin change on the "Import Applicants" page — it stays until you delete it')}
+                </strong>
+                {t('ทั้งการนำเข้าไฟล์ Excel, แก้ไขข้อมูลรายคน, และการลบรายการ จะถูกบันทึกไว้ที่นี่ทั้งหมด',
+                    'Every Excel import, per-row edit, and row deletion on that page is recorded here.')}
+            </div>
+
+            {/* ── Stat tiles ── */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 10, marginBottom: 14 }}>
+                {[
+                    { label: t('บันทึกทั้งหมด', 'Total log entries'), value: applicantStats.total, color: '#334155', bg: '#fff' },
+                    { label: t('แก้ไขรายคน', 'Per-row edits'), value: applicantStats.edits, color: '#3730a3', bg: '#fff' },
+                    { label: t('นำเข้า/ล้างข้อมูล', 'Imports/clears'), value: applicantStats.imports, color: '#92400e', bg: '#fff' },
+                    { label: t('จำนวนแอดมินที่แก้ไข', 'Admins involved'), value: applicantStats.editors, color: '#334155', bg: '#fff' },
+                ].map(s => (
+                    <div key={s.label} style={{
+                        background: s.bg, border: '1px solid #e2e8f0', borderRadius: 8, padding: '12px 14px',
+                    }}>
+                        <div style={{ fontSize: 11.5, color: '#64748b', fontWeight: 600, marginBottom: 4 }}>{s.label}</div>
+                        <div style={{ fontSize: 26, fontWeight: 800, color: s.color, lineHeight: 1 }}>{s.value}</div>
+                    </div>
+                ))}
+            </div>
+
+            <div className="admin-card" style={{ padding: 0, overflow: 'hidden' }}>
+                {/* ── Toolbar ── */}
+                <div style={{
+                    display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center',
+                    padding: '11px 14px', borderBottom: '1px solid #e2e8f0', background: '#f8fafc',
+                }}>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: '#1e293b', marginRight: 4 }}>
+                        {campaign?.name || t('ยังไม่ได้เลือกกิจกรรม', 'No campaign selected')}
+                    </span>
+
+                    <input
+                        value={search}
+                        onChange={e => setSearch(e.target.value)}
+                        placeholder={t('ค้นหา BIB / ชื่อ / ผู้แก้ไข', 'Search BIB / name / editor')}
+                        style={{
+                            padding: '6px 10px', border: '1px solid #cbd5e1', borderRadius: 6,
+                            fontSize: 12.5, width: 230, outline: 'none',
+                        }}
+                    />
+
+                    <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+                        <button
+                            onClick={exportApplicantCsv}
+                            disabled={loading || applicantLogs.length === 0}
+                            title={t('ดาวน์โหลด log ตามตัวกรองที่เลือกอยู่ (CSV เปิดด้วย Excel ได้)',
+                                'Download the log for the current filters (CSV, opens in Excel)')}
+                            style={{
+                                padding: '6px 12px', borderRadius: 6, border: '1px solid #16a34a',
+                                background: '#fff', color: '#15803d', fontSize: 12.5, fontWeight: 700,
+                                cursor: applicantLogs.length === 0 ? 'not-allowed' : 'pointer',
+                                opacity: applicantLogs.length === 0 ? 0.5 : 1,
+                                display: 'inline-flex', alignItems: 'center', gap: 6,
+                            }}
+                        >
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                                <polyline points="7 10 12 15 17 10" />
+                                <line x1="12" y1="15" x2="12" y2="3" />
+                            </svg>
+                            {t('ดาวน์โหลด log (CSV)', 'Download log (CSV)')}
+                        </button>
+                        <button
+                            onClick={() => campaign && load(campaign._id)}
+                            disabled={loading || !campaign}
+                            style={{
+                                padding: '6px 12px', borderRadius: 6, border: '1px solid #3c8dbc',
+                                background: '#3c8dbc', color: '#fff', fontSize: 12.5, fontWeight: 600,
+                                cursor: 'pointer', opacity: loading ? 0.6 : 1,
+                            }}
+                        >
+                            {loading ? t('กำลังโหลด...', 'Loading...') : t('รีเฟรช', 'Refresh')}
+                        </button>
+                        <button
+                            onClick={() => setShowDeleteModal(true)}
+                            disabled={!campaign || applicantLogs.length === 0}
+                            style={{
+                                padding: '6px 12px', borderRadius: 6, border: '1px solid #fca5a5',
+                                background: '#fff', color: '#b91c1c', fontSize: 12.5, fontWeight: 600,
+                                cursor: applicantLogs.length === 0 ? 'not-allowed' : 'pointer', opacity: applicantLogs.length === 0 ? 0.5 : 1,
+                            }}
+                        >
+                            {t('ลบ log ของกิจกรรมนี้', 'Clear log for this campaign')}
+                        </button>
+                    </div>
+                </div>
+
+                {/* ── Table ── */}
+                <div style={{ overflow: 'auto', maxHeight: 620 }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                        <thead>
+                            <tr style={{ background: '#f1f5f9' }}>
+                                {[
+                                    { label: t('เวลา', 'Time'), w: 150 },
+                                    { label: 'BIB', w: 90 },
+                                    { label: t('ชื่อ-นามสกุล', 'Name'), w: 190 },
+                                    { label: t('ที่มา', 'Source'), w: 110 },
+                                    { label: t('สิ่งที่เปลี่ยน', 'What changed'), w: undefined },
+                                    { label: t('แก้ไขโดย', 'Changed by'), w: 190 },
+                                ].map((h, i) => (
+                                    <th key={i} style={{
+                                        padding: '10px 12px', textAlign: 'left', fontWeight: 700, color: '#334155',
+                                        borderBottom: '2px solid #cbd5e1', fontSize: 12, whiteSpace: 'nowrap',
+                                        width: h.w, position: 'sticky', top: 0, background: '#f1f5f9',
+                                    }}>{h.label}</th>
+                                ))}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {loading ? (
+                                <tr><td colSpan={6} style={{ textAlign: 'center', padding: 40, color: '#94a3b8' }}>
+                                    {t('กำลังโหลด...', 'Loading...')}
+                                </td></tr>
+                            ) : !campaign ? (
+                                <tr><td colSpan={6} style={{ textAlign: 'center', padding: 40, color: '#94a3b8' }}>
+                                    {t('ยังไม่ได้เลือกกิจกรรม — ไปที่หน้าจัดการอีเวนต์แล้วกดดาวเลือกกิจกรรมที่ทำงานอยู่',
+                                        'No campaign selected — go to Manage Events and star the campaign you are working on.')}
+                                </td></tr>
+                            ) : filteredApplicantLogs.length === 0 ? (
+                                <tr><td colSpan={6} style={{ textAlign: 'center', padding: 40, color: '#94a3b8' }}>
+                                    {applicantLogs.length === 0
+                                        ? t('ยังไม่มีการแก้ไขรายชื่อผู้สมัครในกิจกรรมนี้', 'No applicant edits recorded for this campaign yet')
+                                        : t('ไม่พบรายการที่ตรงกับตัวกรอง', 'No rows match the current filter')}
+                                </td></tr>
+                            ) : filteredApplicantLogs.map((entry, idx) => {
+                                const srcLabel = APPLICANT_SOURCE_LABELS[entry.source];
+                                return (
+                                    <tr key={entry._id} style={{
+                                        borderBottom: '1px solid #e2e8f0',
+                                        background: idx % 2 === 0 ? '#fff' : '#fbfcfd',
+                                    }}>
+                                        <td style={{ padding: '10px 12px', verticalAlign: 'top', fontSize: 12, color: '#64748b', whiteSpace: 'nowrap' }}>
+                                            {fmtDateTime(entry.changedAt)}
+                                        </td>
+                                        <td style={{ padding: '10px 12px', verticalAlign: 'top', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontWeight: 800, color: '#0f172a' }}>
+                                            {entry.bib || '—'}
+                                        </td>
+                                        <td style={{ padding: '10px 12px', verticalAlign: 'top', fontWeight: 600, color: '#1e293b' }}>
+                                            {entry.applicantName || '—'}
+                                        </td>
+                                        <td style={{ padding: '10px 12px', verticalAlign: 'top' }}>
+                                            {srcLabel && (
+                                                <span style={{
+                                                    fontSize: 11, fontWeight: 700, borderRadius: 4, padding: '2px 8px',
+                                                    background: srcLabel.bg, color: srcLabel.color,
+                                                }}>
+                                                    {th ? srcLabel.th : srcLabel.en}
+                                                </span>
+                                            )}
+                                        </td>
+                                        <td style={{ padding: '9px 12px', verticalAlign: 'top' }}>
+                                            {entry.changes.length > 0 ? (
+                                                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                                                    {entry.changes.map((c, i) => (
+                                                        <div key={i} style={{ color: '#475569', lineHeight: 1.7, fontSize: 12.5 }}>
+                                                            <span style={{
+                                                                fontSize: 11, fontWeight: 700, background: '#f1f5f9', color: '#334155',
+                                                                border: '1px solid #e2e8f0', borderRadius: 4, padding: '1px 7px', marginRight: 6,
+                                                            }}>{applicantFieldLabel(c.field)}</span>
+                                                            <span style={{ color: '#b91c1c' }}>{c.oldValue || '—'}</span>
+                                                            {' → '}
+                                                            <span style={{ color: '#15803d', fontWeight: 600 }}>{c.newValue || '—'}</span>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            ) : (
+                                                <span style={{ color: '#94a3b8', fontStyle: 'italic', fontSize: 12.5 }}>{entry.note || '—'}</span>
+                                            )}
+                                        </td>
+                                        <td style={{ padding: '10px 12px', verticalAlign: 'top', fontSize: 12, color: '#334155', wordBreak: 'break-all' }}>
+                                            {entry.changedBy}
+                                        </td>
+                                    </tr>
+                                );
+                            })}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            </>
+            )}
 
             {/* ── Restore confirmation ── */}
             {restoreTarget && (
@@ -904,8 +1229,11 @@ export default function EditHistoryPage() {
                                 marginTop: 10, background: '#fffbeb', border: '1px solid #fde68a',
                                 borderRadius: 6, padding: '9px 12px', fontSize: 12.5, color: '#92400e',
                             }}>
-                                {t('ข้อมูลนักวิ่งจะไม่ถูกแตะต้อง — ลบเฉพาะประวัติ และหลังลบแล้วจะกดปุ่ม "กู้คืน" ไม่ได้อีก',
-                                    'Runner data is untouched — only the history is removed. After this, the “Restore” buttons will no longer be available.')}
+                                {dataType === 'applicants'
+                                    ? t('ข้อมูลรายชื่อผู้สมัครจะไม่ถูกแตะต้อง — ลบเฉพาะประวัติเท่านั้น',
+                                        'Applicant roster data is untouched — only the history is removed.')
+                                    : t('ข้อมูลนักวิ่งจะไม่ถูกแตะต้อง — ลบเฉพาะประวัติ และหลังลบแล้วจะกดปุ่ม "กู้คืน" ไม่ได้อีก',
+                                        'Runner data is untouched — only the history is removed. After this, the “Restore” buttons will no longer be available.')}
                             </div>
                         </div>
                         <div style={{ padding: '13px 20px', borderTop: '1px solid #e2e8f0', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
