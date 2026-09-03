@@ -14,6 +14,18 @@ import {
     overallCountMapToEntries,
     type OverallCountByCategoryEntry,
 } from '@/lib/overall-display-count';
+import {
+    MAX_TOP_RUNNERS_RANK,
+    MIN_TOP_RUNNERS_RANK,
+    clampTopRunnersRange,
+    isTopRunnersExcludeOverall,
+    resolveTopRunnersRange,
+    sliceTopRunners,
+    topRunnersRangeMapFromConfig,
+    topRunnersRangeMapToEntries,
+    type TopRunnersRange,
+    type TopRunnersRangeEntry,
+} from '@/lib/top-runners-range';
 import { LinkIcon, ArrowTopRightOnSquareIcon } from '@heroicons/react/24/outline';
 
 interface Runner {
@@ -36,6 +48,8 @@ interface FeaturedCampaignSettings {
     slug?: string;
     overallDisplayCount?: number;
     overallDisplayCountByCategory?: OverallCountByCategoryEntry[];
+    topRunnersRangeByCategory?: TopRunnersRangeEntry[];
+    topRunnersExcludeOverallCategories?: string[];
     bestOfDisplayCount?: number;
     separateOverallNationalityCategories?: string[];
     categories?: { name: string; distance?: string }[];
@@ -60,6 +74,10 @@ export default function TopOverallPage() {
     const [saving, setSaving] = useState(false);
     // Overall rank count is configured per race distance ("42K top 3, 21K top 5").
     const [overallCountByCategory, setOverallCountByCategory] = useState<Record<string, number>>({});
+    // Top Runners shows a rank *range* (e.g. 1-20), also per distance.
+    const [topRunnersRanges, setTopRunnersRanges] = useState<Record<string, TopRunnersRange>>({});
+    // Distances whose Top Runners board drops the Overall winners.
+    const [topRunnersCutCategories, setTopRunnersCutCategories] = useState<string[]>([]);
     const [bestOfDisplayCount, setBestOfDisplayCount] = useState<number>(1);
     const [natSplitCategories, setNatSplitCategories] = useState<string[]>([]);
     const [selectedCategory, setSelectedCategory] = useState('');
@@ -82,6 +100,8 @@ export default function TopOverallPage() {
                     ? data.categories.map((c: { name: string }) => c?.name).filter(Boolean)
                     : [];
                 setOverallCountByCategory(overallCountMapFromConfig(data, categoryNames));
+                setTopRunnersRanges(topRunnersRangeMapFromConfig(data, categoryNames));
+                setTopRunnersCutCategories(Array.isArray(data?.topRunnersExcludeOverallCategories) ? data.topRunnersExcludeOverallCategories : []);
                 setBestOfDisplayCount(Math.max(1, Number(data?.bestOfDisplayCount) || 1));
                 setNatSplitCategories(Array.isArray(data?.separateOverallNationalityCategories) ? data.separateOverallNationalityCategories : []);
                 setSelectedCategory(data?.categories?.[0]?.name || '');
@@ -142,6 +162,26 @@ export default function TopOverallPage() {
         overallCountByCategory[selectedCategory] ?? campaign?.overallDisplayCount,
     );
 
+    // Rank range of the distance currently being previewed/edited.
+    const topRunnersRange = topRunnersRanges[selectedCategory]
+        ?? resolveTopRunnersRange(campaign, selectedCategory);
+
+    // How many leading finishers this distance's Top Runners board skips. The cut
+    // always equals the distance's Overall award count, so the two settings stay
+    // in step when the admin changes the Overall count.
+    const selectedCategoryCutsOverall = isTopRunnersExcludeOverall(
+        { topRunnersExcludeOverallCategories: topRunnersCutCategories },
+        selectedCategory,
+    );
+    const topRunnersCut = selectedCategoryCutsOverall ? overallDisplayCount : 0;
+
+    const toggleTopRunnersCutForSelected = () => {
+        if (!selectedCategory) return;
+        setTopRunnersCutCategories(prev => prev.some(c => c === selectedCategory)
+            ? prev.filter(c => c !== selectedCategory)
+            : [...prev, selectedCategory]);
+    };
+
     const toggleNatSplitForSelected = () => {
         if (!selectedCategory) return;
         setNatSplitCategories(prev => prev.some(c => c === selectedCategory)
@@ -156,6 +196,13 @@ export default function TopOverallPage() {
     const overallFemaleWinners = useMemo(() => {
         return sortedFinishedRunners.filter(r => r.gender === 'F').slice(0, overallDisplayCount);
     }, [sortedFinishedRunners, overallDisplayCount]);
+
+    // Top Runners preview — the plain rank slice, no nationality split, matching
+    // what /Top-Overall-Winners renders.
+    const topRunnersPreview = useMemo(() => ({
+        male: sliceTopRunners(sortedFinishedRunners.filter(r => r.gender !== 'F'), topRunnersRange, topRunnersCut),
+        female: sliceTopRunners(sortedFinishedRunners.filter(r => r.gender === 'F'), topRunnersRange, topRunnersCut),
+    }), [sortedFinishedRunners, topRunnersRange.start, topRunnersRange.end, topRunnersCut]); // eslint-disable-line react-hooks/exhaustive-deps
 
     // Nationality-split overall winners (top N per gender × Thai/foreign group).
     const overallByNationality = useMemo(() => {
@@ -183,7 +230,7 @@ export default function TopOverallPage() {
                     {title}
                 </div>
                 <div className="px-4 py-1.5 text-center text-[11px] font-bold">
-                    {language === 'th' ? 'อันดับ Overall' : 'Overall ranking'}
+                    {language === 'th' ? `อันดับ 1-${overallDisplayCount}` : `Rank 1-${overallDisplayCount}`}
                 </div>
             </div>
             <div className="rounded-b-lg border border-t-0 border-gray-200 bg-white overflow-hidden">
@@ -194,6 +241,45 @@ export default function TopOverallPage() {
                                 index === 0 ? 'bg-yellow-500' : index === 1 ? 'bg-gray-400' : index === 2 ? 'bg-amber-700' : 'bg-gray-300 text-gray-600'
                             }`} style={index > 2 ? { color: '#4b5563' } : undefined}>
                                 {index + 1}
+                            </div>
+                            <div className="min-w-0 flex-1 leading-tight">
+                                <p className="truncate text-xs font-semibold text-gray-800">
+                                    {runner.firstName} {runner.lastName}
+                                </p>
+                                <p className="text-[10px] text-gray-500">BIB {runner.bib}</p>
+                            </div>
+                            <div className="shrink-0 text-[11px] font-bold text-gray-800">
+                                {runner.netTimeStr || formatTime(runner.netTime || runner.gunTime || runner.elapsedTime)}
+                            </div>
+                        </div>
+                    )) : (
+                        <div className="px-3 py-3 text-center text-[11px] text-gray-400">
+                            {language === 'th' ? 'ไม่มีข้อมูล' : 'No data'}
+                        </div>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+
+    const renderTopRunnersPreviewColumn = (title: string, headerClass: string, rows: { runner: Runner; rank: number }[]) => (
+        <div className="space-y-0">
+            <div className={`overflow-hidden rounded-t-lg ${headerClass}`} style={{ color: '#ffffff' }}>
+                <div className="px-3 py-2 text-center text-xs font-bold">{title}</div>
+                <div className="px-4 py-1.5 text-center text-[11px] font-bold">
+                    {language === 'th'
+                        ? `อันดับ ${topRunnersCut + topRunnersRange.start}-${topRunnersCut + topRunnersRange.end}`
+                        : `Ranks ${topRunnersCut + topRunnersRange.start}-${topRunnersCut + topRunnersRange.end}`}
+                </div>
+            </div>
+            <div className="rounded-b-lg border border-t-0 border-gray-200 bg-white overflow-hidden">
+                <div className="divide-y divide-gray-100">
+                    {rows.length > 0 ? rows.map(({ runner, rank }) => (
+                        <div key={`tr-${title}-${rank}`} className="flex items-center gap-2 px-3 py-1.5">
+                            <div className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white ${
+                                rank === 1 ? 'bg-yellow-500' : rank === 2 ? 'bg-gray-400' : rank === 3 ? 'bg-amber-700' : 'bg-gray-300 text-gray-600'
+                            }`} style={rank > 3 ? { color: '#4b5563' } : undefined}>
+                                {rank}
                             </div>
                             <div className="min-w-0 flex-1 leading-tight">
                                 <p className="truncate text-xs font-semibold text-gray-800">
@@ -237,6 +323,19 @@ export default function TopOverallPage() {
                         >
                             {clampOverallDisplayCount(overallCountByCategory[category.name] ?? campaign?.overallDisplayCount)}
                         </span>
+                        {/* …and its own Top Runners rank range */}
+                        <span
+                            className={`ml-1 rounded-full px-1.5 py-px text-[10px] font-extrabold ${selectedCategory === category.name ? 'bg-white/25' : 'bg-violet-100'}`}
+                            style={selectedCategory === category.name ? { color: '#ffffff' } : { color: '#6d28d9' }}
+                        >
+                            {(() => {
+                                const r = topRunnersRanges[category.name] ?? resolveTopRunnersRange(campaign, category.name);
+                                const cut = isTopRunnersExcludeOverall({ topRunnersExcludeOverallCategories: topRunnersCutCategories }, category.name)
+                                    ? clampOverallDisplayCount(overallCountByCategory[category.name] ?? campaign?.overallDisplayCount)
+                                    : 0;
+                                return `${cut + r.start}-${cut + r.end}`;
+                            })()}
+                        </span>
                     </button>
                 ))}
             </div>
@@ -270,6 +369,27 @@ export default function TopOverallPage() {
         setOverallCountByCategory(prev => ({ ...prev, [selectedCategory]: normalized }));
     };
 
+    // Only the selected distance's range changes — other distances keep theirs.
+    const updateTopRunnersRange = (patch: Partial<TopRunnersRange>) => {
+        if (!selectedCategory) return;
+        setTopRunnersRanges(prev => {
+            const current = prev[selectedCategory] ?? topRunnersRange;
+            const next = { ...current, ...patch };
+            // Only clamp the edited end here; forcing end >= start on every
+            // keystroke would fight the user while they retype the start.
+            return { ...prev, [selectedCategory]: next };
+        });
+    };
+
+    // Clamp on blur so `end >= start` is enforced once the user is done typing.
+    const commitTopRunnersRange = () => {
+        if (!selectedCategory) return;
+        setTopRunnersRanges(prev => ({
+            ...prev,
+            [selectedCategory]: clampTopRunnersRange(prev[selectedCategory]?.start, prev[selectedCategory]?.end),
+        }));
+    };
+
     const updateBestOfDisplayCount = (value: number) => {
         const normalized = Number.isFinite(value) ? Math.max(1, Math.floor(value)) : 1;
         setBestOfDisplayCount(normalized);
@@ -287,6 +407,8 @@ export default function TopOverallPage() {
                     // for any distance without its own entry.
                     overallDisplayCountByCategory: overallCountMapToEntries(overallCountByCategory),
                     overallDisplayCount: clampOverallDisplayCount(campaign.overallDisplayCount),
+                    topRunnersRangeByCategory: topRunnersRangeMapToEntries(topRunnersRanges),
+                    topRunnersExcludeOverallCategories: topRunnersCutCategories,
                     bestOfDisplayCount: bestOfDisplayCount,
                     separateOverallNationalityCategories: natSplitCategories,
                 }),
@@ -306,7 +428,7 @@ export default function TopOverallPage() {
     return (
         <AdminLayout
             breadcrumbItems={[
-                { label: 'Top Overall', labelEn: 'Top Overall' }
+                { label: 'Top Runners', labelEn: 'Top Runners' }
             ]}
         >
             {toast && (
@@ -328,7 +450,7 @@ export default function TopOverallPage() {
                     <div className="rounded-2xl border border-sky-200 bg-white p-3 shadow-sm">
                         <div className="flex flex-wrap items-center gap-2">
                             <span className="px-3 py-1.5 text-[19px] font-bold text-gray-900">
-                                {language === 'th' ? 'อันดับ Top Overall' : 'Top Overall'}
+                                {language === 'th' ? 'อันดับ Top Runners' : 'Top Runners'}
                             </span>
                             <button
                                 type="button"
@@ -383,56 +505,157 @@ export default function TopOverallPage() {
                         </div>
 
                         <div className="mt-4 rounded-2xl border border-gray-200 bg-[#f8fafc] p-3">
-                            <div className="mt-1 grid items-center gap-2 md:grid-cols-[1fr_auto_1fr]">
-                                <div className="justify-self-start">{renderCategoryTabs()}</div>
-                                <div className="justify-self-center flex items-center gap-1.5 rounded-lg border border-sky-200 bg-sky-50 px-2 py-1.5">
-                                    <span className="text-[11px] font-bold" style={{ color: '#0369a1' }}>
+                            {/* Distances first, then the settings for whichever one is selected —
+                                the two boards are named on their own cards so "Overall" and
+                                "Top Runners" can never be read as the same number. */}
+                            <div>{renderCategoryTabs()}</div>
+
+                            <div className="mt-3 grid gap-3 lg:grid-cols-2">
+                                {/* Board 1 — the Overall award */}
+                                <div className="rounded-xl border-2 border-sky-300 bg-sky-50 p-3">
+                                    <div className="flex items-baseline gap-2">
+                                        <span className="text-[15px] font-extrabold" style={{ color: '#0369a1' }}>
+                                            🏆 {language === 'th' ? 'รางวัล Overall' : 'Overall award'}
+                                        </span>
+                                        <span className="text-[12px] font-bold text-gray-500">
+                                            {selectedCategory || '—'}
+                                        </span>
+                                    </div>
+                                    <p className="mt-0.5 text-[11px] text-gray-500">
                                         {language === 'th'
-                                            ? `จำนวน Overall${selectedCategory ? ` (${selectedCategory})` : ''}:`
-                                            : `Overall count${selectedCategory ? ` (${selectedCategory})` : ''}:`}
-                                    </span>
-                                    <input
-                                        type="number"
-                                        min={MIN_TOP_N}
-                                        max={MAX_TOP_N}
-                                        value={overallDisplayCount}
-                                        disabled={!selectedCategory}
-                                        onChange={(e) => updateOverallDisplayCount(e.target.value === '' ? DEFAULT_TOP_N : Number(e.target.value))}
-                                        title={language === 'th'
-                                            ? 'จำนวนอันดับ Overall ของระยะที่เลือก — แต่ละระยะตั้งค่าแยกกันได้'
-                                            : 'Overall rank count for the selected distance — each distance is configured separately'}
-                                        className="h-9 w-20 rounded-lg border-2 border-sky-400 bg-white text-center font-semibold outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-100 disabled:opacity-50"
-                                        style={{ color: '#0369a1', fontSize: '15px' }}
-                                    />
-                                    <span className="text-[11px] font-bold" style={{ color: '#0369a1' }}>
-                                        {language === 'th' ? `อันดับแรก (1-${MAX_TOP_N})` : `top ranks (1-${MAX_TOP_N})`}
-                                    </span>
-                                </div>
-                                {/* Thai / foreign split toggle — per selected category */}
-                                <div className="justify-self-end flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5">
-                                    <span className="text-[11px] font-bold" style={{ color: '#047857' }}>
-                                        {language === 'th'
-                                            ? `แยกไทย / ต่างชาติ${selectedCategory ? ` (${selectedCategory})` : ''}`
-                                            : `Split Thai / foreign${selectedCategory ? ` (${selectedCategory})` : ''}`}
-                                    </span>
-                                    <button
-                                        type="button"
-                                        role="switch"
-                                        aria-checked={selectedCategorySplit}
-                                        onClick={toggleNatSplitForSelected}
-                                        disabled={!selectedCategory}
-                                        className="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors"
-                                        style={{ backgroundColor: selectedCategorySplit ? '#10b981' : '#cbd5e1', cursor: selectedCategory ? 'pointer' : 'not-allowed' }}
-                                        title={language === 'th'
-                                            ? 'แยกอันดับ Overall ตามสัญชาติ เฉพาะระยะที่เลือก — ถ้าไม่ติ๊กจะรวมไทยและต่างชาติ'
-                                            : 'Split Overall by nationality for the selected category — leave off to combine Thai and foreign'}
-                                    >
-                                        <span
-                                            className="inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform"
-                                            style={{ transform: selectedCategorySplit ? 'translateX(22px)' : 'translateX(2px)' }}
+                                            ? 'ผู้ที่ได้รางวัล Overall — ใช้กับหน้า Overall / ใบเซอร์ / e-slip'
+                                            : 'Overall award winners — used by the Overall board, certificates and e-slips'}
+                                    </p>
+                                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                                        <span className="text-[13px] font-bold" style={{ color: '#0369a1' }}>
+                                            {language === 'th' ? 'ให้รางวัล' : 'Award the top'}
+                                        </span>
+                                        <input
+                                            type="number"
+                                            min={MIN_TOP_N}
+                                            max={MAX_TOP_N}
+                                            value={overallDisplayCount}
+                                            disabled={!selectedCategory}
+                                            onChange={(e) => updateOverallDisplayCount(e.target.value === '' ? DEFAULT_TOP_N : Number(e.target.value))}
+                                            title={language === 'th'
+                                                ? 'จำนวนอันดับ Overall (ผู้ได้รางวัล) ของระยะที่เลือก — แต่ละระยะตั้งค่าแยกกันได้'
+                                                : 'Overall (award) rank count for the selected distance — each distance is configured separately'}
+                                            className="h-11 w-24 rounded-lg border-2 border-sky-400 bg-white text-center font-extrabold outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-100 disabled:opacity-50"
+                                            style={{ color: '#0369a1', fontSize: '20px' }}
                                         />
-                                    </button>
+                                        <span className="text-[13px] font-bold" style={{ color: '#0369a1' }}>
+                                            {language === 'th' ? `อันดับแรก / เพศ  (1-${MAX_TOP_N})` : `ranks per gender  (1-${MAX_TOP_N})`}
+                                        </span>
+                                    </div>
                                 </div>
+
+                                {/* Board 2 — the Top Runners listing */}
+                                <div className="rounded-xl border-2 border-violet-300 bg-violet-50 p-3">
+                                    <div className="flex items-baseline gap-2">
+                                        <span className="text-[15px] font-extrabold" style={{ color: '#6d28d9' }}>
+                                            📋 {language === 'th' ? 'บอร์ด Top Runners' : 'Top Runners board'}
+                                        </span>
+                                        <span className="text-[12px] font-bold text-gray-500">
+                                            {selectedCategory || '—'}
+                                        </span>
+                                    </div>
+                                    <p className="mt-0.5 text-[11px] text-gray-500">
+                                        {language === 'th'
+                                            ? 'รายชื่อที่โชว์บนหน้า Top Runners — ไม่ใช่รางวัล'
+                                            : 'The list shown on the Top Runners board — not an award'}
+                                    </p>
+                                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                                        <span className="text-[13px] font-bold" style={{ color: '#6d28d9' }}>
+                                            {language === 'th' ? 'แสดงอันดับที่' : 'Show ranks'}
+                                        </span>
+                                        <input
+                                            type="number"
+                                            min={MIN_TOP_RUNNERS_RANK}
+                                            max={MAX_TOP_RUNNERS_RANK}
+                                            value={topRunnersRange.start}
+                                            disabled={!selectedCategory}
+                                            onChange={(e) => updateTopRunnersRange({ start: e.target.value === '' ? MIN_TOP_RUNNERS_RANK : Number(e.target.value) })}
+                                            onBlur={commitTopRunnersRange}
+                                            className="h-11 w-20 rounded-lg border-2 border-violet-400 bg-white text-center font-extrabold outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-100 disabled:opacity-50"
+                                            style={{ color: '#6d28d9', fontSize: '20px' }}
+                                        />
+                                        <span className="text-[13px] font-bold" style={{ color: '#6d28d9' }}>
+                                            {language === 'th' ? 'ถึง' : 'to'}
+                                        </span>
+                                        <input
+                                            type="number"
+                                            min={MIN_TOP_RUNNERS_RANK}
+                                            max={MAX_TOP_RUNNERS_RANK}
+                                            value={topRunnersRange.end}
+                                            disabled={!selectedCategory}
+                                            onChange={(e) => updateTopRunnersRange({ end: e.target.value === '' ? MIN_TOP_RUNNERS_RANK : Number(e.target.value) })}
+                                            onBlur={commitTopRunnersRange}
+                                            className="h-11 w-20 rounded-lg border-2 border-violet-400 bg-white text-center font-extrabold outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-100 disabled:opacity-50"
+                                            style={{ color: '#6d28d9', fontSize: '20px' }}
+                                        />
+                                        <span className="text-[13px] font-bold" style={{ color: '#6d28d9' }}>
+                                            {language === 'th'
+                                                ? `= ${topRunnersRange.end - topRunnersRange.start + 1} คน / เพศ`
+                                                : `= ${topRunnersRange.end - topRunnersRange.start + 1} per gender`}
+                                        </span>
+                                    </div>
+                                    {/* Drop the Overall winners so the same runner isn't listed twice */}
+                                    <div className="mt-2 flex flex-wrap items-center gap-2 rounded-lg bg-white/70 px-2 py-1.5">
+                                        <button
+                                            type="button"
+                                            role="switch"
+                                            aria-checked={selectedCategoryCutsOverall}
+                                            onClick={toggleTopRunnersCutForSelected}
+                                            disabled={!selectedCategory}
+                                            className="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors"
+                                            style={{ backgroundColor: selectedCategoryCutsOverall ? '#7c3aed' : '#cbd5e1', cursor: selectedCategory ? 'pointer' : 'not-allowed' }}
+                                            title={language === 'th'
+                                                ? 'ตัดคนที่ได้รางวัล Overall ออกจากบอร์ดนี้ แล้วดึงคนถัดไปมาเติมจนครบจำนวนแถว'
+                                                : 'Drop the Overall winners from this board and backfill from further down the field'}
+                                        >
+                                            <span
+                                                className="inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform"
+                                                style={{ transform: selectedCategoryCutsOverall ? 'translateX(22px)' : 'translateX(2px)' }}
+                                            />
+                                        </button>
+                                        <span className="text-[13px] font-bold" style={{ color: '#6d28d9' }}>
+                                            {language === 'th' ? 'ตัดคนที่ได้รางวัล Overall ออก' : 'Drop the Overall winners'}
+                                        </span>
+                                        <span className="text-[11px] font-semibold text-gray-500">
+                                            {selectedCategoryCutsOverall
+                                                ? (language === 'th'
+                                                    ? `ข้าม ${overallDisplayCount} คนแรก → เริ่มที่อันดับ ${topRunnersCut + topRunnersRange.start}`
+                                                    : `skips the first ${overallDisplayCount} → starts at rank ${topRunnersCut + topRunnersRange.start}`)
+                                                : (language === 'th' ? 'ปิดอยู่ — รวมผู้ได้ Overall ด้วย' : 'off — Overall winners included')}
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Thai / foreign split toggle — per selected category, Overall board only */}
+                            <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5">
+                                <span className="text-[12px] font-bold" style={{ color: '#047857' }}>
+                                    {language === 'th'
+                                        ? `แยกไทย / ต่างชาติ (เฉพาะรางวัล Overall)${selectedCategory ? ` — ${selectedCategory}` : ''}`
+                                        : `Split Thai / foreign (Overall award only)${selectedCategory ? ` — ${selectedCategory}` : ''}`}
+                                </span>
+                                <button
+                                    type="button"
+                                    role="switch"
+                                    aria-checked={selectedCategorySplit}
+                                    onClick={toggleNatSplitForSelected}
+                                    disabled={!selectedCategory}
+                                    className="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors"
+                                    style={{ backgroundColor: selectedCategorySplit ? '#10b981' : '#cbd5e1', cursor: selectedCategory ? 'pointer' : 'not-allowed' }}
+                                    title={language === 'th'
+                                        ? 'แยกอันดับ Overall ตามสัญชาติ เฉพาะระยะที่เลือก — ถ้าไม่ติ๊กจะรวมไทยและต่างชาติ'
+                                        : 'Split Overall by nationality for the selected category — leave off to combine Thai and foreign'}
+                                >
+                                    <span
+                                        className="inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform"
+                                        style={{ transform: selectedCategorySplit ? 'translateX(22px)' : 'translateX(2px)' }}
+                                    />
+                                </button>
                             </div>
 
                             <div className="mt-3" style={{ maxHeight: '600px', overflowY: 'auto' }}>
@@ -455,6 +678,32 @@ export default function TopOverallPage() {
                                     <div className="grid gap-3 xl:grid-cols-2">
                                         {renderOverallPreviewColumn(language === 'th' ? '♂ อันดับชาย' : '♂ Male overall', 'bg-blue-600', overallMaleWinners)}
                                         {renderOverallPreviewColumn(language === 'th' ? '♀ อันดับหญิง' : '♀ Female overall', 'bg-pink-600', overallFemaleWinners)}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Separate preview: the Top Runners board is never split by
+                            nationality, so it gets its own section. */}
+                        <div className="mt-4 rounded-2xl border border-violet-200 bg-violet-50/40 p-3">
+                            <div className="mb-2 text-[13px] font-bold" style={{ color: '#6d28d9' }}>
+                                {language === 'th'
+                                    ? `พรีวิว Top Runners — อันดับ ${topRunnersCut + topRunnersRange.start}-${topRunnersCut + topRunnersRange.end}${selectedCategory ? ` (${selectedCategory})` : ''}`
+                                    : `Top Runners preview — ranks ${topRunnersCut + topRunnersRange.start}-${topRunnersCut + topRunnersRange.end}${selectedCategory ? ` (${selectedCategory})` : ''}`}
+                            </div>
+                            <div style={{ maxHeight: '600px', overflowY: 'auto' }}>
+                                {previewLoading ? (
+                                    <div className="rounded-xl border border-dashed border-gray-300 bg-white px-4 py-8 text-center text-sm text-gray-500">
+                                        {language === 'th' ? 'กำลังโหลดข้อมูลอันดับ...' : 'Loading ranking data...'}
+                                    </div>
+                                ) : !selectedCategory ? (
+                                    <div className="rounded-xl border border-dashed border-gray-300 bg-white px-4 py-8 text-center text-sm text-gray-500">
+                                        {language === 'th' ? 'ไม่มีประเภทการแข่งขันสำหรับแสดงพรีวิว' : 'No category available for preview'}
+                                    </div>
+                                ) : (
+                                    <div className="grid gap-3 xl:grid-cols-2">
+                                        {renderTopRunnersPreviewColumn(language === 'th' ? '♂ TOP RUNNERS · ชาย' : '♂ TOP RUNNERS · Male', 'bg-blue-600', topRunnersPreview.male)}
+                                        {renderTopRunnersPreviewColumn(language === 'th' ? '♀ TOP RUNNERS · หญิง' : '♀ TOP RUNNERS · Female', 'bg-pink-600', topRunnersPreview.female)}
                                     </div>
                                 )}
                             </div>

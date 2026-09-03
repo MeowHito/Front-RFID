@@ -137,6 +137,11 @@ export default function ScanningSlipPage() {
                     excludeOverallThaiFromAgeGroup: campaign.excludeOverallThaiFromAgeGroup,
                     excludeOverallForeignFromAgeGroup: campaign.excludeOverallForeignFromAgeGroup,
                     separateOverallByNationality: isNationalitySplitCategory(campaign.separateOverallNationalityCategories, runner.category),
+                    // The slip falls back to "Top N" for a runner the Top Runners
+                    // board lists who won no Overall / Age-group award.
+                    topRunnersRangeByCategory: campaign.topRunnersRangeByCategory,
+                    topRunnersExcludeOverallCategories: campaign.topRunnersExcludeOverallCategories,
+                    includeTopRunners: true,
                 });
                 const mine = awards.get(runner._id);
                 if (!cancelled) setAwardLabel(mine ? formatAwardLabel(mine) : null);

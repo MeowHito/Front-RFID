@@ -147,6 +147,11 @@ export default function ESlipView({ apiUrl }: { apiUrl: string }) {
                     excludeOverallThaiFromAgeGroup: campaign.excludeOverallThaiFromAgeGroup,
                     excludeOverallForeignFromAgeGroup: campaign.excludeOverallForeignFromAgeGroup,
                     separateOverallByNationality: natSplit,
+                    // The slip falls back to "Top N" for a runner the Top Runners
+                    // board lists who won no Overall / Age-group award.
+                    topRunnersRangeByCategory: campaign.topRunnersRangeByCategory,
+                    topRunnersExcludeOverallCategories: campaign.topRunnersExcludeOverallCategories,
+                    includeTopRunners: true,
                 });
                 const overallRanks = computeOverallRanks(pool, { separateByNationality: false });
                 const mine = awards.get(runner._id);
@@ -157,7 +162,7 @@ export default function ESlipView({ apiUrl }: { apiUrl: string }) {
             } catch { if (!cancelled) { setAwardLabel(null); setBestOfProvince(null); setGunOverallRank(null); } }
         })();
         return () => { cancelled = true; };
-    }, [runner, campaign?._id, campaign?.overallDisplayCount, campaign?.overallDisplayCountByCategory, campaign?.ageGroupDisplayCount, campaign?.bestOfProvinceEnabled, campaign?.bestOfProvinces, campaign?.excludeOverallFromAgeGroup, campaign?.excludeOverallThaiFromAgeGroup, campaign?.excludeOverallForeignFromAgeGroup, campaign?.excludeAgeGroupTop, campaign?.separateOverallNationalityCategories]);
+    }, [runner, campaign?._id, campaign?.overallDisplayCount, campaign?.overallDisplayCountByCategory, campaign?.ageGroupDisplayCount, campaign?.bestOfProvinceEnabled, campaign?.bestOfProvinces, campaign?.excludeOverallFromAgeGroup, campaign?.excludeOverallThaiFromAgeGroup, campaign?.excludeOverallForeignFromAgeGroup, campaign?.excludeAgeGroupTop, campaign?.separateOverallNationalityCategories, campaign?.topRunnersRangeByCategory, campaign?.topRunnersExcludeOverallCategories]);
 
     const handleBgUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const input = e.currentTarget;

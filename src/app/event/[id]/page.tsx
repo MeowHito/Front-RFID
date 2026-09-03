@@ -50,6 +50,9 @@ interface Campaign {
     overallDisplayCount?: number;
     /** Per-distance overrides of the Overall rank count (admin/top-overall). */
     overallDisplayCountByCategory?: { category: string; count: number }[];
+    /** Per-distance rank range of the Top Runners board (admin/top-overall). */
+    topRunnersRangeByCategory?: { category: string; start: number; end: number }[];
+    topRunnersExcludeOverallCategories?: string[];
     ageGroupDisplayCount?: number;
     bestOfDisplayCount?: number;
     excludeOverallFromAgeGroup?: number;
@@ -1974,6 +1977,8 @@ export default function EventLivePage() {
             categoryName={currentCategoryName}
             overallDisplayCount={campaign.overallDisplayCount}
             overallDisplayCountByCategory={campaign.overallDisplayCountByCategory}
+            topRunnersRangeByCategory={campaign.topRunnersRangeByCategory}
+            topRunnersExcludeOverallCategories={campaign.topRunnersExcludeOverallCategories}
             excludeOverallThaiFromAgeGroup={campaign.excludeOverallThaiFromAgeGroup}
             excludeOverallForeignFromAgeGroup={campaign.excludeOverallForeignFromAgeGroup}
             ageGroupDisplayCount={campaign.ageGroupDisplayCount}

@@ -71,6 +71,9 @@ export interface CampaignData {
     overallDisplayCount?: number;
     /** Per-distance overrides of the Overall rank count (admin/top-overall). */
     overallDisplayCountByCategory?: { category: string; count: number }[];
+    /** Top Runners board config — drives the "Top N" fallback award on the slip. */
+    topRunnersRangeByCategory?: { category: string; start: number; end: number }[];
+    topRunnersExcludeOverallCategories?: string[];
     ageGroupDisplayCount?: number;
     bestOfDisplayCount?: number;
     bestOfProvinceEnabled?: boolean;

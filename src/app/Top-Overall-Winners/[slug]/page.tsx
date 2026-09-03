@@ -8,7 +8,14 @@ import NameLangToggle from '@/components/NameLangToggle';
 import { useLanguage } from '@/lib/language-context';
 import { useAuth } from '@/lib/auth-context';
 import { useParams, useSearchParams } from 'next/navigation';
-import { resolveOverallDisplayCount, type OverallCountByCategoryEntry } from '@/lib/overall-display-count';
+import { type OverallCountByCategoryEntry } from '@/lib/overall-display-count';
+import {
+    resolveTopRunnersCut,
+    resolveTopRunnersRange,
+    sliceTopRunners,
+    topRunnersRangeSize,
+    type TopRunnersRangeEntry,
+} from '@/lib/top-runners-range';
 
 interface Runner {
     _id: string;
@@ -43,6 +50,8 @@ interface Campaign {
     categories?: CampaignCategory[];
     overallDisplayCount?: number;
     overallDisplayCountByCategory?: OverallCountByCategoryEntry[];
+    topRunnersRangeByCategory?: TopRunnersRangeEntry[];
+    topRunnersExcludeOverallCategories?: string[];
 }
 
 const REFRESH_INTERVAL = 10;
@@ -72,9 +81,10 @@ function getNameFontSize(name: string, isMobile: boolean, isPortrait: boolean): 
     return isMobile ? `${value.toFixed(1)}px` : `${value.toFixed(2)}vh`;
 }
 
-// "Top Overall" board — a single combined ranking of the fastest N finishers for
-// the selected distance, regardless of gender. Distinct from the gender-separated
-// Overall-Winners board, though both share the same admin-configured `overallDisplayCount`.
+// "Top Runners" board — the overall standings of the selected distance sliced to
+// an admin-configured rank range (e.g. ranks 1-20), one column per gender. The
+// range never skips anyone: the Overall winners are part of it whenever it starts
+// at rank 1. Distinct from the Overall-Winners board, which awards only the top N.
 export default function TopOverallWinnersBySlugPage() {
     const { language, setLanguage } = useLanguage();
     const { isAuthenticated } = useAuth();
@@ -230,11 +240,16 @@ export default function TopOverallWinnersBySlugPage() {
         };
     }, [autoMode]);
 
-    // Rank count is configured per distance (admin/top-overall), falling back to the
-    // campaign-wide count for distances with no override.
-    const topN = resolveOverallDisplayCount(campaign, selectedCategory);
+    // Rank range is configured per distance (admin/top-overall); distances with no
+    // range fall back to 1..overallDisplayCount.
+    const range = resolveTopRunnersRange(campaign, selectedCategory);
+    const rowCount = topRunnersRangeSize(range);
+    // Distances configured to drop the Overall winners skip that many leading
+    // finishers first; the range then fills its rows from further down the field.
+    const cut = resolveTopRunnersCut(campaign, selectedCategory);
 
-    // Top N finishers per gender — same admin-configured count as the combined board used to show.
+    // The slice of the standings the range covers, per gender, each row carrying
+    // its real overall rank so a range like 21-40 still prints 21, 22, 23…
     const { maleWinners, femaleWinners } = useMemo(() => {
         const finished = displayedRunners.filter(r => r.status === 'finished' && (r.netTime || r.gunTime || r.elapsedTime));
         const sorted = [...finished].sort((a, b) => {
@@ -243,15 +258,13 @@ export default function TopOverallWinnersBySlugPage() {
             return at - bt;
         });
         return {
-            maleWinners: sorted.filter(r => r.gender !== 'F').slice(0, topN),
-            femaleWinners: sorted.filter(r => r.gender === 'F').slice(0, topN),
+            maleWinners: sliceTopRunners(sorted.filter(r => r.gender !== 'F'), range, cut),
+            femaleWinners: sliceTopRunners(sorted.filter(r => r.gender === 'F'), range, cut),
         };
-    }, [displayedRunners, topN]);
+    }, [displayedRunners, range.start, range.end, cut]); // eslint-disable-line react-hooks/exhaustive-deps
 
     // Exports only the currently-selected distance (not every distance in the campaign).
     const downloadGroup = useCallback(async (
-        _males: Runner[],
-        _females: Runner[],
         gender: 'male' | 'female' | 'both',
     ) => {
         if (!campaign?._id) return;
@@ -266,7 +279,8 @@ export default function TopOverallWinnersBySlugPage() {
                 gender,
                 nameLang: language,
                 computeWinners: (runners, categoryName) => {
-                    const topNForCat = resolveOverallDisplayCount(campaign, categoryName);
+                    const catRange = resolveTopRunnersRange(campaign, categoryName);
+                    const catCut = resolveTopRunnersCut(campaign, categoryName);
                     const finished = runners.filter(r => r.status === 'finished' && (r.netTime || r.gunTime || r.elapsedTime));
                     const sorted = [...finished].sort((a, b) => {
                         const at = a.gunTime || a.netTime || a.elapsedTime || Infinity; // Overall = gun time
@@ -274,12 +288,14 @@ export default function TopOverallWinnersBySlugPage() {
                         return at - bt;
                     });
                     return {
-                        maleRunners: sorted.filter(r => r.gender !== 'F').slice(0, topNForCat),
-                        femaleRunners: sorted.filter(r => r.gender === 'F').slice(0, topNForCat),
+                        maleRunners: sorted.filter(r => r.gender !== 'F').slice(catCut + catRange.start - 1, catCut + catRange.end),
+                        femaleRunners: sorted.filter(r => r.gender === 'F').slice(catCut + catRange.start - 1, catCut + catRange.end),
+                        // POS column must print the real overall rank, not 1..N
+                        rankOffset: catCut + catRange.start - 1,
                     };
                 },
             });
-            triggerSingleDistanceDownload(blob, campaign.name || '', 'TopOverall', selectedCategory, distance, gender);
+            triggerSingleDistanceDownload(blob, campaign.name || '', 'TopRunners', selectedCategory, distance, gender);
         } catch (e) { console.error(e); } finally {
             setDownloading(null);
         }
@@ -299,14 +315,16 @@ export default function TopOverallWinnersBySlugPage() {
     const rankBg = ['#f59e0b', '#9ca3af', '#92400e', '#e2e8f0', '#e2e8f0'];
     const rankFg = ['#000', '#fff', '#fff', '#475569', '#475569'];
 
-    const renderRunnerRow = (runner: Runner, idx: number) => {
+    // `rank` is the runner's real overall position, so a range like 21-40 prints
+    // 21, 22, 23… instead of restarting the numbering at 1.
+    const renderRunnerRow = (runner: Runner, rank: number) => {
         const fullName = language === 'th' && runner.firstNameTh
             ? `${runner.bib}  ${runner.firstNameTh} ${runner.lastNameTh || ''}`
             : `${runner.bib}  ${runner.firstName} ${runner.lastName}`;
         return (
-        <div key={runner._id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: isMobile ? '4px 8px' : '0.4vh 10px', borderRadius: 6, background: idx === 0 ? '#fffbeb' : 'transparent', height: isMobile ? 'auto' : '4vh', minHeight: isMobile ? 30 : 30 }}>
-            <div style={{ width: isMobile ? 22 : '2.4vh', height: isMobile ? 22 : '2.4vh', minWidth: 18, minHeight: 18, borderRadius: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: isMobile ? 12 : '1.4vh', fontWeight: 900, flexShrink: 0, background: rankBg[idx] || '#e2e8f0', color: rankFg[idx] || '#475569' }}>
-                {idx + 1}
+        <div key={runner._id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: isMobile ? '4px 8px' : '0.4vh 10px', borderRadius: 6, background: rank === 1 ? '#fffbeb' : 'transparent', height: isMobile ? 'auto' : '4vh', minHeight: isMobile ? 30 : 30 }}>
+            <div style={{ width: isMobile ? 22 : '2.4vh', height: isMobile ? 22 : '2.4vh', minWidth: 18, minHeight: 18, borderRadius: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: isMobile ? 12 : '1.4vh', fontWeight: 900, flexShrink: 0, background: rankBg[rank - 1] || '#e2e8f0', color: rankFg[rank - 1] || '#475569' }}>
+                {rank}
             </div>
             <span style={{ width: isMobile ? 16 : '1.8vh', flexShrink: 0, textAlign: 'center', fontSize: isMobile ? 12 : '1.4vh' }}>
                 {runner.gender === 'F' ? '♀' : '♂'}
@@ -321,10 +339,10 @@ export default function TopOverallWinnersBySlugPage() {
         );
     };
 
-    const renderEmptyRow = (idx: number) => (
-        <div key={`empty-${idx}`} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: isMobile ? '4px 8px' : '0.4vh 10px', height: isMobile ? 'auto' : '4vh', minHeight: isMobile ? 30 : 30 }}>
+    const renderEmptyRow = (rank: number) => (
+        <div key={`empty-${rank}`} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: isMobile ? '4px 8px' : '0.4vh 10px', height: isMobile ? 'auto' : '4vh', minHeight: isMobile ? 30 : 30 }}>
             <div style={{ width: isMobile ? 22 : '2.4vh', height: isMobile ? 22 : '2.4vh', minWidth: 18, minHeight: 18, borderRadius: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: isMobile ? 12 : '1.4vh', fontWeight: 900, flexShrink: 0, background: '#f1f5f9', color: '#cbd5e1' }}>
-                {idx + 1}
+                {rank}
             </div>
             <span style={{ width: isMobile ? 16 : '1.8vh', flexShrink: 0 }} />
             <span style={{ fontSize: isMobile ? 11 : '1.2vh', color: '#cbd5e1', fontStyle: 'italic', flex: 1 }}>—</span>
@@ -338,7 +356,7 @@ export default function TopOverallWinnersBySlugPage() {
         </svg>
     );
 
-    const renderColumn = (title: string, bgHeader: string, list: Runner[], colRef: { current: HTMLDivElement | null }, onDownload: () => void) => (
+    const renderColumn = (title: string, bgHeader: string, list: { runner: Runner; rank: number }[], colRef: { current: HTMLDivElement | null }, onDownload: () => void) => (
         <div ref={el => { colRef.current = el; }} style={{ display: 'flex', flexDirection: 'column', gap: isMobile ? 8 : '0.8vh', minHeight: 0, flex: 1, overflowY: isMobile ? 'visible' : 'auto', paddingRight: isMobile ? 0 : 4 }}>
             <div style={{ padding: isMobile ? '8px 10px' : '0.9vh 10px', fontWeight: 900, fontSize: isMobile ? 'clamp(10px, 4vw, 16px)' : 'clamp(10px, 1.7vw, 2vh)', textTransform: 'uppercase', borderRadius: 8, color: 'white', letterSpacing: 1, background: bgHeader, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
                 <span style={{ visibility: 'hidden', padding: isMobile ? '3px 6px' : '3px 8px', fontSize: isMobile ? 11 : 12 }} aria-hidden="true">
@@ -363,7 +381,9 @@ export default function TopOverallWinnersBySlugPage() {
                         <span style={{ fontSize: isMobile ? 9 : '1.1vh', fontWeight: 700, color: '#94a3b8', flex: 1, textTransform: 'uppercase', letterSpacing: 0.5 }}>Name</span>
                         <span style={{ fontSize: isMobile ? 9 : '1.1vh', fontWeight: 700, color: '#94a3b8', flexShrink: 0, minWidth: isMobile ? 60 : '7vh', textAlign: 'right', letterSpacing: 0.5 }}>GunTime</span>
                     </div>
-                    {Array.from({ length: topN }, (_, i) => i).map(i => list[i] ? renderRunnerRow(list[i], i) : renderEmptyRow(i))}
+                    {Array.from({ length: rowCount }, (_, i) => i).map(i => list[i]
+                        ? renderRunnerRow(list[i].runner, list[i].rank)
+                        : renderEmptyRow(cut + range.start + i))}
                 </div>
             </div>
         </div>
@@ -399,9 +419,9 @@ export default function TopOverallWinnersBySlugPage() {
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
                             <NameLangToggle value={language} onChange={setLanguage} isMobile={isMobile} />
                             <button
-                                onClick={() => downloadGroup(maleWinners, femaleWinners, 'both')}
+                                onClick={() => downloadGroup('both')}
                                 disabled={!!downloading}
-                                title="Download Top Overall Winners (Excel)"
+                                title="Download Top Runners (Excel)"
                                 style={{ display: 'flex', alignItems: 'center', gap: 5, padding: isMobile ? '5px 10px' : '0.35vh 0.7vw', background: '#4f46e5', border: '1px solid #4338ca', borderRadius: 7, color: 'white', fontSize: isMobile ? 11 : '1.15vh', fontWeight: 800, cursor: 'pointer', whiteSpace: 'nowrap', opacity: downloading ? 0.6 : 1, transition: 'opacity 0.15s', fontFamily: "'Prompt','Inter',sans-serif" }}
                             >
                                 {dlIcon(11)}
@@ -457,7 +477,7 @@ export default function TopOverallWinnersBySlugPage() {
                             {campaign.name}
                         </span>
                         <span style={{ color: '#4f46e5', fontWeight: 900, fontSize: isMobile ? 11 : '1.4vh', letterSpacing: 1.5, textTransform: 'uppercase', whiteSpace: 'nowrap' }}>
-                            Top Overall {topN}
+                            Top Runners {cut + range.start}-{cut + range.end}
                         </span>
                     </div>
                 </div>
@@ -469,8 +489,8 @@ export default function TopOverallWinnersBySlugPage() {
                 </div>
             ) : (
                 <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: isMobile ? 12 : '1vw', flex: isMobile ? undefined : 1, minHeight: 0, paddingBottom: isMobile ? 16 : 0 }}>
-                    {renderColumn('♂ MALE TOP OVERALL', '#2563eb', maleWinners, maleColRef, () => downloadGroup(maleWinners, femaleWinners, 'male'))}
-                    {renderColumn('♀ FEMALE TOP OVERALL', '#db2777', femaleWinners, femaleColRef, () => downloadGroup(maleWinners, femaleWinners, 'female'))}
+                    {renderColumn('♂ MALE TOP RUNNERS', '#2563eb', maleWinners, maleColRef, () => downloadGroup('male'))}
+                    {renderColumn('♀ FEMALE TOP RUNNERS', '#db2777', femaleWinners, femaleColRef, () => downloadGroup('female'))}
                 </div>
             )}
         </div>

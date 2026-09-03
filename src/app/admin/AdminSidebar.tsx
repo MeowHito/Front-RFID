@@ -96,7 +96,7 @@ const menuSections: MenuSection[] = [
             { href: '/admin/general-chart', label: 'กราฟสถิติ', labelEn: 'General Chart', icon: 'bar-chart', iconColor: '#0ea5e9' },
             { href: '/admin/display', label: 'การแสดงผล', labelEn: 'Display Settings', icon: 'desktop' },
             { href: '/admin/age-group-ranking', label: 'อันดับกลุ่มอายุ', labelEn: 'Age Group Ranking', icon: 'ranking-star' },
-            { href: '/admin/top-overall', label: 'Top Overall', labelEn: 'Top Overall', icon: 'trophy', iconColor: '#ee6b6e' },
+            { href: '/admin/top-overall', label: 'Top Runners', labelEn: 'Top Runners', icon: 'trophy', iconColor: '#ee6b6e' },
             { href: '/admin/best-of-province', label: 'Best of จังหวัด', labelEn: 'Best of Province', icon: 'pin-star', iconColor: '#0d9488' },
             { href: '/admin/target-time-ranking', label: 'อันดับเวลาตามเป้าหมาย', labelEn: 'Target Time Ranking', icon: 'stopwatch' },
             { href: '/admin/certificates', label: 'ใบประกาศ', labelEn: 'Certificates', icon: 'print' },

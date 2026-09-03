@@ -24,7 +24,7 @@ export async function downloadAllDistances<T extends ExcelRunner>(params: {
     /** Short label for the filename, e.g. "Overall", "BestOf", "Nationality". */
     filePartLabel: string;
     /** Same winners logic the page already uses for the on-screen display, applied per distance. */
-    computeWinners: (runners: T[], categoryName: string) => { maleRunners: T[]; femaleRunners: T[] };
+    computeWinners: (runners: T[], categoryName: string) => { maleRunners: T[]; femaleRunners: T[]; rankOffset?: number };
 }): Promise<Blob | null> {
     const { campaignId, campaignName, categories, selectedCategory, currentRunners, gender, nameLang, computeWinners } = params;
     const categoriesToUse = categories.length ? categories : [{ name: selectedCategory, distance: undefined }];
@@ -38,9 +38,9 @@ export async function downloadAllDistances<T extends ExcelRunner>(params: {
             const res = await fetch(`/api/runners/paged?${p.toString()}`, { cache: 'no-store' });
             runnersForCat = res.ok ? (await res.json()).data || [] : [];
         }
-        const { maleRunners, femaleRunners } = computeWinners(runnersForCat, cat.name);
+        const { maleRunners, femaleRunners, rankOffset } = computeWinners(runnersForCat, cat.name);
         const distanceSuffix = cat.distance ? ` (${cat.distance})` : '';
-        return { categoryLabel: `${cat.name}${distanceSuffix}`, maleRunners, femaleRunners };
+        return { categoryLabel: `${cat.name}${distanceSuffix}`, maleRunners, femaleRunners, rankOffset };
     }));
 
     return buildWinnersExcel(campaignName, '', sections, gender, { nameLang });
@@ -63,12 +63,12 @@ export async function downloadSelectedDistance<T extends ExcelRunner>(params: {
     currentRunners: T[];
     gender: 'male' | 'female' | 'both';
     nameLang: 'th' | 'en';
-    computeWinners: (runners: T[], categoryName: string) => { maleRunners: T[]; femaleRunners: T[] };
+    computeWinners: (runners: T[], categoryName: string) => { maleRunners: T[]; femaleRunners: T[]; rankOffset?: number };
 }): Promise<Blob | null> {
     const { campaignName, selectedCategory, distance, currentRunners, gender, nameLang, computeWinners } = params;
-    const { maleRunners, femaleRunners } = computeWinners(currentRunners, selectedCategory);
+    const { maleRunners, femaleRunners, rankOffset } = computeWinners(currentRunners, selectedCategory);
     const distanceSuffix = distance ? ` (${distance})` : '';
-    const sections: ExcelSection[] = [{ categoryLabel: `${selectedCategory}${distanceSuffix}`, maleRunners, femaleRunners }];
+    const sections: ExcelSection[] = [{ categoryLabel: `${selectedCategory}${distanceSuffix}`, maleRunners, femaleRunners, rankOffset }];
     return buildWinnersExcel(campaignName, '', sections, gender, { nameLang });
 }
 

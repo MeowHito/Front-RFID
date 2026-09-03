@@ -11,6 +11,7 @@ import {
     type RankingMenuVisibility,
 } from '@/lib/rankingMenu';
 import { resolveOverallDisplayCount, type OverallCountByCategoryEntry } from '@/lib/overall-display-count';
+import { resolveTopRunnersCut, resolveTopRunnersRange, type TopRunnersRangeEntry } from '@/lib/top-runners-range';
 
 interface RankingMenuDropdownProps {
     campaignId: string;
@@ -23,6 +24,9 @@ interface RankingMenuDropdownProps {
     overallDisplayCount?: number;
     /** Per-distance overrides of the Overall rank count (admin/top-overall). */
     overallDisplayCountByCategory?: OverallCountByCategoryEntry[];
+    /** Per-distance rank range of the Top Runners board (admin/top-overall). */
+    topRunnersRangeByCategory?: TopRunnersRangeEntry[];
+    topRunnersExcludeOverallCategories?: string[];
     /** Top N Thai overall ranks (admin/age-group-ranking "คนไทย"). Falls back to overallDisplayCount. */
     excludeOverallThaiFromAgeGroup?: number;
     /** Top N foreign overall ranks (admin/age-group-ranking "ต่างชาติ"). Falls back to overallDisplayCount. */
@@ -47,6 +51,8 @@ export default function RankingMenuDropdown({
     categoryName,
     overallDisplayCount,
     overallDisplayCountByCategory,
+    topRunnersRangeByCategory,
+    topRunnersExcludeOverallCategories,
     excludeOverallThaiFromAgeGroup,
     excludeOverallForeignFromAgeGroup,
     ageGroupDisplayCount,
@@ -80,6 +86,9 @@ export default function RankingMenuDropdown({
 
     // The Overall rank count is per distance, so the menu labels follow the selected one.
     const overallN = resolveOverallDisplayCount({ overallDisplayCount, overallDisplayCountByCategory }, categoryName);
+    const topRunnersCfg = { overallDisplayCount, overallDisplayCountByCategory, topRunnersRangeByCategory, topRunnersExcludeOverallCategories };
+    const topRunnersRange = resolveTopRunnersRange(topRunnersCfg, categoryName);
+    const topRunnersCut = resolveTopRunnersCut(topRunnersCfg, categoryName);
     const overallThaiN = excludeOverallThaiFromAgeGroup != null ? Math.max(1, Number(excludeOverallThaiFromAgeGroup) || 5) : overallN;
     const overallForeignN = excludeOverallForeignFromAgeGroup != null ? Math.max(1, Number(excludeOverallForeignFromAgeGroup) || 5) : overallN;
     const ageGroupN = Math.max(1, Number(ageGroupDisplayCount) || 5);
@@ -88,7 +97,7 @@ export default function RankingMenuDropdown({
     const bestOfEventName = (campaignName || '').length > 15 ? `${(campaignName || '').slice(0, 15)}...` : (campaignName || '');
 
     const items: { key: RankingMenuItemKey; label: string; href: string }[] = [
-        { key: 'topOverall', label: `TopOverall ${overallN}`, href: `/Top-Overall-Winners/${encodeURIComponent(campaignSlugOrId)}${catQuery}` },
+        { key: 'topOverall', label: `Top Runners ${topRunnersCut + topRunnersRange.start}-${topRunnersCut + topRunnersRange.end}`, href: `/Top-Overall-Winners/${encodeURIComponent(campaignSlugOrId)}${catQuery}` },
         { key: 'general', label: `Overall ${overallThaiN}`, href: `/Overall-Winners/${encodeURIComponent(campaignSlugOrId)}${catQuery}` },
         { key: 'bestOf', label: `Best of ${bestOfEventName} ${bestOfN}`, href: `/Best-Of-Winners/${encodeURIComponent(campaignSlugOrId)}${catQuery}` },
         { key: 'nationality', label: `Foreigner Overall ${overallForeignN}`, href: `/Nationality-Winners/${encodeURIComponent(campaignSlugOrId)}${catQuery}` },

@@ -15,6 +15,11 @@
 import { isThaiNationality } from './nationality';
 import { buildCanonicalAgeGroups, canonicalizeAgeGroup } from './age-groups';
 import { resolveOverallDisplayCount, type OverallCountByCategoryEntry } from './overall-display-count';
+import {
+    resolveTopRunnersCut,
+    resolveTopRunnersRange,
+    type TopRunnersRangeEntry,
+} from './top-runners-range';
 
 export interface AwardConfig {
     overallDisplayCount?: number;
@@ -34,6 +39,14 @@ export interface AwardConfig {
      *  `overallDisplayCount` when unset, matching the previous coupled behavior. */
     excludeOverallThaiFromAgeGroup?: number;
     excludeOverallForeignFromAgeGroup?: number;
+    /** Top Runners board config. Supplying it adds a `topRunners` placing for the
+     *  runners the board lists — see `AwardResult.topRunners`. Omit it and no
+     *  runner gets one, which is the behavior on surfaces that predate the board. */
+    topRunnersRangeByCategory?: TopRunnersRangeEntry[];
+    topRunnersExcludeOverallCategories?: string[];
+    /** Set to compute the Top Runners placing at all. Off by default so the AWARD
+     *  column and certificates keep listing only real awards. */
+    includeTopRunners?: boolean;
 }
 
 export interface AwardRunnerLike {
@@ -60,7 +73,16 @@ export interface AwardRunnerLike {
 // A runner may earn an overall placing, an age-group placing, or both.
 // `overallNat` is set only in nationality-split categories: which bucket the
 // Overall placing belongs to (renders as "OVERALL THA n" / "OVERALL INT n").
-export type AwardResult = { overall?: number; overallNat?: 'thai' | 'foreign'; ageGroup?: number; ageGroupLabel?: string };
+// `topRunners` is the runner's placing within their own gender + distance, set
+// only for runners the Top Runners board actually lists. It is a listing, not an
+// award: `formatAwardLabel` shows it only when the runner won nothing else.
+export type AwardResult = {
+    overall?: number;
+    overallNat?: 'thai' | 'foreign';
+    ageGroup?: number;
+    ageGroupLabel?: string;
+    topRunners?: number;
+};
 
 /** Strip gender prefix ("M30-39") and Thai "ปี" suffix so labels group consistently. */
 export function normalizeAgeGroupLabel(value?: string | null): string {
@@ -153,6 +175,11 @@ export function computeAwardsForCategory(
         foreign: cfg.excludeOverallForeignFromAgeGroup != null ? Math.max(0, Number(cfg.excludeOverallForeignFromAgeGroup)) : overallDisplayCount,
     };
 
+    // Top Runners placing — the same slice the public board renders, so the label
+    // on a slip always matches the board the runner just looked at.
+    const topRunnersRange = resolveTopRunnersRange(cfg, cfg.category);
+    const topRunnersCut = resolveTopRunnersCut(cfg, cfg.category);
+
     const finished = runners.filter(r => r.status === 'finished' && (r.netTime || r.gunTime || r.elapsedTime));
     // RaceTiger occasionally tags a handful of runners with a differently-shaped
     // age-group label than the rest of the field for the same real bracket (e.g.
@@ -192,6 +219,14 @@ export function computeAwardsForCategory(
         } else {
             byGun.slice(0, overallDisplayCount).forEach((r, i) => {
                 ensure(r._id).overall = i + 1;
+            });
+        }
+
+        if (cfg.includeTopRunners) {
+            const from = topRunnersCut + topRunnersRange.start - 1;
+            const to = topRunnersCut + topRunnersRange.end;
+            byGun.slice(from, to).forEach((r, i) => {
+                ensure(r._id).topRunners = from + i + 1;
             });
         }
 
@@ -265,11 +300,14 @@ export function formatOverallAwardLabel(a: AwardResult): string {
     return `Overall ${a.overall}`;
 }
 
-/** Human label shown in the AWARD column / e-slip, e.g. "Overall 1, Age Group 2". */
+/** Human label shown in the AWARD column / e-slip, e.g. "Overall 1, Age Group 2".
+ *  A Top Runners placing is a fallback only: it shows as "Top 12" for a runner the
+ *  board lists who won no Overall or Age-group award, and is dropped for one who did. */
 export function formatAwardLabel(a: AwardResult | undefined | null): string {
     if (!a) return '';
     const parts: string[] = [];
     if (a.overall) parts.push(formatOverallAwardLabel(a));
     if (a.ageGroup) parts.push(`Age Group ${a.ageGroup}`);
+    if (parts.length === 0 && a.topRunners) return `Top ${a.topRunners}`;
     return parts.join(', ');
 }

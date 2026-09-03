@@ -481,7 +481,7 @@ export default function AgeGroupRankingPage() {
                                     style={{ color: '#ffffff' }}
                                 >
                                     <TrophyIcon className="h-4 w-4" />
-                                    Top Overall
+                                    Top Runners
                                 </Link>
                             </div>
 
