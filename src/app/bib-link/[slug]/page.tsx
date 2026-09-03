@@ -224,6 +224,9 @@ export default function BibLinkPage() {
                             excludeOverallThaiFromAgeGroup: c.excludeOverallThaiFromAgeGroup,
                             excludeOverallForeignFromAgeGroup: c.excludeOverallForeignFromAgeGroup,
                             separateOverallByNationality: isNationalitySplitCategory(c.separateOverallNationalityCategories, r.category),
+                            topRunnersRangeByCategory: c.topRunnersRangeByCategory,
+                            topRunnersExcludeOverallCategories: c.topRunnersExcludeOverallCategories,
+                            includeTopRunners: true,
                         });
                         const mine = awards.get(r._id);
                         award = mine ? formatAwardLabel(mine) : null;

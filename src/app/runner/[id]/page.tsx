@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
 import { isRunnerFollowed, loadFollowedRunners, saveFollowedRunners, subscribeFollowedRunners, toggleFollowedRunner, type FollowedRunner } from '@/lib/followed-runners';
-import { computeAwardsForCategory, computeOverallRanks, computeGenderRanks, computeAgeGroupRanks, formatOverallAwardLabel, type AwardResult } from '@/lib/awards';
+import { computeAwardsForCategory, computeOverallRanks, computeGenderRanks, computeAgeGroupRanks, formatOverallAwardLabel, formatTopRunnersLabel, type AwardResult } from '@/lib/awards';
 import { bestOfProvinceAwardFor } from '@/lib/thai-provinces';
 import { isNationalitySplitCategory } from '@/lib/nationality';
 import { dedupeTimings } from '@/lib/timing-dedupe';
@@ -77,6 +77,9 @@ interface CampaignData {
     overallDisplayCount?: number;
     /** Per-distance overrides of the Overall rank count (admin/top-overall). */
     overallDisplayCountByCategory?: { category: string; count: number }[];
+    /** Top Runners board config — drives the "TOP n" part of the AWARD label. */
+    topRunnersRangeByCategory?: { category: string; start: number; end: number }[];
+    topRunnersExcludeOverallCategories?: string[];
     ageGroupDisplayCount?: number;
     bestOfDisplayCount?: number;
     bestOfProvinceEnabled?: boolean;
@@ -448,6 +451,10 @@ export default function RunnerProfilePage() {
                     excludeOverallThaiFromAgeGroup: campaign.excludeOverallThaiFromAgeGroup,
                     excludeOverallForeignFromAgeGroup: campaign.excludeOverallForeignFromAgeGroup,
                     separateOverallByNationality: natSplit,
+                    // The badge also carries the Top Runners placing, e.g. "Overall 1, TOP 1".
+                    topRunnersRangeByCategory: campaign.topRunnersRangeByCategory,
+                    topRunnersExcludeOverallCategories: campaign.topRunnersExcludeOverallCategories,
+                    includeTopRunners: true,
                 });
                 // Overall is now a single combined placing (no nationality split); Gender
                 // and Age-group placings are also by gun time.
@@ -463,7 +470,7 @@ export default function RunnerProfilePage() {
             } catch { if (!cancelled) { setAward(null); setBestOfProvince(null); setGunOverallRank(null); setGunGenderRank(null); setGunAgeGroupRank(null); } }
         })();
         return () => { cancelled = true; };
-    }, [runner, campaign?._id, campaign?.overallDisplayCount, campaign?.overallDisplayCountByCategory, campaign?.ageGroupDisplayCount, campaign?.bestOfProvinceEnabled, campaign?.bestOfProvinces, campaign?.excludeOverallFromAgeGroup, campaign?.excludeOverallThaiFromAgeGroup, campaign?.excludeOverallForeignFromAgeGroup, campaign?.separateOverallNationalityCategories]);
+    }, [runner, campaign?._id, campaign?.overallDisplayCount, campaign?.overallDisplayCountByCategory, campaign?.ageGroupDisplayCount, campaign?.bestOfProvinceEnabled, campaign?.bestOfProvinces, campaign?.excludeOverallFromAgeGroup, campaign?.excludeOverallThaiFromAgeGroup, campaign?.excludeOverallForeignFromAgeGroup, campaign?.separateOverallNationalityCategories, campaign?.topRunnersRangeByCategory, campaign?.topRunnersExcludeOverallCategories]);
 
     useEffect(() => {
         setFollowedRunners(loadFollowedRunners());
@@ -978,12 +985,13 @@ export default function RunnerProfilePage() {
                     same way as the public event table + winner boards. Only shown when the
                     runner actually places into an award slot. Age Group placings also show
                     the runner's age group in parentheses. */}
-                {((award && (award.overall || award.ageGroup)) || bestOfProvince) && (() => {
+                {((award && (award.overall || award.ageGroup || award.topRunners)) || bestOfProvince) && (() => {
                     // "Best of <province>" leads (when earned), then the Overall / Age-group
                     // award — the two are separated by " | ".
                     const awardParts: string[] = [];
                     if (award?.overall) awardParts.push(formatOverallAwardLabel(award));
                     if (award?.ageGroup) awardParts.push(`Age Group ${award.ageGroup}${runner.ageGroup ? ` (${runner.ageGroup})` : ''}`);
+                    if (award?.topRunners) awardParts.push(formatTopRunnersLabel(award));
                     const segments: string[] = [];
                     if (bestOfProvince) segments.push(bestOfProvince);
                     if (awardParts.length) segments.push(awardParts.join(', '));

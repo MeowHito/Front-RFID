@@ -301,13 +301,18 @@ export function formatOverallAwardLabel(a: AwardResult): string {
 }
 
 /** Human label shown in the AWARD column / e-slip, e.g. "Overall 1, Age Group 2".
- *  A Top Runners placing is a fallback only: it shows as "Top 12" for a runner the
- *  board lists who won no Overall or Age-group award, and is dropped for one who did. */
+ *  A Top Runners placing is appended as its own part — "Overall 1, TOP 1" — and
+ *  stands alone for a listed runner who won no Overall or Age-group award. */
 export function formatAwardLabel(a: AwardResult | undefined | null): string {
     if (!a) return '';
     const parts: string[] = [];
     if (a.overall) parts.push(formatOverallAwardLabel(a));
     if (a.ageGroup) parts.push(`Age Group ${a.ageGroup}`);
-    if (parts.length === 0 && a.topRunners) return `Top ${a.topRunners}`;
+    if (a.topRunners) parts.push(formatTopRunnersLabel(a));
     return parts.join(', ');
+}
+
+/** Label for the Top Runners part of an award: "TOP 14". */
+export function formatTopRunnersLabel(a: AwardResult): string {
+    return a.topRunners ? `TOP ${a.topRunners}` : '';
 }

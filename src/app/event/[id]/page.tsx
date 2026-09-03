@@ -1132,11 +1132,15 @@ export default function EventLivePage() {
                 excludeOverallForeignFromAgeGroup: campaign?.excludeOverallForeignFromAgeGroup,
                 // Nationality split is decided per race category (AWARD label only)
                 separateOverallByNationality: natSplitAwardKeys.has(key),
+                // AWARD also carries the Top Runners placing, e.g. "Overall 1, TOP 1".
+                topRunnersRangeByCategory: campaign?.topRunnersRangeByCategory,
+                topRunnersExcludeOverallCategories: campaign?.topRunnersExcludeOverallCategories,
+                includeTopRunners: true,
             };
             for (const [id, award] of computeAwardsForCategory(pool, cfg)) map.set(id, award);
         }
         return map;
-    }, [runners, resolveRunnerCategoryKey, categories, campaign?.overallDisplayCount, campaign?.overallDisplayCountByCategory, campaign?.ageGroupDisplayCount, campaign?.excludeOverallFromAgeGroup, campaign?.excludeOverallThaiFromAgeGroup, campaign?.excludeOverallForeignFromAgeGroup, campaign?.excludeAgeGroupTop, natSplitAwardKeys]);
+    }, [runners, resolveRunnerCategoryKey, categories, campaign?.overallDisplayCount, campaign?.overallDisplayCountByCategory, campaign?.ageGroupDisplayCount, campaign?.excludeOverallFromAgeGroup, campaign?.excludeOverallThaiFromAgeGroup, campaign?.excludeOverallForeignFromAgeGroup, campaign?.excludeAgeGroupTop, campaign?.topRunnersRangeByCategory, campaign?.topRunnersExcludeOverallCategories, natSplitAwardKeys]);
 
     // Build ordered list of visible columns based on admin displayColumns + mobile
     const visibleColumns = useMemo(() => {
@@ -2439,10 +2443,11 @@ export default function EventLivePage() {
                                                 const textColor = isMobile ? '#0f172a' : themeStyles.textMuted;
                                                 return (
                                                     <td key={key} className={isMobile ? 'px-0.5 py-1 text-center' : 'px-1.5 py-1.5 text-center'}>
-                                                        {award && (award.overall || award.ageGroup) ? (
+                                                        {award && (award.overall || award.ageGroup || award.topRunners) ? (
                                                             <span className="inline-flex flex-col items-center leading-tight whitespace-nowrap">
                                                                 {award.overall ? <span className={textCls} style={{ color: textColor }}>{award.overallNat ? `OVERALL ${award.overallNat === 'thai' ? 'THA' : 'INT'}` : 'Overall'} {award.overall}</span> : null}
                                                                 {award.ageGroup ? <span className={textCls} style={{ color: textColor }}>Age Group {award.ageGroup}</span> : null}
+                                                                {award.topRunners ? <span className={textCls} style={{ color: textColor }}>TOP {award.topRunners}</span> : null}
                                                             </span>
                                                         ) : (
                                                             <span className={textCls} style={{ color: textColor }}>-</span>
