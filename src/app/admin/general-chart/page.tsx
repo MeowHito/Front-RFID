@@ -913,8 +913,25 @@ function CourseStrip({
     })();
 
     if (!data.length || segments.length === 0) return null;
-    const totalOnCourse = segments.reduce((sum, s) => sum + s.count, 0);
-    const peak = segments.reduce((m, s) => (s.count > m.count ? s : m), segments[0]);
+    // "On course" has to mean the same thing in the headline as it does under the
+    // picture: the runners still walking. `s.count` is every runner parked on that
+    // checkpoint whatever their status, so the DNF/DQ who dropped out there were
+    // counted as if they were still running — 26 starters with one DNF read 26
+    // instead of 25. Peak density follows the same rule, or the busiest stretch
+    // would be inflated by the people who stopped on it.
+    const stillRacingAt = (s: { runners: SegmentRunner[] }) => s.runners.filter(
+        r => r.bucket === 'active'
+            && r.status !== 'finished'
+            && !OFF_COURSE_STATUSES.has((r.status || '').toLowerCase()),
+    ).length;
+    const totalOnCourse = segments.reduce((sum, s) => sum + stillRacingAt(s), 0);
+    const peakSeg = segments.reduce(
+        (m, s) => (m && stillRacingAt(m) >= stillRacingAt(s) ? m : s),
+        segments[0] as (typeof segments)[number] | undefined,
+    );
+    const peak = peakSeg
+        ? { cpName: peakSeg.cpName, count: stillRacingAt(peakSeg) }
+        : { cpName: '', count: 0 };
     const maxVal = Math.max(...segments.map(s => s.count), 1);
     const many = segments.length > 6;
     const gid = `courseGrad-${cat.replace(/[^a-zA-Z0-9]/g, '')}`;

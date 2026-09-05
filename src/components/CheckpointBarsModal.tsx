@@ -68,6 +68,16 @@ interface Props {
     isDark: boolean;
 }
 
+/**
+ * The last status bucket with anybody in it — i.e. the segment recharts draws on
+ * top of the stack, and so the one the total label must be attached to.
+ */
+const topBucketOf = (d: Datum): StatusBucket | null => {
+    let top: StatusBucket | null = null;
+    for (const b of ['active', 'dnf', 'dq', 'other'] as StatusBucket[]) if (d[b] > 0) top = b;
+    return top;
+};
+
 const isFinishName = (v?: string | null) => {
     const upper = String(v || '').trim().toUpperCase();
     return upper.includes('FINISH') || upper === 'FIN';
@@ -354,7 +364,22 @@ export default function CheckpointBarsModal({
                                                 radius={bi === 3 ? [4, 4, 0, 0] : [0, 0, 0, 0]}
                                                 maxBarSize={48}
                                                 isAnimationActive={false}
-                                            />
+                                            >
+                                                {/* The stack total, printed once above the whole column.
+                                                    It has to hang off the topmost series that actually has
+                                                    somebody in it: recharts drops zero-height rectangles
+                                                    before the labels are built, so a label pinned to the
+                                                    last series alone would never render — `other` is 0 at
+                                                    nearly every checkpoint. */}
+                                                <LabelList
+                                                    position="top"
+                                                    style={{ fill: muted, fontWeight: 800, fontSize: 11 }}
+                                                    valueAccessor={(entry) => {
+                                                        const d = (entry as { payload?: Datum })?.payload;
+                                                        return d && topBucketOf(d) === b ? d.count : '';
+                                                    }}
+                                                />
+                                            </Bar>
                                         ))}
                                     </BarChart>
                                 </ResponsiveContainer>
