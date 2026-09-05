@@ -86,6 +86,8 @@ export default function CheckedInPanel({ campaignId }: { campaignId: string }) {
     const [loading, setLoading] = useState(true);
     const [open, setOpen] = useState(false);
     const [query, setQuery] = useState('');
+    // '' = every distance; otherwise only runners on that distance are listed/counted.
+    const [categoryFilter, setCategoryFilter] = useState('');
     const [sortKey, setSortKey] = useState<SortKey>('checkInTime');
     const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
 
@@ -121,13 +123,38 @@ export default function CheckedInPanel({ campaignId }: { campaignId: string }) {
         }
     };
 
+    /**
+     * Distances present in the checked-in list with how many people each has —
+     * drives the filter dropdown, so the counts stay right even when a campaign
+     * gains or loses a distance mid-event.
+     */
+    const categoryCounts = useMemo(() => {
+        const counts = new Map<string, number>();
+        for (const r of runners) {
+            const key = (r.category || '').trim();
+            if (!key) continue;
+            counts.set(key, (counts.get(key) || 0) + 1);
+        }
+        // "10K" before "40K" — sort on the leading number, falling back to text.
+        const numOf = (c: string) => {
+            const m = c.match(/\d+(\.\d+)?/);
+            return m ? Number(m[0]) : Number.MAX_SAFE_INTEGER;
+        };
+        return [...counts.entries()].sort((a, b) => numOf(a[0]) - numOf(b[0]) || a[0].localeCompare(b[0]));
+    }, [runners]);
+
+    const inCategory = useMemo(
+        () => (categoryFilter ? runners.filter(r => (r.category || '').trim() === categoryFilter) : runners),
+        [runners, categoryFilter],
+    );
+
     const visible = useMemo(() => {
         const q = query.trim().toLowerCase();
         const filtered = q
-            ? runners.filter(r =>
+            ? inCategory.filter(r =>
                 `${r.bib || ''} ${displayName(r)} ${secondaryName(r)} ${r.category || ''} ${r.ageGroup || ''} ${r.team || ''}`
                     .toLowerCase().includes(q))
-            : runners;
+            : inCategory;
         const dir = sortDir === 'asc' ? 1 : -1;
         return [...filtered].sort((a, b) => {
             const va = sortValue(a, sortKey);
@@ -136,7 +163,7 @@ export default function CheckedInPanel({ campaignId }: { campaignId: string }) {
             if (va > vb) return 1 * dir;
             return 0;
         });
-    }, [runners, query, sortKey, sortDir]);
+    }, [inCategory, query, sortKey, sortDir]);
 
     const exportXlsx = () => {
         const header = ['BIB', 'ชื่อ-นามสกุล', 'ชื่อ (อังกฤษ)', 'เพศ', 'อายุ', 'กลุ่มอายุ', 'ประเภท', 'ทีม', 'เวลาเช็คบิบ', 'สแกนล่าสุด', 'จำนวนครั้ง'];
@@ -149,7 +176,7 @@ export default function CheckedInPanel({ campaignId }: { campaignId: string }) {
         ws['!cols'] = [{ wch: 10 }, { wch: 24 }, { wch: 24 }, { wch: 8 }, { wch: 6 }, { wch: 14 }, { wch: 12 }, { wch: 16 }, { wch: 20 }, { wch: 20 }, { wch: 10 }];
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, 'CheckedIn');
-        XLSX.writeFile(wb, `bib-check-${visible.length}.xlsx`);
+        XLSX.writeFile(wb, `bib-check${categoryFilter ? `-${categoryFilter}` : ''}-${visible.length}.xlsx`);
     };
 
     const todayCount = useMemo(() => {
@@ -223,10 +250,30 @@ export default function CheckedInPanel({ campaignId }: { campaignId: string }) {
                                     ✅ รายชื่อผู้เช็คบิบแล้ว
                                 </h3>
                                 <p style={{ margin: '2px 0 0', fontSize: 12, color: '#64748b' }}>
-                                    ทั้งหมด {runners.length.toLocaleString()} คน
+                                    {categoryFilter
+                                        ? `${categoryFilter} ${inCategory.length.toLocaleString()} คน — จากทั้งหมด ${runners.length.toLocaleString()} คน`
+                                        : `ทั้งหมด ${runners.length.toLocaleString()} คน`}
                                     {query.trim() && ` — แสดง ${visible.length.toLocaleString()} คน`}
                                 </p>
                             </div>
+                            <select
+                                value={categoryFilter}
+                                onChange={e => setCategoryFilter(e.target.value)}
+                                aria-label="กรองตามระยะ"
+                                style={{
+                                    padding: '9px 12px', borderRadius: 10,
+                                    border: `1px solid ${categoryFilter ? '#1d4ed8' : '#cbd5e1'}`,
+                                    background: categoryFilter ? '#eff6ff' : '#fff',
+                                    color: categoryFilter ? '#1d4ed8' : '#334155',
+                                    fontSize: 13, fontWeight: 700, cursor: 'pointer',
+                                    fontFamily: "'Prompt', sans-serif", minWidth: 170,
+                                }}
+                            >
+                                <option value="">ทุกระยะ ({runners.length.toLocaleString()} คน)</option>
+                                {categoryCounts.map(([name, count]) => (
+                                    <option key={name} value={name}>{name} ({count.toLocaleString()} คน)</option>
+                                ))}
+                            </select>
                             <input
                                 value={query}
                                 onChange={e => setQuery(e.target.value)}

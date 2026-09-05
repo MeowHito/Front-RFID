@@ -1885,10 +1885,10 @@ export default function ParticipantsPage() {
                                     borderBottom: '2px solid #eef2f7', display: 'flex', alignItems: 'center', gap: 7,
                                 };
 
-                                // Buddhist-Era birth-date picker helpers. Runner birthDate is stored
-                                // as a Gregorian ISO string (YYYY-MM-DD); we display the year as พ.ศ.
-                                // (= Gregorian + 543) and drive it with plain dropdowns so picking an
-                                // old year is a quick select instead of scrubbing a native date spinner.
+                                // Birth-date picker helpers. Runner birthDate is stored as a Gregorian
+                                // ISO string (YYYY-MM-DD) and the year dropdown shows that same ค.ศ.
+                                // year, so what the admin picks is exactly what is saved. Plain dropdowns
+                                // make picking an old year a quick select instead of scrubbing a spinner.
                                 const monthsTh = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'];
                                 const monthsEn = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
                                 const dobYears: number[] = [];
@@ -1992,13 +1992,11 @@ export default function ParticipantsPage() {
                                                         value={dobParts.y}
                                                         onChange={e => commitDob({ ...dobParts, y: e.target.value })}
                                                         style={{ ...dobSelectStyle, flex: '0 0 78px' }}
-                                                        aria-label={language === 'th' ? 'ปี พ.ศ.' : 'Year'}
+                                                        aria-label={language === 'th' ? 'ปี ค.ศ.' : 'Year'}
                                                     >
-                                                        <option value="">{language === 'th' ? 'พ.ศ.' : 'Year'}</option>
+                                                        <option value="">{language === 'th' ? 'ค.ศ.' : 'Year'}</option>
                                                         {dobYears.map(gy => (
-                                                            <option key={gy} value={String(gy)}>
-                                                                {language === 'th' ? gy + 543 : gy}
-                                                            </option>
+                                                            <option key={gy} value={String(gy)}>{gy}</option>
                                                         ))}
                                                     </select>
                                                 </div>
