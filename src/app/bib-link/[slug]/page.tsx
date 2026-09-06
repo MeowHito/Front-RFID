@@ -226,6 +226,7 @@ export default function BibLinkPage() {
                             separateOverallByNationality: isNationalitySplitCategory(c.separateOverallNationalityCategories, r.category),
                             topRunnersRangeByCategory: c.topRunnersRangeByCategory,
                             topRunnersExcludeOverallCategories: c.topRunnersExcludeOverallCategories,
+                            topRunnersEnabled: c.topRunnersEnabled,
                             includeTopRunners: true,
                         });
                         const mine = awards.get(r._id);

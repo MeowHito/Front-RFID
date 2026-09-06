@@ -16,6 +16,7 @@ import { isThaiNationality } from './nationality';
 import { buildCanonicalAgeGroups, canonicalizeAgeGroup } from './age-groups';
 import { resolveOverallDisplayCount, type OverallCountByCategoryEntry } from './overall-display-count';
 import {
+    isTopRunnersEnabled,
     resolveTopRunnersCut,
     resolveTopRunnersRange,
     type TopRunnersRangeEntry,
@@ -44,6 +45,9 @@ export interface AwardConfig {
      *  runner gets one, which is the behavior on surfaces that predate the board. */
     topRunnersRangeByCategory?: TopRunnersRangeEntry[];
     topRunnersExcludeOverallCategories?: string[];
+    /** `false` when the campaign has no Top Runners board — no runner gets a
+     *  `topRunners` placing even with `includeTopRunners` on. */
+    topRunnersEnabled?: boolean;
     /** Set to compute the Top Runners placing at all. Off by default so the AWARD
      *  column and certificates keep listing only real awards. */
     includeTopRunners?: boolean;
@@ -222,7 +226,7 @@ export function computeAwardsForCategory(
             });
         }
 
-        if (cfg.includeTopRunners) {
+        if (cfg.includeTopRunners && isTopRunnersEnabled(cfg)) {
             const from = topRunnersCut + topRunnersRange.start - 1;
             const to = topRunnersCut + topRunnersRange.end;
             byGun.slice(from, to).forEach((r, i) => {

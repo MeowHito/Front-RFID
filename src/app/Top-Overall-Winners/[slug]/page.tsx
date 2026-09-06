@@ -52,6 +52,8 @@ interface Campaign {
     overallDisplayCountByCategory?: OverallCountByCategoryEntry[];
     topRunnersRangeByCategory?: TopRunnersRangeEntry[];
     topRunnersExcludeOverallCategories?: string[];
+    /** `false` when the organizer has no Top Runners board for this event. */
+    topRunnersEnabled?: boolean;
 }
 
 const REFRESH_INTERVAL = 10;
@@ -301,6 +303,19 @@ export default function TopOverallWinnersBySlugPage() {
         }
     }, [campaign, selectedCategory, displayedRunners, language]);
 
+    // Events with the Top Runners board switched off (admin/top-overall) have no
+    // board to show — say so instead of rendering an empty ranking.
+    if (campaign && campaign.topRunnersEnabled === false) {
+        return (
+            <div style={{ fontFamily: "'Prompt', 'Inter', sans-serif", background: '#0f172a', height: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+                <div style={{ fontSize: 72, marginBottom: 24 }}>🚫</div>
+                <div style={{ fontSize: 26, fontWeight: 900, color: '#f59e0b', marginBottom: 8 }}>งานนี้ไม่มี Top Runners</div>
+                <div style={{ fontSize: 16, color: '#94a3b8' }}>Top Runners is turned off for this event</div>
+                <div style={{ fontSize: 14, color: '#64748b', marginTop: 20 }}>{campaign.name}</div>
+            </div>
+        );
+    }
+
     if (campaignNotFound) {
         return (
             <div style={{ fontFamily: "'Prompt', 'Inter', sans-serif", background: '#0f172a', height: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
@@ -471,7 +486,7 @@ export default function TopOverallWinnersBySlugPage() {
             )}
 
             {!(isMobile && !isAuthenticated) && campaign && (
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: isMobile ? 4 : '0.8vw', padding: isMobile ? '8px 12px' : '0.5vh 1.5vw', background: '#1e293b', borderRadius: 10, marginBottom: isMobile ? 8 : '0.8vh', border: '1px solid #334155', flexShrink: 0, textAlign: 'center' }}>
+                <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', alignItems: 'center', justifyContent: 'center', gap: isMobile ? 4 : '0.8vw', padding: isMobile ? '8px 12px' : '0.5vh 1.5vw', background: '#1e293b', borderRadius: 10, marginBottom: isMobile ? 8 : '0.8vh', border: '1px solid #334155', flexShrink: 0, textAlign: 'center' }}>
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
                         <span style={{ fontSize: isMobile ? 15 : '2.2vh', fontWeight: 900, color: '#f1f5f9', letterSpacing: 0.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: isMobile ? '100%' : '55vw' }}>
                             {campaign.name}
@@ -480,6 +495,14 @@ export default function TopOverallWinnersBySlugPage() {
                             Top Runners {cut + range.start}-{cut + range.end}
                         </span>
                     </div>
+                    {/* Which distance this board is showing — the audience reads it from
+                        across the room, so it sits next to the event name, not only in
+                        the small selector up in the header. */}
+                    {selectedCategory && (
+                        <span style={{ display: 'inline-flex', alignItems: 'center', background: '#6366f1', color: '#eef2ff', borderRadius: 999, fontWeight: 900, fontSize: isMobile ? 13 : '1.8vh', letterSpacing: 0.5, padding: isMobile ? '3px 14px' : '0.2vh 1.2vw', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                            {selectedCategory}{campaign.categories?.find(c => c.name === selectedCategory)?.distance ? ` · ${campaign.categories.find(c => c.name === selectedCategory)!.distance}` : ''}
+                        </span>
+                    )}
                 </div>
             )}
 

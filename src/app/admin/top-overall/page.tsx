@@ -50,6 +50,7 @@ interface FeaturedCampaignSettings {
     overallDisplayCountByCategory?: OverallCountByCategoryEntry[];
     topRunnersRangeByCategory?: TopRunnersRangeEntry[];
     topRunnersExcludeOverallCategories?: string[];
+    topRunnersEnabled?: boolean;
     bestOfDisplayCount?: number;
     separateOverallNationalityCategories?: string[];
     categories?: { name: string; distance?: string }[];
@@ -78,6 +79,9 @@ export default function TopOverallPage() {
     const [topRunnersRanges, setTopRunnersRanges] = useState<Record<string, TopRunnersRange>>({});
     // Distances whose Top Runners board drops the Overall winners.
     const [topRunnersCutCategories, setTopRunnersCutCategories] = useState<string[]>([]);
+    // Master switch — events that simply don't run a Top Runners board turn it off,
+    // which also hides the public board and the "TOP n" label in the AWARD column.
+    const [topRunnersEnabled, setTopRunnersEnabled] = useState(true);
     const [bestOfDisplayCount, setBestOfDisplayCount] = useState<number>(1);
     const [natSplitCategories, setNatSplitCategories] = useState<string[]>([]);
     const [selectedCategory, setSelectedCategory] = useState('');
@@ -102,6 +106,7 @@ export default function TopOverallPage() {
                 setOverallCountByCategory(overallCountMapFromConfig(data, categoryNames));
                 setTopRunnersRanges(topRunnersRangeMapFromConfig(data, categoryNames));
                 setTopRunnersCutCategories(Array.isArray(data?.topRunnersExcludeOverallCategories) ? data.topRunnersExcludeOverallCategories : []);
+                setTopRunnersEnabled(data?.topRunnersEnabled !== false);
                 setBestOfDisplayCount(Math.max(1, Number(data?.bestOfDisplayCount) || 1));
                 setNatSplitCategories(Array.isArray(data?.separateOverallNationalityCategories) ? data.separateOverallNationalityCategories : []);
                 setSelectedCategory(data?.categories?.[0]?.name || '');
@@ -323,8 +328,8 @@ export default function TopOverallPage() {
                         >
                             {clampOverallDisplayCount(overallCountByCategory[category.name] ?? campaign?.overallDisplayCount)}
                         </span>
-                        {/* …and its own Top Runners rank range */}
-                        <span
+                        {/* …and its own Top Runners rank range (hidden while the board is off) */}
+                        {topRunnersEnabled && <span
                             className={`ml-1 rounded-full px-1.5 py-px text-[10px] font-extrabold ${selectedCategory === category.name ? 'bg-white/25' : 'bg-violet-100'}`}
                             style={selectedCategory === category.name ? { color: '#ffffff' } : { color: '#6d28d9' }}
                         >
@@ -335,7 +340,7 @@ export default function TopOverallPage() {
                                     : 0;
                                 return `${cut + r.start}-${cut + r.end}`;
                             })()}
-                        </span>
+                        </span>}
                     </button>
                 ))}
             </div>
@@ -409,6 +414,7 @@ export default function TopOverallPage() {
                     overallDisplayCount: clampOverallDisplayCount(campaign.overallDisplayCount),
                     topRunnersRangeByCategory: topRunnersRangeMapToEntries(topRunnersRanges),
                     topRunnersExcludeOverallCategories: topRunnersCutCategories,
+                    topRunnersEnabled,
                     bestOfDisplayCount: bestOfDisplayCount,
                     separateOverallNationalityCategories: natSplitCategories,
                 }),
@@ -550,21 +556,49 @@ export default function TopOverallPage() {
                                 </div>
 
                                 {/* Board 2 — the Top Runners listing */}
-                                <div className="rounded-xl border-2 border-violet-300 bg-violet-50 p-3">
-                                    <div className="flex items-baseline gap-2">
+                                <div className={`rounded-xl border-2 p-3 ${topRunnersEnabled ? 'border-violet-300 bg-violet-50' : 'border-gray-300 bg-gray-100'}`}>
+                                    <div className="flex flex-wrap items-center gap-2">
                                         <span className="text-[15px] font-extrabold" style={{ color: '#6d28d9' }}>
                                             📋 {language === 'th' ? 'บอร์ด Top Runners' : 'Top Runners board'}
                                         </span>
                                         <span className="text-[12px] font-bold text-gray-500">
                                             {selectedCategory || '—'}
                                         </span>
+                                        {/* Master switch — some events have no Top Runners board at all */}
+                                        <div className="ml-auto flex items-center gap-1.5">
+                                            <span className="text-[11px] font-bold" style={{ color: topRunnersEnabled ? '#6d28d9' : '#94a3b8' }}>
+                                                {topRunnersEnabled
+                                                    ? (language === 'th' ? 'เปิดใช้งาน (ทั้งงาน)' : 'On (whole event)')
+                                                    : (language === 'th' ? 'ปิดอยู่ (ทั้งงาน)' : 'Off (whole event)')}
+                                            </span>
+                                            <button
+                                                type="button"
+                                                role="switch"
+                                                aria-checked={topRunnersEnabled}
+                                                onClick={() => setTopRunnersEnabled(prev => !prev)}
+                                                className="relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full transition-colors"
+                                                style={{ backgroundColor: topRunnersEnabled ? '#7c3aed' : '#cbd5e1' }}
+                                                title={language === 'th'
+                                                    ? 'ปิดถ้างานนี้ไม่มี Top Runners — จะซ่อนหน้า Top Runners, เมนูอันดับ และป้าย "TOP n" ในช่อง AWARD ทั้งงาน'
+                                                    : 'Turn off for events with no Top Runners — hides the board, its ranking-menu entry and the "TOP n" AWARD label for the whole event'}
+                                            >
+                                                <span
+                                                    className="inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform"
+                                                    style={{ transform: topRunnersEnabled ? 'translateX(22px)' : 'translateX(2px)' }}
+                                                />
+                                            </button>
+                                        </div>
                                     </div>
                                     <p className="mt-0.5 text-[11px] text-gray-500">
-                                        {language === 'th'
-                                            ? 'รายชื่อที่โชว์บนหน้า Top Runners — ไม่ใช่รางวัล'
-                                            : 'The list shown on the Top Runners board — not an award'}
+                                        {topRunnersEnabled
+                                            ? (language === 'th'
+                                                ? 'รายชื่อที่โชว์บนหน้า Top Runners — ไม่ใช่รางวัล'
+                                                : 'The list shown on the Top Runners board — not an award')
+                                            : (language === 'th'
+                                                ? 'ปิดอยู่ — งานนี้ไม่มี Top Runners: ซ่อนหน้าบอร์ด เมนูอันดับ และป้าย TOP ในช่อง AWARD'
+                                                : 'Off — this event has no Top Runners: the board, its menu entry and the TOP award label are hidden')}
                                     </p>
-                                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                                    <div className={`mt-2 flex flex-wrap items-center gap-2 ${topRunnersEnabled ? '' : 'pointer-events-none opacity-40'}`}>
                                         <span className="text-[13px] font-bold" style={{ color: '#6d28d9' }}>
                                             {language === 'th' ? 'แสดงอันดับที่' : 'Show ranks'}
                                         </span>
@@ -600,7 +634,7 @@ export default function TopOverallPage() {
                                         </span>
                                     </div>
                                     {/* Drop the Overall winners so the same runner isn't listed twice */}
-                                    <div className="mt-2 flex flex-wrap items-center gap-2 rounded-lg bg-white/70 px-2 py-1.5">
+                                    <div className={`mt-2 flex flex-wrap items-center gap-2 rounded-lg bg-white/70 px-2 py-1.5 ${topRunnersEnabled ? '' : 'pointer-events-none opacity-40'}`}>
                                         <button
                                             type="button"
                                             role="switch"
@@ -685,6 +719,20 @@ export default function TopOverallPage() {
 
                         {/* Separate preview: the Top Runners board is never split by
                             nationality, so it gets its own section. */}
+                        {!topRunnersEnabled ? (
+                        <div className="mt-4 rounded-2xl border border-dashed border-gray-300 bg-gray-50 p-4 text-center">
+                            <div className="text-[13px] font-bold text-gray-500">
+                                {language === 'th'
+                                    ? '🚫 งานนี้ปิด Top Runners อยู่ — ไม่มีบอร์ด Top Runners และไม่มีป้าย TOP ในช่อง AWARD'
+                                    : '🚫 Top Runners is off for this event — no board and no TOP label in the AWARD column'}
+                            </div>
+                            <div className="mt-1 text-[11px] text-gray-400">
+                                {language === 'th'
+                                    ? 'เปิดสวิตช์ในการ์ด "บอร์ด Top Runners" แล้วกดบันทึกเพื่อใช้งานอีกครั้ง'
+                                    : 'Flip the switch on the "Top Runners board" card and save to turn it back on'}
+                            </div>
+                        </div>
+                        ) : (
                         <div className="mt-4 rounded-2xl border border-violet-200 bg-violet-50/40 p-3">
                             <div className="mb-2 text-[13px] font-bold" style={{ color: '#6d28d9' }}>
                                 {language === 'th'
@@ -708,6 +756,7 @@ export default function TopOverallPage() {
                                 )}
                             </div>
                         </div>
+                        )}
                     </div>
                 )}
             </div>

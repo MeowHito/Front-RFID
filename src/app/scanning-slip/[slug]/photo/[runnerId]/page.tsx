@@ -114,6 +114,7 @@ export default function ScanningSlipPhotoPage() {
                     // board lists who won no Overall / Age-group award.
                     topRunnersRangeByCategory: campaign.topRunnersRangeByCategory,
                     topRunnersExcludeOverallCategories: campaign.topRunnersExcludeOverallCategories,
+                    topRunnersEnabled: campaign.topRunnersEnabled,
                     includeTopRunners: true,
                 });
                 const mine = awards.get(runner._id);

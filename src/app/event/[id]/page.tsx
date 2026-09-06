@@ -53,6 +53,7 @@ interface Campaign {
     /** Per-distance rank range of the Top Runners board (admin/top-overall). */
     topRunnersRangeByCategory?: { category: string; start: number; end: number }[];
     topRunnersExcludeOverallCategories?: string[];
+    topRunnersEnabled?: boolean;
     ageGroupDisplayCount?: number;
     bestOfDisplayCount?: number;
     excludeOverallFromAgeGroup?: number;
@@ -1135,12 +1136,13 @@ export default function EventLivePage() {
                 // AWARD also carries the Top Runners placing, e.g. "Overall 1, TOP 1".
                 topRunnersRangeByCategory: campaign?.topRunnersRangeByCategory,
                 topRunnersExcludeOverallCategories: campaign?.topRunnersExcludeOverallCategories,
+                topRunnersEnabled: campaign?.topRunnersEnabled,
                 includeTopRunners: true,
             };
             for (const [id, award] of computeAwardsForCategory(pool, cfg)) map.set(id, award);
         }
         return map;
-    }, [runners, resolveRunnerCategoryKey, categories, campaign?.overallDisplayCount, campaign?.overallDisplayCountByCategory, campaign?.ageGroupDisplayCount, campaign?.excludeOverallFromAgeGroup, campaign?.excludeOverallThaiFromAgeGroup, campaign?.excludeOverallForeignFromAgeGroup, campaign?.excludeAgeGroupTop, campaign?.topRunnersRangeByCategory, campaign?.topRunnersExcludeOverallCategories, natSplitAwardKeys]);
+    }, [runners, resolveRunnerCategoryKey, categories, campaign?.overallDisplayCount, campaign?.overallDisplayCountByCategory, campaign?.ageGroupDisplayCount, campaign?.excludeOverallFromAgeGroup, campaign?.excludeOverallThaiFromAgeGroup, campaign?.excludeOverallForeignFromAgeGroup, campaign?.excludeAgeGroupTop, campaign?.topRunnersRangeByCategory, campaign?.topRunnersExcludeOverallCategories, campaign?.topRunnersEnabled, natSplitAwardKeys]);
 
     // Build ordered list of visible columns based on admin displayColumns + mobile
     const visibleColumns = useMemo(() => {
@@ -1983,6 +1985,7 @@ export default function EventLivePage() {
             overallDisplayCountByCategory={campaign.overallDisplayCountByCategory}
             topRunnersRangeByCategory={campaign.topRunnersRangeByCategory}
             topRunnersExcludeOverallCategories={campaign.topRunnersExcludeOverallCategories}
+            topRunnersEnabled={campaign.topRunnersEnabled}
             excludeOverallThaiFromAgeGroup={campaign.excludeOverallThaiFromAgeGroup}
             excludeOverallForeignFromAgeGroup={campaign.excludeOverallForeignFromAgeGroup}
             ageGroupDisplayCount={campaign.ageGroupDisplayCount}

@@ -80,6 +80,7 @@ interface CampaignData {
     /** Top Runners board config — drives the "TOP n" part of the AWARD label. */
     topRunnersRangeByCategory?: { category: string; start: number; end: number }[];
     topRunnersExcludeOverallCategories?: string[];
+    topRunnersEnabled?: boolean;
     ageGroupDisplayCount?: number;
     bestOfDisplayCount?: number;
     bestOfProvinceEnabled?: boolean;
@@ -454,6 +455,7 @@ export default function RunnerProfilePage() {
                     // The badge also carries the Top Runners placing, e.g. "Overall 1, TOP 1".
                     topRunnersRangeByCategory: campaign.topRunnersRangeByCategory,
                     topRunnersExcludeOverallCategories: campaign.topRunnersExcludeOverallCategories,
+                    topRunnersEnabled: campaign.topRunnersEnabled,
                     includeTopRunners: true,
                 });
                 // Overall is now a single combined placing (no nationality split); Gender
@@ -470,7 +472,7 @@ export default function RunnerProfilePage() {
             } catch { if (!cancelled) { setAward(null); setBestOfProvince(null); setGunOverallRank(null); setGunGenderRank(null); setGunAgeGroupRank(null); } }
         })();
         return () => { cancelled = true; };
-    }, [runner, campaign?._id, campaign?.overallDisplayCount, campaign?.overallDisplayCountByCategory, campaign?.ageGroupDisplayCount, campaign?.bestOfProvinceEnabled, campaign?.bestOfProvinces, campaign?.excludeOverallFromAgeGroup, campaign?.excludeOverallThaiFromAgeGroup, campaign?.excludeOverallForeignFromAgeGroup, campaign?.separateOverallNationalityCategories, campaign?.topRunnersRangeByCategory, campaign?.topRunnersExcludeOverallCategories]);
+    }, [runner, campaign?._id, campaign?.overallDisplayCount, campaign?.overallDisplayCountByCategory, campaign?.ageGroupDisplayCount, campaign?.bestOfProvinceEnabled, campaign?.bestOfProvinces, campaign?.excludeOverallFromAgeGroup, campaign?.excludeOverallThaiFromAgeGroup, campaign?.excludeOverallForeignFromAgeGroup, campaign?.separateOverallNationalityCategories, campaign?.topRunnersRangeByCategory, campaign?.topRunnersExcludeOverallCategories, campaign?.topRunnersEnabled]);
 
     useEffect(() => {
         setFollowedRunners(loadFollowedRunners());

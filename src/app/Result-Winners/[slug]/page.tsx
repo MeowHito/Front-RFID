@@ -621,13 +621,21 @@ export default function ResultWinnersBySlugPage() {
             )}
 
             {!(isMobile && !isAuthenticated) && campaign && (
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: isMobile ? 4 : '0.8vw', padding: isMobile ? '8px 12px' : '0.5vmin 1.5vw', background: '#1e293b', borderRadius: 10, marginBottom: isMobile ? 8 : '0.8vmin', border: '1px solid #334155', flexShrink: 0, textAlign: 'center' }}>
+                <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', alignItems: 'center', justifyContent: 'center', gap: isMobile ? 4 : '0.8vw', padding: isMobile ? '8px 12px' : '0.5vmin 1.5vw', background: '#1e293b', borderRadius: 10, marginBottom: isMobile ? 8 : '0.8vmin', border: '1px solid #334155', flexShrink: 0, textAlign: 'center' }}>
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
                         <span style={{ fontSize: isMobile ? 15 : '2.2vmin', fontWeight: 900, color: '#f1f5f9', letterSpacing: 0.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: isMobile ? '100%' : '55vw' }}>
                             {campaign.name}
                         </span>
                         <span style={{ color: '#22c55e', fontWeight: 900, fontSize: isMobile ? 11 : '1.4vmin', letterSpacing: 1.5, textTransform: 'uppercase', whiteSpace: 'nowrap' }}>Age Group Rankings</span>
                     </div>
+                    {/* Which distance this board is showing — the audience reads it from
+                        across the room, so it sits next to the event name, not only in
+                        the small selector up in the header. */}
+                    {selectedCategory && (
+                        <span style={{ display: 'inline-flex', alignItems: 'center', background: '#22c55e', color: '#052e16', borderRadius: 999, fontWeight: 900, fontSize: isMobile ? 13 : '1.8vmin', letterSpacing: 0.5, padding: isMobile ? '3px 14px' : '0.2vmin 1.2vw', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                            {selectedCategory}{campaign.categories?.find(c => c.name === selectedCategory)?.distance ? ` · ${campaign.categories.find(c => c.name === selectedCategory)!.distance}` : ''}
+                        </span>
+                    )}
                 </div>
             )}
 

@@ -151,6 +151,7 @@ export default function ESlipView({ apiUrl }: { apiUrl: string }) {
                     // board lists who won no Overall / Age-group award.
                     topRunnersRangeByCategory: campaign.topRunnersRangeByCategory,
                     topRunnersExcludeOverallCategories: campaign.topRunnersExcludeOverallCategories,
+                    topRunnersEnabled: campaign.topRunnersEnabled,
                     includeTopRunners: true,
                 });
                 const overallRanks = computeOverallRanks(pool, { separateByNationality: false });
@@ -162,7 +163,7 @@ export default function ESlipView({ apiUrl }: { apiUrl: string }) {
             } catch { if (!cancelled) { setAwardLabel(null); setBestOfProvince(null); setGunOverallRank(null); } }
         })();
         return () => { cancelled = true; };
-    }, [runner, campaign?._id, campaign?.overallDisplayCount, campaign?.overallDisplayCountByCategory, campaign?.ageGroupDisplayCount, campaign?.bestOfProvinceEnabled, campaign?.bestOfProvinces, campaign?.excludeOverallFromAgeGroup, campaign?.excludeOverallThaiFromAgeGroup, campaign?.excludeOverallForeignFromAgeGroup, campaign?.excludeAgeGroupTop, campaign?.separateOverallNationalityCategories, campaign?.topRunnersRangeByCategory, campaign?.topRunnersExcludeOverallCategories]);
+    }, [runner, campaign?._id, campaign?.overallDisplayCount, campaign?.overallDisplayCountByCategory, campaign?.ageGroupDisplayCount, campaign?.bestOfProvinceEnabled, campaign?.bestOfProvinces, campaign?.excludeOverallFromAgeGroup, campaign?.excludeOverallThaiFromAgeGroup, campaign?.excludeOverallForeignFromAgeGroup, campaign?.excludeAgeGroupTop, campaign?.separateOverallNationalityCategories, campaign?.topRunnersRangeByCategory, campaign?.topRunnersExcludeOverallCategories, campaign?.topRunnersEnabled]);
 
     const handleBgUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const input = e.currentTarget;

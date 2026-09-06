@@ -33,6 +33,16 @@ export interface TopRunnersRangeConfig extends OverallDisplayCountConfig {
      *  don't want the same runner awarded twice). The skipped slots are backfilled,
      *  so the board keeps the row count the range asks for. */
     topRunnersExcludeOverallCategories?: string[];
+    /** Master switch for the whole feature. `false` means this campaign has no Top
+     *  Runners board at all — the board, its ranking-menu entry and the "TOP n"
+     *  award label all disappear. Undefined means on (existing campaigns). */
+    topRunnersEnabled?: boolean;
+}
+
+/** Whether this campaign runs a Top Runners board at all. Only an explicit
+ *  `false` turns it off, so campaigns saved before the switch existed stay on. */
+export function isTopRunnersEnabled(config: TopRunnersRangeConfig | null | undefined): boolean {
+    return config?.topRunnersEnabled !== false;
 }
 
 export const MIN_TOP_RUNNERS_RANK = 1;

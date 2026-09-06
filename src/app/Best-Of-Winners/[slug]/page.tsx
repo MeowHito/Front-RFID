@@ -470,13 +470,21 @@ export default function BestOfWinnersBySlugPage() {
             )}
 
             {!(isMobile && !isAuthenticated) && campaign && (
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: isMobile ? 4 : 10, padding: isMobile ? '8px 12px' : '8px 20px', background: '#1e293b', borderRadius: 10, marginBottom: isMobile ? 8 : 10, border: '1px solid #334155', flexShrink: 0, textAlign: 'center' }}>
+                <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', alignItems: 'center', justifyContent: 'center', gap: isMobile ? 4 : 10, padding: isMobile ? '8px 12px' : '8px 20px', background: '#1e293b', borderRadius: 10, marginBottom: isMobile ? 8 : 10, border: '1px solid #334155', flexShrink: 0, textAlign: 'center' }}>
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
                         <span style={{ fontSize: isMobile ? 15 : 20, fontWeight: 900, color: '#f1f5f9', letterSpacing: 0.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: isMobile ? '100%' : '55vw' }}>
                             {campaign.name}
                         </span>
                         <span style={{ color: '#0d9488', fontWeight: 900, fontSize: isMobile ? 11 : 14, letterSpacing: 1.5, textTransform: 'uppercase', whiteSpace: 'nowrap' }}>Best of Province</span>
                     </div>
+                    {/* Which distance this board is showing — the audience reads it from
+                        across the room, so it sits next to the event name, not only in
+                        the small selector up in the header. */}
+                    {selectedCategory && (
+                        <span style={{ display: 'inline-flex', alignItems: 'center', background: '#14b8a6', color: '#042f2e', borderRadius: 999, fontWeight: 900, fontSize: isMobile ? 13 : 17, letterSpacing: 0.5, padding: isMobile ? '3px 14px' : '3px 16px', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                            {selectedCategory}{campaign.categories?.find(c => c.name === selectedCategory)?.distance ? ` · ${campaign.categories.find(c => c.name === selectedCategory)!.distance}` : ''}
+                        </span>
+                    )}
                 </div>
             )}
 
