@@ -218,6 +218,7 @@ export default function BibLinkPage() {
                         const awards = computeAwardsForCategory(pool, {
                             overallDisplayCount: c.overallDisplayCount,
                             overallDisplayCountByCategory: c.overallDisplayCountByCategory,
+                            overallEnabled: c.overallEnabled,
                             category: r.category,
                             ageGroupDisplayCount: c.ageGroupDisplayCount,
                             excludeOverallFromAgeGroup: c.excludeOverallFromAgeGroup,

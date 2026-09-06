@@ -102,6 +102,8 @@ interface CampaignData {
     certBgOpacity?: number | null;
     certBgColor?: string | null;
     overallDisplayCount?: number;
+    /** `false` = this event gives no Overall award (admin/top-overall master switch). */
+    overallEnabled?: boolean;
     /** Per-distance overrides of the Overall rank count (admin/top-overall). */
     overallDisplayCountByCategory?: { category: string; count: number }[];
     ageGroupDisplayCount?: number;
@@ -471,6 +473,7 @@ export default function CertificatePage() {
                 const awardMap = computeAwardsForCategory(pool, {
                     overallDisplayCount: campaign.overallDisplayCount,
                     overallDisplayCountByCategory: campaign.overallDisplayCountByCategory,
+                    overallEnabled: campaign.overallEnabled,
                     category: category,
                     ageGroupDisplayCount: campaign.ageGroupDisplayCount,
                     excludeOverallFromAgeGroup: campaign.excludeOverallFromAgeGroup,
@@ -496,7 +499,7 @@ export default function CertificatePage() {
             } catch { if (!cancelled) { setAwards(EMPTY_AWARDS); setGunOverallRank(null); } }
         })();
         return () => { cancelled = true; };
-    }, [runner, campaign?._id, campaign?.overallDisplayCount, campaign?.overallDisplayCountByCategory, campaign?.ageGroupDisplayCount, campaign?.excludeOverallFromAgeGroup, campaign?.excludeOverallThaiFromAgeGroup, campaign?.excludeOverallForeignFromAgeGroup, campaign?.separateOverallNationalityCategories, campaign?.bestOfProvinceEnabled, campaign?.bestOfProvinces]);
+    }, [runner, campaign?._id, campaign?.overallDisplayCount, campaign?.overallDisplayCountByCategory, campaign?.overallEnabled, campaign?.ageGroupDisplayCount, campaign?.excludeOverallFromAgeGroup, campaign?.excludeOverallThaiFromAgeGroup, campaign?.excludeOverallForeignFromAgeGroup, campaign?.separateOverallNationalityCategories, campaign?.bestOfProvinceEnabled, campaign?.bestOfProvinces]);
 
     // Runner with the gun-time overall rank applied, used for token substitution so
     // the certificate's Overall rank matches the /event RANK column.

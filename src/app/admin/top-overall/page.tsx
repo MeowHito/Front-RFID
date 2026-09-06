@@ -48,6 +48,7 @@ interface FeaturedCampaignSettings {
     slug?: string;
     overallDisplayCount?: number;
     overallDisplayCountByCategory?: OverallCountByCategoryEntry[];
+    overallEnabled?: boolean;
     topRunnersRangeByCategory?: TopRunnersRangeEntry[];
     topRunnersExcludeOverallCategories?: string[];
     topRunnersEnabled?: boolean;
@@ -82,6 +83,10 @@ export default function TopOverallPage() {
     // Master switch — events that simply don't run a Top Runners board turn it off,
     // which also hides the public board and the "TOP n" label in the AWARD column.
     const [topRunnersEnabled, setTopRunnersEnabled] = useState(true);
+    // Master switch for the Overall award — events that give no Overall award at all
+    // turn it off, which hides the public board, its ranking-menu entry and the
+    // "Overall n" label on the AWARD column, certificates and e-slips.
+    const [overallEnabled, setOverallEnabled] = useState(true);
     const [bestOfDisplayCount, setBestOfDisplayCount] = useState<number>(1);
     const [natSplitCategories, setNatSplitCategories] = useState<string[]>([]);
     const [selectedCategory, setSelectedCategory] = useState('');
@@ -107,6 +112,7 @@ export default function TopOverallPage() {
                 setTopRunnersRanges(topRunnersRangeMapFromConfig(data, categoryNames));
                 setTopRunnersCutCategories(Array.isArray(data?.topRunnersExcludeOverallCategories) ? data.topRunnersExcludeOverallCategories : []);
                 setTopRunnersEnabled(data?.topRunnersEnabled !== false);
+                setOverallEnabled(data?.overallEnabled !== false);
                 setBestOfDisplayCount(Math.max(1, Number(data?.bestOfDisplayCount) || 1));
                 setNatSplitCategories(Array.isArray(data?.separateOverallNationalityCategories) ? data.separateOverallNationalityCategories : []);
                 setSelectedCategory(data?.categories?.[0]?.name || '');
@@ -326,7 +332,9 @@ export default function TopOverallPage() {
                             className={`ml-1.5 rounded-full px-1.5 py-px text-[10px] font-extrabold ${selectedCategory === category.name ? 'bg-white/25' : 'bg-sky-100'}`}
                             style={selectedCategory === category.name ? { color: '#ffffff' } : { color: '#0369a1' }}
                         >
-                            {clampOverallDisplayCount(overallCountByCategory[category.name] ?? campaign?.overallDisplayCount)}
+                            {overallEnabled
+                                ? clampOverallDisplayCount(overallCountByCategory[category.name] ?? campaign?.overallDisplayCount)
+                                : '—'}
                         </span>
                         {/* …and its own Top Runners rank range (hidden while the board is off) */}
                         {topRunnersEnabled && <span
@@ -412,6 +420,7 @@ export default function TopOverallPage() {
                     // for any distance without its own entry.
                     overallDisplayCountByCategory: overallCountMapToEntries(overallCountByCategory),
                     overallDisplayCount: clampOverallDisplayCount(campaign.overallDisplayCount),
+                    overallEnabled,
                     topRunnersRangeByCategory: topRunnersRangeMapToEntries(topRunnersRanges),
                     topRunnersExcludeOverallCategories: topRunnersCutCategories,
                     topRunnersEnabled,
@@ -518,21 +527,49 @@ export default function TopOverallPage() {
 
                             <div className="mt-3 grid gap-3 lg:grid-cols-2">
                                 {/* Board 1 — the Overall award */}
-                                <div className="rounded-xl border-2 border-sky-300 bg-sky-50 p-3">
-                                    <div className="flex items-baseline gap-2">
+                                <div className={`rounded-xl border-2 p-3 ${overallEnabled ? 'border-sky-300 bg-sky-50' : 'border-gray-300 bg-gray-100'}`}>
+                                    <div className="flex flex-wrap items-center gap-2">
                                         <span className="text-[15px] font-extrabold" style={{ color: '#0369a1' }}>
                                             🏆 {language === 'th' ? 'รางวัล Overall' : 'Overall award'}
                                         </span>
                                         <span className="text-[12px] font-bold text-gray-500">
                                             {selectedCategory || '—'}
                                         </span>
+                                        {/* Master switch — some events give no Overall award at all */}
+                                        <div className="ml-auto flex items-center gap-1.5">
+                                            <span className="text-[11px] font-bold" style={{ color: overallEnabled ? '#0369a1' : '#94a3b8' }}>
+                                                {overallEnabled
+                                                    ? (language === 'th' ? 'เปิดใช้งาน (ทั้งงาน)' : 'On (whole event)')
+                                                    : (language === 'th' ? 'ปิดอยู่ (ทั้งงาน)' : 'Off (whole event)')}
+                                            </span>
+                                            <button
+                                                type="button"
+                                                role="switch"
+                                                aria-checked={overallEnabled}
+                                                onClick={() => setOverallEnabled(prev => !prev)}
+                                                className="relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full transition-colors"
+                                                style={{ backgroundColor: overallEnabled ? '#0284c7' : '#cbd5e1' }}
+                                                title={language === 'th'
+                                                    ? 'ปิดถ้างานนี้ไม่มีรางวัล Overall — จะซ่อนหน้า Overall, เมนูอันดับ และป้าย "Overall n" ในช่อง AWARD / ใบเซอร์ / e-slip ทั้งงาน'
+                                                    : 'Turn off for events with no Overall award — hides the board, its ranking-menu entry and the "Overall n" label on the AWARD column, certificates and e-slips'}
+                                            >
+                                                <span
+                                                    className="inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform"
+                                                    style={{ transform: overallEnabled ? 'translateX(22px)' : 'translateX(2px)' }}
+                                                />
+                                            </button>
+                                        </div>
                                     </div>
                                     <p className="mt-0.5 text-[11px] text-gray-500">
-                                        {language === 'th'
-                                            ? 'ผู้ที่ได้รางวัล Overall — ใช้กับหน้า Overall / ใบเซอร์ / e-slip'
-                                            : 'Overall award winners — used by the Overall board, certificates and e-slips'}
+                                        {overallEnabled
+                                            ? (language === 'th'
+                                                ? 'ผู้ที่ได้รางวัล Overall — ใช้กับหน้า Overall / ใบเซอร์ / e-slip'
+                                                : 'Overall award winners — used by the Overall board, certificates and e-slips')
+                                            : (language === 'th'
+                                                ? 'ปิดอยู่ — งานนี้ไม่มีรางวัล Overall: ซ่อนหน้าบอร์ด เมนูอันดับ และป้าย Overall ในช่อง AWARD / ใบเซอร์ / e-slip'
+                                                : 'Off — this event has no Overall award: the board, its menu entry and the Overall label are hidden')}
                                     </p>
-                                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                                    <div className={`mt-2 flex flex-wrap items-center gap-2 ${overallEnabled ? '' : 'pointer-events-none opacity-40'}`}>
                                         <span className="text-[13px] font-bold" style={{ color: '#0369a1' }}>
                                             {language === 'th' ? 'ให้รางวัล' : 'Award the top'}
                                         </span>

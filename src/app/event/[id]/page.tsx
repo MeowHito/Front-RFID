@@ -48,6 +48,8 @@ interface Campaign {
     profileClusterMinutes?: number;
     // Award config (shared with /admin/age-group-ranking + winner pages)
     overallDisplayCount?: number;
+    /** `false` = this event gives no Overall award (admin/top-overall master switch). */
+    overallEnabled?: boolean;
     /** Per-distance overrides of the Overall rank count (admin/top-overall). */
     overallDisplayCountByCategory?: { category: string; count: number }[];
     /** Per-distance rank range of the Top Runners board (admin/top-overall). */
@@ -1124,6 +1126,7 @@ export default function EventLivePage() {
             const cfg = {
                 overallDisplayCount: campaign?.overallDisplayCount,
                 overallDisplayCountByCategory: campaign?.overallDisplayCountByCategory,
+                    overallEnabled: campaign?.overallEnabled,
                 // Overall count is per distance — resolve the pool's campaign category name
                 // (the pool key is the derived UI key, not the stored category name).
                 category: categories.find(c => c.key === key)?.categoryName || key,
@@ -1142,7 +1145,7 @@ export default function EventLivePage() {
             for (const [id, award] of computeAwardsForCategory(pool, cfg)) map.set(id, award);
         }
         return map;
-    }, [runners, resolveRunnerCategoryKey, categories, campaign?.overallDisplayCount, campaign?.overallDisplayCountByCategory, campaign?.ageGroupDisplayCount, campaign?.excludeOverallFromAgeGroup, campaign?.excludeOverallThaiFromAgeGroup, campaign?.excludeOverallForeignFromAgeGroup, campaign?.excludeAgeGroupTop, campaign?.topRunnersRangeByCategory, campaign?.topRunnersExcludeOverallCategories, campaign?.topRunnersEnabled, natSplitAwardKeys]);
+    }, [runners, resolveRunnerCategoryKey, categories, campaign?.overallDisplayCount, campaign?.overallDisplayCountByCategory, campaign?.overallEnabled, campaign?.ageGroupDisplayCount, campaign?.excludeOverallFromAgeGroup, campaign?.excludeOverallThaiFromAgeGroup, campaign?.excludeOverallForeignFromAgeGroup, campaign?.excludeAgeGroupTop, campaign?.topRunnersRangeByCategory, campaign?.topRunnersExcludeOverallCategories, campaign?.topRunnersEnabled, natSplitAwardKeys]);
 
     // Build ordered list of visible columns based on admin displayColumns + mobile
     const visibleColumns = useMemo(() => {
@@ -1989,6 +1992,7 @@ export default function EventLivePage() {
             categoryName={currentCategoryName}
             overallDisplayCount={campaign.overallDisplayCount}
             overallDisplayCountByCategory={campaign.overallDisplayCountByCategory}
+            overallEnabled={campaign.overallEnabled}
             topRunnersRangeByCategory={campaign.topRunnersRangeByCategory}
             topRunnersExcludeOverallCategories={campaign.topRunnersExcludeOverallCategories}
             topRunnersEnabled={campaign.topRunnersEnabled}

@@ -3,7 +3,7 @@
 import Image from 'next/image';
 import Link from 'next/link';
 import type { CSSProperties } from 'react';
-import { useEffect, useState, useMemo, useRef, useCallback } from 'react';
+import { useEffect, useLayoutEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { downloadSelectedDistance, triggerSingleDistanceDownload } from '@/lib/combined-winners-download';
 import NameLangToggle from '@/components/NameLangToggle';
 import { useLanguage } from '@/lib/language-context';
@@ -46,6 +46,7 @@ interface Campaign {
     categories?: CampaignCategory[];
     overallDisplayCount?: number;
     overallDisplayCountByCategory?: OverallCountByCategoryEntry[];
+    overallEnabled?: boolean;
     excludeOverallThaiFromAgeGroup?: number;
     separateOverallNationalityCategories?: string[];
 }
@@ -60,21 +61,65 @@ function formatTime(ms: number | undefined | null): string {
     return `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 }
 
-// Auto-shrinks the name column font as the name gets longer, so short names stay
-// large and readable while long names still fit on one line instead of truncating.
-// Portrait screens (narrower relative to height) get an extra size reduction.
-function getNameFontSize(name: string, isMobile: boolean, isPortrait: boolean): string {
-    const len = name.length;
-    let scale = 1;
-    if (len > 32) scale = 0.62;
-    else if (len > 28) scale = 0.7;
-    else if (len > 24) scale = 0.78;
-    else if (len > 20) scale = 0.87;
-    else if (len > 16) scale = 0.95;
-    if (isPortrait) scale *= 0.85;
-    const base = isMobile ? 12 : 1.55;
-    const value = base * scale;
-    return isMobile ? `${value.toFixed(1)}px` : `${value.toFixed(2)}vh`;
+// A name is never allowed to be cut off on this board — the audience reads it from
+// across the room, so an ellipsis is worse than a smaller font. Each row measures its
+// own name and shrinks only as far as that row needs: short names keep the full size,
+// long ones step down (to at most MIN_NAME_SCALE of the base) until the whole name
+// fits the column on one line.
+const MIN_NAME_SCALE = 0.5;
+
+// Base name size in px. Portrait boards (the vertical kiosk) are narrow relative to
+// their height, so the vh-derived base is scaled down before any per-name fitting.
+function getNameBasePx(isMobile: boolean, isPortrait: boolean, viewportH: number): number {
+    if (isMobile) return 12;
+    const base = 1.55 * (viewportH / 100);
+    return isPortrait ? base * 0.8 : base;
+}
+
+function AutoFitName({ text, basePx, style }: { text: string; basePx: number; style?: CSSProperties }) {
+    const boxRef = useRef<HTMLSpanElement | null>(null);
+    const textRef = useRef<HTMLSpanElement | null>(null);
+    const [fontPx, setFontPx] = useState(basePx);
+
+    useLayoutEffect(() => {
+        const fit = () => {
+            const box = boxRef.current;
+            const el = textRef.current;
+            if (!box || !el) return;
+            const avail = box.clientWidth;
+            if (!avail) return;
+            const minPx = Math.max(7, basePx * MIN_NAME_SCALE);
+            el.style.fontSize = `${basePx}px`;
+            const full = el.getBoundingClientRect().width;
+            let next = basePx;
+            if (full > avail) {
+                // Text width scales roughly linearly with the font size — estimate once,
+                // then nudge down for kerning/rounding until it really fits.
+                next = Math.max(minPx, Math.floor(basePx * (avail / full) * 10) / 10);
+                el.style.fontSize = `${next}px`;
+                let guard = 12;
+                while (el.getBoundingClientRect().width > avail && next > minPx && guard-- > 0) {
+                    next = Math.max(minPx, next - 0.3);
+                    el.style.fontSize = `${next}px`;
+                }
+            }
+            setFontPx(next);
+        };
+        fit();
+        const box = boxRef.current;
+        if (!box || typeof ResizeObserver === 'undefined') return;
+        const ro = new ResizeObserver(fit);
+        ro.observe(box);
+        return () => ro.disconnect();
+    }, [text, basePx]);
+
+    return (
+        <span ref={boxRef} style={{ flex: 1, minWidth: 0, overflow: 'hidden', display: 'block' }}>
+            <span ref={textRef} style={{ ...style, fontSize: `${fontPx}px`, whiteSpace: 'nowrap', display: 'inline-block' }}>
+                {text}
+            </span>
+        </span>
+    );
 }
 
 export default function OverallWinnersBySlugPage() {
@@ -97,6 +142,8 @@ export default function OverallWinnersBySlugPage() {
     const countdownRef = useRef<NodeJS.Timeout | null>(null);
     const [isMobile, setIsMobile] = useState(false);
     const [isPortrait, setIsPortrait] = useState(false);
+    // Name sizing is measured in px, so the vh base has to follow the real viewport.
+    const [viewportH, setViewportH] = useState(1080);
     const [autoMode, setAutoMode] = useState(false);
     const [autoCountdown, setAutoCountdown] = useState(10);
     const autoTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -113,6 +160,7 @@ export default function OverallWinnersBySlugPage() {
         const check = () => {
             setIsMobile(window.innerWidth < 768);
             setIsPortrait(window.innerHeight > window.innerWidth);
+            setViewportH(window.innerHeight);
         };
         check();
         window.addEventListener('resize', check);
@@ -321,6 +369,19 @@ export default function OverallWinnersBySlugPage() {
     const rankBg = ['#f59e0b', '#9ca3af', '#92400e', '#e2e8f0', '#e2e8f0'];
     const rankFg = ['#000', '#fff', '#fff', '#475569', '#475569'];
 
+    // Events with the Overall award switched off (admin/top-overall) have no board
+    // to show — say so instead of rendering an empty ranking.
+    if (campaign && campaign.overallEnabled === false) {
+        return (
+            <div style={{ fontFamily: "'Prompt', 'Inter', sans-serif", background: '#0f172a', height: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+                <div style={{ fontSize: 72, marginBottom: 24 }}>🚫</div>
+                <div style={{ fontSize: 26, fontWeight: 900, color: '#f59e0b', marginBottom: 8 }}>งานนี้ไม่มีรางวัล Overall</div>
+                <div style={{ fontSize: 16, color: '#94a3b8' }}>Overall is turned off for this event</div>
+                <div style={{ fontSize: 14, color: '#64748b', marginTop: 20 }}>{campaign.name}</div>
+            </div>
+        );
+    }
+
     if (campaignNotFound) {
         return (
             <div style={{ fontFamily: "'Prompt', 'Inter', sans-serif", background: '#0f172a', height: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
@@ -332,6 +393,8 @@ export default function OverallWinnersBySlugPage() {
         );
     }
 
+    const nameBasePx = getNameBasePx(isMobile, isPortrait, viewportH);
+
     const renderRunnerRow = (runner: Runner, idx: number) => {
         const fullName = language === 'th' && runner.firstNameTh
             ? `${runner.bib}  ${runner.firstNameTh} ${runner.lastNameTh || ''}`
@@ -341,9 +404,7 @@ export default function OverallWinnersBySlugPage() {
             <div style={{ width: isMobile ? 22 : '2.4vh', height: isMobile ? 22 : '2.4vh', minWidth: 18, minHeight: 18, borderRadius: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: isMobile ? 12 : '1.4vh', fontWeight: 900, flexShrink: 0, background: rankBg[idx] || '#e2e8f0', color: rankFg[idx] || '#475569' }}>
                 {idx + 1}
             </div>
-            <span style={{ fontSize: getNameFontSize(fullName, isMobile, isPortrait), fontWeight: 700, color: '#1e293b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1, textTransform: 'uppercase' }}>
-                {fullName}
-            </span>
+            <AutoFitName text={fullName} basePx={nameBasePx} style={{ fontWeight: 700, color: '#1e293b', textTransform: 'uppercase' }} />
             <span style={{ fontFamily: 'monospace', fontWeight: 800, fontSize: isMobile ? 11 : '1.5vh', color: '#1e293b', flexShrink: 0, minWidth: isMobile ? 60 : '7vh', textAlign: 'right' }}>
                 {runner.gunTimeStr || formatTime(runner.gunTime)}
             </span>
@@ -374,11 +435,11 @@ export default function OverallWinnersBySlugPage() {
         <div ref={el => { colRef.current = el; }} style={{ display: 'flex', flexDirection: 'column', gap: isMobile ? 8 : '0.8vh', minHeight: 0, flex: 1, overflowY: isMobile ? 'visible' : 'auto', paddingRight: isMobile ? 0 : 4 }}>
             <div style={{ padding: isMobile ? '8px 10px' : '0.9vh 10px', fontWeight: 900, fontSize: headerFontSize, textTransform: 'uppercase', borderRadius: 8, color: 'white', letterSpacing: separateNat ? 1 : 2, background: bgHeader, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
                 <span style={{ ...dlButtonStyle, visibility: 'hidden' }} aria-hidden="true">
-                    {dlIcon(11)}{!isMobile && <span>Download</span>}
+                    {dlIcon(11)}
                 </span>
                 <span style={{ flex: 1, textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{title}</span>
-                <button data-no-capture onClick={onDownload} disabled={!!downloading} title="Download" style={{ ...dlButtonStyle, opacity: downloading ? 0.5 : 1, transition: 'opacity 0.15s' }}>
-                    {dlIcon(11)}{!isMobile && <span>Download</span>}
+                <button data-no-capture onClick={onDownload} disabled={!!downloading} title="Download" aria-label="Download" style={{ ...dlButtonStyle, opacity: downloading ? 0.5 : 1, transition: 'opacity 0.15s' }}>
+                    {dlIcon(11)}
                 </button>
             </div>
             <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: 8, overflow: 'hidden', display: 'flex', flexDirection: 'column', flexShrink: 0, minHeight: isMobile ? 180 : '28vh' }}>
@@ -415,12 +476,8 @@ export default function OverallWinnersBySlugPage() {
                 </div>
 
                 <div style={{ display: 'flex', alignItems: isMobile ? 'stretch' : 'center', gap: isMobile ? 6 : '1vw', flexDirection: isMobile ? 'column' : 'row' }}>
-                    {campaign && (
-                        <span style={{ fontSize: isMobile ? 11 : '1.3vh', fontWeight: 700, color: '#94a3b8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: isMobile ? '100%' : '20vw' }}>
-                            {campaign.name}
-                        </span>
-                    )}
-
+                    {/* The event name is printed big on the title bar below — repeating it
+                        here only squeezed the ACTION logo, so the header stays controls-only. */}
                     {campaign && !initialLoading && (
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
                             <NameLangToggle value={language} onChange={setLanguage} isMobile={isMobile} />
@@ -428,10 +485,10 @@ export default function OverallWinnersBySlugPage() {
                                 onClick={() => downloadLandscape('both')}
                                 disabled={!!downloading}
                                 title="Download Overall Winners (Excel)"
+                                aria-label="Download Overall Winners (Excel)"
                                 style={{ display: 'flex', alignItems: 'center', gap: 5, padding: isMobile ? '5px 10px' : '0.35vh 0.7vw', background: '#1d4ed8', border: '1px solid #2563eb', borderRadius: 7, color: 'white', fontSize: isMobile ? 11 : '1.15vh', fontWeight: 800, cursor: 'pointer', whiteSpace: 'nowrap', opacity: downloading ? 0.6 : 1, transition: 'opacity 0.15s', fontFamily: "'Prompt','Inter',sans-serif" }}
                             >
-                                <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="1" x2="8" y2="11"/><polyline points="4 7 8 11 12 7"/><line x1="2" y1="14" x2="14" y2="14"/></svg>
-                                Download
+                                <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="1" x2="8" y2="11"/><polyline points="4 7 8 11 12 7"/><line x1="2" y1="14" x2="14" y2="14"/></svg>
                             </button>
                         </div>
                     )}

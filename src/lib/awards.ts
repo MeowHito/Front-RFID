@@ -14,7 +14,7 @@
 
 import { isThaiNationality } from './nationality';
 import { buildCanonicalAgeGroups, canonicalizeAgeGroup } from './age-groups';
-import { resolveOverallDisplayCount, type OverallCountByCategoryEntry } from './overall-display-count';
+import { isOverallEnabled, resolveOverallDisplayCount, type OverallCountByCategoryEntry } from './overall-display-count';
 import {
     isTopRunnersEnabled,
     resolveTopRunnersCut,
@@ -27,6 +27,9 @@ export interface AwardConfig {
     /** Per-category overrides of `overallDisplayCount` (campaign setting). Resolved
      *  against `category` below; falls back to `overallDisplayCount` when absent. */
     overallDisplayCountByCategory?: OverallCountByCategoryEntry[];
+    /** `false` when the campaign gives no Overall award — no runner gets an `overall`
+     *  placing, and no one is excluded from the age-group award for holding one. */
+    overallEnabled?: boolean;
     /** Category name of this pool — needed to resolve the per-category overall count. */
     category?: string;
     ageGroupDisplayCount?: number;
@@ -172,8 +175,12 @@ export function computeAwardsForCategory(
     const map = new Map<string, AwardResult>();
     const overallDisplayCount = resolveOverallDisplayCount(cfg, cfg.category);
     const ageGroupDisplayCount = Math.max(1, Number(cfg.ageGroupDisplayCount) || 5);
-    const excludeOv = Math.max(0, Number(cfg.excludeOverallFromAgeGroup) || 0);
-    const separateNat = !!cfg.separateOverallByNationality;
+    // Events with no Overall award skip the placing entirely — and with it the
+    // "top N overall don't also take an age-group award" exclusion, which only
+    // exists to stop double-awarding.
+    const overallOn = isOverallEnabled(cfg);
+    const excludeOv = overallOn ? Math.max(0, Number(cfg.excludeOverallFromAgeGroup) || 0) : 0;
+    const separateNat = overallOn && !!cfg.separateOverallByNationality;
     const excludeNatCount: Record<'thai' | 'foreign', number> = {
         thai: cfg.excludeOverallThaiFromAgeGroup != null ? Math.max(0, Number(cfg.excludeOverallThaiFromAgeGroup)) : overallDisplayCount,
         foreign: cfg.excludeOverallForeignFromAgeGroup != null ? Math.max(0, Number(cfg.excludeOverallForeignFromAgeGroup)) : overallDisplayCount,
@@ -220,7 +227,7 @@ export function computeAwardsForCategory(
                 // Exclusion count is independently configurable per Thai/foreign bucket.
                 if (natCount[key] <= excludeNatCount[key]) excludedBibs.add(r.bib);
             }
-        } else {
+        } else if (overallOn) {
             byGun.slice(0, overallDisplayCount).forEach((r, i) => {
                 ensure(r._id).overall = i + 1;
             });

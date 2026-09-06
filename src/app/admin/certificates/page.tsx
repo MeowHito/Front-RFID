@@ -104,6 +104,8 @@ interface Campaign {
     certBackgroundImage?: string; certLayout?: CertElement[];
     certPaperSize?: PaperSize;
     overallDisplayCount?: number;
+    /** `false` = this event gives no Overall award (admin/top-overall master switch). */
+    overallEnabled?: boolean;
     /** Per-distance overrides of the Overall rank count (admin/top-overall). */
     overallDisplayCountByCategory?: { category: string; count: number }[];
     ageGroupDisplayCount?: number;
@@ -813,6 +815,7 @@ export default function CertificatesPage() {
                 const awardMap = computeAwardsForCategory(pool, {
                     overallDisplayCount: campaign.overallDisplayCount,
                     overallDisplayCountByCategory: campaign.overallDisplayCountByCategory,
+                    overallEnabled: campaign.overallEnabled,
                     category: selectedRunner.category,
                     ageGroupDisplayCount: campaign.ageGroupDisplayCount,
                     excludeOverallFromAgeGroup: campaign.excludeOverallFromAgeGroup,
@@ -836,7 +839,7 @@ export default function CertificatesPage() {
             } catch { if (!cancelled) setAwards(EMPTY_AWARDS); }
         })();
         return () => { cancelled = true; };
-    }, [selectedRunner, campaign?._id, campaign?.overallDisplayCount, campaign?.overallDisplayCountByCategory, campaign?.ageGroupDisplayCount, campaign?.excludeOverallFromAgeGroup, campaign?.excludeOverallThaiFromAgeGroup, campaign?.excludeOverallForeignFromAgeGroup, campaign?.separateOverallNationalityCategories, campaign?.bestOfProvinceEnabled, campaign?.bestOfProvinces]);
+    }, [selectedRunner, campaign?._id, campaign?.overallDisplayCount, campaign?.overallDisplayCountByCategory, campaign?.overallEnabled, campaign?.ageGroupDisplayCount, campaign?.excludeOverallFromAgeGroup, campaign?.excludeOverallThaiFromAgeGroup, campaign?.excludeOverallForeignFromAgeGroup, campaign?.separateOverallNationalityCategories, campaign?.bestOfProvinceEnabled, campaign?.bestOfProvinces]);
 
     useEffect(() => {
         const handler = (e: KeyboardEvent) => {

@@ -15,6 +15,16 @@ export interface OverallCountByCategoryEntry {
 export interface OverallDisplayCountConfig {
     overallDisplayCount?: number;
     overallDisplayCountByCategory?: OverallCountByCategoryEntry[];
+    /** Master switch for the whole Overall award. `false` means this campaign gives
+     *  no Overall award at all — the board, its ranking-menu entry and the
+     *  "Overall n" award label all disappear. Undefined means on (existing campaigns). */
+    overallEnabled?: boolean;
+}
+
+/** Whether this campaign awards an Overall placing at all. Only an explicit `false`
+ *  turns it off, so campaigns saved before the switch existed stay on. */
+export function isOverallEnabled(config: OverallDisplayCountConfig | null | undefined): boolean {
+    return config?.overallEnabled !== false;
 }
 
 export const DEFAULT_OVERALL_DISPLAY_COUNT = 5;

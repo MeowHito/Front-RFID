@@ -69,6 +69,8 @@ export interface CampaignData {
     eslipV2Layout?: ESlipV2Layout;
     slipScanTemplate?: string;
     overallDisplayCount?: number;
+    /** `false` = this event gives no Overall award (admin/top-overall master switch). */
+    overallEnabled?: boolean;
     /** Per-distance overrides of the Overall rank count (admin/top-overall). */
     overallDisplayCountByCategory?: { category: string; count: number }[];
     /** Top Runners board config — drives the "Top N" fallback award on the slip. */

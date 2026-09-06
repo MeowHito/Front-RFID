@@ -10,7 +10,7 @@ import {
     type RankingMenuItemKey,
     type RankingMenuVisibility,
 } from '@/lib/rankingMenu';
-import { resolveOverallDisplayCount, type OverallCountByCategoryEntry } from '@/lib/overall-display-count';
+import { isOverallEnabled, resolveOverallDisplayCount, type OverallCountByCategoryEntry } from '@/lib/overall-display-count';
 import { isTopRunnersEnabled, resolveTopRunnersCut, resolveTopRunnersRange, type TopRunnersRangeEntry } from '@/lib/top-runners-range';
 
 interface RankingMenuDropdownProps {
@@ -24,6 +24,8 @@ interface RankingMenuDropdownProps {
     overallDisplayCount?: number;
     /** Per-distance overrides of the Overall rank count (admin/top-overall). */
     overallDisplayCountByCategory?: OverallCountByCategoryEntry[];
+    /** `false` when this event gives no Overall award — its menu entry is dropped. */
+    overallEnabled?: boolean;
     /** Per-distance rank range of the Top Runners board (admin/top-overall). */
     topRunnersRangeByCategory?: TopRunnersRangeEntry[];
     topRunnersExcludeOverallCategories?: string[];
@@ -53,6 +55,7 @@ export default function RankingMenuDropdown({
     categoryName,
     overallDisplayCount,
     overallDisplayCountByCategory,
+    overallEnabled,
     topRunnersRangeByCategory,
     topRunnersExcludeOverallCategories,
     topRunnersEnabled,
@@ -109,7 +112,11 @@ export default function RankingMenuDropdown({
         { key: 'nationality', label: `Foreigner Overall ${overallForeignN}`, href: `/Nationality-Winners/${encodeURIComponent(campaignSlugOrId)}${catQuery}` },
         { key: 'ageGroup', label: `Age group ${ageGroupN}`, href: `/Result-Winners/${encodeURIComponent(campaignSlugOrId)}${catQuery}` },
     ];
-    const items = allItems.filter(item => item.key !== 'topOverall' || showTopRunners);
+    // Events without an Overall award drop that entry too — for admins as well,
+    // since the board it links to says the award is off.
+    const showOverall = isOverallEnabled({ overallEnabled });
+    const items = allItems.filter(item =>
+        (item.key !== 'topOverall' || showTopRunners) && (item.key !== 'general' || showOverall));
 
     // Admins always see the menu; public users see it only when the admin has ticked at least one item visible
     const hasPublicItems = items.some(item => draft[item.key]);
