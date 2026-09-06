@@ -1337,13 +1337,19 @@ export default function EventLivePage() {
         return [...runners].sort(compareRunnerRankOrder);
     }, [runners, campaign?.separateOverallNationalityCategories]); // eslint-disable-line react-hooks/exhaustive-deps
 
+    // A BIB belongs to exactly one runner across the whole event, so searching is a lookup,
+    // not a filter inside the open distance tab: typing a number (or a name) finds that
+    // runner whichever KM tab happens to be selected. The row carries its own distance
+    // label, and RANK/GEN/AGE still come from that distance's own pool.
+    const isSearching = searchQuery.trim().length > 0;
+
     const filteredRunners = useMemo(() => {
         const filtered = allRankedRunners
             .filter(runner => {
                 const matchesSearch = !searchQuery || runner.firstName?.toLowerCase().includes(searchQuery.toLowerCase()) || runner.lastName?.toLowerCase().includes(searchQuery.toLowerCase()) || runner.bib?.includes(searchQuery);
                 const matchesGender = filterGender === 'ALL' || filterGender === 'FOLLOWED' || runner.gender === filterGender;
                 const matchesFollowed = filterGender !== 'FOLLOWED' || followedRunnerIds.has(runner._id);
-                const matchesCategory = !filterCategory || resolveRunnerCategoryKey(runner) === filterCategory;
+                const matchesCategory = isSearching || !filterCategory || resolveRunnerCategoryKey(runner) === filterCategory;
                 const matchesStatus = filterStatus === 'ALL' || getDisplayStatus(runner) === filterStatus;
                 const matchesAgeGroup = !filterAgeGroup || canonicalAgeGroupOf(runner) === filterAgeGroup;
                 return matchesSearch && matchesGender && matchesFollowed && matchesCategory && matchesStatus && matchesAgeGroup;
@@ -1369,7 +1375,7 @@ export default function EventLivePage() {
             .map((runner, i) => ({ runner, i, alert: runnerNeedsAttention(runner) }))
             .sort((a, b) => (a.alert === b.alert ? a.i - b.i : a.alert ? -1 : 1))
             .map(x => x.runner);
-    }, [allRankedRunners, searchQuery, filterGender, followedRunnerIds, filterCategory, filterStatus, filterAgeGroup, resolveRunnerCategoryKey, canonicalAgeGroupOf, getDisplayStatus, sortAlertsFirst, cpDistanceLookup, isMobile, showAllColumns]); // eslint-disable-line react-hooks/exhaustive-deps
+    }, [allRankedRunners, searchQuery, isSearching, filterGender, followedRunnerIds, filterCategory, filterStatus, filterAgeGroup, resolveRunnerCategoryKey, canonicalAgeGroupOf, getDisplayStatus, sortAlertsFirst, cpDistanceLookup, isMobile, showAllColumns]); // eslint-disable-line react-hooks/exhaustive-deps
 
     // Live overall + gender + age-group ranks — see @/lib/live-ranking for the
     // convention (RANK/GEN by GUN time, AGE by NET time, Overall combined).
@@ -2515,7 +2521,9 @@ export default function EventLivePage() {
                                                                 <span className={`rounded bg-[#dc2626] px-1.5 py-px font-extrabold tracking-[0.05em] text-white ${isMobile ? 'text-[9px]' : 'text-[10px]'}`}>
                                                                     BIB {runner.bib}
                                                                 </span>
-                                                                {/* Age group moved to the CAT column; show nationality here, falling back to category when there is no age group. */}
+                                                                {/* Age group moved to the CAT column; show nationality here, falling back to
+                                                                    category when there is no age group — or whenever a search pulls in a row
+                                                                    from a distance other than the open tab, so it is clear where it came from. */}
                                                                 {runner.nationality ? (
                                                                     // The flag replaces the code ("THA"); the code stays as the
                                                                     // fallback for anything the table cannot resolve, and the
@@ -2528,7 +2536,13 @@ export default function EventLivePage() {
                                                                         {countryToFlag(runner.nationality) || runner.nationality.toUpperCase()}
                                                                     </span>
                                                                 ) : null}
-                                                                {!runner.ageGroup && runner.category ? `${runner.nationality ? ' | ' : ''}${runner.category}` : ''}
+                                                                {(() => {
+                                                                    if (!runner.category) return '';
+                                                                    const otherDistance = isSearching && !!filterCategory
+                                                                        && resolveRunnerCategoryKey(runner) !== filterCategory;
+                                                                    if (runner.ageGroup && !otherDistance) return '';
+                                                                    return `${runner.nationality ? ' | ' : ''}${runner.category}`;
+                                                                })()}
                                                             </span>
                                                         </div>
                                                     </td>
