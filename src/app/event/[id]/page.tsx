@@ -350,6 +350,18 @@ function getStatusLabel(status: string): string {
     }
 }
 
+/**
+ * The reason behind a stopped status, as staff read it: "Auto DNF: missed the FINISH cut-off
+ * (06/09/2026 14:30)" becomes "missed the FINISH cut-off (06/09/2026 14:30)" — the badge next
+ * to it already says DNF, so repeating it just eats the column.
+ */
+function getStatusReason(note?: string): string {
+    const text = String(note || '').trim();
+    if (!text) return '';
+    const stripped = text.replace(/^(auto\s+)?(dnf|dns|dq)\s*:\s*/i, '').trim();
+    return stripped || text;
+}
+
 function FollowHeartIcon({ filled, size = 14, color }: { filled: boolean; size?: number; color: string }) {
     return (
         <svg viewBox="0 0 24 24" aria-hidden="true" className="block" style={{ width: size, height: size }}>
@@ -2565,6 +2577,9 @@ export default function EventLivePage() {
                                                 const showFinishCheckpointBadge = !!statusCheckpointName && isFinishCp;
                                                 const showInProgressCheckpointBadge = !!statusCheckpointName && runner.status === 'in_progress' && !isFinishCp;
                                                 const showDnfChip = isDnfStatus;
+                                                // Why they were pulled — staff only. The public table shows a bare
+                                                // "DNF"; an admin gets the cut-off (or hand-typed) reason under it.
+                                                const dnfReason = isDnfStatus && isAdmin ? getStatusReason(runner.statusNote) : '';
                                                 const showCheckpointChip = showFinishCheckpointBadge || showInProgressCheckpointBadge || showDnfChip;
                                                 // Signed-out viewers get a bare "DQ" badge — no checkpoint the runner was
                                                 // pulled at, no note. Staff still see where and why.
@@ -2612,6 +2627,14 @@ export default function EventLivePage() {
                                                                     </span>
                                                                 )}
                                                             </div>
+                                                            {dnfReason ? (
+                                                                <span
+                                                                    className={`${isMobile ? 'text-[8px]' : 'text-[10px]'} block max-w-full overflow-hidden text-ellipsis whitespace-nowrap text-center font-semibold leading-[1.15] text-red-600`}
+                                                                    title={runner.statusNote}
+                                                                >
+                                                                    {dnfReason}
+                                                                </span>
+                                                            ) : null}
                                                             {showCheckpointBelow && statusCheckpointName ? (
                                                                 <span className={`${isMobile ? 'text-[9px]' : 'text-[10px]'} block max-w-full overflow-hidden text-ellipsis whitespace-nowrap text-center font-semibold leading-[1.15] text-red-600`}>
                                                                     {statusCheckpointName}
