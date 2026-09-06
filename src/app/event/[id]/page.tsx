@@ -3398,15 +3398,26 @@ export default function EventLivePage() {
                                                 // Saving a START/FINISH time makes the backend recompute
                                                 // net/gun time, so pull the runner back in — otherwise the
                                                 // boxes above keep showing the pre-edit (wrong) times.
+                                                // A runner still out on course carries no gun/net time on
+                                                // their own document (those land at the finish); the times
+                                                // on screen come off the timing records instead, so take the
+                                                // refetched ones only once they are real — otherwise adding a
+                                                // mid-race checkpoint would blank both boxes.
                                                 if (editingRunner?._id) {
                                                     try {
                                                         const rRes = await fetch(`/api/runners/${editingRunner._id}`, { cache: 'no-store' });
                                                         if (rRes.ok) {
                                                             const fresh = await rRes.json();
                                                             if (fresh?._id) {
-                                                                setEditingRunner(prev => (prev ? { ...prev, ...fresh } : prev));
-                                                                setEditGunTime(msToHHMMSS(fresh.gunTime) || fresh.gunTimeStr || '');
-                                                                setEditChipTime(msToHHMMSS(fresh.netTime) || fresh.netTimeStr || '');
+                                                                const hasGun = Number(fresh.gunTime) > 0;
+                                                                const hasNet = Number(fresh.netTime) > 0;
+                                                                const gunTime = hasGun ? fresh.gunTime : editingRunner.gunTime;
+                                                                const netTime = hasNet ? fresh.netTime : editingRunner.netTime;
+                                                                const gunTimeStr = hasGun ? fresh.gunTimeStr : editingRunner.gunTimeStr;
+                                                                const netTimeStr = hasNet ? fresh.netTimeStr : editingRunner.netTimeStr;
+                                                                setEditingRunner(prev => (prev ? { ...prev, ...fresh, gunTime, netTime, gunTimeStr, netTimeStr } : prev));
+                                                                setEditGunTime(msToHHMMSS(gunTime) || gunTimeStr || '');
+                                                                setEditChipTime(msToHHMMSS(netTime) || netTimeStr || '');
                                                             }
                                                         }
                                                     } catch { /* ignore */ }
