@@ -9,6 +9,7 @@ import NameLangToggle from '@/components/NameLangToggle';
 import { useLanguage } from '@/lib/language-context';
 import { useAuth } from '@/lib/auth-context';
 import { isThaiNationality, isNationalitySplitCategory } from '@/lib/nationality';
+import { isGenderSplitEnabled } from '@/lib/gender-split';
 import { resolveOverallDisplayCount, type OverallCountByCategoryEntry } from '@/lib/overall-display-count';
 import { useParams, useSearchParams } from 'next/navigation';
 
@@ -49,6 +50,9 @@ interface Campaign {
     overallEnabled?: boolean;
     excludeOverallThaiFromAgeGroup?: number;
     separateOverallNationalityCategories?: string[];
+    /** `false` → this event doesn't race the genders separately; the board shows one
+     *  combined Overall column instead of MALE + FEMALE. */
+    genderSplitEnabled?: boolean;
 }
 
 const REFRESH_INTERVAL = 10;
@@ -292,6 +296,9 @@ export default function OverallWinnersBySlugPage() {
         : topN;
     // Nationality split applies per race category — only when the selected category is in the list
     const separateNat = isNationalitySplitCategory(campaign?.separateOverallNationalityCategories, selectedCategory);
+    // Events with no gender split (e.g. a dog race) show ONE combined Overall column;
+    // `maleWinners` then carries the whole field and `femaleWinners` stays empty.
+    const genderSplit = isGenderSplitEnabled(campaign);
 
     const { maleWinners, femaleWinners } = useMemo(() => {
         const finished = displayedRunners.filter(r => r.status === 'finished' && (r.netTime || r.gunTime || r.elapsedTime));
@@ -301,18 +308,18 @@ export default function OverallWinnersBySlugPage() {
             return at - bt;
         });
         if (separateNat) {
-            const pick = (isFemale: boolean) =>
-                sorted.filter(r => (r.gender === 'F') === isFemale && isThaiNationality(r.nationality)).slice(0, thaiTopN);
+            const pick = (isFemale: boolean | null) =>
+                sorted.filter(r => (isFemale === null || (r.gender === 'F') === isFemale) && isThaiNationality(r.nationality)).slice(0, thaiTopN);
             return {
-                maleWinners: pick(false),
-                femaleWinners: pick(true),
+                maleWinners: pick(genderSplit ? false : null),
+                femaleWinners: genderSplit ? pick(true) : [],
             };
         }
         return {
-            maleWinners: sorted.filter(r => r.gender !== 'F').slice(0, topN),
-            femaleWinners: sorted.filter(r => r.gender === 'F').slice(0, topN),
+            maleWinners: (genderSplit ? sorted.filter(r => r.gender !== 'F') : sorted).slice(0, topN),
+            femaleWinners: genderSplit ? sorted.filter(r => r.gender === 'F').slice(0, topN) : [],
         };
-    }, [displayedRunners, topN, thaiTopN, separateNat]);
+    }, [displayedRunners, topN, thaiTopN, separateNat, genderSplit]);
 
     // Exports only the currently-selected distance (not every distance in the campaign).
     // Nationality-split status is evaluated for the selected category since it's configured per category.
@@ -333,6 +340,7 @@ export default function OverallWinnersBySlugPage() {
                 currentRunners: displayedRunners,
                 gender,
                 nameLang: language,
+                combined: !genderSplit,
                 computeWinners: (runners, categoryName) => {
                     const topNForCat = resolveOverallDisplayCount(campaign, categoryName);
                     const thaiTopNForCat = campaign.excludeOverallThaiFromAgeGroup != null
@@ -346,21 +354,21 @@ export default function OverallWinnersBySlugPage() {
                         return at - bt;
                     });
                     if (separateNatForCat) {
-                        const pick = (isFemale: boolean) =>
-                            sorted.filter(r => (r.gender === 'F') === isFemale && isThaiNationality(r.nationality)).slice(0, thaiTopNForCat);
-                        return { maleRunners: pick(false), femaleRunners: pick(true) };
+                        const pick = (isFemale: boolean | null) =>
+                            sorted.filter(r => (isFemale === null || (r.gender === 'F') === isFemale) && isThaiNationality(r.nationality)).slice(0, thaiTopNForCat);
+                        return { maleRunners: pick(genderSplit ? false : null), femaleRunners: genderSplit ? pick(true) : [] };
                     }
                     return {
-                        maleRunners: sorted.filter(r => r.gender !== 'F').slice(0, topNForCat),
-                        femaleRunners: sorted.filter(r => r.gender === 'F').slice(0, topNForCat),
+                        maleRunners: (genderSplit ? sorted.filter(r => r.gender !== 'F') : sorted).slice(0, topNForCat),
+                        femaleRunners: genderSplit ? sorted.filter(r => r.gender === 'F').slice(0, topNForCat) : [],
                     };
                 },
             });
-            triggerSingleDistanceDownload(blob, campaign.name || '', `Overall${namePart}`, selectedCategory, distance, gender);
+            triggerSingleDistanceDownload(blob, campaign.name || '', `Overall${namePart}`, selectedCategory, distance, gender, !genderSplit);
         } catch (e) { console.error(e); } finally {
             setDownloading(null);
         }
-    }, [campaign, selectedCategory, displayedRunners, language]);
+    }, [campaign, selectedCategory, displayedRunners, language, genderSplit]);
 
     const downloadLandscape = useCallback((gender: 'male' | 'female' | 'both' = 'both') =>
         downloadGroup(maleWinners, femaleWinners, gender),
@@ -559,7 +567,18 @@ export default function OverallWinnersBySlugPage() {
                 </div>
             ) : (
                 <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: isMobile ? 12 : '1vw', flex: isMobile ? undefined : 1, minHeight: 0, paddingBottom: isMobile ? 16 : 0 }}>
-                    {separateNat ? (
+                    {!genderSplit ? (
+                        // No gender split — one combined board, held to half the screen
+                        // width on desktop so rows keep the size the two-column layout gives them.
+                        <div style={{ display: 'flex', flexDirection: 'column', minHeight: 0, flex: isMobile ? undefined : '0 1 50%', width: isMobile ? '100%' : undefined, margin: isMobile ? undefined : '0 auto' }}>
+                            {renderColumn(
+                                separateNat ? '🏅 OVERALL THA' : '🏅 OVERALL',
+                                '#059669', maleWinners, maleColRef,
+                                () => downloadGroup(maleWinners, femaleWinners, 'both', separateNat ? '-THA' : ''),
+                                separateNat ? thaiTopN : topN,
+                            )}
+                        </div>
+                    ) : separateNat ? (
                         <>
                             {renderColumn('♂ OVERALL THA · MALE', '#2563eb', maleWinners, maleColRef, () => downloadGroup(maleWinners, femaleWinners, 'male', '-THA'), thaiTopN)}
                             {renderColumn('♀ OVERALL THA · FEMALE', '#db2777', femaleWinners, femaleColRef, () => downloadGroup(maleWinners, femaleWinners, 'female', '-THA'), thaiTopN)}

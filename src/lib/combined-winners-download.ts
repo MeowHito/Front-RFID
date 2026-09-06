@@ -8,6 +8,25 @@
 
 import { buildWinnersExcel, triggerExcelDownload, type ExcelRunner, type ExcelSection } from './winner-excel';
 
+// Campaigns with the gender split turned off print ONE block per section instead of
+// a male and a female one. The Excel builder's single-gender layout already draws
+// exactly that, so those boards reuse it with a neutral bar label/colour and put
+// every winner in `maleRunners`.
+export const COMBINED_EXCEL_LABEL = '🏅  WINNERS';
+export const COMBINED_EXCEL_COLOR = '059669';
+
+function excelArgs(gender: 'male' | 'female' | 'both', nameLang: 'th' | 'en', combined?: boolean) {
+    return combined
+        ? { gender: 'male' as const, opts: { nameLang, combinedLabel: COMBINED_EXCEL_LABEL, barColor: COMBINED_EXCEL_COLOR } }
+        : { gender, opts: { nameLang } };
+}
+
+/** Male/Female filename suffix — dropped entirely on combined (no-split) boards. */
+function genderFileSuffix(gender: 'male' | 'female' | 'both', combined?: boolean) {
+    if (combined) return '';
+    return gender === 'male' ? '-Male' : gender === 'female' ? '-Female' : '';
+}
+
 export interface CampaignCategoryLike {
     name: string;
     distance?: string;
@@ -23,10 +42,13 @@ export async function downloadAllDistances<T extends ExcelRunner>(params: {
     nameLang: 'th' | 'en';
     /** Short label for the filename, e.g. "Overall", "BestOf", "Nationality". */
     filePartLabel: string;
+    /** `true` when the campaign has no gender split — prints one combined block per
+     *  distance (every winner passed in `maleRunners`) instead of male + female. */
+    combined?: boolean;
     /** Same winners logic the page already uses for the on-screen display, applied per distance. */
     computeWinners: (runners: T[], categoryName: string) => { maleRunners: T[]; femaleRunners: T[]; rankOffset?: number };
 }): Promise<Blob | null> {
-    const { campaignId, campaignName, categories, selectedCategory, currentRunners, gender, nameLang, computeWinners } = params;
+    const { campaignId, campaignName, categories, selectedCategory, currentRunners, gender, nameLang, combined, computeWinners } = params;
     const categoriesToUse = categories.length ? categories : [{ name: selectedCategory, distance: undefined }];
 
     const sections: ExcelSection[] = await Promise.all(categoriesToUse.map(async (cat): Promise<ExcelSection> => {
@@ -63,13 +85,16 @@ export async function downloadSelectedDistance<T extends ExcelRunner>(params: {
     currentRunners: T[];
     gender: 'male' | 'female' | 'both';
     nameLang: 'th' | 'en';
+    /** `true` when the campaign has no gender split — see `downloadAllDistances`. */
+    combined?: boolean;
     computeWinners: (runners: T[], categoryName: string) => { maleRunners: T[]; femaleRunners: T[]; rankOffset?: number };
 }): Promise<Blob | null> {
-    const { campaignName, selectedCategory, distance, currentRunners, gender, nameLang, computeWinners } = params;
+    const { campaignName, selectedCategory, distance, currentRunners, gender, nameLang, combined, computeWinners } = params;
     const { maleRunners, femaleRunners, rankOffset } = computeWinners(currentRunners, selectedCategory);
     const distanceSuffix = distance ? ` (${distance})` : '';
     const sections: ExcelSection[] = [{ categoryLabel: `${selectedCategory}${distanceSuffix}`, maleRunners, femaleRunners, rankOffset }];
-    return buildWinnersExcel(campaignName, '', sections, gender, { nameLang });
+    const { gender: g, opts } = excelArgs(gender, nameLang, combined);
+    return buildWinnersExcel(campaignName, '', sections, g, opts);
 }
 
 export function triggerSingleDistanceDownload(
@@ -79,9 +104,10 @@ export function triggerSingleDistanceDownload(
     selectedCategory: string,
     distance: string | undefined,
     gender: 'male' | 'female' | 'both',
+    combined?: boolean,
 ) {
     if (!blob) return;
-    const suffix = gender === 'male' ? '-Male' : gender === 'female' ? '-Female' : '';
+    const suffix = genderFileSuffix(gender, combined);
     const distPart = distance ? `-${distance}` : (selectedCategory ? `-${selectedCategory}` : '');
     triggerExcelDownload(blob, `${campaignName || 'winners'}-${filePartLabel}${distPart}${suffix}`);
 }

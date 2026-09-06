@@ -144,6 +144,7 @@ export default function ESlipView({ apiUrl }: { apiUrl: string }) {
                     overallEnabled: campaign.overallEnabled,
                     category: runner.category,
                     ageGroupDisplayCount: campaign.ageGroupDisplayCount,
+                    genderSplitEnabled: campaign.genderSplitEnabled,
                     excludeOverallFromAgeGroup: campaign.excludeOverallFromAgeGroup,
                     excludeOverallThaiFromAgeGroup: campaign.excludeOverallThaiFromAgeGroup,
                     excludeOverallForeignFromAgeGroup: campaign.excludeOverallForeignFromAgeGroup,

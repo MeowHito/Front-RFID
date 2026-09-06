@@ -221,6 +221,7 @@ export default function BibLinkPage() {
                             overallEnabled: c.overallEnabled,
                             category: r.category,
                             ageGroupDisplayCount: c.ageGroupDisplayCount,
+                            genderSplitEnabled: c.genderSplitEnabled,
                             excludeOverallFromAgeGroup: c.excludeOverallFromAgeGroup,
                             excludeOverallThaiFromAgeGroup: c.excludeOverallThaiFromAgeGroup,
                             excludeOverallForeignFromAgeGroup: c.excludeOverallForeignFromAgeGroup,

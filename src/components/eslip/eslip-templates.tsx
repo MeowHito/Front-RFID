@@ -79,6 +79,8 @@ export interface CampaignData {
     /** `false` when the event has no Top Runners board at all (admin/top-overall). */
     topRunnersEnabled?: boolean;
     ageGroupDisplayCount?: number;
+    /** `false` → results are not split by gender (see lib/gender-split). */
+    genderSplitEnabled?: boolean;
     bestOfDisplayCount?: number;
     bestOfProvinceEnabled?: boolean;
     bestOfProvinces?: { province: string; count: number }[];

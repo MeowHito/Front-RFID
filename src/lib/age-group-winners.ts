@@ -7,6 +7,7 @@
 import { isThaiNationality, isNationalitySplitCategory } from './nationality';
 import { buildCanonicalAgeGroups, canonicalizeAgeGroup, type AgeGroupBucket } from './age-groups';
 import { resolveOverallDisplayCount, type OverallCountByCategoryEntry } from './overall-display-count';
+import { isGenderSplitEnabled, type GenderSplitConfig } from './gender-split';
 
 export interface AgeGroupWinnerRunner {
     _id: string;
@@ -21,7 +22,7 @@ export interface AgeGroupWinnerRunner {
     ageGroupRank?: number;
 }
 
-export interface AgeGroupWinnerConfig {
+export interface AgeGroupWinnerConfig extends GenderSplitConfig {
     ageGroupDisplayCount?: number;
     overallDisplayCount?: number;
     /** Per-category overrides of `overallDisplayCount` (campaign setting). */
@@ -42,12 +43,21 @@ const DEFAULT_AGE_GROUPS: AgeGroupBucket[] = [
     { label: '60&Over', min: 60, max: 999 },
 ];
 
+/**
+ * Age-group winners for one distance.
+ *
+ * When the campaign's gender split is turned off (`genderSplitEnabled: false`)
+ * the whole field competes together: `maleWinners` then holds the single
+ * combined list per age group and `femaleWinners` is empty. `genderSplit` in the
+ * result says which shape came back, so callers render one column or two.
+ */
 export function computeAgeGroupWinners<T extends AgeGroupWinnerRunner>(
     runners: T[],
     cfg: AgeGroupWinnerConfig,
     selectedCategory: string,
-): { activeAgeGroups: AgeGroupBucket[]; maleWinners: Record<string, T[]>; femaleWinners: Record<string, T[]> } {
+): { activeAgeGroups: AgeGroupBucket[]; maleWinners: Record<string, T[]>; femaleWinners: Record<string, T[]>; genderSplit: boolean } {
     const topN = Math.max(1, Number(cfg.ageGroupDisplayCount) || 5);
+    const genderSplit = isGenderSplitEnabled(cfg);
     const finished = runners.filter(r => r.status === 'finished' && (r.netTime || r.gunTime || r.elapsedTime));
 
     const { buckets, canonicalLabelOf } = buildCanonicalAgeGroups(finished.map(r => r.ageGroup));
@@ -63,8 +73,14 @@ export function computeAgeGroupWinners<T extends AgeGroupWinnerRunner>(
     const byOverallTime = (a: T, b: T) =>
         (a.gunTime || a.netTime || a.elapsedTime || Infinity) - (b.gunTime || b.netTime || b.elapsedTime || Infinity);
     if (excludeOv > 0) {
-        finished.filter(r => r.gender !== 'F').sort(byOverallTime).slice(0, excludeOv).forEach(r => excludedBibs.add(r.bib));
-        finished.filter(r => r.gender === 'F').sort(byOverallTime).slice(0, excludeOv).forEach(r => excludedBibs.add(r.bib));
+        if (genderSplit) {
+            finished.filter(r => r.gender !== 'F').sort(byOverallTime).slice(0, excludeOv).forEach(r => excludedBibs.add(r.bib));
+            finished.filter(r => r.gender === 'F').sort(byOverallTime).slice(0, excludeOv).forEach(r => excludedBibs.add(r.bib));
+        } else {
+            // No gender split → one Overall board for the whole field, so only that
+            // single top N is held back from the age-group awards.
+            [...finished].sort(byOverallTime).slice(0, excludeOv).forEach(r => excludedBibs.add(r.bib));
+        }
     }
 
     const natSplit = isNationalitySplitCategory(cfg.separateOverallNationalityCategories, selectedCategory);
@@ -74,10 +90,10 @@ export function computeAgeGroupWinners<T extends AgeGroupWinnerRunner>(
             thai: cfg.excludeOverallThaiFromAgeGroup != null ? Math.max(0, Number(cfg.excludeOverallThaiFromAgeGroup)) : overallTopN,
             foreign: cfg.excludeOverallForeignFromAgeGroup != null ? Math.max(0, Number(cfg.excludeOverallForeignFromAgeGroup)) : overallTopN,
         };
-        for (const female of [false, true]) {
+        for (const female of genderSplit ? [false, true] : [null]) {
             for (const thai of [true, false]) {
                 finished
-                    .filter(r => (r.gender === 'F') === female && isThaiNationality(r.nationality) === thai)
+                    .filter(r => (female === null || (r.gender === 'F') === female) && isThaiNationality(r.nationality) === thai)
                     .sort(byOverallTime)
                     .slice(0, excludeNatCount[thai ? 'thai' : 'foreign'])
                     .forEach(r => excludedBibs.add(r.bib));
@@ -109,8 +125,9 @@ export function computeAgeGroupWinners<T extends AgeGroupWinnerRunner>(
         if (excludeAG > 0 && runner.ageGroupRank && runner.ageGroupRank > 0 && runner.ageGroupRank <= excludeAG) continue;
         const ag = canonicalizeAgeGroup(runner.ageGroup, canonicalLabelOf);
         if (!ag) continue;
-        const bucket = runner.gender === 'F' ? femaleWinners : maleWinners;
+        // Gender split off → everyone lands in the single combined list (maleWinners).
+        const bucket = genderSplit && runner.gender === 'F' ? femaleWinners : maleWinners;
         if (ag in bucket && bucket[ag].length < topN) bucket[ag].push(runner);
     }
-    return { activeAgeGroups, maleWinners, femaleWinners };
+    return { activeAgeGroups, maleWinners, femaleWinners, genderSplit };
 }

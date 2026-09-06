@@ -11,8 +11,12 @@
 //     also eligible for their age-group award → e.g. "Overall 1, Age Group 1".
 //   • If it is > 0, the top N overall per gender are removed from age-group
 //     contention → they keep only their Overall award.
+// "Per gender" above assumes the campaign's gender split is on (the default).
+// With `genderSplitEnabled: false` every "per gender" step becomes one pass over
+// the whole field — see `isGenderSplitEnabled`.
 
 import { isThaiNationality } from './nationality';
+import { isGenderSplitEnabled, type GenderSplitConfig } from './gender-split';
 import { buildCanonicalAgeGroups, canonicalizeAgeGroup } from './age-groups';
 import { isOverallEnabled, resolveOverallDisplayCount, type OverallCountByCategoryEntry } from './overall-display-count';
 import {
@@ -22,7 +26,7 @@ import {
     type TopRunnersRangeEntry,
 } from './top-runners-range';
 
-export interface AwardConfig {
+export interface AwardConfig extends GenderSplitConfig {
     overallDisplayCount?: number;
     /** Per-category overrides of `overallDisplayCount` (campaign setting). Resolved
      *  against `category` below; falls back to `overallDisplayCount` when absent. */
@@ -207,8 +211,13 @@ export function computeAwardsForCategory(
     // each gender / Thai-INT bucket has its own "OVERALL THA 1..N" / "OVERALL INT 1..N"
     // ranked by GUN time. (The /event RANK column stays a single combined list.) The
     // Age-group award below is ranked by NET time.
-    for (const female of [false, true]) {
-        const group = finished.filter(r => (r.gender === 'F') === female);
+    //
+    // Campaigns with the gender split turned off (`genderSplitEnabled: false`) run a
+    // single pass over the whole field instead, matching the single combined column
+    // their winners board shows.
+    const genderBuckets: (boolean | null)[] = isGenderSplitEnabled(cfg) ? [false, true] : [null];
+    for (const female of genderBuckets) {
+        const group = female === null ? finished : finished.filter(r => (r.gender === 'F') === female);
         const byGun = [...group].sort(compareOverallByGun);
 
         // Overall winners (per gender). When nationality-split is on, the placing is
@@ -288,7 +297,12 @@ export function computeGenderRanks(runners: AwardRunnerLike[]): Map<string, numb
  * canonicalized the same way as the award computation so labels group consistently.
  * Returns a map of runnerId → rank within the runner's gender + age group.
  */
-export function computeAgeGroupRanks(runners: AwardRunnerLike[]): Map<string, number> {
+export function computeAgeGroupRanks(
+    runners: AwardRunnerLike[],
+    opts?: { genderSplit?: boolean },
+): Map<string, number> {
+    // Gender split off → one ranking per age group across the whole field.
+    const genderSplit = opts?.genderSplit !== false;
     const finished = runners.filter(r => r.status === 'finished' && (r.netTime || r.gunTime || r.elapsedTime));
     const { canonicalLabelOf } = buildCanonicalAgeGroups(finished.map(r => r.ageGroup));
     const byNet = [...finished].sort(compareAgeGroupByNet);
@@ -296,7 +310,7 @@ export function computeAgeGroupRanks(runners: AwardRunnerLike[]): Map<string, nu
     const result = new Map<string, number>();
     for (const r of byNet) {
         const ag = canonicalizeAgeGroup(r.ageGroup, canonicalLabelOf);
-        const key = `${String(r.gender || '_')}::${ag || '_'}`;
+        const key = genderSplit ? `${String(r.gender || '_')}::${ag || '_'}` : `${ag || '_'}`;
         counters[key] = (counters[key] || 0) + 1;
         result.set(r._id, counters[key]);
     }

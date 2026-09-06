@@ -10,6 +10,7 @@ import { useAuth } from '@/lib/auth-context';
 import { useParams, useSearchParams } from 'next/navigation';
 import { type AgeGroupBucket, buildCanonicalAgeGroups } from '@/lib/age-groups';
 import { computeAgeGroupWinners } from '@/lib/age-group-winners';
+import { isGenderSplitEnabled } from '@/lib/gender-split';
 
 interface Runner {
     _id: string;
@@ -54,6 +55,9 @@ interface Campaign {
     excludeOverallForeignFromAgeGroup?: number;
     excludeAgeGroupTop?: number;
     separateOverallNationalityCategories?: string[];
+    /** `false` → this event doesn't race the genders separately; the board shows
+     *  one combined column per age group instead of MALE + FEMALE. */
+    genderSplitEnabled?: boolean;
 }
 
 // Last-resort placeholder shown only when NOT A SINGLE runner in the category
@@ -313,6 +317,9 @@ export default function ResultWinnersBySlugPage() {
 
     const disableAgeGroupRanking = false;
     const topN = Math.max(1, campaign?.ageGroupDisplayCount || 5);
+    // Events with no gender split (e.g. a dog race) show ONE combined column —
+    // computeAgeGroupWinners then returns the whole field in `maleWinners`.
+    const genderSplit = isGenderSplitEnabled(campaign);
 
     // Age-group columns mirror the admin ranking page (/admin/age-group-ranking):
     // both derive the visible brackets from the WHOLE field's ageGroup tags — every
@@ -339,14 +346,25 @@ export default function ResultWinnersBySlugPage() {
             const maleWinners: Record<string, Runner[]> = { [OVERALL_GROUP.label]: [] };
             const femaleWinners: Record<string, Runner[]> = { [OVERALL_GROUP.label]: [] };
             for (const runner of sorted) {
-                const bucket = runner.gender === 'F' ? femaleWinners : maleWinners;
+                const bucket = genderSplit && runner.gender === 'F' ? femaleWinners : maleWinners;
                 if (bucket[OVERALL_GROUP.label].length < topN) bucket[OVERALL_GROUP.label].push(runner);
             }
             return { maleWinners, femaleWinners };
         }
         const { maleWinners, femaleWinners } = computeAgeGroupWinners(displayedRunners, campaign || {}, selectedCategory);
         return { maleWinners, femaleWinners };
-    }, [displayedRunners, disableAgeGroupRanking, topN, campaign, selectedCategory]);
+    }, [displayedRunners, disableAgeGroupRanking, topN, campaign, selectedCategory, genderSplit]);
+
+    // Combined (no gender split) boards reuse the Excel builder's single-gender
+    // layout — one 7-column block — relabelled so the sheet doesn't say "MALE".
+    const COMBINED_EXCEL_LABEL = '🏅  WINNERS';
+    const COMBINED_EXCEL_COLOR = '059669';
+    const excelGender = (gender: 'male' | 'female' | 'both'): 'male' | 'female' | 'both' => (genderSplit ? gender : 'male');
+    const excelOpts = genderSplit
+        ? { nameLang: language }
+        : { nameLang: language, combinedLabel: COMBINED_EXCEL_LABEL, barColor: COMBINED_EXCEL_COLOR };
+    const fileSuffix = (gender: 'male' | 'female' | 'both') =>
+        (!genderSplit ? '' : gender === 'male' ? '-Male' : gender === 'female' ? '-Female' : '');
 
     const downloadSection = useCallback(async (ageGroupLabel: string, gender: 'male' | 'female' | 'both' = 'both') => {
         const key = gender === 'both' ? ageGroupLabel : `${gender}-${ageGroupLabel}`;
@@ -357,15 +375,15 @@ export default function ResultWinnersBySlugPage() {
                 maleRunners: maleWinners[ageGroupLabel] || [],
                 femaleRunners: femaleWinners[ageGroupLabel] || [],
             }];
-            const suffix = gender === 'male' ? '-Male' : gender === 'female' ? '-Female' : '';
+            const suffix = fileSuffix(gender);
             const distance = campaign?.categories?.find(c => c.name === selectedCategory)?.distance || selectedCategory || '';
             const distPart = distance ? `-${distance}` : '';
-            const blob = await buildWinnersExcel(campaign?.name || '', selectedCategory, sections, gender, { nameLang: language });
+            const blob = await buildWinnersExcel(campaign?.name || '', selectedCategory, sections, excelGender(gender), excelOpts);
             if (blob) triggerExcelDownload(blob, `${campaign?.name || 'winners'}${distPart}-AgeGroup-${ageGroupLabel}${suffix}`);
         } catch (e) { console.error(e); } finally {
             setDownloading(null);
         }
-    }, [campaign, selectedCategory, maleWinners, femaleWinners, language]);
+    }, [campaign, selectedCategory, maleWinners, femaleWinners, language, genderSplit]); // eslint-disable-line react-hooks/exhaustive-deps
 
     // Per-column download (the ⬇ on the MALE/FEMALE WINNERS header): exports
     // ONLY the currently-selected distance, every age group of it — not the whole
@@ -382,14 +400,14 @@ export default function ResultWinnersBySlugPage() {
                 maleRunners: maleWinners[g.label] || [],
                 femaleRunners: femaleWinners[g.label] || [],
             }));
-            const suffix = gender === 'male' ? '-Male' : gender === 'female' ? '-Female' : '';
+            const suffix = fileSuffix(gender);
             const distPart = distance ? `-${distance}` : '';
-            const blob = await buildWinnersExcel(campaign?.name || '', selectedCategory, sections, gender, { nameLang: language });
+            const blob = await buildWinnersExcel(campaign?.name || '', selectedCategory, sections, excelGender(gender), excelOpts);
             if (blob) triggerExcelDownload(blob, `${campaign?.name || 'winners'}${distPart}-AgeGroup${suffix}`);
         } catch (e) { console.error(e); } finally {
             setDownloading(null);
         }
-    }, [campaign, selectedCategory, activeAgeGroups, maleWinners, femaleWinners, language]);
+    }, [campaign, selectedCategory, activeAgeGroups, maleWinners, femaleWinners, language, genderSplit]); // eslint-disable-line react-hooks/exhaustive-deps
 
     // "Download All" combines every distance in the campaign into one Excel
     // file — each age group prints on its own page, with a distance banner
@@ -425,13 +443,13 @@ export default function ResultWinnersBySlugPage() {
                 });
             }
 
-            const suffix = gender === 'male' ? '-Male' : gender === 'female' ? '-Female' : '';
-            const blob = await buildWinnersExcel(campaign?.name || '', '', sections, gender, { nameLang: language });
+            const suffix = fileSuffix(gender);
+            const blob = await buildWinnersExcel(campaign?.name || '', '', sections, excelGender(gender), excelOpts);
             if (blob) triggerExcelDownload(blob, `${campaign?.name || 'winners'}-AgeGroup-AllDistances${suffix}`);
         } catch (e) { console.error(e); } finally {
             setDownloading(null);
         }
-    }, [campaign, selectedCategory, displayedRunners, language]);
+    }, [campaign, selectedCategory, displayedRunners, language, genderSplit]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const rankBg = ['#f59e0b', '#9ca3af', '#92400e', '#e2e8f0', '#e2e8f0'];
     const rankFg = ['#000', '#fff', '#fff', '#475569', '#475569'];
@@ -645,16 +663,31 @@ export default function ResultWinnersBySlugPage() {
                     Loading...
                 </div>
             ) : (
-                <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: isMobile ? 12 : '1vw', flex: isMobile ? undefined : 1, minHeight: 0, paddingBottom: isMobile ? 16 : 0 }}>
-                    {renderColumn(
-                        disableAgeGroupRanking ? '♂ MALE RANKING' : '♂ MALE WINNERS', '#2563eb', '#1e3a5f', maleWinners, maleColRef, maleAgeGroupRefs,
-                        () => downloadCurrentCategory('male'),
-                        (label) => downloadSection(label, 'male')
-                    )}
-                    {renderColumn(
-                        disableAgeGroupRanking ? '♀ FEMALE RANKING' : '♀ FEMALE WINNERS', '#db2777', '#831843', femaleWinners, femaleColRef, femaleAgeGroupRefs,
-                        () => downloadCurrentCategory('female'),
-                        (label) => downloadSection(label, 'female')
+                <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: isMobile ? 12 : '1vw', flex: isMobile ? undefined : 1, minHeight: 0, paddingBottom: isMobile ? 16 : 0, justifyContent: genderSplit ? undefined : 'center' }}>
+                    {genderSplit ? (
+                        <>
+                            {renderColumn(
+                                disableAgeGroupRanking ? '♂ MALE RANKING' : '♂ MALE WINNERS', '#2563eb', '#1e3a5f', maleWinners, maleColRef, maleAgeGroupRefs,
+                                () => downloadCurrentCategory('male'),
+                                (label) => downloadSection(label, 'male')
+                            )}
+                            {renderColumn(
+                                disableAgeGroupRanking ? '♀ FEMALE RANKING' : '♀ FEMALE WINNERS', '#db2777', '#831843', femaleWinners, femaleColRef, femaleAgeGroupRefs,
+                                () => downloadCurrentCategory('female'),
+                                (label) => downloadSection(label, 'female')
+                            )}
+                        </>
+                    ) : (
+                        // No gender split — one combined board, kept to half the screen
+                        // width on desktop so the rows stay the same size as the
+                        // two-column layout instead of stretching across the wall.
+                        <div style={{ display: 'flex', flexDirection: 'column', minHeight: 0, flex: isMobile ? undefined : '0 1 50%', width: isMobile ? '100%' : undefined }}>
+                            {renderColumn(
+                                disableAgeGroupRanking ? '🏅 OVERALL RANKING' : '🏅 WINNERS', '#059669', '#064e3b', maleWinners, maleColRef, maleAgeGroupRefs,
+                                () => downloadCurrentCategory('both'),
+                                (label) => downloadSection(label, 'both')
+                            )}
+                        </div>
                     )}
                 </div>
             )}

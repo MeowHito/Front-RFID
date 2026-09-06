@@ -107,6 +107,7 @@ export default function ScanningSlipPhotoPage() {
                     overallEnabled: campaign.overallEnabled,
                     category: runner.category,
                     ageGroupDisplayCount: campaign.ageGroupDisplayCount,
+                    genderSplitEnabled: campaign.genderSplitEnabled,
                     excludeOverallFromAgeGroup: campaign.excludeOverallFromAgeGroup,
                     excludeOverallThaiFromAgeGroup: campaign.excludeOverallThaiFromAgeGroup,
                     excludeOverallForeignFromAgeGroup: campaign.excludeOverallForeignFromAgeGroup,

@@ -84,6 +84,8 @@ interface CampaignData {
     topRunnersExcludeOverallCategories?: string[];
     topRunnersEnabled?: boolean;
     ageGroupDisplayCount?: number;
+    /** `false` → results are not split by gender (see lib/gender-split). */
+    genderSplitEnabled?: boolean;
     bestOfDisplayCount?: number;
     bestOfProvinceEnabled?: boolean;
     bestOfProvinces?: { province: string; count: number }[];
@@ -451,6 +453,7 @@ export default function RunnerProfilePage() {
                     overallEnabled: campaign.overallEnabled,
                     category: runner.category,
                     ageGroupDisplayCount: campaign.ageGroupDisplayCount,
+                    genderSplitEnabled: campaign.genderSplitEnabled,
                     excludeOverallFromAgeGroup: campaign.excludeOverallFromAgeGroup,
                     excludeOverallThaiFromAgeGroup: campaign.excludeOverallThaiFromAgeGroup,
                     excludeOverallForeignFromAgeGroup: campaign.excludeOverallForeignFromAgeGroup,
@@ -465,7 +468,7 @@ export default function RunnerProfilePage() {
                 // and Age-group placings are also by gun time.
                 const overallRanks = computeOverallRanks(pool, { separateByNationality: false });
                 const genderRanks = computeGenderRanks(pool);
-                const ageGroupRanks = computeAgeGroupRanks(pool);
+                const ageGroupRanks = computeAgeGroupRanks(pool, { genderSplit: campaign.genderSplitEnabled !== false });
                 if (!cancelled) {
                     setAward(awards.get(runner._id) || null);
                     setGunOverallRank(overallRanks.get(runner._id) || null);
@@ -475,7 +478,7 @@ export default function RunnerProfilePage() {
             } catch { if (!cancelled) { setAward(null); setBestOfProvince(null); setGunOverallRank(null); setGunGenderRank(null); setGunAgeGroupRank(null); } }
         })();
         return () => { cancelled = true; };
-    }, [runner, campaign?._id, campaign?.overallDisplayCount, campaign?.overallDisplayCountByCategory, campaign?.overallEnabled, campaign?.ageGroupDisplayCount, campaign?.bestOfProvinceEnabled, campaign?.bestOfProvinces, campaign?.excludeOverallFromAgeGroup, campaign?.excludeOverallThaiFromAgeGroup, campaign?.excludeOverallForeignFromAgeGroup, campaign?.separateOverallNationalityCategories, campaign?.topRunnersRangeByCategory, campaign?.topRunnersExcludeOverallCategories, campaign?.topRunnersEnabled]);
+    }, [runner, campaign?._id, campaign?.overallDisplayCount, campaign?.overallDisplayCountByCategory, campaign?.overallEnabled, campaign?.ageGroupDisplayCount, campaign?.genderSplitEnabled, campaign?.bestOfProvinceEnabled, campaign?.bestOfProvinces, campaign?.excludeOverallFromAgeGroup, campaign?.excludeOverallThaiFromAgeGroup, campaign?.excludeOverallForeignFromAgeGroup, campaign?.separateOverallNationalityCategories, campaign?.topRunnersRangeByCategory, campaign?.topRunnersExcludeOverallCategories, campaign?.topRunnersEnabled]);
 
     useEffect(() => {
         setFollowedRunners(loadFollowedRunners());

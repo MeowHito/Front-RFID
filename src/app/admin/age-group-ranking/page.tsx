@@ -7,6 +7,7 @@ import { useLanguage } from '@/lib/language-context';
 import { authHeaders } from '@/lib/authHeaders';
 import { isThaiNationality, isNationalitySplitCategory } from '@/lib/nationality';
 import { type AgeGroupBucket, buildCanonicalAgeGroups, canonicalizeAgeGroup } from '@/lib/age-groups';
+import { isGenderSplitEnabled } from '@/lib/gender-split';
 import { LinkIcon, TrophyIcon } from '@heroicons/react/24/outline';
 
 interface Runner {
@@ -42,6 +43,7 @@ interface FeaturedCampaignSettings {
     excludeAgeGroupTop?: number;
     disableAgeGroupRanking?: boolean;
     ageGroupDisplayCount?: number;
+    genderSplitEnabled?: boolean;
     overallDisplayCount?: number;
     excludeOverallThaiFromAgeGroup?: number;
     excludeOverallForeignFromAgeGroup?: number;
@@ -92,6 +94,9 @@ export default function AgeGroupRankingPage() {
     const [saving, setSaving] = useState(false);
     const [excludeTop, setExcludeTop] = useState<number>(0);
     const [ageGroupDisplayCount, setAgeGroupDisplayCount] = useState<number>(DEFAULT_TOP_N);
+    // Off for events that don't race the genders separately (e.g. a dog race):
+    // the public board then shows one combined column per age group.
+    const [genderSplit, setGenderSplit] = useState(true);
     // Nationality-split categories: how many top Thai / foreign overall winners
     // (per gender) are excluded from age-group awards — independent of the public Overall page's display count.
     const [excludeThaiTop, setExcludeThaiTop] = useState<number>(DEFAULT_TOP_N);
@@ -117,6 +122,7 @@ export default function AgeGroupRankingPage() {
                 setCampaign(data);
                 setExcludeTop(Math.max(0, Number(data?.excludeOverallFromAgeGroup) || 0));
                 setAgeGroupDisplayCount(Math.max(1, Number(data?.ageGroupDisplayCount) || DEFAULT_TOP_N));
+                setGenderSplit(isGenderSplitEnabled(data));
                 const overallTopN = Math.max(1, Number(data?.overallDisplayCount) || DEFAULT_TOP_N);
                 setExcludeThaiTop(data?.excludeOverallThaiFromAgeGroup != null ? Math.max(0, Number(data.excludeOverallThaiFromAgeGroup)) : overallTopN);
                 setExcludeForeignTop(data?.excludeOverallForeignFromAgeGroup != null ? Math.max(0, Number(data.excludeOverallForeignFromAgeGroup)) : overallTopN);
@@ -208,17 +214,22 @@ export default function AgeGroupRankingPage() {
         // Exclude top N male + top N female by overall time
         const excludedBibs = new Set<string>();
         if (excludeTop > 0) {
-            sortedByOverallTime.filter(r => r.gender !== 'F').slice(0, excludeTop).forEach(r => excludedBibs.add(r.bib));
-            sortedByOverallTime.filter(r => r.gender === 'F').slice(0, excludeTop).forEach(r => excludedBibs.add(r.bib));
+            if (genderSplit) {
+                sortedByOverallTime.filter(r => r.gender !== 'F').slice(0, excludeTop).forEach(r => excludedBibs.add(r.bib));
+                sortedByOverallTime.filter(r => r.gender === 'F').slice(0, excludeTop).forEach(r => excludedBibs.add(r.bib));
+            } else {
+                // No gender split → a single Overall board for the whole field.
+                sortedByOverallTime.slice(0, excludeTop).forEach(r => excludedBibs.add(r.bib));
+            }
         }
         // Nationality-split categories: top Thai / foreign overall winners (per
         // gender) are excluded from age-group awards, each with its own count
         // (e.g. exclude top 5 Thai but only top 3 foreign).
         if (selectedCategorySplit) {
-            for (const female of [false, true]) {
+            for (const female of genderSplit ? [false, true] : [null]) {
                 for (const thai of [true, false]) {
                     sortedByOverallTime
-                        .filter(r => (r.gender === 'F') === female && isThaiNationality(r.nationality) === thai)
+                        .filter(r => (female === null || (r.gender === 'F') === female) && isThaiNationality(r.nationality) === thai)
                         .slice(0, thai ? excludeThaiTop : excludeForeignTop)
                         .forEach(r => excludedBibs.add(r.bib));
                 }
@@ -238,30 +249,31 @@ export default function AgeGroupRankingPage() {
             // awards at all (organizer rule) — they only compete in the OVERALL INT ranking.
             if (selectedCategorySplit && !isThaiNationality(runner.nationality)) continue;
             const groupLabel = disableAgeGroupRanking ? OVERALL_GROUP.label : canonicalizeAgeGroup(runner.ageGroup, canonicalAgeGroups.canonicalLabelOf);
-            const bucket = runner.gender === 'F' ? female : male;
+            // Gender split off → everyone shares one list per age group (`male`).
+            const bucket = genderSplit && runner.gender === 'F' ? female : male;
             if (bucket[groupLabel] && bucket[groupLabel].length < ageGroupDisplayCount) {
                 bucket[groupLabel].push(runner);
             }
         }
 
         return { maleWinners: male, femaleWinners: female };
-    }, [sortedFinishedRunners, sortedByOverallTime, activeAgeGroups, canonicalAgeGroups, disableAgeGroupRanking, excludeTop, ageGroupDisplayCount, selectedCategorySplit, excludeThaiTop, excludeForeignTop]);
+    }, [sortedFinishedRunners, sortedByOverallTime, activeAgeGroups, canonicalAgeGroups, disableAgeGroupRanking, excludeTop, ageGroupDisplayCount, selectedCategorySplit, excludeThaiTop, excludeForeignTop, genderSplit]);
 
     // Nationality-split overall winners — Thai count follows excludeThaiTop,
     // foreign count follows excludeForeignTop, so display always matches the
     // number of ranks entered for each group.
     const overallByNationality = useMemo(() => {
-        const pick = (isFemale: boolean, thai: boolean) =>
+        const pick = (isFemale: boolean | null, thai: boolean) =>
             sortedFinishedRunners
-                .filter(r => (r.gender === 'F') === isFemale && isThaiNationality(r.nationality) === thai)
+                .filter(r => (isFemale === null || (r.gender === 'F') === isFemale) && isThaiNationality(r.nationality) === thai)
                 .slice(0, thai ? excludeThaiTop : excludeForeignTop);
         return {
-            thaiMale: pick(false, true),
+            thaiMale: pick(genderSplit ? false : null, true),
             thaiFemale: pick(true, true),
-            foreignMale: pick(false, false),
+            foreignMale: pick(genderSplit ? false : null, false),
             foreignFemale: pick(true, false),
         };
-    }, [sortedFinishedRunners, excludeThaiTop, excludeForeignTop]);
+    }, [sortedFinishedRunners, excludeThaiTop, excludeForeignTop, genderSplit]);
 
     const previewCategory = campaign?.categories?.find(item => item.name === selectedCategory);
     const campaignPath = campaign?.slug || campaign?._id || '';
@@ -421,6 +433,7 @@ export default function AgeGroupRankingPage() {
                     excludeOverallFromAgeGroup: excludeTop,
                     disableAgeGroupRanking: false,
                     ageGroupDisplayCount: ageGroupDisplayCount,
+                    genderSplitEnabled: genderSplit,
                     excludeOverallThaiFromAgeGroup: excludeThaiTop,
                     excludeOverallForeignFromAgeGroup: excludeForeignTop,
                     separateOverallNationalityCategories: natSplitCategories,
@@ -534,6 +547,33 @@ export default function AgeGroupRankingPage() {
                                             {language === 'th' ? 'อันดับแรก / กลุ่มอายุ' : 'top per age group'}
                                         </span>
                                     </div>
+
+                                    {/* Gender split — off for events that don't race men and women
+                                        separately (e.g. a dog race). The public board then shows one
+                                        combined column per age group instead of an empty FEMALE side. */}
+                                    <div className={`flex items-center gap-2 rounded-lg border px-3 py-1.5 ${genderSplit ? 'border-rose-200 bg-rose-50' : 'border-emerald-300 bg-emerald-50'}`}>
+                                        <span className="text-[11px] font-bold" style={{ color: genderSplit ? '#9f1239' : '#047857' }}>
+                                            {genderSplit
+                                                ? (language === 'th' ? 'แบ่งชาย / หญิง' : 'Split male / female')
+                                                : (language === 'th' ? 'ไม่แบ่งเพศ (รวมบอร์ดเดียว)' : 'No gender split (single board)')}
+                                        </span>
+                                        <button
+                                            type="button"
+                                            role="switch"
+                                            aria-checked={genderSplit}
+                                            onClick={() => setGenderSplit(v => !v)}
+                                            className="relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full transition-colors"
+                                            style={{ backgroundColor: genderSplit ? '#e11d48' : '#10b981' }}
+                                            title={language === 'th'
+                                                ? 'ปิด = ไม่แบ่งชาย/หญิง แสดงผู้ชนะรวมคอลัมน์เดียวต่อกลุ่มอายุ (ใช้กับทุกระยะของกิจกรรมนี้)'
+                                                : 'Off = no male/female split; one combined winners column per age group (applies to every distance of this campaign)'}
+                                        >
+                                            <span
+                                                className="inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform"
+                                                style={{ transform: genderSplit ? 'translateX(22px)' : 'translateX(2px)' }}
+                                            />
+                                        </button>
+                                    </div>
                                 </div>
 
                                 <button
@@ -634,10 +674,19 @@ export default function AgeGroupRankingPage() {
                                                         {language === 'th' ? 'อันดับ Overall (แยกไทย/ต่างชาติ)' : 'Overall ranking (Thai/foreign split)'}
                                                     </p>
                                                     <div className="grid gap-3 xl:grid-cols-2">
-                                                        {renderOverallPreviewColumn(language === 'th' ? '♂ OVERALL THA · ชาย' : '♂ OVERALL THA · Male', 'bg-blue-600', overallByNationality.thaiMale)}
-                                                        {renderOverallPreviewColumn(language === 'th' ? '♀ OVERALL THA · หญิง' : '♀ OVERALL THA · Female', 'bg-pink-600', overallByNationality.thaiFemale)}
-                                                        {renderOverallPreviewColumn(language === 'th' ? '♂ OVERALL INT · ชาย' : '♂ OVERALL INT · Male', 'bg-indigo-600', overallByNationality.foreignMale)}
-                                                        {renderOverallPreviewColumn(language === 'th' ? '♀ OVERALL INT · หญิง' : '♀ OVERALL INT · Female', 'bg-fuchsia-600', overallByNationality.foreignFemale)}
+                                                        {genderSplit ? (
+                                                            <>
+                                                                {renderOverallPreviewColumn(language === 'th' ? '♂ OVERALL THA · ชาย' : '♂ OVERALL THA · Male', 'bg-blue-600', overallByNationality.thaiMale)}
+                                                                {renderOverallPreviewColumn(language === 'th' ? '♀ OVERALL THA · หญิง' : '♀ OVERALL THA · Female', 'bg-pink-600', overallByNationality.thaiFemale)}
+                                                                {renderOverallPreviewColumn(language === 'th' ? '♂ OVERALL INT · ชาย' : '♂ OVERALL INT · Male', 'bg-indigo-600', overallByNationality.foreignMale)}
+                                                                {renderOverallPreviewColumn(language === 'th' ? '♀ OVERALL INT · หญิง' : '♀ OVERALL INT · Female', 'bg-fuchsia-600', overallByNationality.foreignFemale)}
+                                                            </>
+                                                        ) : (
+                                                            <>
+                                                                {renderOverallPreviewColumn('OVERALL THA', 'bg-emerald-600', overallByNationality.thaiMale)}
+                                                                {renderOverallPreviewColumn('OVERALL INT', 'bg-indigo-600', overallByNationality.foreignMale)}
+                                                            </>
+                                                        )}
                                                     </div>
                                                 </div>
                                             )}
@@ -645,9 +694,15 @@ export default function AgeGroupRankingPage() {
                                                 <p className="mb-1.5 text-[11px] font-bold uppercase tracking-wide" style={{ color: '#6b7280' }}>
                                                     {language === 'th' ? 'อันดับกลุ่มอายุ' : 'Age group ranking'}
                                                 </p>
-                                                <div className="grid gap-3 xl:grid-cols-2">
-                                                    {renderPreviewColumn(language === 'th' ? '♂ ผู้ชนะชาย' : '♂ Male winners', 'bg-blue-600', 'bg-blue-900', maleWinners)}
-                                                    {renderPreviewColumn(language === 'th' ? '♀ ผู้ชนะหญิง' : '♀ Female winners', 'bg-pink-600', 'bg-pink-900', femaleWinners)}
+                                                <div className={`grid gap-3 ${genderSplit ? 'xl:grid-cols-2' : 'xl:grid-cols-1'}`}>
+                                                    {genderSplit ? (
+                                                        <>
+                                                            {renderPreviewColumn(language === 'th' ? '♂ ผู้ชนะชาย' : '♂ Male winners', 'bg-blue-600', 'bg-blue-900', maleWinners)}
+                                                            {renderPreviewColumn(language === 'th' ? '♀ ผู้ชนะหญิง' : '♀ Female winners', 'bg-pink-600', 'bg-pink-900', femaleWinners)}
+                                                        </>
+                                                    ) : (
+                                                        renderPreviewColumn(language === 'th' ? '🏅 ผู้ชนะ (ไม่แยกเพศ)' : '🏅 Winners (no gender split)', 'bg-emerald-600', 'bg-emerald-900', maleWinners)
+                                                    )}
                                                 </div>
                                             </div>
                                         </div>

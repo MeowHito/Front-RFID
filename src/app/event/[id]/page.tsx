@@ -57,6 +57,8 @@ interface Campaign {
     topRunnersExcludeOverallCategories?: string[];
     topRunnersEnabled?: boolean;
     ageGroupDisplayCount?: number;
+    /** `false` → results are not split by gender (see lib/gender-split). */
+    genderSplitEnabled?: boolean;
     bestOfDisplayCount?: number;
     excludeOverallFromAgeGroup?: number;
     excludeOverallThaiFromAgeGroup?: number;
@@ -1143,6 +1145,7 @@ export default function EventLivePage() {
                 // (the pool key is the derived UI key, not the stored category name).
                 category: categories.find(c => c.key === key)?.categoryName || key,
                 ageGroupDisplayCount: campaign?.ageGroupDisplayCount,
+                genderSplitEnabled: campaign?.genderSplitEnabled,
                 excludeOverallFromAgeGroup: campaign?.excludeOverallFromAgeGroup,
                 excludeOverallThaiFromAgeGroup: campaign?.excludeOverallThaiFromAgeGroup,
                 excludeOverallForeignFromAgeGroup: campaign?.excludeOverallForeignFromAgeGroup,
@@ -1157,7 +1160,7 @@ export default function EventLivePage() {
             for (const [id, award] of computeAwardsForCategory(pool, cfg)) map.set(id, award);
         }
         return map;
-    }, [runners, resolveRunnerCategoryKey, categories, campaign?.overallDisplayCount, campaign?.overallDisplayCountByCategory, campaign?.overallEnabled, campaign?.ageGroupDisplayCount, campaign?.excludeOverallFromAgeGroup, campaign?.excludeOverallThaiFromAgeGroup, campaign?.excludeOverallForeignFromAgeGroup, campaign?.excludeAgeGroupTop, campaign?.topRunnersRangeByCategory, campaign?.topRunnersExcludeOverallCategories, campaign?.topRunnersEnabled, natSplitAwardKeys]);
+    }, [runners, resolveRunnerCategoryKey, categories, campaign?.overallDisplayCount, campaign?.overallDisplayCountByCategory, campaign?.overallEnabled, campaign?.ageGroupDisplayCount, campaign?.genderSplitEnabled, campaign?.excludeOverallFromAgeGroup, campaign?.excludeOverallThaiFromAgeGroup, campaign?.excludeOverallForeignFromAgeGroup, campaign?.excludeAgeGroupTop, campaign?.topRunnersRangeByCategory, campaign?.topRunnersExcludeOverallCategories, campaign?.topRunnersEnabled, natSplitAwardKeys]);
 
     // Build ordered list of visible columns based on admin displayColumns + mobile
     const visibleColumns = useMemo(() => {
