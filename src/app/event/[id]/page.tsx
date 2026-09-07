@@ -373,10 +373,13 @@ function getStatusReason(note?: string): string {
  *   "CP3 - Withdraw"        staff pulled them (or they retired) at CP3
  *   "CP5 - CUT-OFF"         missed CP5's cut-off and never reached it
  *   "CP5 - CUT-OFF ARRIVED" missed CP5's cut-off but did reach the checkpoint
- * A withdrawal with no checkpoint recorded reads as a bare "Withdraw".
+ *
+ * A withdrawal staff recorded without a checkpoint falls back to the last checkpoint
+ * the runner actually passed — that is where they left the course. Only a runner with
+ * no crossing at all reads as a bare "Withdraw".
  */
-function getDnfDetailLabel(runner: Runner): string {
-    const checkpoint = String(runner.statusCheckpoint || '').trim().toUpperCase();
+function getDnfDetailLabel(runner: Runner, fallbackCheckpoint?: string): string {
+    const checkpoint = String(runner.statusCheckpoint || fallbackCheckpoint || '').trim().toUpperCase();
     const reason = runner.dnfKind === 'cutoff'
         ? `CUT-OFF${runner.statusCheckpointArrived ? ' ARRIVED' : ''}`
         : 'Withdraw';
@@ -2605,7 +2608,7 @@ export default function EventLivePage() {
                                                 // Where and why a DNF stopped. This replaces the wall-clock
                                                 // time of their last scan, which says nothing useful once a
                                                 // runner is out of the race.
-                                                const dnfDetailLabel = isDnfStatus ? getDnfDetailLabel(runner) : '';
+                                                const dnfDetailLabel = isDnfStatus ? getDnfDetailLabel(runner, statusCheckpointName) : '';
                                                 const showStatusScanTime = !!statusScanTimeLabel && !isDnfStatus;
                                                 const showCheckpointChip = showFinishCheckpointBadge || showInProgressCheckpointBadge || showDnfChip;
                                                 // Signed-out viewers get a bare "DQ" badge — no checkpoint the runner was
