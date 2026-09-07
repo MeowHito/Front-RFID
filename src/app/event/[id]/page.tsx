@@ -369,21 +369,32 @@ function getStatusReason(note?: string): string {
 }
 
 /**
- * The line under a DNF badge — where the runner stopped and why:
+ * The line under a DNF badge. The checkpoint it names is always the last one the runner
+ * actually reached — where they are, not which cut-off caught them:
  *   "CP3 - Withdraw"        staff pulled them (or they retired) at CP3
- *   "CP5 - CUT-OFF"         missed CP5's cut-off and never reached it
- *   "CP5 - CUT-OFF ARRIVED" missed CP5's cut-off but did reach the checkpoint
+ *   "CP4 - CUT-OFF"         cut at CP5 without ever getting there — last seen at CP4
+ *   "CP5 - CUT-OFF ARRIVED" cut at CP5 and did reach it, just after the cut-off
  *
- * A withdrawal staff recorded without a checkpoint falls back to the last checkpoint
- * the runner actually passed — that is where they left the course. Only a runner with
- * no crossing at all reads as a bare "Withdraw".
+ * A withdrawal staff recorded without a checkpoint falls back to that same last-passed
+ * checkpoint. A runner with no crossing at all has no position to name, so the line
+ * reads as a bare "Withdraw" / "CUT-OFF".
  */
-function getDnfDetailLabel(runner: Runner, fallbackCheckpoint?: string): string {
-    const checkpoint = String(runner.statusCheckpoint || fallbackCheckpoint || '').trim().toUpperCase();
-    const reason = runner.dnfKind === 'cutoff'
-        ? `CUT-OFF${runner.statusCheckpointArrived ? ' ARRIVED' : ''}`
-        : 'Withdraw';
-    return checkpoint ? `${checkpoint} - ${reason}` : reason;
+function getDnfDetailLabel(runner: Runner, lastPassedCheckpoint?: string): string {
+    const stoppedAt = String(runner.statusCheckpoint || '').trim();
+    const lastPassed = String(lastPassedCheckpoint || '').trim();
+    const label = (checkpoint: string, reason: string) => (checkpoint ? `${checkpoint.toUpperCase()} - ${reason}` : reason);
+
+    if (runner.dnfKind === 'cutoff') {
+        // ARRIVED means the cut-off checkpoint IS the last one they reached.
+        if (runner.statusCheckpointArrived) return label(stoppedAt || lastPassed, 'CUT-OFF ARRIVED');
+        // Otherwise they are still out between the previous checkpoint and this one, so the
+        // row names that previous one. `lastPassedCheckpoint` falls back to statusCheckpoint
+        // for a runner with no crossings at all — a place they were never at, so drop it.
+        const stillAt = normalizeComparableText(lastPassed) === normalizeComparableText(stoppedAt) ? '' : lastPassed;
+        return label(stillAt, 'CUT-OFF');
+    }
+
+    return label(stoppedAt || lastPassed, 'Withdraw');
 }
 
 function FollowHeartIcon({ filled, size = 14, color }: { filled: boolean; size?: number; color: string }) {
