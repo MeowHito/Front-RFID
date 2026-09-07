@@ -4,7 +4,6 @@ import { useEffect, useState, useCallback, useMemo } from 'react';
 import * as XLSX from 'xlsx';
 import { useLanguage } from '@/lib/language-context';
 import { buildCanonicalAgeGroups, canonicalizeAgeGroup, normalizeAgeGroupLabel } from '@/lib/age-groups';
-import { toAlpha3 } from '@/lib/country-flags';
 import {
     computeLiveRanks,
     deriveEffectiveStatus,
@@ -95,12 +94,21 @@ function formatBirthDateCE(iso?: string): string {
     return `${dd}/${mm}/${yyyy}`;
 }
 
-/** ISO 8601 date (YYYY-MM-DD) — the format the CSV results template expects. */
-function formatBirthDateIso(iso?: string): string {
-    if (!iso) return '';
-    const d = new Date(iso);
-    if (isNaN(d.getTime())) return '';
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+/** Columns of the RaceResultsTemplate workbook — the same set the table below shows. */
+const TEMPLATE_COLUMNS = ['Overall', 'Gender Rank', 'AgeGroup Rank', 'BIB', 'FirstName', 'LastName', 'Gender', 'Category', 'AgeGroup', 'BirthDate (C.E.)', 'Nationality', 'GunTime', 'NetTime', 'Pace', 'Status'];
+const TEMPLATE_COL_WIDTHS = [8, 12, 13, 10, 16, 18, 8, 14, 12, 14, 12, 12, 12, 10, 12];
+
+/** Excel tab names: max 31 chars, no : \ / ? * [ ] characters, unique per workbook. */
+function toSheetName(label: string, used: Set<string>): string {
+    const base = (label || '').replace(/[:\\/?*[\]]/g, '-').trim().slice(0, 31) || 'Sheet';
+    let name = base;
+    let n = 2;
+    while (used.has(name.toLowerCase())) {
+        const suffix = ` (${n++})`;
+        name = base.slice(0, 31 - suffix.length) + suffix;
+    }
+    used.add(name.toLowerCase());
+    return name;
 }
 
 function msToHHMMSS(ms: number): string {
@@ -145,15 +153,6 @@ async function fetchProfiles(campaignId: string): Promise<Map<string, Runner>> {
         page++;
     }
     return byId;
-}
-
-/** What goes in the CSV template's "Ranking" cell — a placing, or why there isn't one. */
-function rankingCell(r: Runner, rank: number): string | number {
-    const s = (r.status || '').toLowerCase();
-    if (s === 'dnf') return 'DNF';
-    if (s === 'dns' || s === 'not_started') return 'DNS';
-    if (s === 'dq') return 'DQ';
-    return rank > 0 ? rank : '';
 }
 
 export default function ExportPage() {
@@ -384,51 +383,78 @@ export default function ExportPage() {
     }, [campaign, visibleRunners, rankOf, selectedCategory, language]);
 
     /**
-     * CSV in the standard results-submission template:
-     *   Ranking, Time, Family Name, First Name, Gender, Birthdate, Nationality
-     * One file per distance — pick the distance above before downloading.
-     * Time is the GUN time, the same basis the Ranking column is placed on.
+     * RaceResultsTemplate workbook — the same columns as the table below, with one
+     * sheet per distance. "All categories" writes every distance as its own tab in
+     * campaign order; a single distance writes just that tab. Ranks come from the
+     * per-distance pools computed above, so splitting into sheets never renumbers
+     * anyone: each tab matches what /event shows for that distance.
      */
-    const handleExportCsv = useCallback(() => {
-        if (visibleRunners.length === 0) {
+    const handleExportTemplate = useCallback(() => {
+        if (!campaign?._id || visibleRunners.length === 0) {
             showToast(language === 'th' ? 'ไม่มีข้อมูล' : 'No data', 'error');
             return;
         }
-        const headers = ['Ranking', 'Time', 'Family Name', 'First Name', 'Gender', 'Birthdate', 'Nationality'];
-        const escapeCell = (val: unknown): string => {
-            const s = val === null || val === undefined ? '' : String(val);
-            return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-        };
+        setExporting(true);
+        try {
+            // Campaign order first, then any category present on runners but missing
+            // from campaign.categories (RaceTiger occasionally introduces one).
+            const present = Array.from(new Set(visibleRunners.map(r => r.category || '')));
+            const declared = (campaign.categories || []).map(c => c.name);
+            const groups = selectedCategory === 'all'
+                ? [...declared.filter(n => present.includes(n)), ...present.filter(n => !declared.includes(n))]
+                : [selectedCategory];
 
-        const rows: string[] = [headers.join(',')];
-        for (const r of visibleRunners) {
-            const gunMs = getRunnerPrimaryTimeMs(r);
-            const finished = (r.status || '').toLowerCase() === 'finished';
-            rows.push([
-                rankingCell(r, rankOf(r).overallRank),
-                // Non-finishers leave Time blank — a partial split time is not a result.
-                finished ? (gunMs > 0 ? msToHHMMSS(gunMs) : (r.gunTimeStr || '').trim()) : '',
-                r.lastName || r.lastNameTh || '',
-                r.firstName || r.firstNameTh || '',
-                (r.gender || '').toUpperCase(),
-                formatBirthDateIso(r.birthDate),
-                toAlpha3(r.nationality),
-            ].map(escapeCell).join(','));
+            const wb = XLSX.utils.book_new();
+            const usedNames = new Set<string>();
+            let exported = 0;
+            for (const cat of groups) {
+                const rows = visibleRunners.filter(r => (r.category || '') === cat);
+                if (rows.length === 0) continue;
+                const aoa: (string | number)[][] = [TEMPLATE_COLUMNS];
+                for (const r of rows) {
+                    const rank = rankOf(r);
+                    aoa.push([
+                        rank.overallRank || '',
+                        rank.genRank || '',
+                        rank.catRank || '',
+                        r.bib || '',
+                        r.firstName || '',
+                        r.lastName || '',
+                        r.gender || '',
+                        r.category || '',
+                        resolveAgeGroup(r) || '',
+                        formatBirthDateCE(r.birthDate),
+                        r.nationality || '',
+                        formatTime(getRunnerPrimaryTimeMs(r), r.gunTimeStr),
+                        formatTime(getRunnerNetTimeMs(r), r.netTimeStr),
+                        r.netPace || r.gunPace || '',
+                        statusLabel(r.status),
+                    ]);
+                }
+                const ws = XLSX.utils.aoa_to_sheet(aoa);
+                ws['!cols'] = TEMPLATE_COL_WIDTHS.map(wch => ({ wch }));
+                XLSX.utils.book_append_sheet(wb, ws, toSheetName(cat || 'Uncategorised', usedNames));
+                exported += rows.length;
+            }
+            if (wb.SheetNames.length === 0) {
+                showToast(language === 'th' ? 'ไม่มีข้อมูล' : 'No data', 'error');
+                return;
+            }
+            XLSX.writeFile(wb, `RaceResultsTemplate-${categoryFileLabel()}-${new Date().toISOString().slice(0, 10)}.xlsx`);
+            showToast(
+                language === 'th'
+                    ? `ดาวน์โหลด ${exported} รายการ (${wb.SheetNames.length} ระยะ)`
+                    : `Downloaded ${exported} records (${wb.SheetNames.length} sheets)`,
+                'success',
+            );
+        } catch (err) {
+            console.error(err);
+            showToast(language === 'th' ? 'เกิดข้อผิดพลาด' : 'Export failed', 'error');
+        } finally {
+            setExporting(false);
         }
-
-        // BOM so Excel opens the file as UTF-8 (Thai names in the fallback columns)
-        const blob = new Blob(['﻿' + rows.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = `results-${categoryFileLabel()}-${new Date().toISOString().slice(0, 10)}.csv`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        URL.revokeObjectURL(url);
-        showToast(language === 'th' ? `ดาวน์โหลด ${visibleRunners.length} รายการ` : `Downloaded ${visibleRunners.length} records`, 'success');
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [visibleRunners, rankOf, selectedCategory, language]);
+    }, [campaign, visibleRunners, rankOf, selectedCategory, language]);
 
     const actionsDisabled = exporting || fetching || visibleRunners.length === 0;
 
@@ -517,11 +543,11 @@ export default function ExportPage() {
                                     {language === 'th' ? 'รีเฟรช' : 'Refresh'}
                                 </button>
                                 <button
-                                    onClick={handleExportCsv}
+                                    onClick={handleExportTemplate}
                                     disabled={actionsDisabled}
                                     title={language === 'th'
-                                        ? 'CSV ตามเทมเพลตส่งผล: Ranking, Time, Family Name, First Name, Gender, Birthdate, Nationality'
-                                        : 'CSV in the results template: Ranking, Time, Family Name, First Name, Gender, Birthdate, Nationality'}
+                                        ? 'ไฟล์ Excel เทมเพลตผลการแข่งขัน — แยกแท็บตามระยะ'
+                                        : 'Race results template workbook — one sheet per distance'}
                                     style={{
                                         padding: '9px 18px', borderRadius: 6, border: '1px solid #16a34a',
                                         background: '#fff', color: '#15803d', fontWeight: 700, fontSize: 13,
@@ -531,7 +557,7 @@ export default function ExportPage() {
                                     }}
                                 >
                                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
-                                    {language === 'th' ? 'ดาวน์โหลด CSV' : 'Download CSV'}
+                                    RaceResultsTemplate
                                 </button>
                                 <button
                                     onClick={handleExportExcel}
@@ -553,8 +579,8 @@ export default function ExportPage() {
                         </div>
                         <div style={{ marginTop: 10, fontSize: 12, color: '#64748b' }}>
                             {language === 'th'
-                                ? 'CSV = เทมเพลตส่งผล (Ranking / Time / Family Name / First Name / Gender / Birthdate / Nationality) — เลือกระยะก่อนดาวน์โหลด 1 ไฟล์ต่อ 1 ระยะ'
-                                : 'CSV = results template (Ranking / Time / Family Name / First Name / Gender / Birthdate / Nationality) — pick a distance first, one file per distance.'}
+                                ? 'RaceResultsTemplate = ไฟล์ Excel แยกแท็บตามระยะ (Overall / Gender Rank / AgeGroup Rank / BIB / ชื่อ / Gender / Category / AgeGroup / BirthDate / Nationality / GunTime / NetTime / Pace / Status) — เลือก “ทุกระยะ” เพื่อได้ครบทุกแท็บในไฟล์เดียว'
+                                : 'RaceResultsTemplate = one Excel file with a sheet per distance (Overall / Gender Rank / AgeGroup Rank / BIB / names / Gender / Category / AgeGroup / BirthDate / Nationality / GunTime / NetTime / Pace / Status) — pick “All categories” to get every distance in one file.'}
                         </div>
                     </div>
 
@@ -573,7 +599,7 @@ export default function ExportPage() {
                                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                                     <thead>
                                         <tr>
-                                            {['Overall', 'Gender Rank', 'AgeGroup Rank', 'BIB', 'FirstName', 'LastName', 'Gender', 'Category', 'AgeGroup', 'BirthDate (C.E.)', 'Nationality', 'GunTime', 'NetTime', 'Pace', 'Status'].map((h, i) => (
+                                            {TEMPLATE_COLUMNS.map((h, i) => (
                                                 <th key={i} style={{ padding: '8px 10px', borderBottom: '2px solid #e5e7eb', textAlign: 'left', fontWeight: 700, fontSize: 11, color: '#475569', whiteSpace: 'nowrap', background: '#f8fafc' }}>{h}</th>
                                             ))}
                                         </tr>
