@@ -125,6 +125,10 @@ interface Runner {
     statusNote?: string;
     statusChangedBy?: string;
     statusChangedAt?: string;
+    /** Why this runner is DNF: 'withdraw' = staff pulled them, 'cutoff' = the cut-off rule did. */
+    dnfKind?: 'withdraw' | 'cutoff';
+    /** Cut-off DNF only: they did reach `statusCheckpoint`, just after its cut-off. */
+    statusCheckpointArrived?: boolean;
     /** ISO time of this runner's FINISH scan, if they have one (set even for DNF/DQ). */
     finishScanTime?: string;
     /** Admin-set flag: a DNF/DQ runner who is confirmed back at the finish area. */
@@ -362,6 +366,21 @@ function getStatusReason(note?: string): string {
     if (!text) return '';
     const stripped = text.replace(/^(auto\s+)?(dnf|dns|dq)\s*:\s*/i, '').trim();
     return stripped || text;
+}
+
+/**
+ * The line under a DNF badge — where the runner stopped and why:
+ *   "CP3 - Withdraw"        staff pulled them (or they retired) at CP3
+ *   "CP5 - CUT-OFF"         missed CP5's cut-off and never reached it
+ *   "CP5 - CUT-OFF ARRIVED" missed CP5's cut-off but did reach the checkpoint
+ * A withdrawal with no checkpoint recorded reads as a bare "Withdraw".
+ */
+function getDnfDetailLabel(runner: Runner): string {
+    const checkpoint = String(runner.statusCheckpoint || '').trim().toUpperCase();
+    const reason = runner.dnfKind === 'cutoff'
+        ? `CUT-OFF${runner.statusCheckpointArrived ? ' ARRIVED' : ''}`
+        : 'Withdraw';
+    return checkpoint ? `${checkpoint} - ${reason}` : reason;
 }
 
 function FollowHeartIcon({ filled, size = 14, color }: { filled: boolean; size?: number; color: string }) {
@@ -2583,6 +2602,11 @@ export default function EventLivePage() {
                                                 // Why they were pulled — staff only. The public table shows a bare
                                                 // "DNF"; an admin gets the cut-off (or hand-typed) reason under it.
                                                 const dnfReason = isDnfStatus && isAdmin ? getStatusReason(runner.statusNote) : '';
+                                                // Where and why a DNF stopped. This replaces the wall-clock
+                                                // time of their last scan, which says nothing useful once a
+                                                // runner is out of the race.
+                                                const dnfDetailLabel = isDnfStatus ? getDnfDetailLabel(runner) : '';
+                                                const showStatusScanTime = !!statusScanTimeLabel && !isDnfStatus;
                                                 const showCheckpointChip = showFinishCheckpointBadge || showInProgressCheckpointBadge || showDnfChip;
                                                 // Signed-out viewers get a bare "DQ" badge — no checkpoint the runner was
                                                 // pulled at, no note. Staff still see where and why.
@@ -2607,7 +2631,7 @@ export default function EventLivePage() {
                                         : statusCheckpointName ? statusNameColor : themeStyles.text;
                                                 return (
                                                     <td key={key} className={isMobile ? 'px-0 py-1 align-top' : 'px-1.5 py-1.5 align-top'}>
-                                                        <div className={`${isMobile ? 'min-h-7' : 'min-h-8'} relative grid min-w-0 justify-items-center gap-y-[3px]`} style={{ gridTemplateRows: showCheckpointBelow ? (statusScanTimeLabel ? 'auto auto auto' : 'auto auto') : (statusScanTimeLabel ? 'auto auto' : 'auto') }}>
+                                                        <div className={`${isMobile ? 'min-h-7' : 'min-h-8'} relative grid min-w-0 justify-items-center gap-y-[3px]`} style={{ gridTemplateRows: showCheckpointBelow ? (showStatusScanTime ? 'auto auto auto' : 'auto auto') : ((showStatusScanTime || dnfDetailLabel) ? 'auto auto' : 'auto') }}>
                                                             <div className="relative flex w-full min-w-0 items-center justify-center gap-1">
                                                                 {showStatusBadge && (
                                                                     <span className={`${isMobile ? 'px-1 py-px text-[8px]' : 'px-2 py-0.5 text-[10px]'} inline-block shrink-0 rounded-[3px] font-bold leading-[1.3] text-white`} style={{ background: getStatusBgColor(displayStatus) }}>
@@ -2653,7 +2677,7 @@ export default function EventLivePage() {
                                                                     ✏️
                                                                 </button>
                                                             )}
-                                                            {statusScanTimeLabel && (
+                                                            {showStatusScanTime && (
                                                                 <span
                                                                     className={`${isMobile ? 'text-[9px]' : 'text-[10px]'} block max-w-full overflow-hidden text-ellipsis whitespace-nowrap text-center font-semibold leading-[1.15]`}
                                                                     style={{ color: isManualStatusTime ? MANUAL_TIME_COLOR : isDnfStatus ? '#dc2626' : statusTimeColor }}
@@ -2662,6 +2686,14 @@ export default function EventLivePage() {
                                                                     {statusScanTimeLabel}
                                                                 </span>
                                                             )}
+                                                            {dnfDetailLabel ? (
+                                                                <span
+                                                                    className={`${isMobile ? 'text-[9px]' : 'text-[10px]'} block max-w-full overflow-hidden text-ellipsis whitespace-nowrap text-center font-semibold leading-[1.15] text-red-600`}
+                                                                    title={dnfDetailLabel}
+                                                                >
+                                                                    {dnfDetailLabel}
+                                                                </span>
+                                                            ) : null}
                                                         </div>
                                                     </td>
                                                 );
