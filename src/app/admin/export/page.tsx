@@ -94,9 +94,35 @@ function formatBirthDateCE(iso?: string): string {
     return `${dd}/${mm}/${yyyy}`;
 }
 
+/** ITRA's template writes birthdates as `1978-08-22`, not the dd/mm/yyyy used above. */
+function formatBirthDateISO(iso?: string): string {
+    if (!iso) return '';
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return '';
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${d.getFullYear()}-${mm}-${dd}`;
+}
+
+/** ITRA accepts only M / F — normalise whatever RaceTiger stored (M, male, Female...). */
+function itraGender(gender?: string): string {
+    const g = (gender || '').trim().toUpperCase();
+    if (g.startsWith('M')) return 'M';
+    if (g.startsWith('F') || g.startsWith('W')) return 'F';
+    return '';
+}
+
 /** Columns of the RaceResultsTemplate workbook — the same set the table below shows. */
 const TEMPLATE_COLUMNS = ['Overall', 'Gender Rank', 'AgeGroup Rank', 'BIB', 'FirstName', 'LastName', 'Gender', 'Category', 'AgeGroup', 'BirthDate (C.E.)', 'Nationality', 'GunTime', 'NetTime', 'Pace', 'Status'];
 const TEMPLATE_COL_WIDTHS = [8, 12, 13, 10, 16, 18, 8, 14, 12, 14, 12, 12, 12, 10, 12];
+
+/**
+ * ITRA-RaceResultsTemplate columns, in ITRA's own order, plus the trailing Status
+ * column we add on top of the official template. Nothing else from our results goes
+ * in — ITRA rejects extra columns.
+ */
+const ITRA_COLUMNS = ['Ranking', 'Time', 'Family Name', 'First Name', 'Gender', 'Birthdate', 'Nationality', 'Status'];
+const ITRA_COL_WIDTHS = [10, 12, 20, 18, 8, 14, 12, 12];
 
 /** Excel tab names: max 31 chars, no : \ / ? * [ ] characters, unique per workbook. */
 function toSheetName(label: string, used: Set<string>): string {
@@ -125,6 +151,12 @@ function formatTime(ms?: number, fallback?: string): string {
     // formatted time string without a parseable millisecond count, and we
     // want those still to appear in the export instead of "-".
     return fallback && fallback.trim() ? fallback.trim() : '-';
+}
+
+/** Same as formatTime, but empty rather than "-" — ITRA's importer chokes on "-". */
+function formatTimeOrBlank(ms?: number, fallback?: string): string {
+    const t = formatTime(ms, fallback);
+    return t === '-' ? '' : t;
 }
 
 function statusLabel(status?: string): string {
@@ -456,6 +488,76 @@ export default function ExportPage() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [campaign, visibleRunners, rankOf, selectedCategory, language]);
 
+    /**
+     * ITRA-RaceResultsTemplate workbook — ITRA's own seven columns (Ranking / Time /
+     * Family Name / First Name / Gender / Birthdate / Nationality) plus a trailing
+     * Status column, one sheet per distance. ITRA submits results per race, so the
+     * per-distance tabs match what they expect to receive.
+     *
+     * Ranking is left blank for anyone who did not finish — the official template
+     * puts "DNF" in that column, but with a Status column present the ranking stays
+     * numeric and the status carries DNF/DNS/DQ. Time is the GUN time, the same
+     * clock the Ranking column is ordered by (see @/lib/live-ranking).
+     */
+    const handleExportItra = useCallback(() => {
+        if (!campaign?._id || visibleRunners.length === 0) {
+            showToast(language === 'th' ? 'ไม่มีข้อมูล' : 'No data', 'error');
+            return;
+        }
+        setExporting(true);
+        try {
+            const present = Array.from(new Set(visibleRunners.map(r => r.category || '')));
+            const declared = (campaign.categories || []).map(c => c.name);
+            const groups = selectedCategory === 'all'
+                ? [...declared.filter(n => present.includes(n)), ...present.filter(n => !declared.includes(n))]
+                : [selectedCategory];
+
+            const wb = XLSX.utils.book_new();
+            const usedNames = new Set<string>();
+            let exported = 0;
+            for (const cat of groups) {
+                const rows = visibleRunners.filter(r => (r.category || '') === cat);
+                if (rows.length === 0) continue;
+                const aoa: (string | number)[][] = [ITRA_COLUMNS];
+                for (const r of rows) {
+                    const finished = (r.status || '').toLowerCase() === 'finished';
+                    const rank = rankOf(r);
+                    aoa.push([
+                        finished ? (rank.overallRank || '') : '',
+                        formatTimeOrBlank(getRunnerPrimaryTimeMs(r), r.gunTimeStr),
+                        r.lastName || '',
+                        r.firstName || '',
+                        itraGender(r.gender),
+                        formatBirthDateISO(r.birthDate),
+                        (r.nationality || '').toUpperCase(),
+                        statusLabel(r.status),
+                    ]);
+                }
+                const ws = XLSX.utils.aoa_to_sheet(aoa);
+                ws['!cols'] = ITRA_COL_WIDTHS.map(wch => ({ wch }));
+                XLSX.utils.book_append_sheet(wb, ws, toSheetName(cat || 'Uncategorised', usedNames));
+                exported += rows.length;
+            }
+            if (wb.SheetNames.length === 0) {
+                showToast(language === 'th' ? 'ไม่มีข้อมูล' : 'No data', 'error');
+                return;
+            }
+            XLSX.writeFile(wb, `ITRA-RaceResultsTemplate-${categoryFileLabel()}-${new Date().toISOString().slice(0, 10)}.xlsx`);
+            showToast(
+                language === 'th'
+                    ? `ดาวน์โหลด ITRA ${exported} รายการ (${wb.SheetNames.length} ระยะ)`
+                    : `Downloaded ITRA ${exported} records (${wb.SheetNames.length} sheets)`,
+                'success',
+            );
+        } catch (err) {
+            console.error(err);
+            showToast(language === 'th' ? 'เกิดข้อผิดพลาด' : 'Export failed', 'error');
+        } finally {
+            setExporting(false);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [campaign, visibleRunners, rankOf, selectedCategory, language]);
+
     const actionsDisabled = exporting || fetching || visibleRunners.length === 0;
 
     return (
@@ -543,6 +645,23 @@ export default function ExportPage() {
                                     {language === 'th' ? 'รีเฟรช' : 'Refresh'}
                                 </button>
                                 <button
+                                    onClick={handleExportItra}
+                                    disabled={actionsDisabled}
+                                    title={language === 'th'
+                                        ? 'ไฟล์ Excel ตามเทมเพลต ITRA — แยกแท็บตามระยะ'
+                                        : 'ITRA race results template workbook — one sheet per distance'}
+                                    style={{
+                                        padding: '9px 18px', borderRadius: 6, border: '1px solid #2563eb',
+                                        background: '#fff', color: '#1d4ed8', fontWeight: 700, fontSize: 13,
+                                        cursor: actionsDisabled ? 'not-allowed' : 'pointer',
+                                        opacity: actionsDisabled ? 0.6 : 1,
+                                        display: 'inline-flex', alignItems: 'center', gap: 6,
+                                    }}
+                                >
+                                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
+                                    ITRA
+                                </button>
+                                <button
                                     onClick={handleExportTemplate}
                                     disabled={actionsDisabled}
                                     title={language === 'th'
@@ -579,8 +698,8 @@ export default function ExportPage() {
                         </div>
                         <div style={{ marginTop: 10, fontSize: 12, color: '#64748b' }}>
                             {language === 'th'
-                                ? 'RaceResultsTemplate = ไฟล์ Excel แยกแท็บตามระยะ (Overall / Gender Rank / AgeGroup Rank / BIB / ชื่อ / Gender / Category / AgeGroup / BirthDate / Nationality / GunTime / NetTime / Pace / Status) — เลือก “ทุกระยะ” เพื่อได้ครบทุกแท็บในไฟล์เดียว'
-                                : 'RaceResultsTemplate = one Excel file with a sheet per distance (Overall / Gender Rank / AgeGroup Rank / BIB / names / Gender / Category / AgeGroup / BirthDate / Nationality / GunTime / NetTime / Pace / Status) — pick “All categories” to get every distance in one file.'}
+                                ? 'ITRA = เทมเพลต ITRA (Ranking / Time / Family Name / First Name / Gender / Birthdate / Nationality / Status) — Time ใช้ Gun Time, Ranking เว้นว่างสำหรับคนที่ไม่จบ · RaceResultsTemplate = ไฟล์ Excel แยกแท็บตามระยะ (Overall / Gender Rank / AgeGroup Rank / BIB / ชื่อ / Gender / Category / AgeGroup / BirthDate / Nationality / GunTime / NetTime / Pace / Status) — เลือก “ทุกระยะ” เพื่อได้ครบทุกแท็บในไฟล์เดียว'
+                                : 'ITRA = ITRA\'s own template (Ranking / Time / Family Name / First Name / Gender / Birthdate / Nationality / Status) — Time is the gun time, Ranking is blank for non-finishers. RaceResultsTemplate = one Excel file with a sheet per distance (Overall / Gender Rank / AgeGroup Rank / BIB / names / Gender / Category / AgeGroup / BirthDate / Nationality / GunTime / NetTime / Pace / Status) — pick “All categories” to get every distance in one file.'}
                         </div>
                     </div>
 
