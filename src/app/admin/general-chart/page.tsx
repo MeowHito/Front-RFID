@@ -1215,6 +1215,8 @@ interface SegmentRunner {
     status: string;
     gender: string;
     bucket: StatusBucket;
+    /** The runner's distance — only shown by the combined all-distances drill-down. */
+    category?: string;
     /** Time on course at the last scan, used to order runners on the same stretch. */
     elapsedMs?: number;
     /** Epoch ms of the scan at the checkpoint they are standing on. */
@@ -1232,6 +1234,77 @@ interface SegmentDatum {
     other: number;
     runners: SegmentRunner[];
     distance?: string;
+}
+
+/** Sentinel category key for the combined "all distances" card. Travels in the
+ *  monitor link exactly like a real distance name, so the full-screen window
+ *  needs no special case beyond the badge label. */
+export const ALL_CATS = '__ALL__';
+/** Badge / heading label for a category key, including the ALL_CATS sentinel. */
+function catLabel(cat: string, th: boolean): string {
+    return cat === ALL_CATS ? (th ? 'ทุกระยะ (รวม)' : 'All distances') : cat;
+}
+
+/**
+ * Places every runner on the LAST checkpoint they actually scanned and turns
+ * that into one bar per checkpoint. Shared by the per-distance cards and the
+ * combined all-distances card so both count exactly the same way.
+ */
+function buildSegments(
+    poolRunners: Runner[],
+    cps: Checkpoint[],
+    cpTimingMap: Record<string, Map<string, number>>,
+): SegmentDatum[] {
+    const cpBibMaps = cps.map(cp => cpTimingMap[cp.name] || new Map<string, number>());
+
+    // The old rule — "scanned here but not the next one" — sent anybody who
+    // missed a checkpoint back to the gap: a finisher who skipped A2 was drawn
+    // standing on START, and counted a second time at FINISH. `scans` keeps the
+    // indices they really passed, so the leg behind them is the previous scan
+    // they have, not the checkpoint before.
+    const placement = new Map<string, { last: number; scans: number[] }>();
+    for (const r of poolRunners) {
+        const scans: number[] = [];
+        for (let i = 0; i < cps.length; i++) if (cpBibMaps[i].has(r.bib)) scans.push(i);
+        if (scans.length) placement.set(r.bib, { last: scans[scans.length - 1], scans });
+    }
+    const atCp: Runner[][] = cps.map(() => []);
+    for (const r of poolRunners) {
+        const p = placement.get(r.bib);
+        if (p) atCp[p.last].push(r);
+    }
+
+    return cps.map((cp, i) => {
+        const segRunners: SegmentRunner[] = atCp[i].map(r => {
+            const scans = placement.get(r.bib)!.scans;
+            const prevIdx = scans.length > 1 ? scans[scans.length - 2] : undefined;
+            return {
+                bib: r.bib,
+                name: `${r.firstName || ''} ${r.lastName || ''}`.trim() || r.bib,
+                status: r.status,
+                gender: r.gender,
+                category: r.category,
+                bucket: statusBucketOf(r.status),
+                elapsedMs: r.elapsedTime || r.netTime || r.gunTime || undefined,
+                // The last two scans give the speed of the leg they just ran,
+                // which is what the 2D view carries forward.
+                lastScanMs: cpBibMaps[i].get(r.bib),
+                prevScanMs: prevIdx === undefined ? undefined : cpBibMaps[prevIdx].get(r.bib),
+            };
+        }).sort((a, b) => (a.bib || '').localeCompare(b.bib || '', undefined, { numeric: true }));
+        const by = (b: StatusBucket) => segRunners.filter(r => r.bucket === b).length;
+        return {
+            cpName: cp.name,
+            count: segRunners.length,
+            total: poolRunners.length,
+            active: by('active'),
+            dnf: by('dnf'),
+            dq: by('dq'),
+            other: by('other'),
+            runners: segRunners,
+            distance: (cp as any).distance || (cp as any).distanceKm || undefined,
+        };
+    });
 }
 
 // ─── Monitor screen ──────────────────────────────────────────────────────────
@@ -1301,7 +1374,7 @@ function MonitorScreen({ req, th, campaign, loading, current, passed, route, leg
                 <div style={{
                     background: '#7c3aed', color: '#fff', fontWeight: 900, fontSize: 20,
                     padding: '6px 16px', borderRadius: 10, letterSpacing: 0.5,
-                }}>{req.cat}</div>
+                }}>{catLabel(req.cat, th)}</div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 20, fontWeight: 900, color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                         {title}
@@ -1678,66 +1751,20 @@ export function GeneralChartView({ monitor }: { monitor?: MonitorRequest }) {
     }, [runners, cpTimingMap]);
 
     // ── Chart data per category (with per-status breakdown + runner lists) ──
+    //    Every runner belongs to the LAST checkpoint they actually scanned — see
+    //    buildSegments. The combined ALL_CATS entry runs the same pass over the
+    //    whole field against the campaign-wide checkpoint order, so the monitor
+    //    window can read it with the sentinel as its `cat`.
     const chartDataByCategory = useMemo(() => {
         const result: Record<string, SegmentDatum[]> = {};
         for (const cat of categories) {
-            const catRunners = runners.filter(r => r.category === cat);
             const catCps = catCpsFor(cat);
             if (catCps.length === 0) continue;
-            const cpBibMaps = catCps.map(cp => cpTimingMap[cp.name] || new Map<string, number>());
-
-            // Every runner belongs to the LAST checkpoint they actually scanned.
-            // The old rule — "scanned here but not the next one" — sent anybody
-            // who missed a checkpoint back to the gap: a finisher who skipped A2
-            // was drawn standing on START, and counted a second time at FINISH.
-            // `scans` keeps the indices they really passed, so the leg behind
-            // them is the previous scan they have, not the checkpoint before.
-            const placement = new Map<string, { last: number; scans: number[] }>();
-            for (const r of catRunners) {
-                const scans: number[] = [];
-                for (let i = 0; i < catCps.length; i++) if (cpBibMaps[i].has(r.bib)) scans.push(i);
-                if (scans.length) placement.set(r.bib, { last: scans[scans.length - 1], scans });
-            }
-            const atCp: Runner[][] = catCps.map(() => []);
-            for (const r of catRunners) {
-                const p = placement.get(r.bib);
-                if (p) atCp[p.last].push(r);
-            }
-
-            const data: SegmentDatum[] = catCps.map((cp, i) => {
-                const segRunners: SegmentRunner[] = atCp[i].map(r => {
-                    const scans = placement.get(r.bib)!.scans;
-                    const prevIdx = scans.length > 1 ? scans[scans.length - 2] : undefined;
-                    return {
-                        bib: r.bib,
-                        name: `${r.firstName || ''} ${r.lastName || ''}`.trim() || r.bib,
-                        status: r.status,
-                        gender: r.gender,
-                        bucket: statusBucketOf(r.status),
-                        elapsedMs: r.elapsedTime || r.netTime || r.gunTime || undefined,
-                        // The last two scans give the speed of the leg they just ran,
-                        // which is what the 2D view carries forward.
-                        lastScanMs: cpBibMaps[i].get(r.bib),
-                        prevScanMs: prevIdx === undefined ? undefined : cpBibMaps[prevIdx].get(r.bib),
-                    };
-                }).sort((a, b) => (a.bib || '').localeCompare(b.bib || '', undefined, { numeric: true }));
-                const by = (b: StatusBucket) => segRunners.filter(r => r.bucket === b).length;
-                return {
-                    cpName: cp.name,
-                    count: segRunners.length,
-                    total: catRunners.length,
-                    active: by('active'),
-                    dnf: by('dnf'),
-                    dq: by('dq'),
-                    other: by('other'),
-                    runners: segRunners,
-                    distance: (cp as any).distance || (cp as any).distanceKm || undefined,
-                };
-            });
-            result[cat] = data;
+            result[cat] = buildSegments(runners.filter(r => r.category === cat), catCps, cpTimingMap);
         }
+        if (checkpoints.length > 0) result[ALL_CATS] = buildSegments(runners, checkpoints, cpTimingMap);
         return result;
-    }, [categories, runners, catCpsFor, cpTimingMap]);
+    }, [categories, runners, catCpsFor, cpTimingMap, checkpoints]);
 
     // ── How long the field actually takes on each leg ──
     // The median of everyone who has already run a leg is the best available
@@ -1774,19 +1801,22 @@ export function GeneralChartView({ monitor }: { monitor?: MonitorRequest }) {
     const catSummary = useMemo(() => {
         const result: Record<string, Record<SummaryBucket, Runner[]>> = {};
         const startBibs = cpTimingMap['START'] || cpTimingMap['Start'] || new Map<string, number>();
+        const bucketsOf = (cr: Runner[]): Record<SummaryBucket, Runner[]> => ({
+            total: cr,
+            started: cr.filter(r => !isDnsRunner(r, startBibs)),
+            finished: cr.filter(r => r.status === 'finished'),
+            dns: cr.filter(r => isDnsRunner(r, startBibs)),
+            dnf: cr.filter(r => r.status === 'dnf'),
+            dq: cr.filter(r => r.status === 'dq'),
+            mF: cr.filter(r => r.gender === 'M' && r.status === 'finished'),
+            fF: cr.filter(r => r.gender === 'F' && r.status === 'finished'),
+        });
         for (const cat of categories) {
-            const cr = runners.filter(r => r.category === cat);
-            result[cat] = {
-                total: cr,
-                started: cr.filter(r => !isDnsRunner(r, startBibs)),
-                finished: cr.filter(r => r.status === 'finished'),
-                dns: cr.filter(r => isDnsRunner(r, startBibs)),
-                dnf: cr.filter(r => r.status === 'dnf'),
-                dq: cr.filter(r => r.status === 'dq'),
-                mF: cr.filter(r => r.gender === 'M' && r.status === 'finished'),
-                fF: cr.filter(r => r.gender === 'F' && r.status === 'finished'),
-            };
+            result[cat] = bucketsOf(runners.filter(r => r.category === cat));
         }
+        // The combined card counts the whole field, not the sum of the cards above —
+        // a runner whose category matches no configured distance still belongs here.
+        result[ALL_CATS] = bucketsOf(runners);
         return result;
     }, [categories, runners, cpTimingMap]);
 
@@ -1874,21 +1904,19 @@ export function GeneralChartView({ monitor }: { monitor?: MonitorRequest }) {
 
     // ── Chart data per category — PASSED THROUGH (cumulative) ──
     const chartDataByCategoryPassedThrough = useMemo(() => {
-        const result: Record<string, { cpName: string; count: number; total: number }[]> = {};
+        const result: Record<string, PassedDatum[]> = {};
+        const countPassed = (pool: Runner[], cps: Checkpoint[]): PassedDatum[] => cps.map(cp => {
+            const cpBibs = cpTimingMap[cp.name] || new Map<string, number>();
+            return { cpName: cp.name, count: pool.filter(r => cpBibs.has(r.bib)).length, total: pool.length };
+        });
         for (const cat of categories) {
-            const catRunners = runners.filter(r => r.category === cat);
             const catCps = catCpsFor(cat);
             if (catCps.length === 0) continue;
-            const data: { cpName: string; count: number; total: number }[] = [];
-            for (const cp of catCps) {
-                const cpBibs = cpTimingMap[cp.name] || new Map<string, number>();
-                const count = catRunners.filter(r => cpBibs.has(r.bib)).length;
-                data.push({ cpName: cp.name, count, total: catRunners.length });
-            }
-            result[cat] = data;
+            result[cat] = countPassed(runners.filter(r => r.category === cat), catCps);
         }
+        if (checkpoints.length > 0) result[ALL_CATS] = countPassed(runners, checkpoints);
         return result;
-    }, [categories, runners, catCpsFor, cpTimingMap]);
+    }, [categories, runners, catCpsFor, cpTimingMap, checkpoints]);
 
     // ── Export ALL categories' summary as ONE Excel file — one sheet per category, so
     //    printing the workbook naturally puts each distance on its own page. ──
@@ -2049,22 +2077,31 @@ export function GeneralChartView({ monitor }: { monitor?: MonitorRequest }) {
                     </div>
                 </div>
 
-                {/* ─── Checkpoint Distribution Charts per Category (Dual: Passed Through + Currently At) ─── */}
-                {categories.map(cat => {
+                {/* ─── Checkpoint Distribution Charts (Dual: Passed Through + Currently At) ───
+                    One card per distance, preceded by the combined ALL_CATS card that runs the
+                    same two charts over the whole field against the campaign-wide checkpoint
+                    order. The combined card has no single route, so it draws no course strip. */}
+                {[ALL_CATS, ...categories].map(cat => {
+                    const isAll = cat === ALL_CATS;
                     const dataCurrently = chartDataByCategory[cat];
                     const dataPassed = chartDataByCategoryPassedThrough[cat];
                     const cs = catSummary[cat];
                     if ((!dataCurrently || dataCurrently.length === 0) && (!dataPassed || dataPassed.length === 0)) return null;
 
                     return (
-                        <div key={cat} style={{ ...styles.sectionCard, marginBottom: 24 }}>
+                        <div key={cat} style={{
+                            ...styles.sectionCard, marginBottom: 24,
+                            ...(isAll ? { border: '1px solid #ddd6fe', boxShadow: '0 1px 3px rgba(124,58,237,0.08)' } : null),
+                        }}>
                             <div style={styles.sectionHeader}>
                                 <div>
                                     <h2 style={styles.sectionTitle}>
-                                        <span style={{ fontSize: 18 }}>📍</span>
-                                        {cat} — {th ? 'การกระจายตัวนักวิ่งตามจุด Checkpoint' : 'Checkpoint Distribution'}
+                                        <span style={{ fontSize: 18 }}>{isAll ? '🌐' : '📍'}</span>
+                                        {catLabel(cat, th)} — {th ? 'การกระจายตัวนักวิ่งตามจุด Checkpoint' : 'Checkpoint Distribution'}
                                     </h2>
-                                    <p style={styles.sectionSub}>{th ? 'เปรียบเทียบจำนวนนักวิ่งที่ผ่านแต่ละจุด กับจำนวนที่เหลืออยู่ปัจจุบัน' : 'Comparing cumulative pass-through vs runners currently remaining at each checkpoint'}</p>
+                                    <p style={styles.sectionSub}>{isAll
+                                        ? (th ? 'รวมนักวิ่งทุกระยะไว้ในกราฟเดียว เรียงตามลำดับจุดของทั้งงาน' : 'Every distance combined in one chart, along the campaign-wide checkpoint order')
+                                        : (th ? 'เปรียบเทียบจำนวนนักวิ่งที่ผ่านแต่ละจุด กับจำนวนที่เหลืออยู่ปัจจุบัน' : 'Comparing cumulative pass-through vs runners currently remaining at each checkpoint')}</p>
                                 </div>
                                 <div style={styles.distBadge}>
                                     <div style={styles.distBadgeLabel}>TOTAL</div>
@@ -2109,8 +2146,10 @@ export function GeneralChartView({ monitor }: { monitor?: MonitorRequest }) {
                                 </div>
                             </div>
 
-                            {/* ─── Course Strip: horizontal route map with runners per segment ─── */}
-                            <CourseStrip
+                            {/* ─── Course Strip: horizontal route map with runners per segment ───
+                                Per distance only — the combined card mixes several routes, so
+                                there is no single course to walk figures along. */}
+                            {!isAll && <CourseStrip
                                 cat={cat}
                                 data={dataCurrently || []}
                                 th={th}
@@ -2121,7 +2160,7 @@ export function GeneralChartView({ monitor }: { monitor?: MonitorRequest }) {
                                 onClusterMinutesChange={saveClusterMinutes}
                                 onPick={(cpName, segRunners) => setCpDetail({ cat, cpName, runners: segRunners })}
                                 onOpenMonitor={(state) => openMonitor({ panel: 'course', cat, campaignId: campaign._id, ...state })}
-                            />
+                            />}
                             {/* Mini summary row — every cell opens the bibs behind its number */}
                             {(() => {
                                 const cells: { label: string; bucket: SummaryBucket; color: string }[] = [
@@ -2321,7 +2360,7 @@ export function GeneralChartView({ monitor }: { monitor?: MonitorRequest }) {
                         <div style={{ padding: '18px 22px', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
                             <div>
                                 <h3 style={{ margin: 0, fontSize: 16, fontWeight: 900, color: '#0f172a' }}>
-                                    {cpDetail.cat} — {cpDetail.cpName}
+                                    {catLabel(cpDetail.cat, th)} — {cpDetail.cpName}
                                 </h3>
                                 <p style={{ margin: '3px 0 0', fontSize: 12, color: '#94a3b8' }}>
                                     {th ? 'คนที่ยังเหลืออยู่ในช่วงนี้' : 'Runners still in this segment'}: <strong style={{ color: '#f59e0b' }}>{cpDetail.runners.length}</strong>
@@ -2359,6 +2398,10 @@ export function GeneralChartView({ monitor }: { monitor?: MonitorRequest }) {
                                                 <td style={{ padding: '9px 8px', fontWeight: 800, color: '#0f172a', fontFamily: 'monospace', width: 70 }}>{r.bib}</td>
                                                 <td style={{ padding: '9px 8px', color: '#334155' }}>
                                                     {r.gender === 'F' ? '♀ ' : r.gender === 'M' ? '♂ ' : ''}{r.name}
+                                                    {/* The combined card mixes distances, so each row has to say which one. */}
+                                                    {cpDetail.cat === ALL_CATS && r.category && (
+                                                        <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 800, color: '#7c3aed', background: '#f5f3ff', border: '1px solid #ede9fe', borderRadius: 5, padding: '1px 5px' }}>{r.category}</span>
+                                                    )}
                                                 </td>
                                                 <td style={{ padding: '9px 22px', textAlign: 'right' }}>
                                                     <span style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', color: STATUS_META[r.bucket].color }}>
@@ -2410,7 +2453,7 @@ export function GeneralChartView({ monitor }: { monitor?: MonitorRequest }) {
                         <div style={{ padding: '18px 22px', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
                             <div>
                                 <h3 style={{ margin: 0, fontSize: 16, fontWeight: 900, color: '#0f172a' }}>
-                                    {bibDetail.cat} — {bibDetail.label}
+                                    {catLabel(bibDetail.cat, th)} — {bibDetail.label}
                                 </h3>
                                 <p style={{ margin: '3px 0 0', fontSize: 12, color: '#94a3b8' }}>
                                     {th ? 'จำนวน' : 'Count'}: <strong style={{ color: bibDetail.color }}>{bibDetail.runners.length}</strong>
@@ -2486,7 +2529,7 @@ export function GeneralChartView({ monitor }: { monitor?: MonitorRequest }) {
                                                     {`${r.firstName || ''} ${r.lastName || ''}`.trim() || '—'}
                                                 </td>
                                                 <td style={{ padding: '9px 8px', textAlign: 'center' }}>{r.gender === 'F' ? '♀' : r.gender === 'M' ? '♂' : '—'}</td>
-                                                <td style={{ padding: '9px 8px', color: '#334155' }}>{r.category || bibDetail.cat}</td>
+                                                <td style={{ padding: '9px 8px', color: '#334155' }}>{r.category || catLabel(bibDetail.cat, th)}</td>
                                                 <td style={{ padding: '9px 22px', textAlign: 'right', color: '#64748b', fontVariantNumeric: 'tabular-nums' }}>
                                                     {r.scanTime ? new Date(r.scanTime).toLocaleTimeString(th ? 'th-TH' : 'en-GB', { hour12: false }) : '—'}
                                                 </td>
