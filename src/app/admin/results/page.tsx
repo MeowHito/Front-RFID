@@ -3,6 +3,7 @@
 import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { useLanguage } from '@/lib/language-context';
 import { authHeaders } from '@/lib/authHeaders';
+import { buildCanonicalAgeGroups, canonicalizeAgeGroup } from '@/lib/age-groups';
 import AdminLayout from '../AdminLayout';
 import '../admin.css';
 
@@ -156,25 +157,6 @@ function compareNumberNullable(a?: number, b?: number): number {
     if (aValid) return -1;
     if (bValid) return 1;
     return 0;
-}
-
-// Age-group filter ranges. Matches runner ageGroup strings like "18-29", "30-39",
-// "40-49", "50-59", "60+", "13-17", "U18", etc.
-const AGE_RANGES: Array<{ key: string; label: string; test: (ag: string) => boolean }> = [
-    { key: '<=17', label: '<= 17', test: (ag) => /U\s*1[0-8]|13-17|U13|<=?\s*17|^1[0-7](\b|$)/i.test(ag) },
-    { key: '18-29', label: '18-29', test: (ag) => /\b18\s*-\s*29\b/.test(ag) },
-    { key: '30-39', label: '30-39', test: (ag) => /\b30\s*-\s*39\b/.test(ag) },
-    { key: '40-49', label: '40-49', test: (ag) => /\b40\s*-\s*49\b/.test(ag) },
-    { key: '50-59', label: '50-59', test: (ag) => /\b50\s*-\s*59\b/.test(ag) },
-    { key: '>=60', label: '>= 60', test: (ag) => /\b60\s*\+|\b60\s*-\s*69\b|\b70\s*\+|>=?\s*60|\b(6[0-9]|7[0-9]|8[0-9]|9[0-9])\b/.test(ag) },
-];
-
-function matchesAgeRange(ageGroup: string | undefined, rangeKey: string): boolean {
-    const ag = (ageGroup || '').trim();
-    if (!ag) return false;
-    const def = AGE_RANGES.find(r => r.key === rangeKey);
-    if (!def) return false;
-    return def.test(ag);
 }
 
 function formatResultTime(ms?: number, raw?: string): string {
@@ -364,6 +346,29 @@ export default function ResultsPage() {
         return () => { if (searchTimerRef.current) clearTimeout(searchTimerRef.current); };
     }, [search]);
 
+    // ── Age-group brackets actually in use ──
+    // Built from the runners themselves with the same canonicalizer every other
+    // surface uses (/event, /Result-Winners, /admin/age-group-ranking, export),
+    // so the options here are exactly the brackets those boards rank by —
+    // including one-off RaceTiger spellings ("50-54", "M 40-49") folded into the
+    // real bracket. Scoped to the selected distance because each distance can
+    // bracket differently.
+    const ageRanges = useMemo(() => {
+        const safeRunners = Array.isArray(runners) ? runners : [];
+        const scoped = selectedCategory === 'all'
+            ? safeRunners
+            : safeRunners.filter(r => r.category === selectedCategory);
+        return buildCanonicalAgeGroups(scoped.map(r => r.ageGroup));
+    }, [runners, selectedCategory]);
+
+    // Switching distance can retire the selected bracket — fall back to "all"
+    // rather than silently showing an empty table.
+    useEffect(() => {
+        if (ageGroupFilter === 'all') return;
+        const range = ageGroupFilter.slice(ageGroupFilter.indexOf(':') + 1);
+        if (!ageRanges.buckets.some(b => b.label === range)) setAgeGroupFilter('all');
+    }, [ageRanges, ageGroupFilter]);
+
     // ── Filter + sort runners ──
     const filteredRunners = useMemo(() => {
         const safeRunners = Array.isArray(runners) ? runners : [];
@@ -381,12 +386,14 @@ export default function ResultsPage() {
         if (statusFilter !== 'all') {
             list = list.filter(r => r.status === statusFilter);
         }
-        // Age group filter (encodes "<gender>:<range>")
+        // Age group filter (encodes "<gender>:<bracket label>")
         if (ageGroupFilter !== 'all') {
-            const [agGender, agRange] = ageGroupFilter.split(':');
+            const sep = ageGroupFilter.indexOf(':');
+            const agGender = ageGroupFilter.slice(0, sep);
+            const agRange = ageGroupFilter.slice(sep + 1);
             list = list.filter(r => {
                 if ((r.gender || '').toUpperCase() !== agGender.toUpperCase()) return false;
-                return matchesAgeRange(r.ageGroup, agRange);
+                return canonicalizeAgeGroup(r.ageGroup, ageRanges.canonicalLabelOf) === agRange;
             });
         }
         // Search filter
@@ -459,7 +466,7 @@ export default function ResultsPage() {
         }
 
         return list;
-    }, [runners, selectedCategory, genderFilter, statusFilter, ageGroupFilter, debouncedSearch, sortBy, sortDirection, cpTimingMap]);
+    }, [runners, selectedCategory, genderFilter, statusFilter, ageGroupFilter, ageRanges, debouncedSearch, sortBy, sortDirection, cpTimingMap]);
 
     // ── Status counts from runner list (scoped to currently selected category) ──
     const categoryScopedRunners = useMemo(() => {
@@ -1152,13 +1159,13 @@ export default function ResultsPage() {
                                 style={{ width: 180, fontSize: 12, padding: '5px 8px' }}>
                                 <option value="all">{language === 'th' ? 'เลือกช่วงอายุ / Choose' : 'Choose age group'}</option>
                                 <optgroup label={language === 'th' ? 'ชาย / Male' : 'Male'}>
-                                    {AGE_RANGES.map(r => (
-                                        <option key={`M:${r.key}`} value={`M:${r.key}`}>{r.label}</option>
+                                    {ageRanges.buckets.map(b => (
+                                        <option key={`M:${b.label}`} value={`M:${b.label}`}>{b.label}</option>
                                     ))}
                                 </optgroup>
                                 <optgroup label={language === 'th' ? 'หญิง / Female' : 'Female'}>
-                                    {AGE_RANGES.map(r => (
-                                        <option key={`F:${r.key}`} value={`F:${r.key}`}>{r.label}</option>
+                                    {ageRanges.buckets.map(b => (
+                                        <option key={`F:${b.label}`} value={`F:${b.label}`}>{b.label}</option>
                                     ))}
                                 </optgroup>
                             </select>
