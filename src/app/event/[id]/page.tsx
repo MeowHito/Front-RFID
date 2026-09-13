@@ -10,6 +10,7 @@ import { useAuth } from '@/lib/auth-context';
 import { authHeaders } from '@/lib/authHeaders';
 import CutoffDateTimePicker from '@/components/CutoffDateTimePicker';
 import { getFollowedRunnersForEvent, isRunnerFollowed, loadFollowedRunners, subscribeFollowedRunners, type FollowedRunner } from '@/lib/followed-runners';
+import { isPlaceholderRunner } from '@/lib/placeholder-runners';
 import { computeAwardsForCategory, type AwardResult } from '@/lib/awards';
 import { isNationalitySplitCategory } from '@/lib/nationality';
 import { type AgeGroupBucket, buildCanonicalAgeGroups, canonicalizeAgeGroup, normalizeAgeGroupLabel } from '@/lib/age-groups';
@@ -750,7 +751,7 @@ export default function EventLivePage() {
                     const runnersData = await runnersRes.json().catch(() => ({}));
                     const list = (runnersData?.data?.data as Runner[]) || (runnersData?.data as Runner[]) || (Array.isArray(runnersData) ? runnersData : []);
                     if (Array.isArray(list) && list.length > 0) {
-                        const mapped = list.map(deriveEffectiveStatus);
+                        const mapped = list.map(deriveEffectiveStatus).filter(r => !isPlaceholderRunner(r));
                         setRunners(mapped);
                         setLastUpdated(new Date());
                     }
@@ -799,7 +800,8 @@ export default function EventLivePage() {
             if (runnersRes.ok) {
                 const runnersData = await runnersRes.json().catch(() => ({}));
                 const list = (runnersData?.data?.data as Runner[]) || (runnersData?.data as Runner[]) || (Array.isArray(runnersData) ? runnersData : []);
-                const runnerList = (Array.isArray(list) ? list : []).map(deriveEffectiveStatus);
+                // Unused RaceTiger spare chips ("Temp18", "Temp7_17") — see lib/placeholder-runners.
+                const runnerList = (Array.isArray(list) ? list : []).map(deriveEffectiveStatus).filter(r => !isPlaceholderRunner(r));
                 setRunners(runnerList);
 
                 // Fetch checkpoint mappings per event for distance-based progress

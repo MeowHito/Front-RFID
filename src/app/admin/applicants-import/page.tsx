@@ -1,8 +1,9 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as XLSX from 'xlsx';
 import { useLanguage } from '@/lib/language-context';
+import { categoryDistanceLabel, findRunnerCategory } from '@/lib/category-distance';
 import AdminLayout from '../AdminLayout';
 import '../admin.css';
 
@@ -12,6 +13,7 @@ interface Campaign {
     nameTh?: string;
     nameEn?: string;
     slug?: string;
+    categories?: { name?: string; distance?: string }[];
 }
 
 interface ApplicantRow {
@@ -152,6 +154,40 @@ const EXPORT_COLS: { field: FieldKey; th: string; width: number }[] = [
     { field: 'team', th: 'ทีม', width: 16 },
     { field: 'challenge', th: 'Challenge', width: 16 },
 ];
+
+// Cell text for export — null/undefined and a lone "-" placeholder count as empty.
+function cellText(v: unknown): string {
+    const s = v === null || v === undefined ? '' : String(v).trim();
+    return s === '-' ? '' : s;
+}
+
+function toRaceTigerGender(raw: unknown): string {
+    const g = cellText(raw).toLowerCase();
+    if (!g) return '';
+    if (['m', 'male', 'man', 'ชาย'].includes(g)) return 'M';
+    if (['f', 'female', 'woman', 'หญิง'].includes(g)) return 'F';
+    return cellText(raw);
+}
+
+// Columns for the RaceTiger athlete import file, one file per distance.
+// "Name" is the Thai name, "English Name" the English spelling. Columns that
+// are empty for every runner in the chosen distance are dropped on export.
+const RACETIGER_COLS: { header: string; width: number; value: (r: ApplicantRow) => string }[] = [
+    { header: 'BIB', width: 10, value: r => cellText(r.bib) },
+    { header: 'Name', width: 28, value: r => cellText(r.fullName) || cellText(`${r.firstName || ''} ${r.lastName || ''}`) },
+    { header: 'English Name', width: 28, value: r => cellText(r.fullNameEn) || cellText(`${r.firstNameEn || ''} ${r.lastNameEn || ''}`) },
+    { header: 'Gender', width: 8, value: r => toRaceTigerGender(r.gender) },
+    { header: 'Age', width: 6, value: r => cellText(r.age) },
+    { header: 'Age Group', width: 22, value: r => cellText(r.ageGroup) },
+    { header: 'ID No.', width: 18, value: r => cellText(r.idCard) },
+    { header: 'Phone', width: 14, value: r => cellText(r.phone) },
+    { header: 'Team', width: 20, value: r => cellText(r.team) },
+    { header: 'Shirt Size', width: 10, value: r => cellText(r.shirtSize) },
+    { header: 'Challenge', width: 14, value: r => cellText(r.challenge) },
+];
+
+// Distance bucket for applicants whose category matches none of the campaign's distances.
+const UNMATCHED_DISTANCE = '__unmatched__';
 
 export default function ApplicantsImportPage() {
     const { language } = useLanguage();
@@ -438,12 +474,93 @@ export default function ApplicantsImportPage() {
         }
     };
 
+    // ─── Distances ───────────────────────────────────────────────────
+    // Buttons come from the campaign's own distances (same labels as /event);
+    // each applicant is matched to one by its raw `category`. Without campaign
+    // distances we fall back to the distinct raw categories in the roster.
+    const [selectedDistance, setSelectedDistance] = useState<string | null>(null);
+    const { distanceGroups, distanceKeyById } = useMemo(() => {
+        const cats = (campaign?.categories || []).filter(c => c && (c.name || c.distance));
+        const catKey = (c: { name?: string; distance?: string }) => c.name || c.distance || '';
+        const keyById = new Map<string, string>();
+        const counts = new Map<string, number>();
+        for (const r of existingRows) {
+            let key: string;
+            if (cats.length) {
+                const m = findRunnerCategory(r.category, cats);
+                key = m ? catKey(m) : UNMATCHED_DISTANCE;
+            } else {
+                key = cellText(r.category) || UNMATCHED_DISTANCE;
+            }
+            keyById.set(r._id, key);
+            counts.set(key, (counts.get(key) || 0) + 1);
+        }
+        const groups: { key: string; label: string; count: number }[] = [];
+        const seen = new Set<string>();
+        if (cats.length) {
+            for (const c of cats) {
+                const key = catKey(c);
+                if (seen.has(key)) continue;
+                seen.add(key);
+                groups.push({ key, label: categoryDistanceLabel(c), count: counts.get(key) || 0 });
+            }
+        } else {
+            [...counts.keys()]
+                .filter(k => k !== UNMATCHED_DISTANCE)
+                .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
+                .forEach(k => groups.push({ key: k, label: k, count: counts.get(k) || 0 }));
+        }
+        const unmatched = counts.get(UNMATCHED_DISTANCE) || 0;
+        if (unmatched) groups.push({ key: UNMATCHED_DISTANCE, label: '', count: unmatched });
+        return { distanceGroups: groups, distanceKeyById: keyById };
+    }, [campaign?.categories, existingRows]);
+
+    const distanceLabel = (g: { key: string; label: string }) =>
+        g.key === UNMATCHED_DISTANCE ? (language === 'th' ? 'ไม่ตรงระยะไหน' : 'No matching distance') : g.label;
+    const selectedGroup = distanceGroups.find(g => g.key === selectedDistance) || null;
+
+    // Drop the selection if that distance disappears (e.g. roster cleared).
+    useEffect(() => {
+        if (selectedDistance && !distanceGroups.some(g => g.key === selectedDistance)) setSelectedDistance(null);
+    }, [distanceGroups, selectedDistance]);
+
+    // Export the chosen distance as a RaceTiger athlete import file.
+    const exportRaceTiger = () => {
+        if (!campaign || !selectedGroup) return;
+        const list = existingRows
+            .filter(r => distanceKeyById.get(r._id) === selectedGroup.key)
+            .sort((a, b) => cellText(a.bib).localeCompare(cellText(b.bib), undefined, { numeric: true }));
+        if (list.length === 0) {
+            showToast(language === 'th' ? 'ระยะนี้ยังไม่มีรายชื่อ' : 'No applicants in this distance', 'error');
+            return;
+        }
+        const matrix = list.map(r => RACETIGER_COLS.map(c => c.value(r)));
+        const keep = RACETIGER_COLS.map((_, ci) => matrix.some(row => row[ci] !== ''));
+        const cols = RACETIGER_COLS.filter((_, ci) => keep[ci]);
+        const body = matrix.map(row => row.filter((_, ci) => keep[ci]));
+        const ws = XLSX.utils.aoa_to_sheet([cols.map(c => c.header), ...body]);
+        ws['!cols'] = cols.map(c => ({ wch: c.width }));
+        const label = distanceLabel(selectedGroup);
+        const sheetName = label.replace(/[\\/:*?"<>|[\]]/g, '-').slice(0, 31).trim() || 'Athletes';
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, sheetName);
+        const safe = (s: string) => s.replace(/[\\/:*?"<>|]/g, '-').trim();
+        const campaignName = safe(campaign.nameTh || campaign.nameEn || campaign.name || 'campaign');
+        XLSX.writeFile(wb, `racetiger-${campaignName}-${safe(label)}-${list.length}.xlsx`);
+        showToast(language === 'th'
+            ? `ส่งออก ${label} ${list.length.toLocaleString()} รายการ`
+            : `Exported ${label}: ${list.length.toLocaleString()} rows`, 'success');
+    };
+
+    const distanceFiltered = selectedDistance
+        ? existingRows.filter(r => distanceKeyById.get(r._id) === selectedDistance)
+        : existingRows;
     const filteredExisting = existingSearch.trim()
-        ? existingRows.filter(r => {
+        ? distanceFiltered.filter(r => {
             const q = existingSearch.trim().toLowerCase();
             return [r.bib, r.idCard, r.fullName, r.fullNameEn, r.phone].some(v => (v || '').toLowerCase().includes(q));
         })
-        : existingRows;
+        : distanceFiltered;
     const EXISTING_PAGE_SIZE = 50;
     const existingPageCount = Math.max(1, Math.ceil(filteredExisting.length / EXISTING_PAGE_SIZE));
     const existingPageClamped = Math.min(existingPage, existingPageCount - 1);
@@ -495,7 +612,7 @@ export default function ApplicantsImportPage() {
         }
     };
 
-    useEffect(() => { setExistingPage(0); }, [existingSearch]);
+    useEffect(() => { setExistingPage(0); }, [existingSearch, selectedDistance]);
 
     const publicUrl = campaign
         ? `${typeof window !== 'undefined' ? window.location.origin : ''}/applicant-status/${campaign.slug || campaign._id}`
@@ -646,6 +763,51 @@ export default function ApplicantsImportPage() {
                                 style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #d1d5db', fontSize: 13, minWidth: 220 }}
                             />
                         </div>
+                        {/* Distance picker — the roster is split per distance; pick one to export for RaceTiger */}
+                        {!existingLoading && existingRows.length > 0 && (
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10, marginBottom: 12, padding: '10px 12px', borderRadius: 10, background: '#f8fafc', border: '1px solid #e2e8f0' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
+                                    <span style={{ fontSize: 12, fontWeight: 700, color: '#475569', marginRight: 2 }}>
+                                        🏁 {language === 'th' ? 'ระยะ:' : 'Distance:'}
+                                    </span>
+                                    {[{ key: '', label: language === 'th' ? 'ทั้งหมด' : 'All', count: existingRows.length }, ...distanceGroups].map(g => {
+                                        const active = (selectedDistance || '') === g.key;
+                                        const unmatched = g.key === UNMATCHED_DISTANCE;
+                                        return (
+                                            <button
+                                                key={g.key || '__all__'}
+                                                onClick={() => setSelectedDistance(g.key || null)}
+                                                style={{
+                                                    padding: '5px 12px', borderRadius: 999, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                                                    border: `1px solid ${active ? (unmatched ? '#f59e0b' : '#2563eb') : (unmatched ? '#fde68a' : '#cbd5e1')}`,
+                                                    background: active ? (unmatched ? '#f59e0b' : '#2563eb') : (unmatched ? '#fffbeb' : '#fff'),
+                                                    color: active ? '#fff' : (unmatched ? '#b45309' : '#334155'),
+                                                }}
+                                            >
+                                                {g.key ? distanceLabel(g) : g.label}
+                                                <span style={{ marginLeft: 6, fontWeight: 600, opacity: 0.75 }}>{g.count.toLocaleString()}</span>
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                                <button
+                                    onClick={exportRaceTiger}
+                                    disabled={!selectedGroup || selectedGroup.count === 0}
+                                    title={!selectedGroup ? (language === 'th' ? 'เลือกระยะก่อนส่งออก' : 'Pick a distance first') : undefined}
+                                    style={{
+                                        padding: '8px 14px', borderRadius: 8, fontSize: 13, fontWeight: 700,
+                                        border: '1px solid', borderColor: selectedGroup && selectedGroup.count > 0 ? '#16a34a' : '#e2e8f0',
+                                        background: selectedGroup && selectedGroup.count > 0 ? '#16a34a' : '#f1f5f9',
+                                        color: selectedGroup && selectedGroup.count > 0 ? '#fff' : '#94a3b8',
+                                        cursor: selectedGroup && selectedGroup.count > 0 ? 'pointer' : 'not-allowed',
+                                    }}
+                                >
+                                    📤 {selectedGroup
+                                        ? (language === 'th' ? `ส่งออก RaceTiger (${distanceLabel(selectedGroup)})` : `Export RaceTiger (${distanceLabel(selectedGroup)})`)
+                                        : (language === 'th' ? 'เลือกระยะก่อนส่งออก RaceTiger' : 'Pick a distance to export')}
+                                </button>
+                            </div>
+                        )}
                         {existingLoading ? (
                             <div style={{ padding: 30, textAlign: 'center', color: '#999', fontSize: 13 }}>
                                 {language === 'th' ? 'กำลังโหลด...' : 'Loading...'}
