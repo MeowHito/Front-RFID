@@ -309,6 +309,15 @@ function parseTimeStrToMs(str: string): number | null {
     return null;
 }
 
+// "1:02:03.456", "02:03" or a pace like "5:12" → ms. null when it isn't a duration.
+function parseDurationMs(value?: string | null): number | null {
+    const match = String(value ?? '').trim().match(/^(?:(\d+):)?(\d{1,2}):(\d{1,2})(?:\.(\d{1,3}))?/);
+    if (!match) return null;
+    const [, h, m, s, frac] = match;
+    const ms = frac ? parseInt(frac.padEnd(3, '0'), 10) : 0;
+    return ((parseInt(h || '0', 10) * 60 + parseInt(m, 10)) * 60 + parseInt(s, 10)) * 1000 + ms;
+}
+
 function msToHHMMSS(ms?: number): string {
     if (!ms || ms <= 0) return '';
     const totalSec = Math.floor(ms / 1000);
@@ -432,6 +441,8 @@ export default function EventLivePage() {
     const [filterAgeGroup, setFilterAgeGroup] = useState('');
     // Admin-only: when on, runners with an incomplete-checkpoint alert (⚠) are pulled to the top
     const [sortAlertsFirst, setSortAlertsFirst] = useState(false);
+    // Admin-only: click a column header to sort the table by it (spotting odd times)
+    const [columnSort, setColumnSort] = useState<{ key: string; dir: 'asc' | 'desc' } | null>(null);
     // Runner detail is now handled by /runner/[id] page
 
     const [showGenRank, setShowGenRank] = useState(true);
@@ -1263,6 +1274,194 @@ export default function EventLivePage() {
         return medians;
     }, [runners]);
 
+    /**
+     * PROGRESS column figures. Lives outside the row render so the admin column
+     * sort orders rows by exactly the percentage the bar shows.
+     */
+    function computeRunnerProgress(runner: Runner, checkpointMeta = getRunnerCheckpointMeta(runner)) {
+        const statusCheckpointName = checkpointMeta.checkpointName;
+        const totalCps = checkpointMeta.totalCheckpoints;
+        const completedCpCount = checkpointMeta.completedCpCount;
+        let progressPct = 0;
+        let progressDistKm = 0;
+        let eventTotalKm = 0;
+        let progressLabel = '';
+        // Stopped runners (DNS/DNF/DQ/not_started) must never be treated as
+        // finish-like for progress/distance, even if RaceTiger sync left
+        // latestCheckpoint='FINISH' on the Runner doc before status was set.
+        const isStoppedStatus = ['dns', 'dnf', 'dq', 'not_started'].includes(runner.status);
+        const isFinishCp = checkpointMeta.isFinishLike && !isStoppedStatus;
+        if (runner.status === 'finished' || isFinishCp) {
+            progressPct = 100;
+            if (totalCps > 0 && completedCpCount > 0) {
+                progressLabel = `${completedCpCount}/${totalCps} CP`;
+            }
+        } else if (['dns', 'not_started'].includes(runner.status)) {
+            // DNS / not_started = runner never showed up. Progress is always 0%
+            // regardless of any residual latestCheckpoint/passedCount/splitDesc
+            // values left on the Runner doc by stale RaceTiger sync data.
+            progressPct = 0;
+        } else {
+            // Calculate progress for ALL non-finished statuses
+            const evLookup = checkpointMeta.evLookup;
+            const matchedCpKey = checkpointMeta.checkpointKey;
+            const checkpointOrder = checkpointMeta.checkpointOrder;
+
+            // Method 1: passedCount / totalCheckpoints (from RaceTiger sync)
+            if ((runner.passedCount ?? 0) > 0 && totalCps > 0) {
+                const ratio = Math.round((runner.passedCount! / totalCps) * 100);
+                progressPct = runner.passedCount! >= totalCps ? 100 : Math.min(99, ratio);
+                progressLabel = `${runner.passedCount}/${totalCps} CP`;
+            }
+
+            // Method 2: distance-based from checkpoint mapping
+            if (progressPct === 0 && evLookup && matchedCpKey) {
+                const cpDist = evLookup.checkpoints[matchedCpKey] ?? 0;
+                const total = parseDistanceValue(runner.category) || evLookup.totalDistance || 0;
+                if (cpDist > 0 && total > 0) {
+                    progressPct = Math.min(99, Math.round((cpDist / total) * 100));
+                    progressDistKm = cpDist;
+                    eventTotalKm = total;
+                }
+            }
+
+            // Method 2.5: order-based from checkpoint mapping (fallback when distance is 0)
+            if (progressPct === 0 && totalCps > 0 && checkpointOrder > 0) {
+                const cpOrder = Math.min(checkpointOrder, totalCps);
+                if (cpOrder > 0) {
+                    progressPct = Math.min(99, Math.round((cpOrder / totalCps) * 100));
+                    progressLabel = `${cpOrder}/${totalCps} CP`;
+                }
+            }
+
+            // Method 3: elapsed time vs median finish time
+            if (progressPct === 0) {
+                const elapsed = runner.gunTime || runner.elapsedTime || 0;
+                const median = categoryMedianTime[runner.category] || 0;
+                if (elapsed > 0 && median > 0) {
+                    const maxPct = runner.status === 'dnf' ? 90 : runner.status === 'dns' ? 0 : 95;
+                    progressPct = Math.min(maxPct, Math.round((elapsed / median) * 100));
+                } else if (statusCheckpointName) {
+                    progressPct = runner.status === 'in_progress' ? 50 : 40;
+                } else if (runner.isStarted || runner.status === 'in_progress') {
+                    progressPct = 5;
+                }
+            }
+        }
+        return { progressPct, progressDistKm, eventTotalKm, progressLabel, isFinishCp };
+    }
+
+    /** DISTANCE column value in km, or null when there is nothing to show. */
+    function computeRunnerDistanceKm(runner: Runner, checkpointMeta = getRunnerCheckpointMeta(runner)): number | null {
+        const runnerCatDist = parseDistanceValue(runner.category);
+        const isStoppedStatus = ['dns', 'dnf', 'dq', 'not_started'].includes(runner.status);
+        const isFinishCp = checkpointMeta.isFinishLike && !isStoppedStatus;
+        // Prefer the per-event checkpoint mapping over the timing
+        // record's own `distanceFromStart` — that field is a snapshot
+        // written once at scan/sync time, so it goes stale (and stays
+        // wrong forever) whenever an admin later corrects a
+        // checkpoint's per-category KM. The mapping lookup always
+        // reflects the current, correct value; many older imports
+        // never populated it at all, so still fall back when missing.
+        let rawDist: number | null = null;
+        const evLookupDist = checkpointMeta.evLookup;
+        if (evLookupDist) {
+            if (isFinishCp || runner.status === 'finished') {
+                const total = evLookupDist.totalDistance || runnerCatDist || 0;
+                if (total > 0) rawDist = total;
+            } else if (checkpointMeta.checkpointKey) {
+                const mapped = evLookupDist.checkpoints[checkpointMeta.checkpointKey];
+                if (mapped != null && mapped > 0) rawDist = mapped;
+            }
+        }
+        if (rawDist == null || rawDist <= 0) {
+            rawDist = runner.distanceFromStart ?? null;
+        }
+        return rawDist != null
+            ? (runnerCatDist != null && rawDist > runnerCatDist ? runnerCatDist : rawDist)
+            : null;
+    }
+
+    /**
+     * NEXT / ETA for a runner still on course: the next checkpoint and when they
+     * should reach it. `arrivalAtMs` is a wall-clock instant (so it can be sorted
+     * without the 1s clock ticking the order around); `etaMs` is the bare leg
+     * estimate used when there is no scan time to anchor it.
+     */
+    function computeNextStation(runner: Runner, checkpointMeta = getRunnerCheckpointMeta(runner)) {
+        const evLookupEta = checkpointMeta.evLookup;
+        const statusCheckpointName = checkpointMeta.checkpointName;
+        let nextCpName = '';
+        let nextOrder = 0;
+        let arrivalAtMs: number | null = null;
+        let etaMs: number | null = null;
+
+        if (evLookupEta) {
+            const matchedKey = checkpointMeta.checkpointKey;
+
+            if (matchedKey) {
+                const currentCpDist = evLookupEta.checkpoints[matchedKey] ?? 0;
+                const currentOrder = evLookupEta.cpOrders[matchedKey] ?? 0;
+                const totalCps = evLookupEta.totalCheckpoints || 1;
+
+                // Find next checkpoint by order
+                let bestNextKey = '';
+                let bestNextOrder = Infinity;
+                for (const [k, ord] of Object.entries(evLookupEta.cpOrders)) {
+                    if (ord > currentOrder && ord < bestNextOrder) {
+                        bestNextOrder = ord;
+                        bestNextKey = k;
+                    }
+                }
+                let nextCpDist = 0;
+                if (bestNextKey) {
+                    nextCpName = bestNextKey.toUpperCase();
+                    nextCpDist = evLookupEta.checkpoints[bestNextKey] ?? 0;
+                    nextOrder = bestNextOrder;
+                } else {
+                    nextCpName = 'FINISH';
+                    nextCpDist = evLookupEta.totalDistance || 0;
+                    nextOrder = totalCps + 1;
+                }
+
+                // Parse elapsed time from all possible fields
+                const elapsedMs = getRunnerEtaElapsedMs(runner);
+
+                // Strategy 1: Distance-based ETA (when checkpoint km data exists)
+                // Shared with the 2D course profile — see estimatePaceEtaMs.
+                if (currentCpDist > 0 && elapsedMs > 0 && nextCpDist > currentCpDist) {
+                    etaMs = estimatePaceEtaMs({
+                        elapsedMs,
+                        currentKm: currentCpDist,
+                        nextKm: nextCpDist,
+                    });
+                }
+                // Strategy 2: Order-based fallback (when no km data)
+                else if (elapsedMs > 0 && currentOrder > 0) {
+                    const orderSteps = (bestNextKey ? bestNextOrder : totalCps + 1) - currentOrder;
+                    const timePerOrder = elapsedMs / currentOrder;
+                    etaMs = timePerOrder * orderSteps * ETA_SLOWDOWN;
+                }
+
+                const scanDate = runner.scanTime ? new Date(runner.scanTime) : null;
+                if (etaMs != null && scanDate && !isNaN(scanDate.getTime())) {
+                    arrivalAtMs = scanDate.getTime() + etaMs;
+                }
+            } else if (!statusCheckpointName || statusCheckpointName.toLowerCase() === 'start') {
+                let firstCpKey = '';
+                let firstOrder = Infinity;
+                for (const [k, ord] of Object.entries(evLookupEta.cpOrders)) {
+                    if (ord > 1 && ord < firstOrder) { firstOrder = ord; firstCpKey = k; }
+                }
+                if (firstCpKey) {
+                    nextCpName = firstCpKey.toUpperCase();
+                    nextOrder = firstOrder;
+                }
+            }
+        }
+        return { nextCpName, nextOrder, arrivalAtMs, etaMs };
+    }
+
     // Status counts for filter badges — keyed by DISPLAY status, so "Wait" counts the
     // runners whose distance has not been released yet and DNS the ones who missed it.
     const statusCounts = useMemo(() => {
@@ -1445,6 +1644,153 @@ export default function EventLivePage() {
         () => computeLiveRanks(allRankedRunners, canonicalAgeGroupOf, rankPoolKeyOf),
         [allRankedRunners, canonicalAgeGroupOf, rankPoolKeyOf],
     );
+
+    /**
+     * Admin column sort — the value each column is ordered by, mirroring what its
+     * cell shows. `null` means "nothing to show" ('-') and always sinks to the
+     * bottom whichever way the column is sorted, so a click on GUN TIME puts the
+     * real extremes at the top instead of a wall of empty rows.
+     */
+    function getColumnSortValue(runner: Runner, key: string): number | string | null {
+        const hideRanks = ['dnf', 'dns', 'dq', 'not_started'].includes(runner.status);
+        const positive = (v: number | null | undefined) => (typeof v === 'number' && v > 0 ? v : null);
+        const text = (v: string | null | undefined) => (String(v ?? '').trim() ? String(v).trim().toLowerCase() : null);
+        switch (key) {
+            case 'rank': {
+                if (hideRanks) return null;
+                const live = liveRanks.get(runner._id);
+                const useCatRank = isMobile && !showAllColumns && !!filterAgeGroup;
+                const useGenderRank = isMobile && !showAllColumns && !useCatRank && (filterGender === 'M' || filterGender === 'F');
+                if (useGenderRank) return positive(live?.genRank || runner.genderRank);
+                if (useCatRank) return positive(live?.catRank || runner.ageGroupRank || runner.ageGroupNetRank);
+                return positive(live?.overallRank || runner.overallRank);
+            }
+            case 'genRank':
+                return hideRanks ? null : positive(liveRanks.get(runner._id)?.genRank || runner.genderRank);
+            case 'catRank':
+                return hideRanks ? null : positive(liveRanks.get(runner._id)?.catRank || runner.ageGroupRank || runner.ageGroupNetRank);
+            case 'award': {
+                // Overall places first, then age-group places, then Top-Runners-only.
+                const award = awardByRunnerId.get(runner._id);
+                if (award?.overall) return award.overall;
+                if (award?.ageGroup) return 1000 + award.ageGroup;
+                if (award?.topRunners) return 2000 + award.topRunners;
+                return null;
+            }
+            case 'runner':
+                return text(language === 'th' && runner.firstNameTh
+                    ? `${runner.firstNameTh} ${runner.lastNameTh || ''}`
+                    : `${runner.firstName || ''} ${runner.lastName || ''}`);
+            case 'sex':
+                return text(runner.gender);
+            case 'status': {
+                // Grouped by status, then by the scan time printed under the badge.
+                const order: Record<string, number> = { finished: 1, in_progress: 2, wait: 3, dns: 4, dnf: 5, dq: 6 };
+                const group = order[getDisplayStatus(runner)] ?? 7;
+                const scanMs = Date.parse(String(runner.lastPassTime || runner.scanTime || ''));
+                // Scan times are epoch ms (~1.7e12); 1e13 per group keeps groups apart.
+                return group * 1e13 + (Number.isNaN(scanMs) ? 1e13 - 1 : scanMs);
+            }
+            case 'gunTime': {
+                if (isMobile && !showAllColumns && !!filterAgeGroup) {
+                    return positive(parseDurationMs(runner.netTimeStr) ?? runner.netTime);
+                }
+                return positive(parseDurationMs(runner.gunTimeStr) ?? (runner.gunTime || runner.elapsedTime));
+            }
+            case 'netTime':
+                return positive(parseDurationMs(runner.netTimeStr) ?? runner.netTime);
+            case 'genNet': return positive(runner.genderNetRank);
+            case 'gunPace': return positive(parseDurationMs(runner.gunPace));
+            case 'netPace': return positive(parseDurationMs(runner.netPace));
+            case 'finish': return positive(runner.totalFinishers);
+            case 'genFin': return positive(runner.genderFinishers);
+            case 'chipCode': return text(runner.chipCode);
+            case 'printingCode': return text(runner.printingCode);
+            case 'splitNo': return typeof runner.splitNo === 'number' ? runner.splitNo : null;
+            case 'splitName': return text(runner.splitDesc);
+            case 'splitTime': return positive(runner.splitTime);
+            case 'splitPace': return positive(parseDurationMs(runner.splitPace));
+            case 'distFromStart': return computeRunnerDistanceKm(runner);
+            case 'gunTimeMs': return positive(runner.gunTimeMs);
+            case 'netTimeMs': return positive(runner.netTimeMs);
+            case 'totalGunTime': return positive(runner.totalGunTime);
+            case 'totalNetTime': return positive(runner.totalNetTime);
+            case 'supplement': return text(runner.supplement);
+            case 'cutOff': return text(runner.cutOff);
+            case 'legTime': return positive(runner.legTime);
+            case 'legPace': return positive(parseDurationMs(runner.legPace));
+            case 'legDistance': return positive(runner.legDistance);
+            case 'lagMs': return positive(runner.lagMs);
+            case 'nextStation': {
+                if (['dnf', 'dns', 'dq', 'not_started'].includes(runner.status || '')) return null;
+                // Still on course (soonest arrival first), then finishers.
+                if (runner.status === 'finished') return 3e13;
+                const next = computeNextStation(runner);
+                if (!next.nextCpName) return null;
+                if (!isRaceFinished && next.arrivalAtMs != null) return next.arrivalAtMs;
+                if (!isRaceFinished && next.etaMs != null) return currentTime.getTime() + next.etaMs;
+                return 2e13 + next.nextOrder;
+            }
+            case 'progress': {
+                const meta = getRunnerCheckpointMeta(runner);
+                const { progressPct } = computeRunnerProgress(runner, meta);
+                // Same % → fewer passed checkpoints first, so the ⚠ rows lead the 100% block.
+                return progressPct * 1000 + meta.completedCpCount;
+            }
+            case 'laps': return runner.lapCount || runner.passedCount || 0;
+            case 'bestLap': return positive(runner.bestLapTime);
+            case 'avgLap': return positive(runner.avgLapTime);
+            case 'lastLap': return positive(runner.lastLapTime);
+            case 'totalTime': return positive(runner.elapsedTime || runner.gunTime);
+            case 'lastPass': {
+                const ms = Date.parse(String(runner.lastPassTime || ''));
+                return Number.isNaN(ms) ? null : ms;
+            }
+            case 'lapPace': {
+                const laps = runner.lapCount || runner.passedCount || 0;
+                const totalMs = runner.elapsedTime || runner.gunTime || 0;
+                return laps > 0 && totalMs > 0 ? totalMs / laps : null;
+            }
+            default:
+                return null;
+        }
+    }
+
+    // The rows the table renders: the filtered list, re-ordered by the admin's
+    // column sort when one is active. Ties keep the rank order they came in with.
+    const tableRunners = useMemo(() => {
+        if (!isAdmin || !columnSort || !visibleColumns.includes(columnSort.key)) return filteredRunners;
+        const dir = columnSort.dir === 'asc' ? 1 : -1;
+        return filteredRunners
+            .map((runner, i) => ({
+                runner,
+                i,
+                value: getColumnSortValue(runner, columnSort.key),
+                alert: sortAlertsFirst && runnerNeedsAttention(runner),
+            }))
+            .sort((a, b) => {
+                // The ⚠ toggle still wins: its rows stay on top, sorted among themselves.
+                if (a.alert !== b.alert) return a.alert ? -1 : 1;
+                if (a.value === null || b.value === null) {
+                    if (a.value === b.value) return a.i - b.i;
+                    return a.value === null ? 1 : -1;
+                }
+                const cmp = typeof a.value === 'number' && typeof b.value === 'number'
+                    ? a.value - b.value
+                    : String(a.value).localeCompare(String(b.value), language === 'th' ? 'th' : 'en');
+                return cmp !== 0 ? cmp * dir : a.i - b.i;
+            })
+            .map(x => x.runner);
+    }, [isAdmin, columnSort, visibleColumns, filteredRunners, sortAlertsFirst, liveRanks, awardByRunnerId, language, isMobile, showAllColumns, filterAgeGroup, filterGender, cpDistanceLookup, categoryMedianTime, isRaceFinished]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    /** Header click: ascending → descending → back to the normal rank order. */
+    function toggleColumnSort(key: string) {
+        setColumnSort(prev => {
+            if (!prev || prev.key !== key) return { key, dir: 'asc' };
+            if (prev.dir === 'asc') return { key, dir: 'desc' };
+            return null;
+        });
+    }
 
 
 
@@ -2337,100 +2683,47 @@ export default function EventLivePage() {
                                     } else if (key === 'gunTime' && collapsedAgeFilter) {
                                         thLabel = 'Net Time';
                                     }
+                                    const sortDir = isAdmin && columnSort?.key === key ? columnSort.dir : null;
                                     return (
-                                        <th key={key} className={isMobile ? 'overflow-hidden text-ellipsis whitespace-nowrap' : ''} style={{ padding: isMobile && key === 'status' ? '6px 4px' : isMobile && key === 'gunTime' ? '6px 1px' : !isMobile && key === 'status' ? '8px 6px' : isMobile ? '6px 4px' : '8px 6px', textAlign: key === 'status' ? 'center' : def.align, width: thWidth }}>
+                                        <th
+                                            key={key}
+                                            className={`${isMobile ? 'overflow-hidden text-ellipsis whitespace-nowrap' : ''} ${isAdmin ? 'cursor-pointer select-none hover:text-[var(--foreground)]' : ''}`}
+                                            style={{ padding: isMobile && key === 'status' ? '6px 4px' : isMobile && key === 'gunTime' ? '6px 1px' : !isMobile && key === 'status' ? '8px 6px' : isMobile ? '6px 4px' : '8px 6px', textAlign: key === 'status' ? 'center' : def.align, width: thWidth, color: sortDir ? '#2563eb' : undefined }}
+                                            onClick={isAdmin ? () => toggleColumnSort(key) : undefined}
+                                            aria-sort={sortDir ? (sortDir === 'asc' ? 'ascending' : 'descending') : undefined}
+                                            title={isAdmin
+                                                ? (language === 'th' ? 'กดเพื่อเรียง: น้อย→มาก / มาก→น้อย / ปิด (แอดมินเท่านั้น)' : 'Click to sort: ascending / descending / off (admin only)')
+                                                : undefined}
+                                        >
                                             {thLabel}
+                                            {isAdmin && (
+                                                <span aria-hidden className="ml-0.5 inline-block" style={{ opacity: sortDir ? 1 : 0.3 }}>
+                                                    {sortDir === 'asc' ? '▲' : sortDir === 'desc' ? '▼' : '↕'}
+                                                </span>
+                                            )}
                                         </th>
                                     );
                                 })}
                             </tr>
                         </thead>
                         <tbody>
-                            {filteredRunners.length === 0 ? (
+                            {tableRunners.length === 0 ? (
                                 <tr><td colSpan={visibleColumns.length} className="px-4 py-12 text-center text-sm text-slate-400">
                                     {filterGender === 'FOLLOWED'
                                         ? (language === 'th' ? 'ยังไม่มีนักกีฬาที่คุณติดตามในรายการนี้' : 'No followed runners in this event')
                                         : (language === 'th' ? 'ไม่พบข้อมูลผู้เข้าแข่งขัน' : 'No participants found')}
                                 </td></tr>
                             ) : (
-                                filteredRunners.map((runner, idx) => {
+                                tableRunners.map((runner, idx) => {
                                     const rank = idx + 1;
                                     const isFollowedRunner = isRunnerFollowed(followedRunnersForEvent, runner._id);
                                     const checkpointMeta = getRunnerCheckpointMeta(runner);
                                     const statusCheckpointName = checkpointMeta.checkpointName;
                                     const checkpointKey = checkpointMeta.checkpointKey;
-                                    const checkpointOrder = checkpointMeta.checkpointOrder;
                                     const totalCps = checkpointMeta.totalCheckpoints;
                                     const completedCpCount = checkpointMeta.completedCpCount;
                                     // Calculate progress % based on RaceTiger checkpoint data
-                                    let progressPct = 0;
-                                    let progressDistKm = 0;
-                                    let eventTotalKm = 0;
-                                    let progressLabel = '';
-                                    // Stopped runners (DNS/DNF/DQ/not_started) must never be treated as
-                                    // finish-like for progress/distance, even if RaceTiger sync left
-                                    // latestCheckpoint='FINISH' on the Runner doc before status was set.
-                                    const isStoppedStatus = ['dns', 'dnf', 'dq', 'not_started'].includes(runner.status);
-                                    const isFinishCp = checkpointMeta.isFinishLike && !isStoppedStatus;
-                                    const runnerStartDate = getRunnerCategoryStartDate(runner);
-                                    if (runner.status === 'finished' || isFinishCp) {
-                                        progressPct = 100;
-                                        if (totalCps > 0 && completedCpCount > 0) {
-                                            progressLabel = `${completedCpCount}/${totalCps} CP`;
-                                        }
-                                    } else if (['dns', 'not_started'].includes(runner.status)) {
-                                        // DNS / not_started = runner never showed up. Progress is always 0%
-                                        // regardless of any residual latestCheckpoint/passedCount/splitDesc
-                                        // values left on the Runner doc by stale RaceTiger sync data.
-                                        progressPct = 0;
-                                    } else {
-                                        // Calculate progress for ALL non-finished statuses
-                                        const evLookup = checkpointMeta.evLookup;
-
-                                        // Helper: try matching latestCheckpoint name to checkpoint mappings (exact + normalized)
-                                        const matchedCpKey = checkpointKey;
-
-                                        // Method 1: passedCount / totalCheckpoints (from RaceTiger sync)
-                                        if ((runner.passedCount ?? 0) > 0 && totalCps > 0) {
-                                            const ratio = Math.round((runner.passedCount! / totalCps) * 100);
-                                            progressPct = runner.passedCount! >= totalCps ? 100 : Math.min(99, ratio);
-                                            progressLabel = `${runner.passedCount}/${totalCps} CP`;
-                                        }
-
-                                        // Method 2: distance-based from checkpoint mapping
-                                        if (progressPct === 0 && evLookup && matchedCpKey) {
-                                            const cpDist = evLookup.checkpoints[matchedCpKey] ?? 0;
-                                            const total = parseDistanceValue(runner.category) || evLookup.totalDistance || 0;
-                                            if (cpDist > 0 && total > 0) {
-                                                progressPct = Math.min(99, Math.round((cpDist / total) * 100));
-                                                progressDistKm = cpDist;
-                                                eventTotalKm = total;
-                                            }
-                                        }
-
-                                        // Method 2.5: order-based from checkpoint mapping (fallback when distance is 0)
-                                        if (progressPct === 0 && totalCps > 0 && checkpointOrder > 0) {
-                                            const cpOrder = Math.min(checkpointOrder, totalCps);
-                                            if (cpOrder > 0) {
-                                                progressPct = Math.min(99, Math.round((cpOrder / totalCps) * 100));
-                                                progressLabel = `${cpOrder}/${totalCps} CP`;
-                                            }
-                                        }
-
-                                        // Method 3: elapsed time vs median finish time
-                                        if (progressPct === 0) {
-                                            const elapsed = runner.gunTime || runner.elapsedTime || 0;
-                                            const median = categoryMedianTime[runner.category] || 0;
-                                            if (elapsed > 0 && median > 0) {
-                                                const maxPct = runner.status === 'dnf' ? 90 : runner.status === 'dns' ? 0 : 95;
-                                                progressPct = Math.min(maxPct, Math.round((elapsed / median) * 100));
-                                            } else if (statusCheckpointName) {
-                                                progressPct = runner.status === 'in_progress' ? 50 : 40;
-                                            } else if (runner.isStarted || runner.status === 'in_progress') {
-                                                progressPct = 5;
-                                            }
-                                        }
-                                    }
+                                    const { progressPct, progressDistKm, eventTotalKm, progressLabel, isFinishCp } = computeRunnerProgress(runner, checkpointMeta);
 
                                     const showProgressAlert = progressPct >= 100 && totalCps > 0 && completedCpCount > 0 && completedCpCount < totalCps;
                                     const currentCheckpointTime = String(runner.lastPassTime || runner.scanTime || '').trim();
@@ -2819,31 +3112,7 @@ export default function EventLivePage() {
                                                     </td>
                                                 );
                                             case 'distFromStart': {
-                                                const runnerCatDist = parseDistanceValue(runner.category);
-                                                // Prefer the per-event checkpoint mapping over the timing
-                                                // record's own `distanceFromStart` — that field is a snapshot
-                                                // written once at scan/sync time, so it goes stale (and stays
-                                                // wrong forever) whenever an admin later corrects a
-                                                // checkpoint's per-category KM. The mapping lookup always
-                                                // reflects the current, correct value; many older imports
-                                                // never populated it at all, so still fall back when missing.
-                                                let rawDist: number | null = null;
-                                                const evLookupDist = checkpointMeta.evLookup;
-                                                if (evLookupDist) {
-                                                    if (isFinishCp || runner.status === 'finished') {
-                                                        const total = evLookupDist.totalDistance || runnerCatDist || 0;
-                                                        if (total > 0) rawDist = total;
-                                                    } else if (checkpointKey) {
-                                                        const mapped = evLookupDist.checkpoints[checkpointKey];
-                                                        if (mapped != null && mapped > 0) rawDist = mapped;
-                                                    }
-                                                }
-                                                if (rawDist == null || rawDist <= 0) {
-                                                    rawDist = runner.distanceFromStart ?? null;
-                                                }
-                                                const displayDist = rawDist != null
-                                                    ? (runnerCatDist != null && rawDist > runnerCatDist ? runnerCatDist : rawDist)
-                                                    : null;
+                                                const displayDist = computeRunnerDistanceKm(runner, checkpointMeta);
                                                 return (
                                                     <td key={key} className="px-1 py-1.5 text-center text-[11px] font-semibold" style={{ color: themeStyles.textMuted }}>
                                                         {displayDist != null ? `${displayDist.toFixed(1)}km` : '-'}
@@ -2959,89 +3228,19 @@ export default function EventLivePage() {
                                                     );
                                                 }
 
-                                                const evLookupEta = checkpointMeta.evLookup;
-                                                let nextCpName = '';
+                                                const { nextCpName, arrivalAtMs, etaMs } = computeNextStation(runner, checkpointMeta);
                                                 let etaRemainingSec = -1;
                                                 let isPastDue = false;
-
-                                                if (evLookupEta) {
-                                                    const matchedKey = checkpointKey;
-
-                                                    if (matchedKey) {
-                                                        const currentCpDist = evLookupEta.checkpoints[matchedKey] ?? 0;
-                                                        const currentOrder = evLookupEta.cpOrders[matchedKey] ?? 0;
-                                                        const totalCps = evLookupEta.totalCheckpoints || 1;
-
-                                                        // Find next checkpoint by order
-                                                        let bestNextKey = '';
-                                                        let bestNextOrder = Infinity;
-                                                        for (const [k, ord] of Object.entries(evLookupEta.cpOrders)) {
-                                                            if (ord > currentOrder && ord < bestNextOrder) {
-                                                                bestNextOrder = ord;
-                                                                bestNextKey = k;
-                                                            }
-                                                        }
-                                                        let nextCpDist = 0;
-                                                        if (bestNextKey) {
-                                                            nextCpName = bestNextKey.toUpperCase();
-                                                            nextCpDist = evLookupEta.checkpoints[bestNextKey] ?? 0;
-                                                        } else {
-                                                            nextCpName = 'FINISH';
-                                                            nextCpDist = evLookupEta.totalDistance || 0;
-                                                        }
-
-                                                        // Parse elapsed time from all possible fields
-                                                        const elapsedMs = getRunnerEtaElapsedMs(runner);
-                                                        const scanDate = runner.scanTime ? new Date(runner.scanTime) : null;
-
-                                                        // Strategy 1: Distance-based ETA (when checkpoint km data exists)
-                                                        // Shared with the 2D course profile — see estimatePaceEtaMs.
-                                                        if (currentCpDist > 0 && elapsedMs > 0 && nextCpDist > currentCpDist) {
-                                                            const adjustedEtaMs = estimatePaceEtaMs({
-                                                                elapsedMs,
-                                                                currentKm: currentCpDist,
-                                                                nextKm: nextCpDist,
-                                                            });
-                                                            if (scanDate && !isNaN(scanDate.getTime())) {
-                                                                const arrivalTime = scanDate.getTime() + adjustedEtaMs;
-                                                                const remainMs = arrivalTime - currentTime.getTime();
-                                                                if (remainMs > 0) {
-                                                                    etaRemainingSec = Math.floor(remainMs / 1000);
-                                                                } else {
-                                                                    etaRemainingSec = 0;
-                                                                    isPastDue = true;
-                                                                }
-                                                            } else {
-                                                                etaRemainingSec = Math.round(adjustedEtaMs / 1000);
-                                                            }
-                                                        }
-                                                        // Strategy 2: Order-based fallback (when no km data)
-                                                        else if (elapsedMs > 0 && currentOrder > 0) {
-                                                            const orderSteps = (bestNextKey ? bestNextOrder : totalCps + 1) - currentOrder;
-                                                            const timePerOrder = elapsedMs / currentOrder;
-                                                            const adjustedEtaMs = timePerOrder * orderSteps * ETA_SLOWDOWN;
-
-                                                            if (scanDate && !isNaN(scanDate.getTime())) {
-                                                                const arrivalTime = scanDate.getTime() + adjustedEtaMs;
-                                                                const remainMs = arrivalTime - currentTime.getTime();
-                                                                if (remainMs > 0) {
-                                                                    etaRemainingSec = Math.floor(remainMs / 1000);
-                                                                } else {
-                                                                    etaRemainingSec = 0;
-                                                                    isPastDue = true;
-                                                                }
-                                                            } else {
-                                                                etaRemainingSec = Math.round(adjustedEtaMs / 1000);
-                                                            }
-                                                        }
-                                                    } else if (!statusCheckpointName || statusCheckpointName.toLowerCase() === 'start') {
-                                                        let firstCpKey = '';
-                                                        let firstOrder = Infinity;
-                                                        for (const [k, ord] of Object.entries(evLookupEta.cpOrders)) {
-                                                            if (ord > 1 && ord < firstOrder) { firstOrder = ord; firstCpKey = k; }
-                                                        }
-                                                        if (firstCpKey) nextCpName = firstCpKey.toUpperCase();
+                                                if (arrivalAtMs != null) {
+                                                    const remainMs = arrivalAtMs - currentTime.getTime();
+                                                    if (remainMs > 0) {
+                                                        etaRemainingSec = Math.floor(remainMs / 1000);
+                                                    } else {
+                                                        etaRemainingSec = 0;
+                                                        isPastDue = true;
                                                     }
+                                                } else if (etaMs != null) {
+                                                    etaRemainingSec = Math.round(etaMs / 1000);
                                                 }
 
                                                 // Format remaining time as mm:ss or h:mm:ss
