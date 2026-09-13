@@ -161,29 +161,54 @@ function cellText(v: unknown): string {
     return s === '-' ? '' : s;
 }
 
+// RaceTiger's template spells gender in lowercase English.
 function toRaceTigerGender(raw: unknown): string {
     const g = cellText(raw).toLowerCase();
     if (!g) return '';
-    if (['m', 'male', 'man', 'ชาย'].includes(g)) return 'M';
-    if (['f', 'female', 'woman', 'หญิง'].includes(g)) return 'F';
+    if (['m', 'male', 'man', 'ชาย'].includes(g)) return 'male';
+    if (['f', 'female', 'woman', 'หญิง'].includes(g)) return 'female';
     return cellText(raw);
 }
 
-// Columns for the RaceTiger athlete import file, one file per distance.
-// "Name" is the Thai name, "English Name" the English spelling. Columns that
-// are empty for every runner in the chosen distance are dropped on export.
-const RACETIGER_COLS: { header: string; width: number; value: (r: ApplicantRow) => string }[] = [
-    { header: 'BIB', width: 10, value: r => cellText(r.bib) },
-    { header: 'Name', width: 28, value: r => cellText(r.fullName) || cellText(`${r.firstName || ''} ${r.lastName || ''}`) },
-    { header: 'English Name', width: 28, value: r => cellText(r.fullNameEn) || cellText(`${r.firstNameEn || ''} ${r.lastNameEn || ''}`) },
-    { header: 'Gender', width: 8, value: r => toRaceTigerGender(r.gender) },
-    { header: 'Age', width: 6, value: r => cellText(r.age) },
-    { header: 'Age Group', width: 22, value: r => cellText(r.ageGroup) },
-    { header: 'ID No.', width: 18, value: r => cellText(r.idCard) },
-    { header: 'Phone', width: 14, value: r => cellText(r.phone) },
-    { header: 'Team', width: 20, value: r => cellText(r.team) },
-    { header: 'Shirt Size', width: 10, value: r => cellText(r.shirtSize) },
-    { header: 'Challenge', width: 14, value: r => cellText(r.challenge) },
+// Plain positive integers go out as numbers (like the template); anything else
+// — leading zeros, "BUM 44" — stays text so nothing is mangled.
+function numberish(s: string): string | number {
+    return /^[1-9]\d{0,14}$/.test(s) ? Number(s) : s;
+}
+
+const RACETIGER_SHEET_NAME = '运动员导入表';
+
+// Columns of RaceTiger's athlete import template (Athlete-import-template-en.xlsx),
+// in the template's order and spelling — " NAME" really has a leading space.
+// NAME is the Thai name; ENGLISH NAME is our addition for the English spelling
+// (the template has no column for it). Columns empty for every runner in the
+// chosen distance are dropped on export; RACENO is always filled.
+type RaceTigerValue = string | number;
+const RACETIGER_COLS: { header: string; width: number; value: (r: ApplicantRow, i: number) => RaceTigerValue }[] = [
+    { header: 'RACENO', width: 8, value: (_r, i) => i + 1 },
+    { header: 'BIB', width: 10, value: r => numberish(cellText(r.bib)) },
+    { header: ' NAME', width: 28, value: r => cellText(r.fullName) || cellText(`${r.firstName || ''} ${r.lastName || ''}`) || cellText(r.fullNameEn) },
+    { header: 'ENGLISH NAME', width: 28, value: r => cellText(r.fullNameEn) || cellText(`${r.firstNameEn || ''} ${r.lastNameEn || ''}`) },
+    { header: 'CHIPCODE1', width: 16, value: () => '' },
+    { header: 'PRINTCODE1', width: 16, value: () => '' },
+    { header: 'ATHLETETYPE', width: 14, value: () => '' },
+    { header: 'CERIFTYPE', width: 12, value: () => '' },
+    { header: 'GENDER', width: 9, value: r => toRaceTigerGender(r.gender) },
+    { header: 'PHONE', width: 14, value: r => cellText(r.phone) },
+    { header: 'IDTYPE', width: 10, value: () => '' },
+    { header: 'IDNUMBER', width: 18, value: r => cellText(r.idCard) },
+    { header: 'BIRTHDATE', width: 12, value: () => '' },
+    { header: 'AGE', width: 6, value: r => numberish(cellText(r.age)) },
+    { header: 'BLOOD_TYPE', width: 11, value: () => '' },
+    { header: 'WAVENAME', width: 12, value: () => '' },
+    { header: 'TSHIRT', width: 9, value: r => cellText(r.shirtSize) },
+    { header: 'CATEGORYNAME', width: 24, value: r => cellText(r.ageGroup) },
+    { header: 'CATEGORY2NAME', width: 16, value: () => '' },
+    { header: 'TEAMNAME', width: 20, value: r => cellText(r.team) },
+    { header: 'COUNTRYREGION', width: 14, value: () => '' },
+    { header: 'PROVINCE', width: 14, value: () => '' },
+    { header: 'CITY', width: 14, value: () => '' },
+    { header: 'CLUBNAME', width: 16, value: () => '' },
 ];
 
 // Distance bucket for applicants whose category matches none of the campaign's distances.
@@ -534,19 +559,18 @@ export default function ApplicantsImportPage() {
             showToast(language === 'th' ? 'ระยะนี้ยังไม่มีรายชื่อ' : 'No applicants in this distance', 'error');
             return;
         }
-        const matrix = list.map(r => RACETIGER_COLS.map(c => c.value(r)));
+        const matrix = list.map((r, i) => RACETIGER_COLS.map(c => c.value(r, i)));
         const keep = RACETIGER_COLS.map((_, ci) => matrix.some(row => row[ci] !== ''));
         const cols = RACETIGER_COLS.filter((_, ci) => keep[ci]);
         const body = matrix.map(row => row.filter((_, ci) => keep[ci]));
         const ws = XLSX.utils.aoa_to_sheet([cols.map(c => c.header), ...body]);
         ws['!cols'] = cols.map(c => ({ wch: c.width }));
         const label = distanceLabel(selectedGroup);
-        const sheetName = label.replace(/[\\/:*?"<>|[\]]/g, '-').slice(0, 31).trim() || 'Athletes';
         const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, sheetName);
+        XLSX.utils.book_append_sheet(wb, ws, RACETIGER_SHEET_NAME);
         const safe = (s: string) => s.replace(/[\\/:*?"<>|]/g, '-').trim();
         const campaignName = safe(campaign.nameTh || campaign.nameEn || campaign.name || 'campaign');
-        XLSX.writeFile(wb, `racetiger-${campaignName}-${safe(label)}-${list.length}.xlsx`);
+        XLSX.writeFile(wb, `Athlete-import-${campaignName}-${safe(label)}-${list.length}.xlsx`);
         showToast(language === 'th'
             ? `ส่งออก ${label} ${list.length.toLocaleString()} รายการ`
             : `Exported ${label}: ${list.length.toLocaleString()} rows`, 'success');
