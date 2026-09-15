@@ -117,12 +117,12 @@ const TEMPLATE_COLUMNS = ['Overall', 'Gender Rank', 'AgeGroup Rank', 'BIB', 'Fir
 const TEMPLATE_COL_WIDTHS = [8, 12, 13, 10, 16, 18, 8, 14, 12, 14, 12, 12, 12, 10, 12];
 
 /**
- * ITRA-RaceResultsTemplate columns, in ITRA's own order, plus the trailing Status
- * column we add on top of the official template. Nothing else from our results goes
- * in — ITRA rejects extra columns.
+ * ITRA-RaceResultsTemplate columns, in ITRA's own order. Nothing else from our
+ * results goes in — ITRA rejects extra columns (non-finisher status lives in the
+ * Ranking column instead).
  */
-const ITRA_COLUMNS = ['Ranking', 'Time', 'Family Name', 'First Name', 'Gender', 'Birthdate', 'Nationality', 'Status'];
-const ITRA_COL_WIDTHS = [10, 12, 20, 18, 8, 14, 12, 12];
+const ITRA_COLUMNS = ['Ranking', 'Time', 'Family Name', 'First Name', 'Gender', 'Birthdate', 'Nationality'];
+const ITRA_COL_WIDTHS = [10, 12, 20, 18, 8, 14, 12];
 
 /** Excel tab names: max 31 chars, no : \ / ? * [ ] characters, unique per workbook. */
 function toSheetName(label: string, used: Set<string>): string {
@@ -490,14 +490,13 @@ export default function ExportPage() {
 
     /**
      * ITRA-RaceResultsTemplate workbook — ITRA's own seven columns (Ranking / Time /
-     * Family Name / First Name / Gender / Birthdate / Nationality) plus a trailing
-     * Status column, one sheet per distance. ITRA submits results per race, so the
-     * per-distance tabs match what they expect to receive.
+     * Family Name / First Name / Gender / Birthdate / Nationality), one sheet per
+     * distance. ITRA submits results per race, so the per-distance tabs match what
+     * they expect to receive.
      *
-     * Ranking is left blank for anyone who did not finish — the official template
-     * puts "DNF" in that column, but with a Status column present the ranking stays
-     * numeric and the status carries DNF/DNS/DQ. Time is the GUN time, the same
-     * clock the Ranking column is ordered by (see @/lib/live-ranking).
+     * As in the official template, anyone who did not finish gets their status
+     * (DNF / DNS / DQ) in the Ranking column and no Time. Finishers' Time is the
+     * GUN time, the same clock the Ranking column is ordered by (see @/lib/live-ranking).
      */
     const handleExportItra = useCallback(() => {
         if (!campaign?._id || visibleRunners.length === 0) {
@@ -523,14 +522,13 @@ export default function ExportPage() {
                     const finished = (r.status || '').toLowerCase() === 'finished';
                     const rank = rankOf(r);
                     aoa.push([
-                        finished ? (rank.overallRank || '') : '',
-                        formatTimeOrBlank(getRunnerPrimaryTimeMs(r), r.gunTimeStr),
+                        finished ? (rank.overallRank || '') : statusLabel(r.status),
+                        finished ? formatTimeOrBlank(getRunnerPrimaryTimeMs(r), r.gunTimeStr) : '',
                         r.lastName || '',
                         r.firstName || '',
                         itraGender(r.gender),
                         formatBirthDateISO(r.birthDate),
                         (r.nationality || '').toUpperCase(),
-                        statusLabel(r.status),
                     ]);
                 }
                 const ws = XLSX.utils.aoa_to_sheet(aoa);
@@ -698,8 +696,8 @@ export default function ExportPage() {
                         </div>
                         <div style={{ marginTop: 10, fontSize: 12, color: '#64748b' }}>
                             {language === 'th'
-                                ? 'ITRA = เทมเพลต ITRA (Ranking / Time / Family Name / First Name / Gender / Birthdate / Nationality / Status) — Time ใช้ Gun Time, Ranking เว้นว่างสำหรับคนที่ไม่จบ · RaceResultsTemplate = ไฟล์ Excel แยกแท็บตามระยะ (Overall / Gender Rank / AgeGroup Rank / BIB / ชื่อ / Gender / Category / AgeGroup / BirthDate / Nationality / GunTime / NetTime / Pace / Status) — เลือก “ทุกระยะ” เพื่อได้ครบทุกแท็บในไฟล์เดียว'
-                                : 'ITRA = ITRA\'s own template (Ranking / Time / Family Name / First Name / Gender / Birthdate / Nationality / Status) — Time is the gun time, Ranking is blank for non-finishers. RaceResultsTemplate = one Excel file with a sheet per distance (Overall / Gender Rank / AgeGroup Rank / BIB / names / Gender / Category / AgeGroup / BirthDate / Nationality / GunTime / NetTime / Pace / Status) — pick “All categories” to get every distance in one file.'}
+                                ? 'ITRA = เทมเพลต ITRA (Ranking / Time / Family Name / First Name / Gender / Birthdate / Nationality) — Time ใช้ Gun Time, คนที่ไม่จบจะแสดงสถานะ (DNF/DNS/DQ) ในช่อง Ranking และไม่มีเวลา ·RaceResultsTemplate = ไฟล์ Excel แยกแท็บตามระยะ (Overall / Gender Rank / AgeGroup Rank / BIB / ชื่อ / Gender / Category / AgeGroup / BirthDate / Nationality / GunTime / NetTime / Pace / Status) — เลือก “ทุกระยะ” เพื่อได้ครบทุกแท็บในไฟล์เดียว'
+                                : 'ITRA = ITRA\'s own template (Ranking / Time / Family Name / First Name / Gender / Birthdate / Nationality) — Time is the gun time; non-finishers show their status (DNF/DNS/DQ) in the Ranking column with no time.RaceResultsTemplate = one Excel file with a sheet per distance (Overall / Gender Rank / AgeGroup Rank / BIB / names / Gender / Category / AgeGroup / BirthDate / Nationality / GunTime / NetTime / Pace / Status) — pick “All categories” to get every distance in one file.'}
                         </div>
                     </div>
 

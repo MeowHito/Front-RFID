@@ -85,6 +85,11 @@ const APPLICANT_FIELD_LABELS: Record<string, { th: string; en: string }> = {
     category: { th: 'ประเภท', en: 'Category' },
     team: { th: 'ทีม', en: 'Team' },
     challenge: { th: 'Challenge', en: 'Challenge' },
+    chipCode: { th: 'Chip Code', en: 'Chip Code' },
+    printingCode: { th: 'Print Code', en: 'Print Code' },
+    bloodType: { th: 'กรุ๊ปเลือด', en: 'Blood Type' },
+    wave: { th: 'กลุ่มปล่อยตัว (Wave)', en: 'Wave' },
+    nationality: { th: 'สัญชาติ', en: 'Nationality' },
 };
 
 const APPLICANT_SOURCE_LABELS: Record<string, { th: string; en: string; bg: string; color: string }> = {

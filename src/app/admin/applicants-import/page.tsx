@@ -33,6 +33,11 @@ interface ApplicantRow {
     category: string;
     team: string;
     challenge: string;
+    chipCode: string;
+    printingCode: string;
+    bloodType: string;
+    wave: string;
+    nationality: string;
     extra: Record<string, string>;
 }
 
@@ -65,6 +70,13 @@ const LATIN_EN_NAME_KEYWORDS = ['firstname', 'first name', 'lastname', 'last nam
 // is an order number, not a BIB; "ชื่อทีม"/"ชื่ออีเว้นท์" are not a person's name).
 const HEADER_MAP: { field: FieldKey; keywords: string[]; exclude?: string[] }[] = [
     { field: 'challenge', keywords: ['challenge', 'เลือกเวลาในการลงแข่งขัน'] },
+    // RaceTiger columns — ahead of idCard ("national" ⊂ "nationality"), the name
+    // fields ("name" ⊂ "WAVENAME"), bib ("number" ⊂ "chip number") and team ("กลุ่ม").
+    { field: 'printingCode', keywords: ['printcode', 'print code', 'printingcode', 'printing code'] },
+    { field: 'chipCode', keywords: ['chipcode', 'chip code', 'chip', 'ชิป'] },
+    { field: 'bloodType', keywords: ['blood', 'กรุ๊ปเลือด', 'หมู่เลือด', 'เลือด'] },
+    { field: 'wave', keywords: ['wavename', 'wave', 'กลุ่มปล่อยตัว', 'รอบปล่อยตัว', 'start box'] },
+    { field: 'nationality', keywords: ['countryregion', 'country', 'nationality', 'สัญชาติ', 'ประเทศ'] },
     { field: 'idCard', keywords: ['เลขบัตร', 'บัตรประชาชน', 'ประชาชน', 'เลขประจำตัว', 'idcard', 'id card', 'citizen', 'cid', 'national'] },
     { field: 'fullName', keywords: ['ชื่อ-นามสกุล', 'ชื่อ - นามสกุล', 'ชื่อ นามสกุล', 'ชื่อสกุล', 'ชื่อ-สกุล', 'fullname', 'full name'], exclude: ['อังกฤษ', 'english'] },
     { field: 'lastName', keywords: ['นามสกุล', 'สกุล', 'lastname', 'last name', 'surname'], exclude: ['อังกฤษ', 'english'] },
@@ -120,7 +132,7 @@ function detectHeaderRow(aoa: unknown[][]): number {
 }
 
 function blankRow(): ApplicantRow {
-    return { idCard: '', bib: '', firstName: '', lastName: '', fullName: '', firstNameEn: '', lastNameEn: '', fullNameEn: '', phone: '', age: '', gender: '', ageGroup: '', shirtSize: '', category: '', team: '', challenge: '', extra: {} };
+    return { idCard: '', bib: '', firstName: '', lastName: '', fullName: '', firstNameEn: '', lastNameEn: '', fullNameEn: '', phone: '', age: '', gender: '', ageGroup: '', shirtSize: '', category: '', team: '', challenge: '', chipCode: '', printingCode: '', bloodType: '', wave: '', nationality: '', extra: {} };
 }
 
 const PREVIEW_COLS: { field: FieldKey; th: string; en: string }[] = [
@@ -134,6 +146,11 @@ const PREVIEW_COLS: { field: FieldKey; th: string; en: string }[] = [
     { field: 'ageGroup', th: 'กลุ่มอายุ', en: 'Age Group' },
     { field: 'shirtSize', th: 'ขนาดเสื้อ', en: 'Shirt' },
     { field: 'challenge', th: 'Challenge', en: 'Challenge' },
+    { field: 'chipCode', th: 'Chip Code', en: 'Chip Code' },
+    { field: 'printingCode', th: 'Print Code', en: 'Print Code' },
+    { field: 'bloodType', th: 'กรุ๊ปเลือด', en: 'Blood Type' },
+    { field: 'wave', th: 'Wave', en: 'Wave' },
+    { field: 'nationality', th: 'สัญชาติ', en: 'Nationality' },
 ];
 
 // Columns written by "ดาวน์โหลดข้อมูลเดิม". Header names are the ones the
@@ -153,6 +170,11 @@ const EXPORT_COLS: { field: FieldKey; th: string; width: number }[] = [
     { field: 'category', th: 'ประเภท', width: 12 },
     { field: 'team', th: 'ทีม', width: 16 },
     { field: 'challenge', th: 'Challenge', width: 16 },
+    { field: 'chipCode', th: 'Chip Code', width: 16 },
+    { field: 'printingCode', th: 'Print Code', width: 16 },
+    { field: 'bloodType', th: 'กรุ๊ปเลือด', width: 10 },
+    { field: 'wave', th: 'Wave', width: 12 },
+    { field: 'nationality', th: 'สัญชาติ', width: 10 },
 ];
 
 // Cell text for export — null/undefined and a lone "-" placeholder count as empty.
@@ -168,6 +190,15 @@ function toRaceTigerGender(raw: unknown): string {
     if (['m', 'male', 'man', 'ชาย'].includes(g)) return 'male';
     if (['f', 'female', 'woman', 'หญิง'].includes(g)) return 'female';
     return cellText(raw);
+}
+
+// RaceTiger wants a 3-letter country code (THA). Codes pass through upper-cased;
+// the common ways rosters write Thai nationality become THA; anything else stays as typed.
+function toRaceTigerCountry(raw: unknown): string {
+    const s = cellText(raw);
+    if (/^[a-z]{3}$/i.test(s)) return s.toUpperCase();
+    if (/^(ไทย|สัญชาติไทย|thai|thailand|th)$/i.test(s)) return 'THA';
+    return s;
 }
 
 // Plain positive integers go out as numbers (like the template); anything else
@@ -189,8 +220,8 @@ const RACETIGER_COLS: { header: string; width: number; value: (r: ApplicantRow, 
     { header: 'BIB', width: 10, value: r => numberish(cellText(r.bib)) },
     { header: ' NAME', width: 28, value: r => cellText(r.fullName) || cellText(`${r.firstName || ''} ${r.lastName || ''}`) || cellText(r.fullNameEn) },
     { header: 'ENGLISH NAME', width: 28, value: r => cellText(r.fullNameEn) || cellText(`${r.firstNameEn || ''} ${r.lastNameEn || ''}`) },
-    { header: 'CHIPCODE1', width: 16, value: () => '' },
-    { header: 'PRINTCODE1', width: 16, value: () => '' },
+    { header: 'CHIPCODE1', width: 16, value: r => cellText(r.chipCode) },
+    { header: 'PRINTCODE1', width: 16, value: r => cellText(r.printingCode) },
     { header: 'ATHLETETYPE', width: 14, value: () => '' },
     { header: 'CERIFTYPE', width: 12, value: () => '' },
     { header: 'GENDER', width: 9, value: r => toRaceTigerGender(r.gender) },
@@ -199,13 +230,13 @@ const RACETIGER_COLS: { header: string; width: number; value: (r: ApplicantRow, 
     { header: 'IDNUMBER', width: 18, value: r => cellText(r.idCard) },
     { header: 'BIRTHDATE', width: 12, value: () => '' },
     { header: 'AGE', width: 6, value: r => numberish(cellText(r.age)) },
-    { header: 'BLOOD_TYPE', width: 11, value: () => '' },
-    { header: 'WAVENAME', width: 12, value: () => '' },
+    { header: 'BLOOD_TYPE', width: 11, value: r => cellText(r.bloodType) },
+    { header: 'WAVENAME', width: 12, value: r => cellText(r.wave) },
     { header: 'TSHIRT', width: 9, value: r => cellText(r.shirtSize) },
     { header: 'CATEGORYNAME', width: 24, value: r => cellText(r.ageGroup) },
     { header: 'CATEGORY2NAME', width: 16, value: () => '' },
     { header: 'TEAMNAME', width: 20, value: r => cellText(r.team) },
-    { header: 'COUNTRYREGION', width: 14, value: () => '' },
+    { header: 'COUNTRYREGION', width: 14, value: r => toRaceTigerCountry(r.nationality) },
     { header: 'PROVINCE', width: 14, value: () => '' },
     { header: 'CITY', width: 14, value: () => '' },
     { header: 'CLUBNAME', width: 16, value: () => '' },
@@ -397,6 +428,8 @@ export default function ApplicantsImportPage() {
                 fullNameEn: r.fullNameEn, phone: r.phone, age: r.age, gender: r.gender,
                 ageGroup: r.ageGroup, shirtSize: r.shirtSize, category: r.category,
                 team: r.team, challenge: r.challenge,
+                chipCode: r.chipCode, printingCode: r.printingCode, bloodType: r.bloodType,
+                wave: r.wave, nationality: r.nationality,
             }));
 
             // Upload in batches so very large rosters stay well under the proxy's
@@ -592,8 +625,8 @@ export default function ApplicantsImportPage() {
 
     const downloadTemplate = () => {
         const ws = XLSX.utils.aoa_to_sheet([
-            ['เลขบัตรประชาชน', 'BIB', 'ชื่อ', 'นามสกุล', 'First Name', 'Last Name', 'เบอร์โทร', 'อายุ', 'เพศ', 'กลุ่มอายุ', 'ขนาดเสื้อ', 'ประเภท'],
-            ['1234567890123', '001', 'ดีใจ', 'ใจดี', 'Deejai', 'Jaidee', '0812345678', '38', 'ชาย', '35-39 ปี', '2XL', '10K'],
+            ['เลขบัตรประชาชน', 'BIB', 'ชื่อ', 'นามสกุล', 'First Name', 'Last Name', 'เบอร์โทร', 'อายุ', 'เพศ', 'กลุ่มอายุ', 'ขนาดเสื้อ', 'ประเภท', 'Chip Code', 'Print Code', 'กรุ๊ปเลือด', 'Wave', 'สัญชาติ'],
+            ['1234567890123', '001', 'ดีใจ', 'ใจดี', 'Deejai', 'Jaidee', '0812345678', '38', 'ชาย', '35-39 ปี', '2XL', '10K', '', 'BZ73532', 'O', 'A', 'THA'],
         ]);
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, 'Applicants');
