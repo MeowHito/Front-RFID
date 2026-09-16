@@ -33,6 +33,7 @@ interface ApplicantRow {
     category: string;
     team: string;
     challenge: string;
+    birthDate: string;
     chipCode: string;
     printingCode: string;
     bloodType: string;
@@ -77,6 +78,7 @@ const HEADER_MAP: { field: FieldKey; keywords: string[]; exclude?: string[] }[] 
     { field: 'bloodType', keywords: ['blood', 'กรุ๊ปเลือด', 'หมู่เลือด', 'เลือด'] },
     { field: 'wave', keywords: ['wavename', 'wave', 'กลุ่มปล่อยตัว', 'รอบปล่อยตัว', 'start box'] },
     { field: 'nationality', keywords: ['countryregion', 'country', 'nationality', 'สัญชาติ', 'ประเทศ'] },
+    { field: 'birthDate', keywords: ['birthdate', 'birth date', 'date of birth', 'birthday', 'dob', 'วันเกิด', 'วัน/เดือน/ปีเกิด', 'วันเดือนปีเกิด'] },
     { field: 'idCard', keywords: ['เลขบัตร', 'บัตรประชาชน', 'ประชาชน', 'เลขประจำตัว', 'idcard', 'id card', 'citizen', 'cid', 'national'] },
     { field: 'fullName', keywords: ['ชื่อ-นามสกุล', 'ชื่อ - นามสกุล', 'ชื่อ นามสกุล', 'ชื่อสกุล', 'ชื่อ-สกุล', 'fullname', 'full name'], exclude: ['อังกฤษ', 'english'] },
     { field: 'lastName', keywords: ['นามสกุล', 'สกุล', 'lastname', 'last name', 'surname'], exclude: ['อังกฤษ', 'english'] },
@@ -132,7 +134,7 @@ function detectHeaderRow(aoa: unknown[][]): number {
 }
 
 function blankRow(): ApplicantRow {
-    return { idCard: '', bib: '', firstName: '', lastName: '', fullName: '', firstNameEn: '', lastNameEn: '', fullNameEn: '', phone: '', age: '', gender: '', ageGroup: '', shirtSize: '', category: '', team: '', challenge: '', chipCode: '', printingCode: '', bloodType: '', wave: '', nationality: '', extra: {} };
+    return { idCard: '', bib: '', firstName: '', lastName: '', fullName: '', firstNameEn: '', lastNameEn: '', fullNameEn: '', phone: '', age: '', gender: '', ageGroup: '', shirtSize: '', category: '', team: '', challenge: '', birthDate: '', chipCode: '', printingCode: '', bloodType: '', wave: '', nationality: '', extra: {} };
 }
 
 const PREVIEW_COLS: { field: FieldKey; th: string; en: string }[] = [
@@ -146,6 +148,7 @@ const PREVIEW_COLS: { field: FieldKey; th: string; en: string }[] = [
     { field: 'ageGroup', th: 'กลุ่มอายุ', en: 'Age Group' },
     { field: 'shirtSize', th: 'ขนาดเสื้อ', en: 'Shirt' },
     { field: 'challenge', th: 'Challenge', en: 'Challenge' },
+    { field: 'birthDate', th: 'วันเกิด', en: 'Birth Date' },
     { field: 'chipCode', th: 'Chip Code', en: 'Chip Code' },
     { field: 'printingCode', th: 'Print Code', en: 'Print Code' },
     { field: 'bloodType', th: 'กรุ๊ปเลือด', en: 'Blood Type' },
@@ -170,6 +173,7 @@ const EXPORT_COLS: { field: FieldKey; th: string; width: number }[] = [
     { field: 'category', th: 'ประเภท', width: 12 },
     { field: 'team', th: 'ทีม', width: 16 },
     { field: 'challenge', th: 'Challenge', width: 16 },
+    { field: 'birthDate', th: 'วันเกิด', width: 14 },
     { field: 'chipCode', th: 'Chip Code', width: 16 },
     { field: 'printingCode', th: 'Print Code', width: 16 },
     { field: 'bloodType', th: 'กรุ๊ปเลือด', width: 10 },
@@ -190,6 +194,44 @@ function toRaceTigerGender(raw: unknown): string {
     if (['m', 'male', 'man', 'ชาย'].includes(g)) return 'male';
     if (['f', 'female', 'woman', 'หญิง'].includes(g)) return 'female';
     return cellText(raw);
+}
+
+/**
+ * Birthdates reach us as an Excel date serial, a real date cell, or text in any of
+ * dd/mm/yyyy · yyyy-mm-dd · dd.mm.yyyy — RaceTiger (and our storage) wants
+ * yyyy-mm-dd C.E., so everything is normalised on the way in. Thai rosters usually
+ * write a Buddhist year (2539), which is shifted back 543 years. Day-first is
+ * assumed for ambiguous text like 05/02/1996, the way Thai rosters write it.
+ * Anything unparseable is kept as typed so the admin can see and fix it.
+ */
+function normalizeBirthDate(raw: unknown): string {
+    if (raw === null || raw === undefined) return '';
+    const iso = (y: number, m: number, d: number): string => {
+        const year = y >= 2400 ? y - 543 : y;
+        if (!(year > 1900 && year < 2200) || !(m >= 1 && m <= 12) || !(d >= 1 && d <= 31)) return '';
+        return `${year}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+    };
+    if (raw instanceof Date) {
+        return isNaN(raw.getTime()) ? '' : iso(raw.getFullYear(), raw.getMonth() + 1, raw.getDate());
+    }
+    const s = String(raw).trim();
+    if (!s || s === '-') return '';
+    // A bare number is an Excel date serial (days since 1899-12-30) — but a lone
+    // 4-digit value is a year, not a serial, so it is left alone.
+    if (/^\d{1,6}(\.\d+)?$/.test(s) && !/^\d{4}$/.test(s)) {
+        const n = Number(s);
+        if (n > 0 && n < 80000) {
+            const d = new Date(Date.UTC(1899, 11, 30) + Math.round(n) * 86400000);
+            return iso(d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate()) || s;
+        }
+    }
+    const parts = s.split(/[^0-9]+/).filter(Boolean).map(Number);
+    if (parts.length === 3) {
+        const [a, b, c] = parts;
+        const out = a > 31 ? iso(a, b, c) : iso(c, b, a);
+        if (out) return out;
+    }
+    return s;
 }
 
 // RaceTiger wants a 3-letter country code (THA). Codes pass through upper-cased;
@@ -228,7 +270,7 @@ const RACETIGER_COLS: { header: string; width: number; value: (r: ApplicantRow, 
     { header: 'PHONE', width: 14, value: r => cellText(r.phone) },
     { header: 'IDTYPE', width: 10, value: () => '' },
     { header: 'IDNUMBER', width: 18, value: r => cellText(r.idCard) },
-    { header: 'BIRTHDATE', width: 12, value: () => '' },
+    { header: 'BIRTHDATE', width: 12, value: r => normalizeBirthDate(r.birthDate) },
     { header: 'AGE', width: 6, value: r => numberish(cellText(r.age)) },
     { header: 'BLOOD_TYPE', width: 11, value: r => cellText(r.bloodType) },
     { header: 'WAVENAME', width: 12, value: r => cellText(r.wave) },
@@ -254,6 +296,7 @@ export default function ApplicantsImportPage() {
     const [existingLoading, setExistingLoading] = useState(false);
     const [existingSearch, setExistingSearch] = useState('');
     const [existingPage, setExistingPage] = useState(0);
+    const [existingPageSize, setExistingPageSize] = useState<number | 'all'>(50);
     const [editingCell, setEditingCell] = useState<{ id: string; field: FieldKey } | null>(null);
     const [editingValue, setEditingValue] = useState('');
     const [savingCellId, setSavingCellId] = useState<string | null>(null);
@@ -344,7 +387,9 @@ export default function ApplicantsImportPage() {
                 headers.forEach((h, ci) => {
                     const field = mapping[ci].field;
                     if (!field) return; // unmapped columns are ignored — we only keep displayed data
-                    const str = String(cells[ci] ?? '').trim();
+                    const str = field === 'birthDate'
+                        ? normalizeBirthDate(cells[ci])
+                        : String(cells[ci] ?? '').trim();
                     if (!str) return;
                     // Don't clobber an already-filled field with a second matching column
                     if (!row[field]) (row[field] as string) = str;
@@ -428,6 +473,7 @@ export default function ApplicantsImportPage() {
                 fullNameEn: r.fullNameEn, phone: r.phone, age: r.age, gender: r.gender,
                 ageGroup: r.ageGroup, shirtSize: r.shirtSize, category: r.category,
                 team: r.team, challenge: r.challenge,
+                birthDate: r.birthDate,
                 chipCode: r.chipCode, printingCode: r.printingCode, bloodType: r.bloodType,
                 wave: r.wave, nationality: r.nationality,
             }));
@@ -618,15 +664,17 @@ export default function ApplicantsImportPage() {
             return [r.bib, r.idCard, r.fullName, r.fullNameEn, r.phone].some(v => (v || '').toLowerCase().includes(q));
         })
         : distanceFiltered;
-    const EXISTING_PAGE_SIZE = 50;
-    const existingPageCount = Math.max(1, Math.ceil(filteredExisting.length / EXISTING_PAGE_SIZE));
+    // 'all' shows the whole (filtered) roster on one page.
+    const existingPageSizeNum = existingPageSize === 'all' ? Math.max(1, filteredExisting.length) : existingPageSize;
+    const existingPageCount = Math.max(1, Math.ceil(filteredExisting.length / existingPageSizeNum));
     const existingPageClamped = Math.min(existingPage, existingPageCount - 1);
-    const pagedExisting = filteredExisting.slice(existingPageClamped * EXISTING_PAGE_SIZE, (existingPageClamped + 1) * EXISTING_PAGE_SIZE);
+    const existingFrom = existingPageClamped * existingPageSizeNum;
+    const pagedExisting = filteredExisting.slice(existingFrom, existingFrom + existingPageSizeNum);
 
     const downloadTemplate = () => {
         const ws = XLSX.utils.aoa_to_sheet([
-            ['เลขบัตรประชาชน', 'BIB', 'ชื่อ', 'นามสกุล', 'First Name', 'Last Name', 'เบอร์โทร', 'อายุ', 'เพศ', 'กลุ่มอายุ', 'ขนาดเสื้อ', 'ประเภท', 'Chip Code', 'Print Code', 'กรุ๊ปเลือด', 'Wave', 'สัญชาติ'],
-            ['1234567890123', '001', 'ดีใจ', 'ใจดี', 'Deejai', 'Jaidee', '0812345678', '38', 'ชาย', '35-39 ปี', '2XL', '10K', '', 'BZ73532', 'O', 'A', 'THA'],
+            ['เลขบัตรประชาชน', 'BIB', 'ชื่อ', 'นามสกุล', 'First Name', 'Last Name', 'เบอร์โทร', 'อายุ', 'เพศ', 'กลุ่มอายุ', 'ขนาดเสื้อ', 'ประเภท', 'วันเกิด', 'Chip Code', 'Print Code', 'กรุ๊ปเลือด', 'Wave', 'สัญชาติ'],
+            ['1234567890123', '001', 'ดีใจ', 'ใจดี', 'Deejai', 'Jaidee', '0812345678', '38', 'ชาย', '35-39 ปี', '2XL', '10K', '1988-05-02', '', 'BZ73532', 'O', 'A', 'THA'],
         ]);
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, 'Applicants');
@@ -669,7 +717,7 @@ export default function ApplicantsImportPage() {
         }
     };
 
-    useEffect(() => { setExistingPage(0); }, [existingSearch, selectedDistance]);
+    useEffect(() => { setExistingPage(0); }, [existingSearch, selectedDistance, existingPageSize]);
 
     const publicUrl = campaign
         ? `${typeof window !== 'undefined' ? window.location.origin : ''}/applicant-status/${campaign.slug || campaign._id}`
@@ -891,7 +939,7 @@ export default function ApplicantsImportPage() {
                                         <tbody>
                                             {pagedExisting.map((r, idx) => (
                                                 <tr key={r._id}>
-                                                    <td>{existingPageClamped * EXISTING_PAGE_SIZE + idx + 1}</td>
+                                                    <td>{existingFrom + idx + 1}</td>
                                                     {PREVIEW_COLS.map(c => {
                                                         const isEditing = editingCell?.id === r._id && editingCell.field === c.field;
                                                         return (
@@ -939,27 +987,46 @@ export default function ApplicantsImportPage() {
                                         </tbody>
                                     </table>
                                 </div>
-                                {existingPageCount > 1 && (
-                                    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 10, marginTop: 12 }}>
-                                        <button
-                                            onClick={() => setExistingPage(p => Math.max(0, p - 1))}
-                                            disabled={existingPageClamped === 0}
-                                            style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid #d1d5db', background: '#fff', cursor: existingPageClamped === 0 ? 'not-allowed' : 'pointer', fontSize: 13 }}
-                                        >
-                                            ‹ {language === 'th' ? 'ก่อนหน้า' : 'Prev'}
-                                        </button>
-                                        <span style={{ fontSize: 13, color: '#64748b' }}>
-                                            {existingPageClamped + 1} / {existingPageCount}
+                                {/* Footer: how many rows are shown, the page-size picker, and the pager */}
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10, marginTop: 12 }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#64748b' }}>
+                                        <span>
+                                            {language === 'th'
+                                                ? `แสดง ${filteredExisting.length === 0 ? 0 : (existingFrom + 1).toLocaleString()} ถึง ${Math.min(existingFrom + existingPageSizeNum, filteredExisting.length).toLocaleString()} จาก ${filteredExisting.length.toLocaleString()} แถว`
+                                                : `Showing ${filteredExisting.length === 0 ? 0 : (existingFrom + 1).toLocaleString()} to ${Math.min(existingFrom + existingPageSizeNum, filteredExisting.length).toLocaleString()} of ${filteredExisting.length.toLocaleString()} rows`}
                                         </span>
-                                        <button
-                                            onClick={() => setExistingPage(p => Math.min(existingPageCount - 1, p + 1))}
-                                            disabled={existingPageClamped >= existingPageCount - 1}
-                                            style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid #d1d5db', background: '#fff', cursor: existingPageClamped >= existingPageCount - 1 ? 'not-allowed' : 'pointer', fontSize: 13 }}
+                                        <select
+                                            value={String(existingPageSize)}
+                                            onChange={(e) => setExistingPageSize(e.target.value === 'all' ? 'all' : Number(e.target.value))}
+                                            style={{ padding: '5px 8px', borderRadius: 6, border: '1px solid #d1d5db', background: '#fff', fontSize: 13, fontWeight: 600, color: '#334155', cursor: 'pointer' }}
                                         >
-                                            {language === 'th' ? 'ถัดไป' : 'Next'} ›
-                                        </button>
+                                            {[25, 50, 100, 200].map(n => <option key={n} value={n}>{n}</option>)}
+                                            <option value="all">{language === 'th' ? 'ทั้งหมด' : 'All'}</option>
+                                        </select>
+                                        <span>{language === 'th' ? 'แถวต่อหน้า' : 'rows per page'}</span>
                                     </div>
-                                )}
+                                    {existingPageCount > 1 && (
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                            <button
+                                                onClick={() => setExistingPage(p => Math.max(0, p - 1))}
+                                                disabled={existingPageClamped === 0}
+                                                style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid #d1d5db', background: '#fff', cursor: existingPageClamped === 0 ? 'not-allowed' : 'pointer', fontSize: 13 }}
+                                            >
+                                                ‹ {language === 'th' ? 'ก่อนหน้า' : 'Prev'}
+                                            </button>
+                                            <span style={{ fontSize: 13, color: '#64748b' }}>
+                                                {existingPageClamped + 1} / {existingPageCount}
+                                            </span>
+                                            <button
+                                                onClick={() => setExistingPage(p => Math.min(existingPageCount - 1, p + 1))}
+                                                disabled={existingPageClamped >= existingPageCount - 1}
+                                                style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid #d1d5db', background: '#fff', cursor: existingPageClamped >= existingPageCount - 1 ? 'not-allowed' : 'pointer', fontSize: 13 }}
+                                            >
+                                                {language === 'th' ? 'ถัดไป' : 'Next'} ›
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
                             </>
                         )}
                     </div>

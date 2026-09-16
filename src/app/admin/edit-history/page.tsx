@@ -85,6 +85,7 @@ const APPLICANT_FIELD_LABELS: Record<string, { th: string; en: string }> = {
     category: { th: 'ประเภท', en: 'Category' },
     team: { th: 'ทีม', en: 'Team' },
     challenge: { th: 'Challenge', en: 'Challenge' },
+    birthDate: { th: 'วันเกิด', en: 'Birth Date' },
     chipCode: { th: 'Chip Code', en: 'Chip Code' },
     printingCode: { th: 'Print Code', en: 'Print Code' },
     bloodType: { th: 'กรุ๊ปเลือด', en: 'Blood Type' },
