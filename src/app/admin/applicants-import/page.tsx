@@ -252,16 +252,17 @@ function numberish(s: string): string | number {
 const RACETIGER_SHEET_NAME = '运动员导入表';
 
 // Columns of RaceTiger's athlete import template (Athlete-import-template-en.xlsx),
-// in the template's order and spelling — " NAME" really has a leading space.
-// NAME is the Thai name; ENGLISH NAME is our addition for the English spelling
-// (the template has no column for it). Columns empty for every runner in the
-// chosen distance are dropped on export; RACENO is always filled.
+// in the template's order and spelling. The template's own " NAME" column (the Thai
+// spelling) is left out on purpose — RaceTiger's form has no field for it — so the
+// only name column is ENGLISH NAME, which falls back to the Thai name for anyone
+// with no English spelling on file rather than exporting them nameless.
+// Columns empty for every runner in the chosen distance are dropped on export;
+// RACENO is always filled.
 type RaceTigerValue = string | number;
 const RACETIGER_COLS: { header: string; width: number; value: (r: ApplicantRow, i: number) => RaceTigerValue }[] = [
     { header: 'RACENO', width: 8, value: (_r, i) => i + 1 },
     { header: 'BIB', width: 10, value: r => numberish(cellText(r.bib)) },
-    { header: ' NAME', width: 28, value: r => cellText(r.fullName) || cellText(`${r.firstName || ''} ${r.lastName || ''}`) || cellText(r.fullNameEn) },
-    { header: 'ENGLISH NAME', width: 28, value: r => cellText(r.fullNameEn) || cellText(`${r.firstNameEn || ''} ${r.lastNameEn || ''}`) },
+    { header: 'ENGLISH NAME', width: 28, value: r => cellText(r.fullNameEn) || cellText(`${r.firstNameEn || ''} ${r.lastNameEn || ''}`) || cellText(r.fullName) || cellText(`${r.firstName || ''} ${r.lastName || ''}`) },
     { header: 'CHIPCODE1', width: 16, value: r => cellText(r.chipCode) },
     { header: 'PRINTCODE1', width: 16, value: r => cellText(r.printingCode) },
     { header: 'ATHLETETYPE', width: 14, value: () => '' },
