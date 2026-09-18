@@ -232,7 +232,14 @@ export default function ParticipantsPage() {
     const [listSearch, setListSearch] = useState('');
     const [debouncedSearch, setDebouncedSearch] = useState('');
     const [listPage, setListPage] = useState(1);
-    const listLimit = 50;
+    const [listLimit, setListLimit] = useState(50);
+    // Restore the remembered rows-per-page (after mount to avoid a hydration mismatch)
+    useEffect(() => {
+        try {
+            const saved = Number(localStorage.getItem('participants_page_size'));
+            if ([50, 100, 200, 500, 1000].includes(saved)) setListLimit(saved);
+        } catch { /* ignore */ }
+    }, []);
     const [categoryCounts, setCategoryCounts] = useState<Record<string, number>>({});
     // Age-group labels in use per race distance, for the edit form's dropdown
     const [ageGroupsByCategory, setAgeGroupsByCategory] = useState<Record<string, { label: string; count: number }[]>>({});
@@ -394,7 +401,7 @@ export default function ParticipantsPage() {
         } finally {
             setRunnersLoading(false);
         }
-    }, [campaign, activeTab, debouncedSearch, listPage, listRunnerStatus, natFilter, sortBy, sortOrder]);
+    }, [campaign, activeTab, debouncedSearch, listPage, listLimit, listRunnerStatus, natFilter, sortBy, sortOrder]);
 
     // Load runners when tab changes — always fetch fresh status counts
     useEffect(() => {
@@ -414,7 +421,7 @@ export default function ParticipantsPage() {
             fetchRunners();
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [debouncedSearch, listPage, listRunnerStatus, natFilter, sortBy, sortOrder]);
+    }, [debouncedSearch, listPage, listLimit, listRunnerStatus, natFilter, sortBy, sortOrder]);
 
     // Load Thai / foreign counts for the current tab (independent of the active nationality filter)
     useEffect(() => {
@@ -1741,8 +1748,25 @@ export default function ParticipantsPage() {
                                     </div>
 
                                     {/* Pagination */}
+                                    <div className="flex justify-center items-center gap-2 mt-3 flex-wrap">
+                                        <label className="flex items-center gap-1.5 text-[12px] text-gray-500 mr-2">
+                                            {language === 'th' ? 'แสดง' : 'Show'}
+                                            <select
+                                                value={listLimit}
+                                                onChange={e => {
+                                                    const v = Number(e.target.value);
+                                                    setListLimit(v);
+                                                    setListPage(1);
+                                                    try { localStorage.setItem('participants_page_size', String(v)); } catch { /* ignore */ }
+                                                }}
+                                                className="px-2 py-1 text-[12px] border border-gray-300 rounded bg-white text-gray-700 cursor-pointer"
+                                            >
+                                                {[50, 100, 200, 500, 1000].map(n => <option key={n} value={n}>{n}</option>)}
+                                            </select>
+                                            {language === 'th' ? 'แถว/หน้า' : 'rows/page'}
+                                        </label>
                                     {runnersTotal > listLimit && (
-                                        <div className="flex justify-center items-center gap-2 mt-3">
+                                        <>
                                             <button
                                                 disabled={listPage <= 1}
                                                 onClick={() => setListPage(p => Math.max(1, p - 1))}
@@ -1762,8 +1786,9 @@ export default function ParticipantsPage() {
                                             >
                                                 {language === 'th' ? 'ถัดไป' : 'Next'} →
                                             </button>
-                                        </div>
+                                        </>
                                     )}
+                                    </div>
                                 </>
                             )}
                         </div>
