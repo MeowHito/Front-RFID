@@ -535,34 +535,7 @@ function GpxRoutesCard({ campaignId, categories, th, notify }: {
         }
     };
 
-    /** Refill one category's markers from the checkpoint table and save them. */
-    const applyAuto = async (cat: string) => {
-        if (!campaignId) return;
-        const route = routes[cat];
-        if (!route) return;
-        const { marks: autoMarks } = buildAutoMarks(cat, route.distanceKm);
-        if (!autoMarks.length) {
-            notify(th
-                ? `ไม่พบระยะทางของ checkpoint สำหรับ ${cat} — กรอกในหน้า "ระยะทาง/Checkpoint" ก่อน`
-                : `No checkpoint distances recorded for ${cat} yet`);
-            return;
-        }
-        setBusy(cat);
-        try {
-            if (!await putMarks(cat, withManual(cat, autoMarks))) throw new Error();
-            setMarks(prev => ({ ...prev, [cat]: marksToText(autoMarks) }));
-            notify(th
-                ? `เติมตำแหน่ง CP ของ ${cat} อัตโนมัติ ${autoMarks.length} จุดแล้ว`
-                : `Filled ${autoMarks.length} checkpoint positions for ${cat}`);
-            await loadRoutes();
-        } catch {
-            notify(th ? 'บันทึกไม่สำเร็จ' : 'Save failed');
-        } finally {
-            setBusy(null);
-        }
-    };
-
-    /** Same, for every category that already has a route — one click for old events. */
+    /** Refill every category's markers from the checkpoint table — one click for old events. */
     const applyAutoAll = async () => {
         if (!campaignId) return;
         const targets = catNames
@@ -864,7 +837,7 @@ function GpxRoutesCard({ campaignId, categories, th, notify }: {
                                                         return (
                                                             <div key={row.key} style={{ minWidth: 0 }}>
                                                                 {row.manual ? (
-                                                                    <div style={{ display: 'flex', alignItems: 'center', gap: 4, height: 22, marginBottom: 3 }}>
+                                                                    <div style={{ position: 'relative', height: 22, marginBottom: 3 }}>
                                                                         <input
                                                                             type="text"
                                                                             className="ce-input"
@@ -873,20 +846,24 @@ function GpxRoutesCard({ campaignId, categories, th, notify }: {
                                                                             value={row.name}
                                                                             onChange={(e) => patchManualPoint(cat, row.id, { name: e.target.value })}
                                                                             style={{
-                                                                                height: 22, fontSize: 11, fontWeight: 700, padding: '1px 5px',
-                                                                                flex: 1, minWidth: 0, borderRadius: 4,
+                                                                                height: 22, fontSize: 11, fontWeight: 700,
+                                                                                padding: '1px 22px 1px 5px', borderRadius: 4,
                                                                                 border: '1px solid #c4b5fd', background: '#faf5ff', color: '#5b21b6',
                                                                             }}
                                                                         />
+                                                                        {/* Sits inside its own field, so there is no guessing which point it removes. */}
                                                                         <button
                                                                             type="button"
                                                                             onClick={() => removeManualPoint(cat, row.id)}
-                                                                            title={th ? 'ลบจุดนี้' : 'Remove this point'}
+                                                                            title={th ? `ลบจุด ${row.name || 'นี้'}` : `Remove ${row.name || 'this point'}`}
                                                                             style={{
-                                                                                flex: '0 0 auto', width: 22, height: 22, padding: 0, lineHeight: 1,
-                                                                                fontSize: 11, fontWeight: 700, fontFamily: 'inherit', cursor: 'pointer',
-                                                                                border: '1px solid #fecaca', background: '#fff', color: '#dc2626', borderRadius: 4,
+                                                                                position: 'absolute', right: 3, top: 3, width: 16, height: 16,
+                                                                                padding: 0, lineHeight: '16px', textAlign: 'center',
+                                                                                fontSize: 10, fontWeight: 700, fontFamily: 'inherit', cursor: 'pointer',
+                                                                                border: 'none', background: 'transparent', color: '#a78bfa', borderRadius: 3,
                                                                             }}
+                                                                            onMouseEnter={(e) => { e.currentTarget.style.background = '#fee2e2'; e.currentTarget.style.color = '#dc2626'; }}
+                                                                            onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#a78bfa'; }}
                                                                         >
                                                                             ✕
                                                                         </button>
@@ -958,20 +935,6 @@ function GpxRoutesCard({ campaignId, categories, th, notify }: {
                                                     }}
                                                 >
                                                     {th ? 'บันทึกตำแหน่ง CP' : 'Save CP positions'}
-                                                </button>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => applyAuto(cat)}
-                                                    disabled={isBusy}
-                                                    title={th ? 'ดึงระยะทางของ checkpoint ในระยะนี้มาใส่ใหม่' : 'Re-read the km recorded for this distance'}
-                                                    style={{
-                                                        fontSize: 12, fontWeight: 700, fontFamily: 'inherit',
-                                                        cursor: 'pointer', border: '1px solid #cbd5e1', background: '#fff',
-                                                        color: '#475569', borderRadius: 6, padding: '7px 14px',
-                                                        opacity: isBusy ? 0.6 : 1,
-                                                    }}
-                                                >
-                                                    {th ? '⟳ เติมอัตโนมัติ' : '⟳ Auto-fill'}
                                                 </button>
                                                 <button
                                                     type="button"
