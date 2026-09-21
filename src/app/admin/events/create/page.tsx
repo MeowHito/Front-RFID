@@ -142,6 +142,17 @@ interface AutoCpKm {
     km: number;
 }
 
+/**
+ * A marker the admin typed in by hand instead of one read from the checkpoint
+ * table — a checkpoint the campaign list does not carry yet, or any landmark
+ * worth pinning on the line. Kept as text while editing, like the km inputs.
+ */
+interface ManualMark {
+    id: string;
+    name: string;
+    km: string;
+}
+
 interface CampaignEventLite {
     _id: string;
     name?: string;
@@ -194,6 +205,12 @@ function GpxRoutesCard({ campaignId, categories, th, notify }: {
     // Per category → per checkpoint name → km typed by the admin (kept as text
     // so a half-typed "12." doesn't get clobbered while editing).
     const [marks, setMarks] = useState<Record<string, Record<string, string>>>({});
+    // Hand-added points per category. Name one exactly like the timing
+    // checkpoint and the map / 2D course views place it on the line by that name.
+    const [manual, setManual] = useState<Record<string, ManualMark[]>>({});
+    // Categories whose manual rows were already restored from the saved markers.
+    const manualSeeded = useRef<Set<string>>(new Set());
+    const [cpsLoaded, setCpsLoaded] = useState(false);
 
     const catNames = categories.map(c => (c.name || '').trim()).filter(Boolean);
 
@@ -231,6 +248,7 @@ function GpxRoutesCard({ campaignId, categories, th, notify }: {
                     setCheckpoints([...data].sort((a, b) => (a.orderNum ?? 999) - (b.orderNum ?? 999)));
                 }
             } catch { setCheckpoints([]); }
+            finally { setCpsLoaded(true); }
         })();
     }, [campaignId]);
 
@@ -287,6 +305,27 @@ function GpxRoutesCard({ campaignId, categories, th, notify }: {
         return () => { cancelled = true; };
     }, [campaignId]);
 
+    // Saved markers whose name matches no checkpoint in the campaign list are the
+    // admin's own points: bring them back as editable rows instead of hiding
+    // them. Seeded once per category, so a reload never overwrites typing.
+    useEffect(() => {
+        if (!cpsLoaded) return;
+        const known = new Set(checkpoints.map(cp => cp.name));
+        setManual(prev => {
+            const next = { ...prev };
+            let changed = false;
+            for (const [cat, r] of Object.entries(routes)) {
+                if (manualSeeded.current.has(cat)) continue;
+                manualSeeded.current.add(cat);
+                const extras = (r.checkpointMarks || []).filter(m => m?.name && !known.has(m.name));
+                if (!extras.length) continue;
+                next[cat] = extras.map((m, i) => ({ id: `${cat}#${i}#${m.name}`, name: m.name, km: String(m.km) }));
+                changed = true;
+            }
+            return changed ? next : prev;
+        });
+    }, [cpsLoaded, checkpoints, routes]);
+
     const cpsFor = useCallback((cat: string) =>
         checkpoints.filter(cp => !cp.distanceMappings?.length || cp.distanceMappings.includes(cat)),
         [checkpoints]);
@@ -334,6 +373,45 @@ function GpxRoutesCard({ campaignId, categories, th, notify }: {
     const marksToText = (marks: AutoCpKm[]): Record<string, string> =>
         Object.fromEntries(marks.map(m => [m.name, String(m.km)]));
 
+    /** The hand-added rows of one category, as markers ready to save. */
+    const manualEntries = useCallback((cat: string): AutoCpKm[] =>
+        (manual[cat] || [])
+            .map(m => ({ name: m.name.trim(), km: parseFloat(m.km) }))
+            .filter(m => !!m.name && Number.isFinite(m.km))
+            .map(m => ({ name: m.name, km: +Math.max(0, m.km).toFixed(3) })),
+        [manual]);
+
+    /**
+     * Checkpoint markers first, then the hand-added ones. Every save goes through
+     * here, so auto-filling or replacing the GPX never drops a manual point. A
+     * name is kept once — a manual row that repeats a checkpoint loses to it.
+     */
+    const withManual = useCallback((cat: string, base: AutoCpKm[]): AutoCpKm[] => {
+        const seen = new Set(base.map(m => m.name));
+        return [...base, ...manualEntries(cat).filter(m => !seen.has(m.name))];
+    }, [manualEntries]);
+
+    const addManualPoint = (cat: string) => {
+        setManual(prev => ({
+            ...prev,
+            [cat]: [
+                ...(prev[cat] || []),
+                { id: `m-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, name: '', km: '' },
+            ],
+        }));
+    };
+
+    const patchManualPoint = (cat: string, id: string, patch: Partial<ManualMark>) => {
+        setManual(prev => ({
+            ...prev,
+            [cat]: (prev[cat] || []).map(m => (m.id === id ? { ...m, ...patch } : m)),
+        }));
+    };
+
+    const removeManualPoint = (cat: string, id: string) => {
+        setManual(prev => ({ ...prev, [cat]: (prev[cat] || []).filter(m => m.id !== id) }));
+    };
+
     const handleFile = async (cat: string, file: File) => {
         if (!campaignId) return;
         setBusy(cat);
@@ -355,7 +433,7 @@ function GpxRoutesCard({ campaignId, categories, th, notify }: {
                     elevationGainM: parsed.elevationGainM,
                     rawPointCount: parsed.rawPointCount,
                     bounds: parsed.bounds,
-                    checkpointMarks: autoMarks,
+                    checkpointMarks: withManual(cat, autoMarks),
                 }),
             });
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -415,10 +493,14 @@ function GpxRoutesCard({ campaignId, categories, th, notify }: {
         if (!campaignId) return;
         setBusy(cat);
         try {
-            const entries = Object.entries(marks[cat] || {})
+            // Only the checkpoint rows come from `marks`; anything else saved
+            // earlier is now an editable manual row, so take it from there.
+            const known = new Set(checkpoints.map(cp => cp.name));
+            const fromTable = Object.entries(marks[cat] || {})
+                .filter(([name]) => known.has(name))
                 .map(([name, v]) => ({ name, km: parseFloat(v) }))
                 .filter(m => Number.isFinite(m.km));
-            if (!await putMarks(cat, entries)) throw new Error();
+            if (!await putMarks(cat, withManual(cat, fromTable))) throw new Error();
             notify(th ? `บันทึกตำแหน่ง CP ของ ${cat} แล้ว` : `Checkpoint positions saved for ${cat}`);
             await loadRoutes();
         } catch {
@@ -442,7 +524,7 @@ function GpxRoutesCard({ campaignId, categories, th, notify }: {
         }
         setBusy(cat);
         try {
-            if (!await putMarks(cat, autoMarks)) throw new Error();
+            if (!await putMarks(cat, withManual(cat, autoMarks))) throw new Error();
             setMarks(prev => ({ ...prev, [cat]: marksToText(autoMarks) }));
             notify(th
                 ? `เติมตำแหน่ง CP ของ ${cat} อัตโนมัติ ${autoMarks.length} จุดแล้ว`
@@ -470,7 +552,7 @@ function GpxRoutesCard({ campaignId, categories, th, notify }: {
             const { marks: autoMarks } = buildAutoMarks(cat, route.distanceKm);
             if (!autoMarks.length) continue;
             try {
-                if (!await putMarks(cat, autoMarks)) throw new Error();
+                if (!await putMarks(cat, withManual(cat, autoMarks))) throw new Error();
                 nextMarks[cat] = marksToText(autoMarks);
                 filled++;
             } catch { failed++; }
@@ -580,6 +662,15 @@ function GpxRoutesCard({ campaignId, categories, th, notify }: {
                         const isOpen = expanded === cat;
                         const auto = r ? buildAutoMarks(cat, r.distanceKm) : null;
                         const autoByName = new Map((auto?.marks || []).map(m => [m.name, m.km]));
+                        const listId = slugifyPreview(cat) || 'cat';
+                        // Names worth offering when adding a point by hand: every
+                        // checkpoint known for this campaign or recorded for this
+                        // distance, minus the ones that already have a row above.
+                        const taken = new Set(cps.map(cp => cp.name));
+                        const nameSuggestions = Array.from(new Set([
+                            ...autoSourceFor(cat).list.map(m => m.name),
+                            ...checkpoints.map(cp => cp.name),
+                        ])).filter(n => n && !taken.has(n));
                         return (
                             <div key={cat} style={{ border: '1px solid #e2e8f0', borderRadius: 10, overflow: 'hidden' }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 14px', background: r ? '#faf5ff' : '#fff', flexWrap: 'wrap' }}>
@@ -681,12 +772,15 @@ function GpxRoutesCard({ campaignId, categories, th, notify }: {
                                                     : 'No checkpoint distances recorded for this distance yet — fill the "Distance" column on the checkpoint page, then auto-fill again.'}
                                             </div>
                                         )}
-                                        {cps.length === 0 ? (
-                                            <div style={{ fontSize: 12, color: '#94a3b8' }}>
-                                                {th ? 'ยังไม่มี checkpoint สำหรับระยะนี้' : 'No checkpoints for this distance yet'}
-                                            </div>
-                                        ) : (
-                                            <>
+                                        <>
+                                            {cps.length === 0 && !manual[cat]?.length && (
+                                                <div style={{ fontSize: 12, color: '#94a3b8' }}>
+                                                    {th
+                                                        ? 'ยังไม่มี checkpoint สำหรับระยะนี้ — กดปุ่ม "＋ เพิ่มจุดเอง" เพื่อปักจุดบนเส้นทางด้วยตัวเอง'
+                                                        : 'No checkpoints for this distance yet — use "＋ Add point" to pin one by hand.'}
+                                                </div>
+                                            )}
+                                            {cps.length > 0 && (
                                                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 10 }}>
                                                     {cps.map(cp => {
                                                         const autoValue = autoByName.get(cp.name);
@@ -721,36 +815,108 @@ function GpxRoutesCard({ campaignId, categories, th, notify }: {
                                                         );
                                                     })}
                                                 </div>
-                                                <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => saveMarks(cat)}
-                                                        disabled={isBusy}
-                                                        style={{
-                                                            fontSize: 12, fontWeight: 700, fontFamily: 'inherit',
-                                                            cursor: 'pointer', border: 'none', background: '#7c3aed', color: '#fff',
-                                                            borderRadius: 6, padding: '7px 16px', opacity: isBusy ? 0.6 : 1,
-                                                        }}
-                                                    >
-                                                        {th ? 'บันทึกตำแหน่ง CP' : 'Save CP positions'}
-                                                    </button>
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => applyAuto(cat)}
-                                                        disabled={isBusy}
-                                                        title={th ? 'ดึงระยะทางของ checkpoint ในระยะนี้มาใส่ใหม่' : 'Re-read the km recorded for this distance'}
-                                                        style={{
-                                                            fontSize: 12, fontWeight: 700, fontFamily: 'inherit',
-                                                            cursor: 'pointer', border: '1px solid #cbd5e1', background: '#fff',
-                                                            color: '#475569', borderRadius: 6, padding: '7px 14px',
-                                                            opacity: isBusy ? 0.6 : 1,
-                                                        }}
-                                                    >
-                                                        {th ? '⟳ เติมอัตโนมัติ' : '⟳ Auto-fill'}
-                                                    </button>
+                                            )}
+
+                                            {!!manual[cat]?.length && (
+                                                <div style={{ marginTop: cps.length ? 14 : 0 }}>
+                                                    <div style={{ fontSize: 11, fontWeight: 800, color: '#7c3aed', marginBottom: 7 }}>
+                                                        {th ? 'จุดที่เพิ่มเอง' : 'Manual points'}
+                                                    </div>
+                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                                                        {(manual[cat] || []).map(m => (
+                                                            <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                                                                <input
+                                                                    type="text"
+                                                                    className="ce-input ce-input-sm"
+                                                                    list={`cp-names-${listId}`}
+                                                                    placeholder={th ? 'ชื่อจุด เช่น CP1' : 'Point name, e.g. CP1'}
+                                                                    value={m.name}
+                                                                    onChange={(e) => patchManualPoint(cat, m.id, { name: e.target.value })}
+                                                                    style={{ flex: '1 1 170px', minWidth: 130 }}
+                                                                />
+                                                                <input
+                                                                    type="number"
+                                                                    step="0.1"
+                                                                    min={0}
+                                                                    max={r.distanceKm}
+                                                                    className="ce-input ce-input-sm"
+                                                                    placeholder="0.0"
+                                                                    value={m.km}
+                                                                    onChange={(e) => patchManualPoint(cat, m.id, { km: e.target.value })}
+                                                                    style={{ width: 92, flex: '0 0 auto' }}
+                                                                />
+                                                                <span style={{ fontSize: 11, color: '#94a3b8' }}>km</span>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => removeManualPoint(cat, m.id)}
+                                                                    title={th ? 'ลบจุดนี้' : 'Remove this point'}
+                                                                    style={{
+                                                                        fontSize: 12, fontWeight: 700, fontFamily: 'inherit', cursor: 'pointer',
+                                                                        border: '1px solid #fecaca', background: '#fff', color: '#dc2626',
+                                                                        borderRadius: 6, padding: '4px 9px', lineHeight: 1.2,
+                                                                    }}
+                                                                >
+                                                                    ✕
+                                                                </button>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                    <div style={{ fontSize: 10.5, color: '#94a3b8', marginTop: 7, lineHeight: 1.6 }}>
+                                                        {th
+                                                            ? 'ตั้งชื่อให้ตรงกับชื่อ checkpoint ที่ใช้จับเวลา (เช่น CP1) จุดนี้จะไปอยู่บนแผนที่และกราฟเส้นทางตรงกิโลเมตรที่ระบุ'
+                                                            : 'Name it exactly like the timing checkpoint (e.g. CP1) and it lands at that km on the map and course profile.'}
+                                                    </div>
+                                                    <datalist id={`cp-names-${listId}`}>
+                                                        {nameSuggestions.map(n => <option key={n} value={n} />)}
+                                                    </datalist>
                                                 </div>
-                                            </>
-                                        )}
+                                            )}
+
+                                            <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => saveMarks(cat)}
+                                                    disabled={isBusy}
+                                                    style={{
+                                                        fontSize: 12, fontWeight: 700, fontFamily: 'inherit',
+                                                        cursor: 'pointer', border: 'none', background: '#7c3aed', color: '#fff',
+                                                        borderRadius: 6, padding: '7px 16px', opacity: isBusy ? 0.6 : 1,
+                                                    }}
+                                                >
+                                                    {th ? 'บันทึกตำแหน่ง CP' : 'Save CP positions'}
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => applyAuto(cat)}
+                                                    disabled={isBusy}
+                                                    title={th ? 'ดึงระยะทางของ checkpoint ในระยะนี้มาใส่ใหม่' : 'Re-read the km recorded for this distance'}
+                                                    style={{
+                                                        fontSize: 12, fontWeight: 700, fontFamily: 'inherit',
+                                                        cursor: 'pointer', border: '1px solid #cbd5e1', background: '#fff',
+                                                        color: '#475569', borderRadius: 6, padding: '7px 14px',
+                                                        opacity: isBusy ? 0.6 : 1,
+                                                    }}
+                                                >
+                                                    {th ? '⟳ เติมอัตโนมัติ' : '⟳ Auto-fill'}
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => addManualPoint(cat)}
+                                                    disabled={isBusy}
+                                                    title={th
+                                                        ? 'เพิ่มจุดบนเส้นทางเอง เมื่อ checkpoint ไม่ได้อยู่ในตาราง'
+                                                        : 'Pin a point by hand when the checkpoint is not in the table'}
+                                                    style={{
+                                                        fontSize: 12, fontWeight: 700, fontFamily: 'inherit',
+                                                        cursor: 'pointer', border: '1px dashed #7c3aed', background: '#f5f3ff',
+                                                        color: '#7c3aed', borderRadius: 6, padding: '7px 14px',
+                                                        opacity: isBusy ? 0.6 : 1,
+                                                    }}
+                                                >
+                                                    {th ? '＋ เพิ่มจุดเอง' : '＋ Add point'}
+                                                </button>
+                                            </div>
+                                        </>
                                     </div>
                                 )}
                             </div>
