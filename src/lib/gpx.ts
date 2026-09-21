@@ -10,6 +10,14 @@
 /** [lat, lng, cumulative km from start, elevation in metres (optional)] */
 export type RouteCoord = number[];
 
+/** A named <wpt> from the file, snapped onto the track. */
+export interface GpxWaypoint {
+    name: string;
+    km: number;
+    lat: number;
+    lng: number;
+}
+
 export interface ParsedRoute {
     coords: number[][];        // [[lat, lng, cumKm, ele?], ...]
     distanceKm: number;
@@ -17,6 +25,8 @@ export interface ParsedRoute {
     pointCount: number;        // after downsampling
     rawPointCount: number;     // as found in the file
     bounds: { minLat: number; minLng: number; maxLat: number; maxLng: number };
+    /** Named waypoints (CP1, WS, ...) in km order, empty when the file has none. */
+    waypoints: GpxWaypoint[];
 }
 
 /** Max points kept after downsampling. */
@@ -43,7 +53,7 @@ function haversineKm(aLat: number, aLng: number, bLat: number, bLng: number): nu
 
 interface RawPoint { lat: number; lng: number; ele: number | null }
 
-function readPoints(doc: Document): RawPoint[] {
+function readPoints(doc: Document): { pts: RawPoint[]; tag: string } {
     // Prefer track points; fall back to route points, then waypoints, so that
     // GPX files exported as routes (rte) still work.
     const tagOrder = ['trkpt', 'rtept', 'wpt'];
@@ -61,9 +71,58 @@ function readPoints(doc: Document): RawPoint[] {
             const ele = eleNode ? parseFloat(eleNode.textContent || '') : NaN;
             pts.push({ lat, lng, ele: Number.isFinite(ele) ? ele : null });
         }
-        if (pts.length >= 2) return pts;
+        if (pts.length >= 2) return { pts, tag };
     }
-    return [];
+    return { pts: [], tag: '' };
+}
+
+const firstText = (node: Element, tag: string): string =>
+    (node.getElementsByTagName(tag)[0]?.textContent || '').trim();
+
+/**
+ * Named <wpt> markers — this is where an app like Ji3ng or Garmin stores the
+ * checkpoints an organiser dropped on the course, so they are worth reading
+ * instead of asking for the km again. Each one is snapped to the nearest point
+ * on the track to turn its coordinates into a km along the line.
+ *
+ * Skipped: the unnamed ones, the "Auto-generated" Begin/End pair every export
+ * adds (START/FINISH are already known), repeats of a name already taken — an
+ * out-and-back passes the same aid station twice — and a pin dropped twice on
+ * the same spot under two names ("CP1" and "CP1 - 1", a few metres apart). Two
+ * pins that share a spot but not a km are the two passes of an out-and-back, so
+ * both of those are kept.
+ */
+function readWaypoints(doc: Document, pts: RawPoint[], cum: number[]): GpxWaypoint[] {
+    const nodes = doc.getElementsByTagName('wpt');
+    const out: GpxWaypoint[] = [];
+    const seen = new Set<string>();
+    for (let i = 0; i < nodes.length; i++) {
+        const n = nodes[i];
+        const name = firstText(n, 'name');
+        if (!name) continue;
+        if (/^auto-generated$/i.test(firstText(n, 'desc'))) continue;
+        const key = name.toLowerCase();
+        if (seen.has(key)) continue;
+        const lat = parseFloat(n.getAttribute('lat') || '');
+        const lng = parseFloat(n.getAttribute('lon') || n.getAttribute('lng') || '');
+        if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
+
+        let bestIdx = 0;
+        let bestD = Infinity;
+        for (let j = 0; j < pts.length; j++) {
+            const d = haversineKm(lat, lng, pts[j].lat, pts[j].lng);
+            if (d < bestD) { bestD = d; bestIdx = j; }
+        }
+        // More than a kilometre off the line is not a marker on this course.
+        if (bestD > 1) continue;
+
+        const km = +cum[bestIdx].toFixed(3);
+        if (out.some(o => Math.abs(o.km - km) < 0.1 && haversineKm(o.lat, o.lng, lat, lng) < 0.05)) continue;
+
+        seen.add(key);
+        out.push({ name, km, lat, lng });
+    }
+    return out.sort((a, b) => a.km - b.km);
 }
 
 export class GpxParseError extends Error { }
@@ -74,7 +133,7 @@ export function parseGpx(text: string, maxPoints = MAX_POINTS): ParsedRoute {
         throw new GpxParseError('ไฟล์ GPX เสียหรืออ่านไม่ได้ (invalid XML)');
     }
 
-    const pts = readPoints(doc);
+    const { pts, tag } = readPoints(doc);
     if (pts.length < 2) {
         throw new GpxParseError('ไม่พบพิกัดในไฟล์ GPX (ต้องมีอย่างน้อย 2 จุด)');
     }
@@ -114,6 +173,9 @@ export function parseGpx(text: string, maxPoints = MAX_POINTS): ParsedRoute {
     const lats = coords.map(c => c[0]);
     const lngs = coords.map(c => c[1]);
 
+    // When the <wpt> list *is* the track there are no separate markers to read.
+    const waypoints = tag === 'wpt' ? [] : readWaypoints(doc, pts, cum);
+
     return {
         coords,
         distanceKm: +cum[lastIdx].toFixed(3),
@@ -126,5 +188,6 @@ export function parseGpx(text: string, maxPoints = MAX_POINTS): ParsedRoute {
             maxLat: Math.max(...lats),
             maxLng: Math.max(...lngs),
         },
+        waypoints,
     };
 }

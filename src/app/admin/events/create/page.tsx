@@ -211,6 +211,10 @@ function GpxRoutesCard({ campaignId, categories, th, notify }: {
     // Categories whose manual rows were already restored from the saved markers.
     const manualSeeded = useRef<Set<string>>(new Set());
     const [cpsLoaded, setCpsLoaded] = useState(false);
+    // Rows are listed in km order, but a row must not jump around under the
+    // cursor while its km is half-typed. Focusing a km field pins the order it
+    // had at that moment; leaving the field drops the pin and lets it re-sort.
+    const [rowOrder, setRowOrder] = useState<Record<string, string[]>>({});
 
     const catNames = categories.map(c => (c.name || '').trim()).filter(Boolean);
 
@@ -421,6 +425,22 @@ function GpxRoutesCard({ campaignId, categories, th, notify }: {
             // The km of each checkpoint is already recorded per distance, so fill
             // the markers here — the admin should not have to retype them.
             const { marks: autoMarks } = buildAutoMarks(cat, parsed.distanceKm);
+            // The file itself usually carries the organiser's own pins (CP1, WS,
+            // ...). Whatever the checkpoint table could not answer is taken from
+            // there: a pin named like a checkpoint fills that checkpoint's km,
+            // the rest become editable manual points.
+            const alreadyFilled = new Set(autoMarks.map(m => m.name));
+            const cpNames = new Set(cpsFor(cat).map(cp => cp.name));
+            const fromGpx = parsed.waypoints
+                .filter(w => !alreadyFilled.has(w.name))
+                .map(w => ({ name: w.name, km: w.km }));
+            const cpMarks = [...autoMarks, ...fromGpx.filter(w => cpNames.has(w.name))];
+            const extras = fromGpx.filter(w => !cpNames.has(w.name));
+            const manualRows: ManualMark[] = extras.map((w, i) => ({
+                id: `gpx-${Date.now()}-${i}`,
+                name: w.name,
+                km: String(w.km),
+            }));
             const res = await fetch('/api/routes', {
                 method: 'POST',
                 headers: authHeaders(),
@@ -433,22 +453,27 @@ function GpxRoutesCard({ campaignId, categories, th, notify }: {
                     elevationGainM: parsed.elevationGainM,
                     rawPointCount: parsed.rawPointCount,
                     bounds: parsed.bounds,
-                    checkpointMarks: withManual(cat, autoMarks),
+                    checkpointMarks: [...cpMarks, ...extras],
                 }),
             });
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
             const km = parsed.distanceKm.toFixed(1);
-            notify(
-                autoMarks.length
-                    ? (th
-                        ? `อัปโหลดเส้นทาง ${cat} สำเร็จ (${km} กม.) · เติมตำแหน่ง CP อัตโนมัติ ${autoMarks.length} จุด`
-                        : `Route for ${cat} uploaded (${km} km) · ${autoMarks.length} checkpoint positions filled automatically`)
-                    : (th
-                        ? `อัปโหลดเส้นทาง ${cat} สำเร็จ (${km} กม.)`
-                        : `Route for ${cat} uploaded (${km} km)`),
-            );
+            const parts = [th ? `อัปโหลดเส้นทาง ${cat} สำเร็จ (${km} กม.)` : `Route for ${cat} uploaded (${km} km)`];
+            if (cpMarks.length) {
+                parts.push(th
+                    ? `เติมตำแหน่ง CP อัตโนมัติ ${cpMarks.length} จุด`
+                    : `${cpMarks.length} checkpoint positions filled automatically`);
+            }
+            if (extras.length) {
+                parts.push(th
+                    ? `พบจุดในไฟล์ GPX เพิ่มอีก ${extras.length} จุด (${extras.map(e => e.name).join(', ')})`
+                    : `${extras.length} more point(s) read from the GPX (${extras.map(e => e.name).join(', ')})`);
+            }
+            notify(parts.join(' · '));
             // A new line invalidates any km the admin typed for the old one.
-            setMarks(prev => ({ ...prev, [cat]: marksToText(autoMarks) }));
+            setMarks(prev => ({ ...prev, [cat]: marksToText(cpMarks) }));
+            setManual(prev => ({ ...prev, [cat]: manualRows }));
+            manualSeeded.current.add(cat);
             await loadRoutes();
             setExpanded(cat);
         } catch (err) {
@@ -618,8 +643,8 @@ function GpxRoutesCard({ campaignId, categories, th, notify }: {
 
             <div style={{ fontSize: 12.5, color: '#64748b', lineHeight: 1.7, marginBottom: 14 }}>
                 {th
-                    ? 'อัปโหลดไฟล์ .gpx ของแต่ละระยะ เพื่อให้หน้าสถิติแสดง "แผนที่ความหนาแน่นนักวิ่ง" บนเส้นทางจริงได้ (ปุ่ม MAP ในหน้า /admin/general-chart) — ตำแหน่ง CP บนเส้นทางจะถูกเติมให้อัตโนมัติจากระยะทางของ checkpoint ที่บันทึกไว้ในแต่ละระยะ ไม่ต้องกรอกเอง'
-                    : 'Upload a .gpx per distance so the statistics page can paint runner density onto the real course (the MAP button on /admin/general-chart). Checkpoint positions are filled automatically from the km already recorded for each distance — no retyping.'}
+                    ? 'อัปโหลดไฟล์ .gpx ของแต่ละระยะ เพื่อให้หน้าสถิติแสดง "แผนที่ความหนาแน่นนักวิ่ง" บนเส้นทางจริงได้ (ปุ่ม MAP ในหน้า /admin/general-chart) — ตำแหน่ง CP บนเส้นทางจะถูกเติมให้อัตโนมัติจากระยะทางของ checkpoint ที่บันทึกไว้ในแต่ละระยะ และจากจุด (waypoint) ที่ปักมาในไฟล์ GPX เอง เช่น CP1 / WS ไม่ต้องกรอกเอง · เพิ่มจุดเองทีหลังได้ด้วยปุ่ม "＋ เพิ่มจุดเอง"'
+                    : 'Upload a .gpx per distance so the statistics page can paint runner density onto the real course (the MAP button on /admin/general-chart). Checkpoint positions are filled automatically from the km recorded for each distance and from the waypoints pinned inside the GPX itself (CP1, WS, ...) — no retyping. Anything missing can be added with "＋ Add point".'}
             </div>
 
             {!campaignId ? (
@@ -663,14 +688,65 @@ function GpxRoutesCard({ campaignId, categories, th, notify }: {
                         const auto = r ? buildAutoMarks(cat, r.distanceKm) : null;
                         const autoByName = new Map((auto?.marks || []).map(m => [m.name, m.km]));
                         const listId = slugifyPreview(cat) || 'cat';
+                        const manualRows = manual[cat] || [];
                         // Names worth offering when adding a point by hand: every
                         // checkpoint known for this campaign or recorded for this
-                        // distance, minus the ones that already have a row above.
-                        const taken = new Set(cps.map(cp => cp.name));
+                        // distance, minus the ones that already have a row.
+                        const taken = new Set([...cps.map(cp => cp.name), ...manualRows.map(m => m.name)]);
                         const nameSuggestions = Array.from(new Set([
                             ...autoSourceFor(cat).list.map(m => m.name),
                             ...checkpoints.map(cp => cp.name),
                         ])).filter(n => n && !taken.has(n));
+
+                        // Checkpoints and hand-added points share one list, so a
+                        // point at km 6 sits between START and FINISH rather than
+                        // in a section of its own.
+                        const pointRows: {
+                            key: string; id: string; name: string; km: string;
+                            manual: boolean; autoValue?: number;
+                        }[] = [
+                            ...cps.map(cp => ({
+                                key: `cp:${cp._id}`,
+                                id: cp._id,
+                                name: cp.name,
+                                km: marks[cat]?.[cp.name] ?? '',
+                                manual: false,
+                                autoValue: autoByName.get(cp.name),
+                            })),
+                            ...manualRows.map(m => ({
+                                key: `mn:${m.id}`,
+                                id: m.id,
+                                name: m.name,
+                                km: m.km,
+                                manual: true,
+                                autoValue: undefined,
+                            })),
+                        ];
+                        // A row with no km yet has no place on the course, so it waits at the end.
+                        const sortKm = (row: typeof pointRows[number]) => {
+                            const typed = parseFloat(row.km);
+                            if (Number.isFinite(typed)) return typed;
+                            return row.autoValue ?? Number.POSITIVE_INFINITY;
+                        };
+                        const pinned = rowOrder[cat];
+                        const ordered = [...pointRows].sort((a, b) => {
+                            if (pinned) {
+                                const ia = pinned.indexOf(a.key);
+                                const ib = pinned.indexOf(b.key);
+                                // Rows added after the pin was taken go to the end.
+                                if (ia !== -1 || ib !== -1) return (ia === -1 ? 1e9 : ia) - (ib === -1 ? 1e9 : ib);
+                            }
+                            return sortKm(a) - sortKm(b) || a.name.localeCompare(b.name);
+                        });
+                        const freezeOrder = () => setRowOrder(prev => (
+                            prev[cat] ? prev : { ...prev, [cat]: ordered.map(o => o.key) }
+                        ));
+                        const thawOrder = () => setRowOrder(prev => {
+                            if (!(cat in prev)) return prev;
+                            const next = { ...prev };
+                            delete next[cat];
+                            return next;
+                        });
                         return (
                             <div key={cat} style={{ border: '1px solid #e2e8f0', borderRadius: 10, overflow: 'hidden' }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 14px', background: r ? '#faf5ff' : '#fff', flexWrap: 'wrap' }}>
@@ -773,23 +849,60 @@ function GpxRoutesCard({ campaignId, categories, th, notify }: {
                                             </div>
                                         )}
                                         <>
-                                            {cps.length === 0 && !manual[cat]?.length && (
+                                            {ordered.length === 0 && (
                                                 <div style={{ fontSize: 12, color: '#94a3b8' }}>
                                                     {th
                                                         ? 'ยังไม่มี checkpoint สำหรับระยะนี้ — กดปุ่ม "＋ เพิ่มจุดเอง" เพื่อปักจุดบนเส้นทางด้วยตัวเอง'
                                                         : 'No checkpoints for this distance yet — use "＋ Add point" to pin one by hand.'}
                                                 </div>
                                             )}
-                                            {cps.length > 0 && (
-                                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 10 }}>
-                                                    {cps.map(cp => {
-                                                        const autoValue = autoByName.get(cp.name);
-                                                        const typed = marks[cat]?.[cp.name] ?? '';
-                                                        const differs = autoValue !== undefined && typed !== ''
-                                                            && Math.abs(parseFloat(typed) - autoValue) > 0.01;
+                                            {ordered.length > 0 && (
+                                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(170px, 1fr))', gap: 10 }}>
+                                                    {ordered.map(row => {
+                                                        const differs = row.autoValue !== undefined && row.km !== ''
+                                                            && Math.abs(parseFloat(row.km) - row.autoValue) > 0.01;
                                                         return (
-                                                            <div key={cp._id}>
-                                                                <label className="ce-label" style={{ fontSize: 11 }}>{cp.name}</label>
+                                                            <div key={row.key} style={{ minWidth: 0 }}>
+                                                                {row.manual ? (
+                                                                    <div style={{ display: 'flex', alignItems: 'center', gap: 4, height: 22, marginBottom: 3 }}>
+                                                                        <input
+                                                                            type="text"
+                                                                            className="ce-input"
+                                                                            list={`cp-names-${listId}`}
+                                                                            placeholder={th ? 'ชื่อจุด' : 'Point name'}
+                                                                            value={row.name}
+                                                                            onChange={(e) => patchManualPoint(cat, row.id, { name: e.target.value })}
+                                                                            style={{
+                                                                                height: 22, fontSize: 11, fontWeight: 700, padding: '1px 5px',
+                                                                                flex: 1, minWidth: 0, borderRadius: 4,
+                                                                                border: '1px solid #c4b5fd', background: '#faf5ff', color: '#5b21b6',
+                                                                            }}
+                                                                        />
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => removeManualPoint(cat, row.id)}
+                                                                            title={th ? 'ลบจุดนี้' : 'Remove this point'}
+                                                                            style={{
+                                                                                flex: '0 0 auto', width: 22, height: 22, padding: 0, lineHeight: 1,
+                                                                                fontSize: 11, fontWeight: 700, fontFamily: 'inherit', cursor: 'pointer',
+                                                                                border: '1px solid #fecaca', background: '#fff', color: '#dc2626', borderRadius: 4,
+                                                                            }}
+                                                                        >
+                                                                            ✕
+                                                                        </button>
+                                                                    </div>
+                                                                ) : (
+                                                                    <label
+                                                                        className="ce-label"
+                                                                        title={row.name}
+                                                                        style={{
+                                                                            fontSize: 11, height: 22, lineHeight: '22px', marginBottom: 3,
+                                                                            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                                                                        }}
+                                                                    >
+                                                                        {row.name}
+                                                                    </label>
+                                                                )}
                                                                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                                                                     <input
                                                                         type="number"
@@ -797,18 +910,22 @@ function GpxRoutesCard({ campaignId, categories, th, notify }: {
                                                                         min={0}
                                                                         max={r.distanceKm}
                                                                         className="ce-input ce-input-sm"
-                                                                        placeholder={autoValue !== undefined ? String(autoValue) : '—'}
-                                                                        value={typed}
-                                                                        onChange={(e) => setMarks(prev => ({
-                                                                            ...prev,
-                                                                            [cat]: { ...(prev[cat] || {}), [cp.name]: e.target.value },
-                                                                        }))}
+                                                                        placeholder={row.autoValue !== undefined ? String(row.autoValue) : '—'}
+                                                                        value={row.km}
+                                                                        onFocus={freezeOrder}
+                                                                        onBlur={thawOrder}
+                                                                        onChange={(e) => (row.manual
+                                                                            ? patchManualPoint(cat, row.id, { km: e.target.value })
+                                                                            : setMarks(prev => ({
+                                                                                ...prev,
+                                                                                [cat]: { ...(prev[cat] || {}), [row.name]: e.target.value },
+                                                                            })))}
                                                                     />
                                                                     <span style={{ fontSize: 11, color: '#94a3b8' }}>km</span>
                                                                 </div>
                                                                 {differs && (
                                                                     <div style={{ fontSize: 10.5, color: '#94a3b8', marginTop: 2 }}>
-                                                                        {th ? `จากตาราง: ${autoValue}` : `From table: ${autoValue}`}
+                                                                        {th ? `จากตาราง: ${row.autoValue}` : `From table: ${row.autoValue}`}
                                                                     </div>
                                                                 )}
                                                             </div>
@@ -817,58 +934,15 @@ function GpxRoutesCard({ campaignId, categories, th, notify }: {
                                                 </div>
                                             )}
 
-                                            {!!manual[cat]?.length && (
-                                                <div style={{ marginTop: cps.length ? 14 : 0 }}>
-                                                    <div style={{ fontSize: 11, fontWeight: 800, color: '#7c3aed', marginBottom: 7 }}>
-                                                        {th ? 'จุดที่เพิ่มเอง' : 'Manual points'}
-                                                    </div>
-                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                                                        {(manual[cat] || []).map(m => (
-                                                            <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                                                                <input
-                                                                    type="text"
-                                                                    className="ce-input ce-input-sm"
-                                                                    list={`cp-names-${listId}`}
-                                                                    placeholder={th ? 'ชื่อจุด เช่น CP1' : 'Point name, e.g. CP1'}
-                                                                    value={m.name}
-                                                                    onChange={(e) => patchManualPoint(cat, m.id, { name: e.target.value })}
-                                                                    style={{ flex: '1 1 170px', minWidth: 130 }}
-                                                                />
-                                                                <input
-                                                                    type="number"
-                                                                    step="0.1"
-                                                                    min={0}
-                                                                    max={r.distanceKm}
-                                                                    className="ce-input ce-input-sm"
-                                                                    placeholder="0.0"
-                                                                    value={m.km}
-                                                                    onChange={(e) => patchManualPoint(cat, m.id, { km: e.target.value })}
-                                                                    style={{ width: 92, flex: '0 0 auto' }}
-                                                                />
-                                                                <span style={{ fontSize: 11, color: '#94a3b8' }}>km</span>
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={() => removeManualPoint(cat, m.id)}
-                                                                    title={th ? 'ลบจุดนี้' : 'Remove this point'}
-                                                                    style={{
-                                                                        fontSize: 12, fontWeight: 700, fontFamily: 'inherit', cursor: 'pointer',
-                                                                        border: '1px solid #fecaca', background: '#fff', color: '#dc2626',
-                                                                        borderRadius: 6, padding: '4px 9px', lineHeight: 1.2,
-                                                                    }}
-                                                                >
-                                                                    ✕
-                                                                </button>
-                                                            </div>
-                                                        ))}
-                                                    </div>
-                                                    <div style={{ fontSize: 10.5, color: '#94a3b8', marginTop: 7, lineHeight: 1.6 }}>
-                                                        {th
-                                                            ? 'ตั้งชื่อให้ตรงกับชื่อ checkpoint ที่ใช้จับเวลา (เช่น CP1) จุดนี้จะไปอยู่บนแผนที่และกราฟเส้นทางตรงกิโลเมตรที่ระบุ'
-                                                            : 'Name it exactly like the timing checkpoint (e.g. CP1) and it lands at that km on the map and course profile.'}
-                                                    </div>
-                                                    <datalist id={`cp-names-${listId}`}>
-                                                        {nameSuggestions.map(n => <option key={n} value={n} />)}
-                                                    </datalist>
+                                            <datalist id={`cp-names-${listId}`}>
+                                                {nameSuggestions.map(n => <option key={n} value={n} />)}
+                                            </datalist>
+
+                                            {manualRows.length > 0 && (
+                                                <div style={{ fontSize: 10.5, color: '#94a3b8', marginTop: 8, lineHeight: 1.6 }}>
+                                                    {th
+                                                        ? 'ช่องพื้นม่วงคือจุดที่เพิ่มเอง — ตั้งชื่อให้ตรงกับชื่อ checkpoint ที่ใช้จับเวลา (เช่น CP1) จุดนั้นจะไปอยู่บนแผนที่ตรงกิโลเมตรที่ระบุ · ทุกช่องเรียงตามกิโลเมตรให้เองหลังพิมพ์เสร็จ'
+                                                        : 'The purple fields are hand-added points — name one like the timing checkpoint (e.g. CP1) and it lands at that km on the map. Fields re-sort by km once you leave them.'}
                                                 </div>
                                             )}
 
