@@ -4,6 +4,7 @@ import { useEffect, useState, useRef, useCallback, ReactNode } from 'react';
 import { useParams } from 'next/navigation';
 import { QRCodeSVG } from 'qrcode.react';
 import { computeAwardsForCategory, formatAwardLabel } from '@/lib/awards';
+import { stripHiddenAgeGroup } from '@/lib/age-group-award-toggle';
 import { isNationalitySplitCategory } from '@/lib/nationality';
 import {
     RunnerData,
@@ -132,6 +133,9 @@ export default function ScanningSlipPage() {
                     overallDisplayCount: campaign.overallDisplayCount,
                     overallDisplayCountByCategory: campaign.overallDisplayCountByCategory,
                     overallEnabled: campaign.overallEnabled,
+                    overallDisabledCategories: campaign.overallDisabledCategories,
+                    ageGroupDisabledCategories: campaign.ageGroupDisabledCategories,
+                    categories: campaign.categories,
                     category: runner.category,
                     ageGroupDisplayCount: campaign.ageGroupDisplayCount,
                     genderSplitEnabled: campaign.genderSplitEnabled,
@@ -187,7 +191,8 @@ export default function ScanningSlipPage() {
             const detailRes = await fetch(`/api/runner/${found._id}`, { cache: 'no-store' });
             const detail = await detailRes.json();
             if (detail?.status?.code === '200' && detail.data?.runner) {
-                const r: RunnerData = detail.data.runner;
+                // Distances with no age groups (admin/categories) show none on the slip.
+                const r: RunnerData = stripHiddenAgeGroup(detail.data.runner as RunnerData, campaign);
                 setRunner(r);
                 setTimings(detail.data.timingRecords || []);
                 setTargetBandLabel(computeTargetBandLabel(r, campaign));

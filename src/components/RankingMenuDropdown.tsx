@@ -11,6 +11,7 @@ import {
     type RankingMenuVisibility,
 } from '@/lib/rankingMenu';
 import { isOverallEnabled, resolveOverallDisplayCount, type OverallCountByCategoryEntry } from '@/lib/overall-display-count';
+import { isAgeGroupAwardEnabled, type AgeGroupCategoryLike } from '@/lib/age-group-award-toggle';
 import { isTopRunnersEnabled, resolveTopRunnersCut, resolveTopRunnersRange, type TopRunnersRangeEntry } from '@/lib/top-runners-range';
 
 interface RankingMenuDropdownProps {
@@ -26,6 +27,12 @@ interface RankingMenuDropdownProps {
     overallDisplayCountByCategory?: OverallCountByCategoryEntry[];
     /** `false` when this event gives no Overall award — its menu entry is dropped. */
     overallEnabled?: boolean;
+    /** Distances whose Overall award is off on their own — the entry is dropped for those too. */
+    overallDisabledCategories?: string[];
+    /** Distances with no age-group award (admin/age-group-ranking) — the Age group entry is dropped. */
+    ageGroupDisabledCategories?: string[];
+    /** Campaign distances — carries the per-distance "no age groups" switch (admin/categories). */
+    categories?: AgeGroupCategoryLike[];
     /** Per-distance rank range of the Top Runners board (admin/top-overall). */
     topRunnersRangeByCategory?: TopRunnersRangeEntry[];
     topRunnersExcludeOverallCategories?: string[];
@@ -56,6 +63,9 @@ export default function RankingMenuDropdown({
     overallDisplayCount,
     overallDisplayCountByCategory,
     overallEnabled,
+    overallDisabledCategories,
+    ageGroupDisabledCategories,
+    categories,
     topRunnersRangeByCategory,
     topRunnersExcludeOverallCategories,
     topRunnersEnabled,
@@ -92,7 +102,7 @@ export default function RankingMenuDropdown({
 
     // The Overall rank count is per distance, so the menu labels follow the selected one.
     const overallN = resolveOverallDisplayCount({ overallDisplayCount, overallDisplayCountByCategory }, categoryName);
-    const topRunnersCfg = { overallDisplayCount, overallDisplayCountByCategory, topRunnersRangeByCategory, topRunnersExcludeOverallCategories, topRunnersEnabled };
+    const topRunnersCfg = { overallDisplayCount, overallDisplayCountByCategory, overallEnabled, overallDisabledCategories, topRunnersRangeByCategory, topRunnersExcludeOverallCategories, topRunnersEnabled };
     // Events without a Top Runners board drop the entry entirely — for admins too,
     // since there is no board to link to.
     const showTopRunners = isTopRunnersEnabled(topRunnersCfg);
@@ -112,11 +122,14 @@ export default function RankingMenuDropdown({
         { key: 'nationality', label: `Foreigner Overall ${overallForeignN}`, href: `/Nationality-Winners/${encodeURIComponent(campaignSlugOrId)}${catQuery}` },
         { key: 'ageGroup', label: `Age group ${ageGroupN}`, href: `/Result-Winners/${encodeURIComponent(campaignSlugOrId)}${catQuery}` },
     ];
-    // Events without an Overall award drop that entry too — for admins as well,
-    // since the board it links to says the award is off.
-    const showOverall = isOverallEnabled({ overallEnabled });
+    // Events (or this one distance) without an Overall award drop that entry too —
+    // for admins as well, since the board it links to says the award is off.
+    const showOverall = isOverallEnabled({ overallEnabled, overallDisabledCategories }, categoryName);
+    const showAgeGroup = isAgeGroupAwardEnabled({ ageGroupDisabledCategories, categories }, categoryName);
     const items = allItems.filter(item =>
-        (item.key !== 'topOverall' || showTopRunners) && (item.key !== 'general' || showOverall));
+        (item.key !== 'topOverall' || showTopRunners)
+        && (item.key !== 'general' || showOverall)
+        && (item.key !== 'ageGroup' || showAgeGroup));
 
     // Admins always see the menu; public users see it only when the admin has ticked at least one item visible
     const hasPublicItems = items.some(item => draft[item.key]);

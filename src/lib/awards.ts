@@ -19,6 +19,7 @@ import { isThaiNationality } from './nationality';
 import { isGenderSplitEnabled, type GenderSplitConfig } from './gender-split';
 import { buildCanonicalAgeGroups, canonicalizeAgeGroup } from './age-groups';
 import { isOverallEnabled, resolveOverallDisplayCount, type OverallCountByCategoryEntry } from './overall-display-count';
+import { isAgeGroupAwardEnabled, type AgeGroupAwardConfig } from './age-group-award-toggle';
 import {
     isTopRunnersEnabled,
     resolveTopRunnersCut,
@@ -26,7 +27,7 @@ import {
     type TopRunnersRangeEntry,
 } from './top-runners-range';
 
-export interface AwardConfig extends GenderSplitConfig {
+export interface AwardConfig extends GenderSplitConfig, AgeGroupAwardConfig {
     overallDisplayCount?: number;
     /** Per-category overrides of `overallDisplayCount` (campaign setting). Resolved
      *  against `category` below; falls back to `overallDisplayCount` when absent. */
@@ -34,6 +35,9 @@ export interface AwardConfig extends GenderSplitConfig {
     /** `false` when the campaign gives no Overall award — no runner gets an `overall`
      *  placing, and no one is excluded from the age-group award for holding one. */
     overallEnabled?: boolean;
+    /** Distances whose Overall award is off on their own (admin/top-overall). Resolved
+     *  against `category` below — such a pool behaves exactly like `overallEnabled: false`. */
+    overallDisabledCategories?: string[];
     /** Category name of this pool — needed to resolve the per-category overall count. */
     category?: string;
     ageGroupDisplayCount?: number;
@@ -179,10 +183,12 @@ export function computeAwardsForCategory(
     const map = new Map<string, AwardResult>();
     const overallDisplayCount = resolveOverallDisplayCount(cfg, cfg.category);
     const ageGroupDisplayCount = Math.max(1, Number(cfg.ageGroupDisplayCount) || 5);
-    // Events with no Overall award skip the placing entirely — and with it the
-    // "top N overall don't also take an age-group award" exclusion, which only
-    // exists to stop double-awarding.
-    const overallOn = isOverallEnabled(cfg);
+    // Events (or single distances) with no Overall award skip the placing entirely —
+    // and with it the "top N overall don't also take an age-group award" exclusion,
+    // which only exists to stop double-awarding.
+    const overallOn = isOverallEnabled(cfg, cfg.category);
+    // Likewise a distance with no age-group award hands out no "Age Group n" placing.
+    const ageGroupOn = isAgeGroupAwardEnabled(cfg, cfg.category);
     const excludeOv = overallOn ? Math.max(0, Number(cfg.excludeOverallFromAgeGroup) || 0) : 0;
     const separateNat = overallOn && !!cfg.separateOverallByNationality;
     const excludeNatCount: Record<'thai' | 'foreign', number> = {
@@ -254,6 +260,7 @@ export function computeAwardsForCategory(
         // eligible unless the admin excludes the top `excludeOv` overall (or the
         // category is nationality-split, which always excludes them above).
         if (excludeOv > 0) byGun.slice(0, excludeOv).forEach(r => excludedBibs.add(r.bib));
+        if (!ageGroupOn) continue;
 
         const byNet = [...group].sort(compareAgeGroupByNet);
         const bucketCount = new Map<string, number>();

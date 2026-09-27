@@ -24,6 +24,10 @@ interface RaceCategory {
     distance?: string;
     startTime?: string;
     ageGroups?: AgeGroup[];
+    /** `false` = this distance has no age groups at all: runners show no age group,
+     *  age-group rank or age-group award anywhere (public table, runner page,
+     *  e-slips, certificates, bib-check screens, winner boards). */
+    ageGroupEnabled?: boolean;
 }
 
 interface Campaign {
@@ -259,6 +263,40 @@ export default function CategoriesPage() {
         }
     };
 
+    // Per-distance "has age groups" switch. Saved on its own right away (it is a
+    // separate decision from the bracket editor below, which has its own Save).
+    const selectedCat = campaign?.categories?.find(c => c.name === selectedCategory);
+    const ageGroupsOn = selectedCat?.ageGroupEnabled !== false;
+    const [togglingAgeGroups, setTogglingAgeGroups] = useState(false);
+    const toggleAgeGroupsForSelected = async () => {
+        if (!selectedCategory || !campaign?._id || togglingAgeGroups) return;
+        const nextOn = !ageGroupsOn;
+        setTogglingAgeGroups(true);
+        try {
+            const updatedCategories = (campaign.categories || []).map(cat =>
+                cat.name === selectedCategory ? { ...cat, ageGroupEnabled: nextOn } : cat
+            );
+            const res = await fetch(`/api/campaigns/${campaign._id}`, {
+                method: 'PUT',
+                headers: authHeaders(),
+                body: JSON.stringify({ categories: updatedCategories }),
+            });
+            if (!res.ok) throw new Error('Failed to save');
+            const updated = await res.json();
+            setCampaign(updated);
+            showToast(
+                nextOn
+                    ? (language === 'th' ? `เปิดรุ่นอายุของระยะ ${selectedCategory} แล้ว` : `Age groups turned on for ${selectedCategory}`)
+                    : (language === 'th' ? `ปิดรุ่นอายุของระยะ ${selectedCategory} แล้ว — จะไม่แสดงรุ่นอายุที่ไหนเลย` : `Age groups turned off for ${selectedCategory} — hidden everywhere`),
+                'success',
+            );
+        } catch {
+            showToast(language === 'th' ? 'บันทึกไม่สำเร็จ' : 'Save failed', 'error');
+        } finally {
+            setTogglingAgeGroups(false);
+        }
+    };
+
     const handleSaveAll = async () => {
         if (!selectedCategory || !campaign?._id) {
             showToast(language === 'th' ? 'กรุณาเลือกระยะทางก่อน' : 'Please select a distance first', 'error');
@@ -385,6 +423,32 @@ export default function CategoriesPage() {
                                             </option>
                                         ))}
                                     </select>
+                                    {/* Whole-distance switch: off = this distance has no age groups at all */}
+                                    <div
+                                        style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '3px 8px', borderRadius: 4, border: `1px solid ${ageGroupsOn ? '#8fd19e' : '#ccc'}`, background: ageGroupsOn ? '#f0fff4' : '#f3f4f6' }}
+                                        title={language === 'th'
+                                            ? 'ปิดถ้าระยะนี้ไม่มีรุ่นอายุเลย — จะไม่แสดงรุ่นอายุ อันดับรุ่นอายุ และรางวัลรุ่นอายุของนักวิ่งระยะนี้ทุกหน้า (/event, หน้านักวิ่ง, e-slip, ใบเซอร์, จอเช็คบิบ, บอร์ดผู้ชนะ)'
+                                            : 'Turn off when this distance has no age groups at all — hides the age group, its rank and its award for this distance on every page'}
+                                    >
+                                        <span style={{ fontWeight: 600, fontSize: 12, color: ageGroupsOn ? '#1f7a3a' : '#6b7280' }}>
+                                            {language === 'th' ? 'รุ่นอายุระยะนี้:' : 'Age groups:'}
+                                        </span>
+                                        <button
+                                            type="button"
+                                            role="switch"
+                                            aria-checked={ageGroupsOn}
+                                            onClick={toggleAgeGroupsForSelected}
+                                            disabled={readOnly || !selectedCategory || togglingAgeGroups}
+                                            style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', width: 40, height: 22, borderRadius: 999, border: 'none', padding: 0, background: ageGroupsOn ? '#00a65a' : '#cbd5e1', cursor: readOnly || !selectedCategory ? 'not-allowed' : 'pointer', opacity: togglingAgeGroups ? 0.6 : 1, transition: 'background 0.15s' }}
+                                        >
+                                            <span style={{ position: 'absolute', top: 2, left: ageGroupsOn ? 20 : 2, width: 18, height: 18, borderRadius: '50%', background: '#fff', boxShadow: '0 1px 2px rgba(0,0,0,0.3)', transition: 'left 0.15s' }} />
+                                        </button>
+                                        <span style={{ fontWeight: 700, fontSize: 12, color: ageGroupsOn ? '#1f7a3a' : '#6b7280' }}>
+                                            {ageGroupsOn
+                                                ? (language === 'th' ? 'เปิด' : 'On')
+                                                : (language === 'th' ? 'ปิด — ไม่มีรุ่นอายุ' : 'Off — no age groups')}
+                                        </span>
+                                    </div>
                                 </div>
                                 <div style={{ fontWeight: 'bold', color: '#3c8dbc', fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
                                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ display: 'inline-block', verticalAlign: 'middle' }}>

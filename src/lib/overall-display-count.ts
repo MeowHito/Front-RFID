@@ -19,12 +19,40 @@ export interface OverallDisplayCountConfig {
      *  no Overall award at all — the board, its ranking-menu entry and the
      *  "Overall n" award label all disappear. Undefined means on (existing campaigns). */
     overallEnabled?: boolean;
+    /** Distances whose Overall award is off while the rest of the event keeps it
+     *  (admin/top-overall switch, per selected distance). Matched by
+     *  `normalizeCategoryName`, like the other per-category lists. */
+    overallDisabledCategories?: string[];
 }
 
-/** Whether this campaign awards an Overall placing at all. Only an explicit `false`
- *  turns it off, so campaigns saved before the switch existed stay on. */
-export function isOverallEnabled(config: OverallDisplayCountConfig | null | undefined): boolean {
+/** Whether this campaign awards an Overall placing at all (whole-event switch).
+ *  Only an explicit `false` turns it off, so campaigns saved before the switch
+ *  existed stay on. */
+export function isOverallEnabledForEvent(config: OverallDisplayCountConfig | null | undefined): boolean {
     return config?.overallEnabled !== false;
+}
+
+/** True when `category` is one of the distances whose Overall award is switched off. */
+export function isOverallDisabledCategory(
+    config: OverallDisplayCountConfig | null | undefined,
+    category?: string | null,
+): boolean {
+    const list = config?.overallDisabledCategories;
+    if (!Array.isArray(list) || list.length === 0) return false;
+    const target = normalizeCategoryName(category);
+    if (!target) return false;
+    return list.some(c => normalizeCategoryName(c) === target);
+}
+
+/** Whether the Overall award exists for this distance. Off when the whole-event
+ *  switch is off OR the distance is in `overallDisabledCategories`. Without a
+ *  category only the whole-event switch is consulted. */
+export function isOverallEnabled(
+    config: OverallDisplayCountConfig | null | undefined,
+    category?: string | null,
+): boolean {
+    if (!isOverallEnabledForEvent(config)) return false;
+    return !isOverallDisabledCategory(config, category);
 }
 
 export const DEFAULT_OVERALL_DISPLAY_COUNT = 5;

@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useRef, useCallback, useLayoutEffect } from 'react';
+import { stripHiddenAgeGroup } from '@/lib/age-group-award-toggle';
 import { useParams } from 'next/navigation';
 
 function fitNameToWidth(el: HTMLElement | null, baseRem: number, minRem = 1.0) {
@@ -45,7 +46,7 @@ interface Runner {
     gunPace?: string; netPace?: string; photoUrl?: string;
     wave?: string; medical?: string;
 }
-interface Campaign { _id: string; name: string; slug?: string; scanningTemplate?: string; scanningBgImage?: string; scanningBgImagePortrait?: string; subtitle?: string; }
+interface Campaign { _id: string; name: string; slug?: string; scanningTemplate?: string; scanningBgImage?: string; scanningBgImagePortrait?: string; subtitle?: string; categories?: { name: string; distance?: string; ageGroupEnabled?: boolean }[]; }
 
 export default function Scanning2BySlugPage() {
     const params = useParams();
@@ -140,7 +141,8 @@ export default function Scanning2BySlugPage() {
             const p = new URLSearchParams({ campaignId: campaign?._id || '', code, checkIn: '1' });
             const res = await fetch(`/api/runners/lookup?${p.toString()}`);
             const data = await res.json();
-            setRunner(data.runner || null);
+            // Distances with no age groups (admin/categories) show none on the check-in screen.
+            setRunner(data.runner ? stripHiddenAgeGroup(data.runner, campaign) : null);
             setFound(!!data.found);
             setAnimKey(k => k + 1);
         } catch {

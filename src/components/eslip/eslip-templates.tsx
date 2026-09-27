@@ -57,6 +57,8 @@ export interface TimingRecord {
 export interface CampaignData {
     _id: string;
     name: string;
+    /** Campaign distances — carries the per-distance "no age groups" switch. */
+    categories?: { name: string; distance?: string; ageGroupEnabled?: boolean }[];
     eventDate: string;
     location?: string;
     slug?: string;
@@ -71,6 +73,8 @@ export interface CampaignData {
     overallDisplayCount?: number;
     /** `false` = this event gives no Overall award (admin/top-overall master switch). */
     overallEnabled?: boolean;
+    overallDisabledCategories?: string[];
+    ageGroupDisabledCategories?: string[];
     /** Per-distance overrides of the Overall rank count (admin/top-overall). */
     overallDisplayCountByCategory?: { category: string; count: number }[];
     /** Top Runners board config — drives the "Top N" fallback award on the slip. */

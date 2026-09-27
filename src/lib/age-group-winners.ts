@@ -8,6 +8,7 @@ import { isThaiNationality, isNationalitySplitCategory } from './nationality';
 import { buildCanonicalAgeGroups, canonicalizeAgeGroup, type AgeGroupBucket } from './age-groups';
 import { resolveOverallDisplayCount, type OverallCountByCategoryEntry } from './overall-display-count';
 import { isGenderSplitEnabled, type GenderSplitConfig } from './gender-split';
+import { isAgeGroupAwardEnabled, type AgeGroupAwardConfig } from './age-group-award-toggle';
 
 export interface AgeGroupWinnerRunner {
     _id: string;
@@ -22,7 +23,7 @@ export interface AgeGroupWinnerRunner {
     ageGroupRank?: number;
 }
 
-export interface AgeGroupWinnerConfig extends GenderSplitConfig {
+export interface AgeGroupWinnerConfig extends GenderSplitConfig, AgeGroupAwardConfig {
     ageGroupDisplayCount?: number;
     overallDisplayCount?: number;
     /** Per-category overrides of `overallDisplayCount` (campaign setting). */
@@ -116,6 +117,11 @@ export function computeAgeGroupWinners<T extends AgeGroupWinnerRunner>(
     const maleWinners: Record<string, T[]> = {};
     const femaleWinners: Record<string, T[]> = {};
     for (const g of activeAgeGroups) { maleWinners[g.label] = []; femaleWinners[g.label] = []; }
+
+    // Distance with no age-group award → every bracket stays empty.
+    if (!isAgeGroupAwardEnabled(cfg, selectedCategory)) {
+        return { activeAgeGroups, maleWinners, femaleWinners, genderSplit };
+    }
 
     for (const runner of sorted) {
         if (excludedBibs.has(runner.bib)) continue;

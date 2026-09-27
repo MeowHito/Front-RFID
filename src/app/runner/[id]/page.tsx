@@ -6,6 +6,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { isRunnerFollowed, loadFollowedRunners, saveFollowedRunners, subscribeFollowedRunners, toggleFollowedRunner, type FollowedRunner } from '@/lib/followed-runners';
 import { computeAwardsForCategory, computeOverallRanks, computeGenderRanks, computeAgeGroupRanks, formatOverallAwardLabel, formatTopRunnersLabel, type AwardResult } from '@/lib/awards';
+import { stripHiddenAgeGroup } from '@/lib/age-group-award-toggle';
 import { bestOfProvinceAwardFor } from '@/lib/thai-provinces';
 import { isNationalitySplitCategory } from '@/lib/nationality';
 import { dedupeTimings } from '@/lib/timing-dedupe';
@@ -77,6 +78,8 @@ interface CampaignData {
     overallDisplayCount?: number;
     /** `false` = this event gives no Overall award (admin/top-overall master switch). */
     overallEnabled?: boolean;
+    overallDisabledCategories?: string[];
+    ageGroupDisabledCategories?: string[];
     /** Per-distance overrides of the Overall rank count (admin/top-overall). */
     overallDisplayCountByCategory?: { category: string; count: number }[];
     /** Top Runners board config — drives the "TOP n" part of the AWARD label. */
@@ -386,7 +389,8 @@ export default function RunnerProfilePage() {
                 if (runnerRes.status === 'fulfilled') {
                     const json = runnerRes.value;
                     if (json.status?.code === '200' && json.data) {
-                        setRunner(json.data.runner);
+                        // Distances with no age groups (admin/categories) show none here.
+                        setRunner(stripHiddenAgeGroup(json.data.runner, json.data.campaign));
                         setTimings(json.data.timingRecords || []);
                         setCampaign(json.data.campaign || null);
                         setCpMappings(json.data.checkpointMappings || []);
@@ -451,6 +455,9 @@ export default function RunnerProfilePage() {
                     overallDisplayCount: campaign.overallDisplayCount,
                     overallDisplayCountByCategory: campaign.overallDisplayCountByCategory,
                     overallEnabled: campaign.overallEnabled,
+                    overallDisabledCategories: campaign.overallDisabledCategories,
+                    ageGroupDisabledCategories: campaign.ageGroupDisabledCategories,
+                    categories: campaign.categories,
                     category: runner.category,
                     ageGroupDisplayCount: campaign.ageGroupDisplayCount,
                     genderSplitEnabled: campaign.genderSplitEnabled,
@@ -478,7 +485,7 @@ export default function RunnerProfilePage() {
             } catch { if (!cancelled) { setAward(null); setBestOfProvince(null); setGunOverallRank(null); setGunGenderRank(null); setGunAgeGroupRank(null); } }
         })();
         return () => { cancelled = true; };
-    }, [runner, campaign?._id, campaign?.overallDisplayCount, campaign?.overallDisplayCountByCategory, campaign?.overallEnabled, campaign?.ageGroupDisplayCount, campaign?.genderSplitEnabled, campaign?.bestOfProvinceEnabled, campaign?.bestOfProvinces, campaign?.excludeOverallFromAgeGroup, campaign?.excludeOverallThaiFromAgeGroup, campaign?.excludeOverallForeignFromAgeGroup, campaign?.separateOverallNationalityCategories, campaign?.topRunnersRangeByCategory, campaign?.topRunnersExcludeOverallCategories, campaign?.topRunnersEnabled]);
+    }, [runner, campaign?._id, campaign?.overallDisplayCount, campaign?.overallDisplayCountByCategory, campaign?.overallEnabled, campaign?.overallDisabledCategories, campaign?.ageGroupDisabledCategories, campaign?.categories, campaign?.ageGroupDisplayCount, campaign?.genderSplitEnabled, campaign?.bestOfProvinceEnabled, campaign?.bestOfProvinces, campaign?.excludeOverallFromAgeGroup, campaign?.excludeOverallThaiFromAgeGroup, campaign?.excludeOverallForeignFromAgeGroup, campaign?.separateOverallNationalityCategories, campaign?.topRunnersRangeByCategory, campaign?.topRunnersExcludeOverallCategories, campaign?.topRunnersEnabled]);
 
     useEffect(() => {
         setFollowedRunners(loadFollowedRunners());

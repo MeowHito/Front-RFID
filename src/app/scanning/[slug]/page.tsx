@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useRef, useCallback, useLayoutEffect } from 'react';
+import { stripHiddenAgeGroup } from '@/lib/age-group-award-toggle';
 import { useParams } from 'next/navigation';
 import { QRCodeSVG } from 'qrcode.react';
 
@@ -48,7 +49,7 @@ interface Runner {
     gunPace?: string; netPace?: string; photoUrl?: string;
     wave?: string; medical?: string;
 }
-interface Campaign { _id: string; name: string; slug?: string; scanningTemplate?: string; scanningBgImage?: string; scanningBgImagePortrait?: string; subtitle?: string; }
+interface Campaign { _id: string; name: string; slug?: string; scanningTemplate?: string; scanningBgImage?: string; scanningBgImagePortrait?: string; subtitle?: string; categories?: { name: string; distance?: string; ageGroupEnabled?: boolean }[]; }
 
 export default function ScanningBySlugPage() {
     const params = useParams();
@@ -190,7 +191,8 @@ export default function ScanningBySlugPage() {
                     body: JSON.stringify({ photo: '' }),
                 }).catch(() => {});
             }
-            setRunner(foundRunner);
+            // Distances with no age groups (admin/categories) show none on the check-in screen.
+            setRunner(foundRunner ? stripHiddenAgeGroup(foundRunner, campaign) : null);
             setFound(!!data.found);
             setAnimKey(k => k + 1);
         } catch {

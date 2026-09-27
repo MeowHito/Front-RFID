@@ -9,6 +9,7 @@ import { useEffect, useState, useRef, useCallback, useMemo, type CSSProperties }
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { computeAwardsForCategory, computeOverallRanks, formatAwardLabel, formatOverallAwardLabel } from '@/lib/awards';
+import { stripHiddenAgeGroup } from '@/lib/age-group-award-toggle';
 import { isNationalitySplitCategory } from '@/lib/nationality';
 import { resolveRunnerDistanceLabel, type RaceCategoryLike } from '@/lib/category-distance';
 import { bestOfProvinceAwardFor } from '@/lib/thai-provinces';
@@ -104,6 +105,8 @@ interface CampaignData {
     overallDisplayCount?: number;
     /** `false` = this event gives no Overall award (admin/top-overall master switch). */
     overallEnabled?: boolean;
+    overallDisabledCategories?: string[];
+    ageGroupDisabledCategories?: string[];
     /** Per-distance overrides of the Overall rank count (admin/top-overall). */
     overallDisplayCountByCategory?: { category: string; count: number }[];
     ageGroupDisplayCount?: number;
@@ -442,7 +445,8 @@ export default function CertificatePage() {
                     setError('ไม่พบข้อมูลนักวิ่ง');
                     return;
                 }
-                setRunner(json.data.runner);
+                // Distances with no age groups (admin/categories) print none on the certificate.
+                setRunner(stripHiddenAgeGroup(json.data.runner, json.data.campaign));
                 setCampaign(json.data.campaign || null);
                 setTimingRecords(Array.isArray(json.data.timingRecords) ? json.data.timingRecords : []);
             } catch {
@@ -476,6 +480,9 @@ export default function CertificatePage() {
                     overallDisplayCount: campaign.overallDisplayCount,
                     overallDisplayCountByCategory: campaign.overallDisplayCountByCategory,
                     overallEnabled: campaign.overallEnabled,
+                    overallDisabledCategories: campaign.overallDisabledCategories,
+                    ageGroupDisabledCategories: campaign.ageGroupDisabledCategories,
+                    categories: campaign.categories,
                     category: category,
                     ageGroupDisplayCount: campaign.ageGroupDisplayCount,
                     genderSplitEnabled: campaign.genderSplitEnabled,
@@ -502,7 +509,7 @@ export default function CertificatePage() {
             } catch { if (!cancelled) { setAwards(EMPTY_AWARDS); setGunOverallRank(null); } }
         })();
         return () => { cancelled = true; };
-    }, [runner, campaign?._id, campaign?.overallDisplayCount, campaign?.overallDisplayCountByCategory, campaign?.overallEnabled, campaign?.ageGroupDisplayCount, campaign?.genderSplitEnabled, campaign?.excludeOverallFromAgeGroup, campaign?.excludeOverallThaiFromAgeGroup, campaign?.excludeOverallForeignFromAgeGroup, campaign?.separateOverallNationalityCategories, campaign?.bestOfProvinceEnabled, campaign?.bestOfProvinces]);
+    }, [runner, campaign?._id, campaign?.overallDisplayCount, campaign?.overallDisplayCountByCategory, campaign?.overallEnabled, campaign?.overallDisabledCategories, campaign?.ageGroupDisabledCategories, campaign?.categories, campaign?.ageGroupDisplayCount, campaign?.genderSplitEnabled, campaign?.excludeOverallFromAgeGroup, campaign?.excludeOverallThaiFromAgeGroup, campaign?.excludeOverallForeignFromAgeGroup, campaign?.separateOverallNationalityCategories, campaign?.bestOfProvinceEnabled, campaign?.bestOfProvinces]);
 
     // Runner with the gun-time overall rank applied, used for token substitution so
     // the certificate's Overall rank matches the /event RANK column.

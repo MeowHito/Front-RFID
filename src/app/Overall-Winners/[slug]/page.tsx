@@ -10,7 +10,7 @@ import { useLanguage } from '@/lib/language-context';
 import { useAuth } from '@/lib/auth-context';
 import { isThaiNationality, isNationalitySplitCategory } from '@/lib/nationality';
 import { isGenderSplitEnabled } from '@/lib/gender-split';
-import { resolveOverallDisplayCount, type OverallCountByCategoryEntry } from '@/lib/overall-display-count';
+import { isOverallEnabled, resolveOverallDisplayCount, type OverallCountByCategoryEntry } from '@/lib/overall-display-count';
 import { useParams, useSearchParams } from 'next/navigation';
 
 interface Runner {
@@ -48,6 +48,7 @@ interface Campaign {
     overallDisplayCount?: number;
     overallDisplayCountByCategory?: OverallCountByCategoryEntry[];
     overallEnabled?: boolean;
+    overallDisabledCategories?: string[];
     excludeOverallThaiFromAgeGroup?: number;
     separateOverallNationalityCategories?: string[];
     /** `false` → this event doesn't race the genders separately; the board shows one
@@ -153,6 +154,8 @@ export default function OverallWinnersBySlugPage() {
     const autoTimerRef = useRef<NodeJS.Timeout | null>(null);
     const autoCountdownRef = useRef<NodeJS.Timeout | null>(null);
     const campaignCategoriesRef = useRef<CampaignCategory[]>([]);
+    // Auto-rotate reads this instead of `campaign` so it never needs to restart.
+    const campaignRef = useRef<Campaign | null>(null);
     const displayedCategoryRef = useRef<string>('');
     const [downloading, setDownloading] = useState<string | null>(null);
     const maleColRef = useRef<HTMLDivElement | null>(null);
@@ -186,7 +189,10 @@ export default function OverallWinnersBySlugPage() {
                         setCampaign(data);
                         if (data.categories?.length > 0) {
                             const urlMatch = data.categories.find((c: CampaignCategory) => c.name === categoryFromUrl);
-                            setSelectedCategory(urlMatch ? urlMatch.name : data.categories[0].name);
+                            // Land on a distance that actually has an Overall award when
+                            // the link doesn't name one.
+                            const firstOn = data.categories.find((c: CampaignCategory) => isOverallEnabled(data, c.name));
+                            setSelectedCategory(urlMatch ? urlMatch.name : (firstOn || data.categories[0]).name);
                         }
                     } else {
                         setCampaignNotFound(true);
@@ -250,6 +256,7 @@ export default function OverallWinnersBySlugPage() {
 
     useEffect(() => {
         campaignCategoriesRef.current = campaign?.categories || [];
+        campaignRef.current = campaign;
     }, [campaign]);
 
     useEffect(() => {
@@ -276,7 +283,12 @@ export default function OverallWinnersBySlugPage() {
                 const cats = campaignCategoriesRef.current;
                 if (!cats.length) return prev;
                 const idx = cats.findIndex(c => c.name === prev);
-                return cats[(idx + 1) % cats.length].name;
+                // Skip distances whose Overall award is off — nothing to show there.
+                for (let step = 1; step <= cats.length; step++) {
+                    const next = cats[(idx + step) % cats.length];
+                    if (isOverallEnabled(campaignRef.current, next.name)) return next.name;
+                }
+                return prev;
             });
         }, 10000);
         return () => {
@@ -377,8 +389,11 @@ export default function OverallWinnersBySlugPage() {
     const rankBg = ['#f59e0b', '#9ca3af', '#92400e', '#e2e8f0', '#e2e8f0'];
     const rankFg = ['#000', '#fff', '#fff', '#475569', '#475569'];
 
-    // Events with the Overall award switched off (admin/top-overall) have no board
-    // to show — say so instead of rendering an empty ranking.
+    // Events with the Overall award switched off for the whole event
+    // (admin/top-overall) have no board to show — say so instead of rendering an
+    // empty ranking. A single distance switched off is handled below the header,
+    // so the distance selector stays reachable.
+    const overallOffForSelected = !!campaign && !!selectedCategory && !isOverallEnabled(campaign, selectedCategory);
     if (campaign && campaign.overallEnabled === false) {
         return (
             <div style={{ fontFamily: "'Prompt', 'Inter', sans-serif", background: '#0f172a', height: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
@@ -561,7 +576,13 @@ export default function OverallWinnersBySlugPage() {
             )}
 
             {/* Show loading only on very first load — never blank the screen on refresh */}
-            {initialLoading && displayedRunners.length === 0 ? (
+            {overallOffForSelected ? (
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: isMobile ? '40px 12px' : 0, textAlign: 'center' }}>
+                    <div style={{ fontSize: isMobile ? 48 : 72, marginBottom: isMobile ? 12 : 24 }}>🚫</div>
+                    <div style={{ fontSize: isMobile ? 20 : 26, fontWeight: 900, color: '#f59e0b', marginBottom: 8 }}>ระยะ {selectedCategory} ไม่มีรางวัล Overall</div>
+                    <div style={{ fontSize: isMobile ? 14 : 16, color: '#94a3b8' }}>Overall is turned off for {selectedCategory}</div>
+                </div>
+            ) : initialLoading && displayedRunners.length === 0 ? (
                 <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', fontSize: isMobile ? 16 : '2vh' }}>
                     Loading...
                 </div>

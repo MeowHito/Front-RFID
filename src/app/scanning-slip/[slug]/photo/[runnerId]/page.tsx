@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import { computeAwardsForCategory, formatAwardLabel } from '@/lib/awards';
+import { stripHiddenAgeGroup } from '@/lib/age-group-award-toggle';
 import { isNationalitySplitCategory } from '@/lib/nationality';
 import {
     RunnerData,
@@ -69,7 +70,8 @@ export default function ScanningSlipPhotoPage() {
                 const c = cRes.ok ? await cRes.json() : null;
                 const detail = await rRes.json();
                 if (detail?.status?.code === '200' && detail.data?.runner) {
-                    const r: RunnerData = detail.data.runner;
+                    // Distances with no age groups (admin/categories) show none on the slip.
+                    const r: RunnerData = stripHiddenAgeGroup(detail.data.runner as RunnerData, c);
                     setCampaign(c);
                     setRunner(r);
                     setTimings(detail.data.timingRecords || []);
@@ -105,6 +107,9 @@ export default function ScanningSlipPhotoPage() {
                     overallDisplayCount: campaign.overallDisplayCount,
                     overallDisplayCountByCategory: campaign.overallDisplayCountByCategory,
                     overallEnabled: campaign.overallEnabled,
+                    overallDisabledCategories: campaign.overallDisabledCategories,
+                    ageGroupDisabledCategories: campaign.ageGroupDisabledCategories,
+                    categories: campaign.categories,
                     category: runner.category,
                     ageGroupDisplayCount: campaign.ageGroupDisplayCount,
                     genderSplitEnabled: campaign.genderSplitEnabled,

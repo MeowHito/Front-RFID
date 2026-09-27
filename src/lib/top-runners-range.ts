@@ -12,6 +12,7 @@
 
 import { normalizeCategoryName } from './nationality';
 import {
+    isOverallEnabled,
     resolveOverallDisplayCount,
     type OverallDisplayCountConfig,
 } from './overall-display-count';
@@ -123,7 +124,9 @@ export function resolveTopRunnersCut(
     config: TopRunnersRangeConfig | null | undefined,
     category?: string | null,
 ): number {
-    return isTopRunnersExcludeOverall(config, category)
+    // A distance with no Overall award has no winners to skip, whatever the
+    // "drop Overall winners" flag says for it.
+    return isTopRunnersExcludeOverall(config, category) && isOverallEnabled(config, category)
         ? resolveOverallDisplayCount(config, category)
         : 0;
 }

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
 import { computeAwardsForCategory, computeOverallRanks, formatAwardLabel } from '@/lib/awards';
+import { stripHiddenAgeGroup } from '@/lib/age-group-award-toggle';
 import { bestOfProvinceAwardFor } from '@/lib/thai-provinces';
 import { isNationalitySplitCategory } from '@/lib/nationality';
 import { useLanguage } from '@/lib/language-context';
@@ -76,7 +77,8 @@ export default function ESlipView({ apiUrl }: { apiUrl: string }) {
                 const res = await fetch(apiUrl);
                 const json = await res.json();
                 if (json.status?.code === '200' && json.data) {
-                    setRunner(json.data.runner);
+                    // Distances with no age groups (admin/categories) show none on the slip.
+                    setRunner(stripHiddenAgeGroup(json.data.runner, json.data.campaign));
                     setTimings(json.data.timingRecords || []);
                     let c = json.data.campaign;
                     // Back-compat: ensure layout has a splits element so the splits table renders
@@ -142,6 +144,9 @@ export default function ESlipView({ apiUrl }: { apiUrl: string }) {
                     overallDisplayCount: campaign.overallDisplayCount,
                     overallDisplayCountByCategory: campaign.overallDisplayCountByCategory,
                     overallEnabled: campaign.overallEnabled,
+                    overallDisabledCategories: campaign.overallDisabledCategories,
+                    ageGroupDisabledCategories: campaign.ageGroupDisabledCategories,
+                    categories: campaign.categories,
                     category: runner.category,
                     ageGroupDisplayCount: campaign.ageGroupDisplayCount,
                     genderSplitEnabled: campaign.genderSplitEnabled,
@@ -165,7 +170,7 @@ export default function ESlipView({ apiUrl }: { apiUrl: string }) {
             } catch { if (!cancelled) { setAwardLabel(null); setBestOfProvince(null); setGunOverallRank(null); } }
         })();
         return () => { cancelled = true; };
-    }, [runner, campaign?._id, campaign?.overallDisplayCount, campaign?.overallDisplayCountByCategory, campaign?.overallEnabled, campaign?.ageGroupDisplayCount, campaign?.bestOfProvinceEnabled, campaign?.bestOfProvinces, campaign?.excludeOverallFromAgeGroup, campaign?.excludeOverallThaiFromAgeGroup, campaign?.excludeOverallForeignFromAgeGroup, campaign?.excludeAgeGroupTop, campaign?.separateOverallNationalityCategories, campaign?.topRunnersRangeByCategory, campaign?.topRunnersExcludeOverallCategories, campaign?.topRunnersEnabled]);
+    }, [runner, campaign?._id, campaign?.overallDisplayCount, campaign?.overallDisplayCountByCategory, campaign?.overallEnabled, campaign?.overallDisabledCategories, campaign?.ageGroupDisabledCategories, campaign?.categories, campaign?.ageGroupDisplayCount, campaign?.bestOfProvinceEnabled, campaign?.bestOfProvinces, campaign?.excludeOverallFromAgeGroup, campaign?.excludeOverallThaiFromAgeGroup, campaign?.excludeOverallForeignFromAgeGroup, campaign?.excludeAgeGroupTop, campaign?.separateOverallNationalityCategories, campaign?.topRunnersRangeByCategory, campaign?.topRunnersExcludeOverallCategories, campaign?.topRunnersEnabled]);
 
     const handleBgUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const input = e.currentTarget;

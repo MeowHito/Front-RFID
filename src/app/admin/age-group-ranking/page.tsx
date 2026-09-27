@@ -8,6 +8,7 @@ import { authHeaders } from '@/lib/authHeaders';
 import { isThaiNationality, isNationalitySplitCategory } from '@/lib/nationality';
 import { type AgeGroupBucket, buildCanonicalAgeGroups, canonicalizeAgeGroup } from '@/lib/age-groups';
 import { isGenderSplitEnabled } from '@/lib/gender-split';
+import { categoryHasAgeGroups, isAgeGroupDisabledCategory } from '@/lib/age-group-award-toggle';
 import { LinkIcon, TrophyIcon } from '@heroicons/react/24/outline';
 
 interface Runner {
@@ -48,7 +49,8 @@ interface FeaturedCampaignSettings {
     excludeOverallThaiFromAgeGroup?: number;
     excludeOverallForeignFromAgeGroup?: number;
     separateOverallNationalityCategories?: string[];
-    categories?: { name: string; distance?: string; ageGroups?: AgeGroupConfig[] }[];
+    ageGroupDisabledCategories?: string[];
+    categories?: { name: string; distance?: string; ageGroups?: AgeGroupConfig[]; ageGroupEnabled?: boolean }[];
 }
 
 const DEFAULT_AGE_GROUPS: AgeGroupBucket[] = [
@@ -103,6 +105,10 @@ export default function AgeGroupRankingPage() {
     const [excludeForeignTop, setExcludeForeignTop] = useState<number>(DEFAULT_TOP_N);
     // Category names whose Overall ranking is split into Thai / foreign buckets
     const [natSplitCategories, setNatSplitCategories] = useState<string[]>([]);
+    // Distances that give no age-group award. The switch below the distance tabs
+    // acts on the selected distance only; off distances lose the "Age Group n"
+    // label on AWARD / certificates / e-slips, the public board and the menu entry.
+    const [ageGroupDisabledCategories, setAgeGroupDisabledCategories] = useState<string[]>([]);
     const [selectedCategory, setSelectedCategory] = useState('');
     const [previewRunners, setPreviewRunners] = useState<Runner[]>([]);
     const [previewLoading, setPreviewLoading] = useState(false);
@@ -127,6 +133,7 @@ export default function AgeGroupRankingPage() {
                 setExcludeThaiTop(data?.excludeOverallThaiFromAgeGroup != null ? Math.max(0, Number(data.excludeOverallThaiFromAgeGroup)) : overallTopN);
                 setExcludeForeignTop(data?.excludeOverallForeignFromAgeGroup != null ? Math.max(0, Number(data.excludeOverallForeignFromAgeGroup)) : overallTopN);
                 setNatSplitCategories(Array.isArray(data?.separateOverallNationalityCategories) ? data.separateOverallNationalityCategories : []);
+                setAgeGroupDisabledCategories(Array.isArray(data?.ageGroupDisabledCategories) ? data.ageGroupDisabledCategories : []);
                 setSelectedCategory(data?.categories?.[0]?.name || '');
             }
         } catch { /* */ } finally {
@@ -276,6 +283,24 @@ export default function AgeGroupRankingPage() {
     }, [sortedFinishedRunners, excludeThaiTop, excludeForeignTop, genderSplit]);
 
     const previewCategory = campaign?.categories?.find(item => item.name === selectedCategory);
+
+    // Whether the selected distance gives an age-group award at all.
+    const ageGroupCfg = { ageGroupDisabledCategories, categories: campaign?.categories };
+    // A distance with no age groups at all (admin/categories) can't give the award either.
+    const selectedHasAgeGroups = !!selectedCategory && categoryHasAgeGroups(ageGroupCfg, selectedCategory);
+    const selectedAgeGroupOn = selectedHasAgeGroups && !isAgeGroupDisabledCategory(ageGroupCfg, selectedCategory);
+    const allAgeGroupOff = !!campaign?.categories?.length
+        && campaign.categories.every(c => isAgeGroupDisabledCategory(ageGroupCfg, c.name));
+    const toggleAgeGroupForSelected = () => {
+        if (!selectedCategory) return;
+        setAgeGroupDisabledCategories(prev => prev.some(c => c === selectedCategory)
+            ? prev.filter(c => c !== selectedCategory)
+            : [...prev, selectedCategory]);
+    };
+    const setAgeGroupForAll = (on: boolean) => {
+        const names = (campaign?.categories || []).map(c => c.name).filter(Boolean);
+        setAgeGroupDisabledCategories(on ? [] : names);
+    };
     const campaignPath = campaign?.slug || campaign?._id || '';
     const ageGroupShareUrl = campaignPath ? `${origin}/Result-Winners/${campaignPath}` : '';
 
@@ -376,6 +401,17 @@ export default function AgeGroupRankingPage() {
                         style={selectedCategory === category.name ? { color: '#ffffff' } : undefined}
                     >
                         {category.name}{category.distance ? ` (${category.distance})` : ''}
+                        {/* Distances with the award switched off — or no age groups at all — are flagged right on the tab */}
+                        {(!categoryHasAgeGroups(ageGroupCfg, category.name) || isAgeGroupDisabledCategory(ageGroupCfg, category.name)) && (
+                            <span
+                                className={`ml-1.5 rounded-full px-1.5 py-px text-[10px] font-extrabold ${selectedCategory === category.name ? 'bg-white/25' : 'bg-gray-200'}`}
+                                style={selectedCategory === category.name ? { color: '#ffffff' } : { color: '#6b7280' }}
+                            >
+                                {!categoryHasAgeGroups(ageGroupCfg, category.name)
+                                    ? (language === 'th' ? 'ไม่มีรุ่นอายุ' : 'no age groups')
+                                    : (language === 'th' ? 'ปิด' : 'off')}
+                            </span>
+                        )}
                     </button>
                 ))}
             </div>
@@ -437,6 +473,7 @@ export default function AgeGroupRankingPage() {
                     excludeOverallThaiFromAgeGroup: excludeThaiTop,
                     excludeOverallForeignFromAgeGroup: excludeForeignTop,
                     separateOverallNationalityCategories: natSplitCategories,
+                    ageGroupDisabledCategories,
                 }),
             });
             if (res.ok) {
@@ -657,6 +694,72 @@ export default function AgeGroupRankingPage() {
 
                                 <div className="mt-3">{renderCategoryTabs()}</div>
 
+                                {/* Per-distance switch — some distances give no age-group award at all */}
+                                <div className={`mt-3 flex flex-wrap items-center gap-2 rounded-lg border px-3 py-1.5 ${selectedAgeGroupOn ? 'border-emerald-200 bg-emerald-50' : 'border-gray-300 bg-gray-100'}`}>
+                                    <span className="text-[12px] font-bold" style={{ color: selectedAgeGroupOn ? '#047857' : '#6b7280' }}>
+                                        {language === 'th'
+                                            ? `รางวัลรุ่นอายุ${selectedCategory ? ` — ${selectedCategory}` : ''}`
+                                            : `Age group award${selectedCategory ? ` — ${selectedCategory}` : ''}`}
+                                    </span>
+                                    <span className="text-[11px] font-bold" style={{ color: selectedAgeGroupOn ? '#047857' : '#94a3b8' }}>
+                                        {selectedAgeGroupOn
+                                            ? (language === 'th' ? 'เปิดอยู่ (ระยะนี้)' : 'On (this distance)')
+                                            : (language === 'th' ? 'ปิดอยู่ (ระยะนี้)' : 'Off (this distance)')}
+                                    </span>
+                                    <button
+                                        type="button"
+                                        role="switch"
+                                        aria-checked={selectedAgeGroupOn}
+                                        onClick={toggleAgeGroupForSelected}
+                                        disabled={!selectedCategory || !selectedHasAgeGroups}
+                                        className="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors"
+                                        style={{ backgroundColor: selectedAgeGroupOn ? '#10b981' : '#cbd5e1', cursor: selectedCategory && selectedHasAgeGroups ? 'pointer' : 'not-allowed' }}
+                                        title={language === 'th'
+                                            ? 'ปิดถ้าระยะนี้ไม่มีรางวัลรุ่นอายุ — จะซ่อนบอร์ด Age Group, เมนูอันดับ และป้าย "Age Group n" ในช่อง AWARD / ใบเซอร์ / e-slip เฉพาะระยะที่เลือก'
+                                            : 'Turn off when this distance has no age-group award — hides the board, its ranking-menu entry and the "Age Group n" label on the AWARD column, certificates and e-slips for the selected distance only'}
+                                    >
+                                        <span
+                                            className="inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform"
+                                            style={{ transform: selectedAgeGroupOn ? 'translateX(22px)' : 'translateX(2px)' }}
+                                        />
+                                    </button>
+                                    <span className="text-[11px] text-gray-500">
+                                        {!selectedHasAgeGroups
+                                            ? (language === 'th' ? 'ระยะนี้ปิดรุ่นอายุทั้งหมดไว้ที่ /admin/categories — ไม่มีรางวัลรุ่นอายุอยู่แล้ว' : 'Age groups are switched off for this distance at /admin/categories — no award to give')
+                                            : selectedAgeGroupOn
+                                                ? (language === 'th' ? 'ปิดถ้าระยะนี้ไม่มีรางวัลรุ่นอายุ' : 'Turn off if this distance gives no age-group award')
+                                                : (language === 'th' ? 'ซ่อนบอร์ด เมนูอันดับ และป้าย Age Group ในช่อง AWARD / ใบเซอร์ / e-slip ของระยะนี้' : 'Board, menu entry and Age Group label hidden for this distance')}
+                                    </span>
+                                    {(campaign?.categories?.length || 0) > 1 && (
+                                        <div className="ml-auto flex flex-wrap items-center gap-1.5 text-[10px] font-bold">
+                                            <span className="text-gray-400">{language === 'th' ? 'ทุกระยะ:' : 'All distances:'}</span>
+                                            <button
+                                                type="button"
+                                                onClick={() => setAgeGroupForAll(true)}
+                                                disabled={ageGroupDisabledCategories.length === 0}
+                                                className="rounded-full border border-emerald-300 bg-white px-2 py-px text-emerald-700 hover:bg-emerald-100 disabled:cursor-default disabled:opacity-40"
+                                            >
+                                                {language === 'th' ? 'เปิดทั้งหมด' : 'Turn all on'}
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => setAgeGroupForAll(false)}
+                                                disabled={allAgeGroupOff}
+                                                className="rounded-full border border-gray-300 bg-white px-2 py-px text-gray-600 hover:bg-gray-100 disabled:cursor-default disabled:opacity-40"
+                                            >
+                                                {language === 'th' ? 'ปิดทั้งหมด' : 'Turn all off'}
+                                            </button>
+                                            {ageGroupDisabledCategories.length > 0 && (
+                                                <span className="text-gray-400">
+                                                    {allAgeGroupOff
+                                                        ? (language === 'th' ? '— งานนี้ไม่มีรางวัลรุ่นอายุเลย' : '— this event gives no age-group award')
+                                                        : (language === 'th' ? `— ปิดอยู่ ${ageGroupDisabledCategories.length} ระยะ` : `— ${ageGroupDisabledCategories.length} off`)}
+                                                </span>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+
                                 <div className="mt-3" style={{ maxHeight: '600px', overflowY: 'auto' }}>
                                     {previewLoading ? (
                                         <div className="rounded-xl border border-dashed border-gray-300 bg-white px-4 py-8 text-center text-sm text-gray-500">
@@ -665,6 +768,23 @@ export default function AgeGroupRankingPage() {
                                     ) : !selectedCategory ? (
                                         <div className="rounded-xl border border-dashed border-gray-300 bg-white px-4 py-8 text-center text-sm text-gray-500">
                                             {language === 'th' ? 'ไม่มีประเภทการแข่งขันสำหรับแสดงพรีวิว' : 'No category available for preview'}
+                                        </div>
+                                    ) : !selectedAgeGroupOn ? (
+                                        <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 px-4 py-8 text-center">
+                                            <div className="text-[13px] font-bold text-gray-500">
+                                                {!selectedHasAgeGroups
+                                                    ? (language === 'th'
+                                                        ? `🚫 ระยะ ${selectedCategory} ไม่มีรุ่นอายุ — ปิดไว้ที่ /admin/categories`
+                                                        : `🚫 ${selectedCategory} has no age groups — switched off at /admin/categories`)
+                                                    : (language === 'th'
+                                                        ? `🚫 ระยะ ${selectedCategory} ปิดรางวัลรุ่นอายุอยู่ — ไม่มีบอร์ด Age Group และไม่มีป้าย Age Group ในช่อง AWARD ของระยะนี้`
+                                                        : `🚫 Age group award is off for ${selectedCategory} — no board and no Age Group label in the AWARD column for this distance`)}
+                                            </div>
+                                            <div className="mt-1 text-[11px] text-gray-400">
+                                                {!selectedHasAgeGroups
+                                                    ? (language === 'th' ? 'เปิดรุ่นอายุของระยะนี้ที่ /admin/categories ก่อน' : 'Turn age groups back on for this distance at /admin/categories first')
+                                                    : (language === 'th' ? 'เปิดสวิตช์ด้านบนแล้วกดบันทึกเพื่อใช้งานอีกครั้ง' : 'Flip the switch above and save to turn it back on')}
+                                            </div>
                                         </div>
                                     ) : (
                                         <div className="space-y-4">

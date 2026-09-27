@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { useLanguage } from '@/lib/language-context';
 import { authHeaders } from '@/lib/authHeaders';
 import { computeAwardsForCategory, formatAwardLabel, formatOverallAwardLabel } from '@/lib/awards';
+import { stripHiddenAgeGroup } from '@/lib/age-group-award-toggle';
 import { isNationalitySplitCategory } from '@/lib/nationality';
 import { categoryDistanceLabel, resolveRunnerDistanceLabel } from '@/lib/category-distance';
 import { bestOfProvinceAwardFor } from '@/lib/thai-provinces';
@@ -106,6 +107,8 @@ interface Campaign {
     overallDisplayCount?: number;
     /** `false` = this event gives no Overall award (admin/top-overall master switch). */
     overallEnabled?: boolean;
+    overallDisabledCategories?: string[];
+    ageGroupDisabledCategories?: string[];
     /** Per-distance overrides of the Overall rank count (admin/top-overall). */
     overallDisplayCountByCategory?: { category: string; count: number }[];
     ageGroupDisplayCount?: number;
@@ -762,13 +765,14 @@ export default function CertificatesPage() {
 
     const handleSelectRunner = useCallback(async (runner: Runner) => {
         const requestId = ++runnerRequestRef.current;
-        setSelectedRunner(runner);
+        // Distances with no age groups (admin/categories) print none on the certificate.
+        setSelectedRunner(stripHiddenAgeGroup(runner, campaign));
         setSplits([]);
         try {
             const detailRes = await fetch(`/api/runners/${runner._id}`, { cache: 'no-store' });
             const detail = detailRes.ok ? await detailRes.json() as Runner : runner;
             const resolved = await resolveRunnerRanks({ ...runner, ...detail });
-            if (runnerRequestRef.current === requestId) setSelectedRunner(resolved);
+            if (runnerRequestRef.current === requestId) setSelectedRunner(stripHiddenAgeGroup(resolved, campaign));
 
             // Fetch splits
             const eventId = (detail.eventId as unknown as string) || (resolved.eventId as unknown as string);
@@ -795,9 +799,9 @@ export default function CertificatesPage() {
             }
         } catch {
             const resolved = await resolveRunnerRanks(runner);
-            if (runnerRequestRef.current === requestId) setSelectedRunner(resolved);
+            if (runnerRequestRef.current === requestId) setSelectedRunner(stripHiddenAgeGroup(resolved, campaign));
         }
-    }, [resolveRunnerRanks]);
+    }, [resolveRunnerRanks, campaign]);
 
     // Compute the selected runner's AWARDs — Overall / Age Group placing (same
     // algorithm and admin-configured rules as the public event table and
@@ -818,6 +822,9 @@ export default function CertificatesPage() {
                     overallDisplayCount: campaign.overallDisplayCount,
                     overallDisplayCountByCategory: campaign.overallDisplayCountByCategory,
                     overallEnabled: campaign.overallEnabled,
+                    overallDisabledCategories: campaign.overallDisabledCategories,
+                    ageGroupDisabledCategories: campaign.ageGroupDisabledCategories,
+                    categories: campaign.categories,
                     category: selectedRunner.category,
                     ageGroupDisplayCount: campaign.ageGroupDisplayCount,
                     genderSplitEnabled: campaign.genderSplitEnabled,
@@ -842,7 +849,7 @@ export default function CertificatesPage() {
             } catch { if (!cancelled) setAwards(EMPTY_AWARDS); }
         })();
         return () => { cancelled = true; };
-    }, [selectedRunner, campaign?._id, campaign?.overallDisplayCount, campaign?.overallDisplayCountByCategory, campaign?.overallEnabled, campaign?.ageGroupDisplayCount, campaign?.genderSplitEnabled, campaign?.excludeOverallFromAgeGroup, campaign?.excludeOverallThaiFromAgeGroup, campaign?.excludeOverallForeignFromAgeGroup, campaign?.separateOverallNationalityCategories, campaign?.bestOfProvinceEnabled, campaign?.bestOfProvinces]);
+    }, [selectedRunner, campaign?._id, campaign?.overallDisplayCount, campaign?.overallDisplayCountByCategory, campaign?.overallEnabled, campaign?.overallDisabledCategories, campaign?.ageGroupDisabledCategories, campaign?.categories, campaign?.ageGroupDisplayCount, campaign?.genderSplitEnabled, campaign?.excludeOverallFromAgeGroup, campaign?.excludeOverallThaiFromAgeGroup, campaign?.excludeOverallForeignFromAgeGroup, campaign?.separateOverallNationalityCategories, campaign?.bestOfProvinceEnabled, campaign?.bestOfProvinces]);
 
     useEffect(() => {
         const handler = (e: KeyboardEvent) => {

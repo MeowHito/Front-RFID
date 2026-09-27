@@ -11,6 +11,7 @@ import { useParams, useSearchParams } from 'next/navigation';
 import { type AgeGroupBucket, buildCanonicalAgeGroups } from '@/lib/age-groups';
 import { computeAgeGroupWinners } from '@/lib/age-group-winners';
 import { isGenderSplitEnabled } from '@/lib/gender-split';
+import { isAgeGroupAwardEnabled } from '@/lib/age-group-award-toggle';
 
 interface Runner {
     _id: string;
@@ -58,6 +59,8 @@ interface Campaign {
     /** `false` → this event doesn't race the genders separately; the board shows
      *  one combined column per age group instead of MALE + FEMALE. */
     genderSplitEnabled?: boolean;
+    /** Distances with no age-group award (admin/age-group-ranking). */
+    ageGroupDisabledCategories?: string[];
 }
 
 // Last-resort placeholder shown only when NOT A SINGLE runner in the category
@@ -167,7 +170,9 @@ export default function ResultWinnersBySlugPage() {
                         setCampaign(data);
                         if (data.categories?.length > 0) {
                             const urlMatch = data.categories.find((c: { name: string }) => c.name === categoryFromUrl);
-                            setSelectedCategory(urlMatch ? urlMatch.name : data.categories[0].name);
+                            // Land on a distance that actually gives the award when the link doesn't name one.
+                            const firstOn = data.categories.find((c: { name: string }) => isAgeGroupAwardEnabled(data, c.name));
+                            setSelectedCategory(urlMatch ? urlMatch.name : (firstOn || data.categories[0]).name);
                         }
                     } else {
                         setCampaignNotFound(true);
@@ -244,6 +249,9 @@ export default function ResultWinnersBySlugPage() {
                     const res = await fetch(`/api/runners/paged?${p.toString()}`, { cache: 'no-store' });
                     if (!res.ok) return null;
                     const data = await res.json();
+                    // Distances with the age-group award switched off drop out of the
+                    // selector and the auto-rotate the same way as ones with no brackets.
+                    if (!isAgeGroupAwardEnabled(campaign, cat.name)) return null;
                     return data.data?.[0]?.ageGroup ? cat : null;
                 } catch { return null; }
             })
@@ -316,6 +324,9 @@ export default function ResultWinnersBySlugPage() {
     }, []);
 
     const disableAgeGroupRanking = false;
+    // The selected distance can still be one with the award off (deep link) — say so
+    // instead of rendering empty brackets.
+    const ageGroupOffForSelected = !!campaign && !!selectedCategory && !isAgeGroupAwardEnabled(campaign, selectedCategory);
     const topN = Math.max(1, campaign?.ageGroupDisplayCount || 5);
     // Events with no gender split (e.g. a dog race) show ONE combined column —
     // computeAgeGroupWinners then returns the whole field in `maleWinners`.
@@ -416,7 +427,9 @@ export default function ResultWinnersBySlugPage() {
         if (!campaign?._id) return;
         setDownloading(gender === 'both' ? 'all' : `all-${gender}`);
         try {
-            const categoriesToUse = campaign.categories?.length ? campaign.categories : [{ name: selectedCategory, distance: undefined }];
+            // Distances with the award switched off have no winners to export.
+            const categoriesToUse = (campaign.categories?.length ? campaign.categories : [{ name: selectedCategory, distance: undefined }])
+                .filter(cat => isAgeGroupAwardEnabled(campaign, cat.name));
             const perCategory = await Promise.all(categoriesToUse.map(async (cat) => {
                 let runnersForCat: Runner[];
                 if (cat.name === selectedCategory) {
@@ -658,7 +671,13 @@ export default function ResultWinnersBySlugPage() {
             )}
 
             {/* Show loading only on very first load — never blank the screen on refresh */}
-            {initialLoading && displayedRunners.length === 0 ? (
+            {ageGroupOffForSelected ? (
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: isMobile ? '40px 12px' : 0, textAlign: 'center' }}>
+                    <div style={{ fontSize: isMobile ? 48 : 72, marginBottom: isMobile ? 12 : 24 }}>🚫</div>
+                    <div style={{ fontSize: isMobile ? 20 : 26, fontWeight: 900, color: '#f59e0b', marginBottom: 8 }}>ระยะ {selectedCategory} ไม่มีรางวัลรุ่นอายุ</div>
+                    <div style={{ fontSize: isMobile ? 14 : 16, color: '#94a3b8' }}>Age group award is turned off for {selectedCategory}</div>
+                </div>
+            ) : initialLoading && displayedRunners.length === 0 ? (
                 <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', fontSize: isMobile ? 16 : '2vmin' }}>
                     Loading...
                 </div>

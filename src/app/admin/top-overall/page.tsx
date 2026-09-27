@@ -10,6 +10,7 @@ import {
     MAX_OVERALL_DISPLAY_COUNT,
     MIN_OVERALL_DISPLAY_COUNT,
     clampOverallDisplayCount,
+    isOverallDisabledCategory,
     overallCountMapFromConfig,
     overallCountMapToEntries,
     type OverallCountByCategoryEntry,
@@ -49,6 +50,7 @@ interface FeaturedCampaignSettings {
     overallDisplayCount?: number;
     overallDisplayCountByCategory?: OverallCountByCategoryEntry[];
     overallEnabled?: boolean;
+    overallDisabledCategories?: string[];
     topRunnersRangeByCategory?: TopRunnersRangeEntry[];
     topRunnersExcludeOverallCategories?: string[];
     topRunnersEnabled?: boolean;
@@ -83,10 +85,13 @@ export default function TopOverallPage() {
     // Master switch — events that simply don't run a Top Runners board turn it off,
     // which also hides the public board and the "TOP n" label in the AWARD column.
     const [topRunnersEnabled, setTopRunnersEnabled] = useState(true);
-    // Master switch for the Overall award — events that give no Overall award at all
-    // turn it off, which hides the public board, its ranking-menu entry and the
-    // "Overall n" label on the AWARD column, certificates and e-slips.
-    const [overallEnabled, setOverallEnabled] = useState(true);
+    // Distances whose Overall award is switched off. The switch on the Overall card
+    // acts on the selected distance only; turning off every distance is the same as
+    // "no Overall award in this event". Off distances lose the public board, the
+    // ranking-menu entry and the "Overall n" label on AWARD / certificates / e-slips.
+    // Campaigns saved with the old whole-event `overallEnabled: false` load as
+    // "every distance off" and are written back in the per-distance form.
+    const [overallDisabledCategories, setOverallDisabledCategories] = useState<string[]>([]);
     const [bestOfDisplayCount, setBestOfDisplayCount] = useState<number>(1);
     const [natSplitCategories, setNatSplitCategories] = useState<string[]>([]);
     const [selectedCategory, setSelectedCategory] = useState('');
@@ -112,7 +117,9 @@ export default function TopOverallPage() {
                 setTopRunnersRanges(topRunnersRangeMapFromConfig(data, categoryNames));
                 setTopRunnersCutCategories(Array.isArray(data?.topRunnersExcludeOverallCategories) ? data.topRunnersExcludeOverallCategories : []);
                 setTopRunnersEnabled(data?.topRunnersEnabled !== false);
-                setOverallEnabled(data?.overallEnabled !== false);
+                setOverallDisabledCategories(data?.overallEnabled === false
+                    ? categoryNames
+                    : (Array.isArray(data?.overallDisabledCategories) ? data.overallDisabledCategories : []));
                 setBestOfDisplayCount(Math.max(1, Number(data?.bestOfDisplayCount) || 1));
                 setNatSplitCategories(Array.isArray(data?.separateOverallNationalityCategories) ? data.separateOverallNationalityCategories : []);
                 setSelectedCategory(data?.categories?.[0]?.name || '');
@@ -168,6 +175,12 @@ export default function TopOverallPage() {
     // Whether the currently selected category splits Overall by nationality
     const selectedCategorySplit = isNationalitySplitCategory(natSplitCategories, selectedCategory);
 
+    // Whether the selected distance gives an Overall award at all.
+    const overallCfg = { overallDisabledCategories };
+    const selectedOverallOn = !!selectedCategory && !isOverallDisabledCategory(overallCfg, selectedCategory);
+    const allOverallOff = !!campaign?.categories?.length
+        && campaign.categories.every(c => isOverallDisabledCategory(overallCfg, c.name));
+
     // Rank count of the distance currently being previewed/edited.
     const overallDisplayCount = clampOverallDisplayCount(
         overallCountByCategory[selectedCategory] ?? campaign?.overallDisplayCount,
@@ -184,7 +197,18 @@ export default function TopOverallPage() {
         { topRunnersExcludeOverallCategories: topRunnersCutCategories },
         selectedCategory,
     );
-    const topRunnersCut = selectedCategoryCutsOverall ? overallDisplayCount : 0;
+    const topRunnersCut = selectedCategoryCutsOverall && selectedOverallOn ? overallDisplayCount : 0;
+
+    const toggleOverallForSelected = () => {
+        if (!selectedCategory) return;
+        setOverallDisabledCategories(prev => prev.some(c => c === selectedCategory)
+            ? prev.filter(c => c !== selectedCategory)
+            : [...prev, selectedCategory]);
+    };
+    const setOverallForAll = (on: boolean) => {
+        const names = (campaign?.categories || []).map(c => c.name).filter(Boolean);
+        setOverallDisabledCategories(on ? [] : names);
+    };
 
     const toggleTopRunnersCutForSelected = () => {
         if (!selectedCategory) return;
@@ -332,7 +356,7 @@ export default function TopOverallPage() {
                             className={`ml-1.5 rounded-full px-1.5 py-px text-[10px] font-extrabold ${selectedCategory === category.name ? 'bg-white/25' : 'bg-sky-100'}`}
                             style={selectedCategory === category.name ? { color: '#ffffff' } : { color: '#0369a1' }}
                         >
-                            {overallEnabled
+                            {!isOverallDisabledCategory(overallCfg, category.name)
                                 ? clampOverallDisplayCount(overallCountByCategory[category.name] ?? campaign?.overallDisplayCount)
                                 : '—'}
                         </span>
@@ -344,6 +368,7 @@ export default function TopOverallPage() {
                             {(() => {
                                 const r = topRunnersRanges[category.name] ?? resolveTopRunnersRange(campaign, category.name);
                                 const cut = isTopRunnersExcludeOverall({ topRunnersExcludeOverallCategories: topRunnersCutCategories }, category.name)
+                                    && !isOverallDisabledCategory(overallCfg, category.name)
                                     ? clampOverallDisplayCount(overallCountByCategory[category.name] ?? campaign?.overallDisplayCount)
                                     : 0;
                                 return `${cut + r.start}-${cut + r.end}`;
@@ -420,7 +445,10 @@ export default function TopOverallPage() {
                     // for any distance without its own entry.
                     overallDisplayCountByCategory: overallCountMapToEntries(overallCountByCategory),
                     overallDisplayCount: clampOverallDisplayCount(campaign.overallDisplayCount),
-                    overallEnabled,
+                    // Per-distance off list is the source of truth; the whole-event flag is
+                    // kept on so old readers don't hide every distance.
+                    overallEnabled: true,
+                    overallDisabledCategories,
                     topRunnersRangeByCategory: topRunnersRangeMapToEntries(topRunnersRanges),
                     topRunnersExcludeOverallCategories: topRunnersCutCategories,
                     topRunnersEnabled,
@@ -527,7 +555,7 @@ export default function TopOverallPage() {
 
                             <div className="mt-3 grid gap-3 lg:grid-cols-2">
                                 {/* Board 1 — the Overall award */}
-                                <div className={`rounded-xl border-2 p-3 ${overallEnabled ? 'border-sky-300 bg-sky-50' : 'border-gray-300 bg-gray-100'}`}>
+                                <div className={`rounded-xl border-2 p-3 ${selectedOverallOn ? 'border-sky-300 bg-sky-50' : 'border-gray-300 bg-gray-100'}`}>
                                     <div className="flex flex-wrap items-center gap-2">
                                         <span className="text-[15px] font-extrabold" style={{ color: '#0369a1' }}>
                                             🏆 {language === 'th' ? 'รางวัล Overall' : 'Overall award'}
@@ -535,41 +563,71 @@ export default function TopOverallPage() {
                                         <span className="text-[12px] font-bold text-gray-500">
                                             {selectedCategory || '—'}
                                         </span>
-                                        {/* Master switch — some events give no Overall award at all */}
+                                        {/* Per-distance switch — some distances (or whole events) give no Overall award */}
                                         <div className="ml-auto flex items-center gap-1.5">
-                                            <span className="text-[11px] font-bold" style={{ color: overallEnabled ? '#0369a1' : '#94a3b8' }}>
-                                                {overallEnabled
-                                                    ? (language === 'th' ? 'เปิดใช้งาน (ทั้งงาน)' : 'On (whole event)')
-                                                    : (language === 'th' ? 'ปิดอยู่ (ทั้งงาน)' : 'Off (whole event)')}
+                                            <span className="text-[11px] font-bold" style={{ color: selectedOverallOn ? '#0369a1' : '#94a3b8' }}>
+                                                {selectedOverallOn
+                                                    ? (language === 'th' ? 'เปิดอยู่ (ระยะนี้)' : 'On (this distance)')
+                                                    : (language === 'th' ? 'ปิดอยู่ (ระยะนี้)' : 'Off (this distance)')}
                                             </span>
                                             <button
                                                 type="button"
                                                 role="switch"
-                                                aria-checked={overallEnabled}
-                                                onClick={() => setOverallEnabled(prev => !prev)}
-                                                className="relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full transition-colors"
-                                                style={{ backgroundColor: overallEnabled ? '#0284c7' : '#cbd5e1' }}
+                                                aria-checked={selectedOverallOn}
+                                                onClick={toggleOverallForSelected}
+                                                disabled={!selectedCategory}
+                                                className="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors"
+                                                style={{ backgroundColor: selectedOverallOn ? '#0284c7' : '#cbd5e1', cursor: selectedCategory ? 'pointer' : 'not-allowed' }}
                                                 title={language === 'th'
-                                                    ? 'ปิดถ้างานนี้ไม่มีรางวัล Overall — จะซ่อนหน้า Overall, เมนูอันดับ และป้าย "Overall n" ในช่อง AWARD / ใบเซอร์ / e-slip ทั้งงาน'
-                                                    : 'Turn off for events with no Overall award — hides the board, its ranking-menu entry and the "Overall n" label on the AWARD column, certificates and e-slips'}
+                                                    ? 'ปิดถ้าระยะนี้ไม่มีรางวัล Overall — จะซ่อนหน้า Overall, เมนูอันดับ และป้าย "Overall n" ในช่อง AWARD / ใบเซอร์ / e-slip เฉพาะระยะที่เลือก'
+                                                    : 'Turn off when this distance has no Overall award — hides the board, its ranking-menu entry and the "Overall n" label on the AWARD column, certificates and e-slips for the selected distance only'}
                                             >
                                                 <span
                                                     className="inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform"
-                                                    style={{ transform: overallEnabled ? 'translateX(22px)' : 'translateX(2px)' }}
+                                                    style={{ transform: selectedOverallOn ? 'translateX(22px)' : 'translateX(2px)' }}
                                                 />
                                             </button>
                                         </div>
                                     </div>
                                     <p className="mt-0.5 text-[11px] text-gray-500">
-                                        {overallEnabled
+                                        {selectedOverallOn
                                             ? (language === 'th'
                                                 ? 'ผู้ที่ได้รางวัล Overall — ใช้กับหน้า Overall / ใบเซอร์ / e-slip'
                                                 : 'Overall award winners — used by the Overall board, certificates and e-slips')
                                             : (language === 'th'
-                                                ? 'ปิดอยู่ — งานนี้ไม่มีรางวัล Overall: ซ่อนหน้าบอร์ด เมนูอันดับ และป้าย Overall ในช่อง AWARD / ใบเซอร์ / e-slip'
-                                                : 'Off — this event has no Overall award: the board, its menu entry and the Overall label are hidden')}
+                                                ? `ปิดอยู่ — ระยะ ${selectedCategory || '—'} ไม่มีรางวัล Overall: ซ่อนหน้าบอร์ด เมนูอันดับ และป้าย Overall ในช่อง AWARD / ใบเซอร์ / e-slip ของระยะนี้`
+                                                : `Off — ${selectedCategory || '—'} has no Overall award: the board, its menu entry and the Overall label are hidden for this distance`)}
                                     </p>
-                                    <div className={`mt-2 flex flex-wrap items-center gap-2 ${overallEnabled ? '' : 'pointer-events-none opacity-40'}`}>
+                                    {/* Whole-event shortcuts so an age-group-only event is two clicks, not one per distance */}
+                                    {(campaign?.categories?.length || 0) > 1 && (
+                                        <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[10px] font-bold">
+                                            <span className="text-gray-400">{language === 'th' ? 'ทุกระยะ:' : 'All distances:'}</span>
+                                            <button
+                                                type="button"
+                                                onClick={() => setOverallForAll(true)}
+                                                disabled={overallDisabledCategories.length === 0}
+                                                className="rounded-full border border-sky-300 bg-white px-2 py-px text-sky-700 hover:bg-sky-100 disabled:cursor-default disabled:opacity-40"
+                                            >
+                                                {language === 'th' ? 'เปิดทั้งหมด' : 'Turn all on'}
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => setOverallForAll(false)}
+                                                disabled={allOverallOff}
+                                                className="rounded-full border border-gray-300 bg-white px-2 py-px text-gray-600 hover:bg-gray-100 disabled:cursor-default disabled:opacity-40"
+                                            >
+                                                {language === 'th' ? 'ปิดทั้งหมด' : 'Turn all off'}
+                                            </button>
+                                            <span className="text-gray-400">
+                                                {allOverallOff
+                                                    ? (language === 'th' ? '— งานนี้ไม่มีรางวัล Overall เลย' : '— this event gives no Overall award')
+                                                    : overallDisabledCategories.length > 0
+                                                        ? (language === 'th' ? `— ปิดอยู่ ${overallDisabledCategories.length} ระยะ` : `— ${overallDisabledCategories.length} off`)
+                                                        : ''}
+                                            </span>
+                                        </div>
+                                    )}
+                                    <div className={`mt-2 flex flex-wrap items-center gap-2 ${selectedOverallOn ? '' : 'pointer-events-none opacity-40'}`}>
                                         <span className="text-[13px] font-bold" style={{ color: '#0369a1' }}>
                                             {language === 'th' ? 'ให้รางวัล' : 'Award the top'}
                                         </span>
@@ -737,6 +795,19 @@ export default function TopOverallPage() {
                                 ) : !selectedCategory ? (
                                     <div className="rounded-xl border border-dashed border-gray-300 bg-white px-4 py-8 text-center text-sm text-gray-500">
                                         {language === 'th' ? 'ไม่มีประเภทการแข่งขันสำหรับแสดงพรีวิว' : 'No category available for preview'}
+                                    </div>
+                                ) : !selectedOverallOn ? (
+                                    <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 px-4 py-8 text-center">
+                                        <div className="text-[13px] font-bold text-gray-500">
+                                            {language === 'th'
+                                                ? `🚫 ระยะ ${selectedCategory} ปิดรางวัล Overall อยู่ — ไม่มีบอร์ด Overall และไม่มีป้าย Overall ในช่อง AWARD ของระยะนี้`
+                                                : `🚫 Overall is off for ${selectedCategory} — no board and no Overall label in the AWARD column for this distance`}
+                                        </div>
+                                        <div className="mt-1 text-[11px] text-gray-400">
+                                            {language === 'th'
+                                                ? 'เปิดสวิตช์ในการ์ด "รางวัล Overall" แล้วกดบันทึกเพื่อใช้งานอีกครั้ง'
+                                                : 'Flip the switch on the "Overall award" card and save to turn it back on'}
+                                        </div>
                                     </div>
                                 ) : selectedCategorySplit ? (
                                     <div className="grid gap-3 xl:grid-cols-2">

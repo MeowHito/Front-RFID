@@ -12,6 +12,7 @@ import CutoffDateTimePicker from '@/components/CutoffDateTimePicker';
 import { getFollowedRunnersForEvent, isRunnerFollowed, loadFollowedRunners, subscribeFollowedRunners, type FollowedRunner } from '@/lib/followed-runners';
 import { isPlaceholderRunner } from '@/lib/placeholder-runners';
 import { computeAwardsForCategory, type AwardResult } from '@/lib/awards';
+import { stripHiddenAgeGroups } from '@/lib/age-group-award-toggle';
 import { isNationalitySplitCategory } from '@/lib/nationality';
 import { type AgeGroupBucket, buildCanonicalAgeGroups, canonicalizeAgeGroup, normalizeAgeGroupLabel } from '@/lib/age-groups';
 import RankingMenuDropdown from '@/components/RankingMenuDropdown';
@@ -51,6 +52,8 @@ interface Campaign {
     overallDisplayCount?: number;
     /** `false` = this event gives no Overall award (admin/top-overall master switch). */
     overallEnabled?: boolean;
+    overallDisabledCategories?: string[];
+    ageGroupDisabledCategories?: string[];
     /** Per-distance overrides of the Overall rank count (admin/top-overall). */
     overallDisplayCountByCategory?: { category: string; count: number }[];
     /** Per-distance rank range of the Top Runners board (admin/top-overall). */
@@ -78,6 +81,8 @@ interface RaceCategory {
     raceType?: string;
     badgeColor: string;
     status: string;
+    /** `false` = this distance has no age groups at all (admin/categories switch). */
+    ageGroupEnabled?: boolean;
 }
 
 interface Runner {
@@ -428,7 +433,12 @@ export default function EventLivePage() {
 
     const [campaign, setCampaign] = useState<Campaign | null>(null);
     // ... (rest of the code remains the same)
-    const [runners, setRunners] = useState<Runner[]>([]);
+    const [rawRunners, setRunners] = useState<Runner[]>([]);
+    // Distances with no age groups (admin/categories) show none on the table — the
+    // AGE column, the age-group filter and the "(30-39)" suffix all key off
+    // `runner.ageGroup`, so blanking it here covers every render site, including
+    // rows refreshed over the socket.
+    const runners = useMemo(() => stripHiddenAgeGroups(rawRunners, campaign), [rawRunners, campaign]);
     // How many people have saved/downloaded their e-slip (aggregated across all distances)
     const [eslipStats, setEslipStats] = useState<{ totalDownloads: number; uniqueRunners: number } | null>(null);
     const [loading, setLoading] = useState(true);
@@ -1186,7 +1196,10 @@ export default function EventLivePage() {
             const cfg = {
                 overallDisplayCount: campaign?.overallDisplayCount,
                 overallDisplayCountByCategory: campaign?.overallDisplayCountByCategory,
-                    overallEnabled: campaign?.overallEnabled,
+                overallEnabled: campaign?.overallEnabled,
+                overallDisabledCategories: campaign?.overallDisabledCategories,
+                ageGroupDisabledCategories: campaign?.ageGroupDisabledCategories,
+                categories: campaign?.categories,
                 // Overall count is per distance — resolve the pool's campaign category name
                 // (the pool key is the derived UI key, not the stored category name).
                 category: categories.find(c => c.key === key)?.categoryName || key,
@@ -1206,7 +1219,7 @@ export default function EventLivePage() {
             for (const [id, award] of computeAwardsForCategory(pool, cfg)) map.set(id, award);
         }
         return map;
-    }, [runners, resolveRunnerCategoryKey, categories, campaign?.overallDisplayCount, campaign?.overallDisplayCountByCategory, campaign?.overallEnabled, campaign?.ageGroupDisplayCount, campaign?.genderSplitEnabled, campaign?.excludeOverallFromAgeGroup, campaign?.excludeOverallThaiFromAgeGroup, campaign?.excludeOverallForeignFromAgeGroup, campaign?.excludeAgeGroupTop, campaign?.topRunnersRangeByCategory, campaign?.topRunnersExcludeOverallCategories, campaign?.topRunnersEnabled, natSplitAwardKeys]);
+    }, [runners, resolveRunnerCategoryKey, categories, campaign?.overallDisplayCount, campaign?.overallDisplayCountByCategory, campaign?.overallEnabled, campaign?.overallDisabledCategories, campaign?.ageGroupDisabledCategories, campaign?.categories, campaign?.ageGroupDisplayCount, campaign?.genderSplitEnabled, campaign?.excludeOverallFromAgeGroup, campaign?.excludeOverallThaiFromAgeGroup, campaign?.excludeOverallForeignFromAgeGroup, campaign?.excludeAgeGroupTop, campaign?.topRunnersRangeByCategory, campaign?.topRunnersExcludeOverallCategories, campaign?.topRunnersEnabled, natSplitAwardKeys]);
 
     // Build ordered list of visible columns based on admin displayColumns + mobile
     const visibleColumns = useMemo(() => {
@@ -2389,6 +2402,9 @@ export default function EventLivePage() {
             overallDisplayCount={campaign.overallDisplayCount}
             overallDisplayCountByCategory={campaign.overallDisplayCountByCategory}
             overallEnabled={campaign.overallEnabled}
+            overallDisabledCategories={campaign.overallDisabledCategories}
+            ageGroupDisabledCategories={campaign.ageGroupDisabledCategories}
+            categories={campaign.categories}
             topRunnersRangeByCategory={campaign.topRunnersRangeByCategory}
             topRunnersExcludeOverallCategories={campaign.topRunnersExcludeOverallCategories}
             topRunnersEnabled={campaign.topRunnersEnabled}
