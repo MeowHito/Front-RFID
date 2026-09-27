@@ -42,6 +42,11 @@ export async function PUT(
     { params }: { params: Promise<{ id: string }> }
 ) {
     const { id } = await params;
+    // ?light=1 → echo back only the fields that were sent (plus _id). A campaign
+    // document can be several MB (base64 images, layouts), so pages that save one
+    // small field should not have to download the whole thing on every save.
+    const light = request.nextUrl.searchParams.get('light');
+    const isLight = light === '1' || light === 'true';
 
     try {
         const body = await request.json();
@@ -60,6 +65,11 @@ export async function PUT(
         }
 
         const data = await res.json();
+        if (isLight && data && typeof data === 'object' && body && typeof body === 'object') {
+            const picked: Record<string, unknown> = { _id: (data as Record<string, unknown>)._id };
+            for (const k of Object.keys(body as Record<string, unknown>)) picked[k] = (data as Record<string, unknown>)[k];
+            return NextResponse.json(picked);
+        }
         return NextResponse.json(data);
     } catch (error) {
         console.error('Error updating campaign:', error);

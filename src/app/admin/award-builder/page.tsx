@@ -42,6 +42,8 @@ import {
     CheckIcon,
     FunnelIcon,
     PlusIcon,
+    Bars3Icon,
+    PencilSquareIcon,
 } from '@heroicons/react/24/outline';
 
 interface RaceCategory { name: string; distance?: string; badgeColor?: string; raceType?: string; }
@@ -88,6 +90,12 @@ const emptyForm = (category: string): AwardForm => ({
 
 const normCat = (v?: string | null) => String(v || '').trim().toLowerCase();
 
+/** Filter chip value meaning "every distance". */
+const ALL = '__all__';
+
+/** Give up on a save after this long so the button can never stay on "Saving...". */
+const SAVE_TIMEOUT_MS = 30_000;
+
 const formatDateOnly = (value?: string) => {
     if (!value) return '';
     const d = new Date(value);
@@ -116,6 +124,10 @@ export default function AwardBuilderPage() {
     const [activeTab, setActiveTab] = useState<string>('');
     const nameInputRef = useRef<HTMLInputElement | null>(null);
     const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+    // Drag-to-reorder inside a distance card (saved awards only).
+    const [dragId, setDragId] = useState<string | null>(null);
+    const [dragOverId, setDragOverId] = useState<string | null>(null);
+    const settingsRef = useRef<HTMLDivElement | null>(null);
 
     const showToast = useCallback((message: string, type: 'success' | 'error') => {
         setToast({ message, type });
@@ -228,21 +240,34 @@ export default function AwardBuilderPage() {
     const persist = async (list: CustomAward[]): Promise<boolean> => {
         if (!campaign?._id) return false;
         setSaving(true);
+        // `light=1` makes the proxy echo back only the fields we sent. Without it every
+        // save downloaded the whole campaign document (~3 MB of base64 images / layouts),
+        // which is what made the button sit on "Saving..." on the real server.
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), SAVE_TIMEOUT_MS);
         try {
-            const res = await fetch(`/api/campaigns/${campaign._id}`, {
+            const res = await fetch(`/api/campaigns/${campaign._id}?light=1`, {
                 method: 'PUT',
                 headers: authHeaders(),
                 body: JSON.stringify({ customAwards: list }),
+                signal: ctrl.signal,
             });
             if (!res.ok) {
-                showToast(th ? 'บันทึกล้มเหลว' : 'Save failed', 'error');
+                showToast(th ? `บันทึกล้มเหลว (${res.status})` : `Save failed (${res.status})`, 'error');
                 return false;
             }
             return true;
-        } catch {
-            showToast(th ? 'บันทึกล้มเหลว' : 'Save failed', 'error');
+        } catch (e) {
+            const timedOut = e instanceof DOMException && e.name === 'AbortError';
+            showToast(
+                timedOut
+                    ? (th ? 'บันทึกนานเกินไป กรุณารีเฟรชหน้าเพื่อตรวจสอบว่าบันทึกสำเร็จหรือไม่' : 'Save timed out. Refresh the page to check whether it went through.')
+                    : (th ? 'บันทึกล้มเหลว' : 'Save failed'),
+                'error',
+            );
             return false;
         } finally {
+            clearTimeout(timer);
             setSaving(false);
         }
     };
@@ -253,7 +278,9 @@ export default function AwardBuilderPage() {
         if (!award) return;
         setForm(f => ({ ...f, id: award.id }));
         setQueried(award);
-        setActiveTab(award.category);
+        // Keep the current distance filter unless it would hide what was just queried.
+        if (activeTab && activeTab !== ALL && normCat(activeTab) !== normCat(award.category)) setActiveTab(ALL);
+        setTimeout(() => document.getElementById(`award-${award.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 60);
     };
 
     const handleSaveTemplate = async () => {
@@ -273,17 +300,9 @@ export default function AwardBuilderPage() {
         setForm(emptyForm(form.category || categories[0]?.name || ''));
     };
 
-    const handleDelete = async () => {
-        if (form.id && savedAwards.some(a => a.id === form.id)) {
-            const confirmed = window.confirm(th ? `ลบเทมเพลต "${form.name}" ?` : `Delete template "${form.name}"?`);
-            if (!confirmed) return;
-            const next = savedAwards.filter(a => a.id !== form.id);
-            const ok = await persist(next);
-            if (!ok) return;
-            setSavedAwards(next);
-            if (queried?.id === form.id) setQueried(null);
-            showToast(th ? 'ลบเทมเพลตแล้ว' : 'Template deleted', 'success');
-        }
+    /** Clear the form and drop the unsaved query. Saved awards are deleted from the list rows. */
+    const handleClearForm = () => {
+        if (queried && !savedAwards.some(a => a.id === queried.id)) setQueried(null);
         setForm(emptyForm(form.category || categories[0]?.name || ''));
     };
 
@@ -295,6 +314,48 @@ export default function AwardBuilderPage() {
         if (!ok) return;
         setSavedAwards(next);
         showToast(th ? 'บันทึกรายการรางวัลแล้ว' : 'Award list saved', 'success');
+    };
+
+    // ---- list row actions ---------------------------------------------------
+    const scrollToSettings = () => {
+        settingsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        setTimeout(() => nameInputRef.current?.focus({ preventScroll: true }), 350);
+    };
+
+    /** Pencil on a row: load it into the form and jump back up to edit. */
+    const editAward = (award: CustomAward) => {
+        loadTemplate(award);
+        scrollToSettings();
+    };
+
+    /** Trash on a row: unsaved query just disappears; saved awards are removed and persisted. */
+    const deleteAward = async (award: CustomAward, unsaved: boolean) => {
+        if (unsaved) { setQueried(null); return; }
+        const confirmed = window.confirm(th ? `ลบรางวัล "${award.name}" ของระยะ ${award.category} ?` : `Delete "${award.name}" (${award.category})?`);
+        if (!confirmed) return;
+        const next = savedAwards.filter(a => a.id !== award.id);
+        const ok = await persist(next);
+        if (!ok) return;
+        setSavedAwards(next);
+        if (queried?.id === award.id) setQueried(null);
+        if (form.id === award.id) setForm(f => ({ ...f, id: null }));
+        showToast(th ? 'ลบรางวัลแล้ว' : 'Award deleted', 'success');
+    };
+
+    /** Drop `fromId` onto `toId` (same distance only). Optimistic; rolls back if the save fails. */
+    const reorderAwards = async (fromId: string, toId: string) => {
+        if (fromId === toId) return;
+        const fromIdx = savedAwards.findIndex(a => a.id === fromId);
+        const toIdx = savedAwards.findIndex(a => a.id === toId);
+        if (fromIdx < 0 || toIdx < 0) return;
+        if (normCat(savedAwards[fromIdx].category) !== normCat(savedAwards[toIdx].category)) return;
+        const next = savedAwards.filter(a => a.id !== fromId);
+        const insertAt = next.findIndex(a => a.id === toId) + (fromIdx < toIdx ? 1 : 0);
+        next.splice(insertAt, 0, savedAwards[fromIdx]);
+        const prev = savedAwards;
+        setSavedAwards(next);
+        const ok = await persist(next);
+        if (!ok) setSavedAwards(prev);
     };
 
     // ---- viewing ------------------------------------------------------------
@@ -406,10 +467,11 @@ export default function AwardBuilderPage() {
     const categoryLabel = (c: RaceCategory) =>
         `${c.name}${c.distance ? ` (${c.distance})` : ''}${c.raceType ? ` - ${c.raceType}` : ''}`;
 
-    // Results pane shows one distance at a time (the one just queried) so it never
-    // needs to scroll; "ทั้งหมด" lists every distance.
-    const ALL = '__all__';
-    const resultFilter = activeTab || queried?.category || ALL;
+    // Results section lists every distance by default; chips narrow it to one.
+    const resultFilter = activeTab || ALL;
+    const unsavedQuery = !!queried && !savedAwards.some(a => a.id === queried.id);
+    // Saved awards are shown straight from the campaign, so a page refresh never blanks the list.
+    const hasList = savedAwards.length > 0 || !!queried;
     const visibleCategories = resultFilter === ALL
         ? categories
         : categories.filter(c => normCat(c.name) === normCat(resultFilter));
@@ -417,8 +479,7 @@ export default function AwardBuilderPage() {
     // "+ เพิ่มรางวัลใหม่" on a distance card: fresh form for that distance, cursor in the title.
     const addAwardFor = (category: string) => {
         setForm(emptyForm(category));
-        setActiveTab(category);
-        setTimeout(() => nameInputRef.current?.focus(), 0);
+        scrollToSettings();
     };
 
     const awardSubtitle = (a: CustomAward) => {
@@ -442,9 +503,8 @@ export default function AwardBuilderPage() {
                 </div>
             )}
 
-            {/* One screen on desktop: header row, then settings (left) and results (right).
-                Each pane scrolls on its own only if the screen is too short. */}
-            <div className="flex flex-col bg-slate-50 lg:-m-[15px] lg:h-[calc(100vh-50px)] lg:overflow-hidden">
+            {/* Header row, then settings on top and results underneath; the page scrolls as one column. */}
+            <div className="flex min-h-[calc(100vh-50px)] flex-col bg-slate-50 lg:-m-[15px]">
                 {loading ? (
                     <div className="flex flex-1 items-center justify-center p-10 text-gray-400!">{th ? 'กำลังโหลด...' : 'Loading...'}</div>
                 ) : !campaign ? (
@@ -493,10 +553,10 @@ export default function AwardBuilderPage() {
                             </span>
                         </div>
 
-                        <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 p-3 lg:grid-cols-[minmax(0,1.65fr)_minmax(0,1fr)] lg:px-5">
-                            {/* ===================== LEFT: settings ===================== */}
-                            <div className="flex min-h-0 flex-col gap-3">
-                                <div className="min-h-0 flex-1 space-y-3 lg:overflow-y-auto">
+                        <div className="flex flex-col gap-3 p-3 lg:px-5 lg:pb-6">
+                            {/* ===================== Settings ===================== */}
+                            <div ref={settingsRef} className="flex flex-col gap-3">
+                                <div className="space-y-3">
                                     {/* Step 1 */}
                                     <div className="rounded-xl border border-gray-200 bg-white shadow-sm">
                                         <StepHeader n={1} title={th ? 'ตั้งเงื่อนไขรางวัล' : 'Award settings'} hint={th ? 'เลือกระยะ ประเภท และจำนวนรางวัล' : 'Distance, type and number of places'} />
@@ -606,27 +666,27 @@ export default function AwardBuilderPage() {
                                         className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-3.5 py-2 text-sm font-medium text-gray-800! hover:bg-gray-50">
                                         <ArrowPathIcon className="h-4 w-4 text-orange-500!" /> {th ? 'รีเฟรช' : 'Refresh'}
                                     </button>
-                                    <button type="button" onClick={handleDelete} disabled={saving}
+                                    <button type="button" onClick={handleClearForm}
                                         className="ml-auto inline-flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3.5 py-2 text-sm font-medium text-red-600! hover:bg-red-100 disabled:opacity-50">
                                         <TrashIcon className="h-4 w-4" /> {th ? 'ล้างเงื่อนไข' : 'Delete'}
                                     </button>
                                 </div>
                             </div>
 
-                            {/* ===================== RIGHT: results ===================== */}
-                            <div className="flex min-h-[320px] flex-col rounded-xl border border-gray-200 bg-white shadow-sm lg:min-h-0">
-                                <div className="flex shrink-0 items-center gap-2 pr-3">
-                                    <StepHeader n={3} title={th ? 'ผลลัพธ์' : 'Results'} hint={queried ? (th ? 'กดชื่อรางวัลเพื่อดูรายชื่อ' : 'Click an award to see the winners') : undefined} />
-                                    {queried && (
+                            {/* ===================== Results (below the settings) ===================== */}
+                            <div className="flex flex-col rounded-xl border border-gray-200 bg-white shadow-sm">
+                                <div className="flex shrink-0 flex-wrap items-center gap-2 pr-3">
+                                    <StepHeader n={3} title={th ? 'ผลลัพธ์' : 'Results'} hint={hasList ? (th ? 'กดชื่อรางวัลเพื่อดูรายชื่อ • ลากที่ขีดเพื่อสลับตำแหน่ง' : 'Click an award to see the winners • drag the handle to reorder') : undefined} />
+                                    {unsavedQuery && (
                                         <button type="button" onClick={handleSaveAll} disabled={saving}
                                             className="ml-auto inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-emerald-600 px-3.5 py-2 text-sm font-semibold text-white! hover:bg-emerald-700 disabled:opacity-50">
                                             <CheckIcon className="h-4 w-4" />
-                                            {saving ? (th ? 'กำลังบันทึก...' : 'Saving...') : (th ? 'บันทึก' : 'Save')}
+                                            {saving ? (th ? 'กำลังบันทึก...' : 'Saving...') : (th ? 'บันทึกรายการ' : 'Save list')}
                                         </button>
                                     )}
                                 </div>
 
-                                {queried && (
+                                {hasList && (
                                     <div className="flex shrink-0 flex-wrap items-center gap-1.5 border-b border-gray-100 px-4 pb-2.5">
                                         <FunnelIcon className="h-4 w-4 text-gray-400!" />
                                         {[{ name: ALL, label: th ? 'ทั้งหมด' : 'All' }, ...categories.map(c => ({ name: c.name, label: c.name }))].map(opt => {
@@ -642,39 +702,71 @@ export default function AwardBuilderPage() {
                                     </div>
                                 )}
 
-                                <div className="min-h-0 flex-1 overflow-y-auto p-3">
-                                    {queried ? (
-                                        <div className="space-y-3">
+                                <div className="p-3">
+                                    {hasList ? (
+                                        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                                             {visibleCategories.map(c => {
                                                 const list = awardsByCategory.get(normCat(c.name)) || [];
+                                                const savedCount = list.filter(x => !x.unsaved).length;
                                                 return (
-                                                    <div key={c.name} className="overflow-hidden rounded-lg border border-gray-200">
+                                                    <div key={c.name} className="flex flex-col overflow-hidden rounded-lg border border-gray-200">
                                                         <div className="flex items-center justify-between gap-2 bg-slate-900 px-4 py-2 text-white!">
                                                             <span className="truncate text-sm font-bold">{th ? 'ระยะ' : 'Distance'} {c.name}{c.raceType ? ` (${c.raceType})` : ''}</span>
                                                             <span className="shrink-0 rounded-full bg-white/15 px-2.5 py-0.5 text-[11px] text-white!">
                                                                 {th ? `เข้าเส้นชัย ${finisherCountFor(c.name)} คน` : `${finisherCountFor(c.name)} finished`}
                                                             </span>
                                                         </div>
-                                                        <div className="space-y-2 bg-slate-50 p-2.5">
-                                                            {list.map(({ award, unsaved }) => (
-                                                                <button key={award.id} type="button" onClick={() => openAward(award)}
-                                                                    className="flex w-full items-center gap-3 rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-left transition hover:border-blue-300 hover:bg-blue-50/40">
-                                                                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-600!">
-                                                                        <DocumentTextIcon className="h-5 w-5" />
-                                                                    </span>
-                                                                    <span className="min-w-0 flex-1">
-                                                                        <span className="block truncate text-sm font-semibold text-gray-900!">{award.name}</span>
-                                                                        <span className="block truncate text-xs text-gray-500!">{awardSubtitle(award)}</span>
-                                                                    </span>
-                                                                    {unsaved && (
-                                                                        <span className="shrink-0 rounded-md border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700!">
-                                                                            {th ? 'ยังไม่บันทึก' : 'Unsaved'}
-                                                                        </span>
-                                                                    )}
-                                                                    <ChevronRightIcon className="h-4 w-4 shrink-0 text-gray-400!" />
-                                                                </button>
-                                                            ))}
-                                                            <div className={`flex items-center gap-2 ${list.length ? 'justify-end' : 'justify-between py-1'}`}>
+                                                        <div className="flex flex-1 flex-col gap-2 bg-slate-50 p-2.5">
+                                                            {list.map(({ award, unsaved }) => {
+                                                                const canDrag = !unsaved && savedCount > 1;
+                                                                const isDragOver = !!dragId && dragId !== award.id && dragOverId === award.id;
+                                                                const isEditing = form.id === award.id;
+                                                                return (
+                                                                    <div key={award.id} id={`award-${award.id}`}
+                                                                        onDragOver={e => { if (!dragId || dragId === award.id) return; e.preventDefault(); e.dataTransfer.dropEffect = 'move'; if (dragOverId !== award.id) setDragOverId(award.id); }}
+                                                                        onDragLeave={() => { if (dragOverId === award.id) setDragOverId(null); }}
+                                                                        onDrop={e => { e.preventDefault(); const from = dragId; setDragId(null); setDragOverId(null); if (from) void reorderAwards(from, award.id); }}
+                                                                        className={`flex items-center gap-1 rounded-lg border bg-white py-1.5 pl-1 pr-1.5 transition ${isDragOver ? 'border-blue-500 ring-2 ring-blue-100' : isEditing ? 'border-blue-300 bg-blue-50/30' : 'border-gray-200'} ${dragId === award.id ? 'opacity-40' : ''}`}>
+                                                                        {canDrag ? (
+                                                                            <span
+                                                                                draggable
+                                                                                onDragStart={e => { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', award.id); setDragId(award.id); }}
+                                                                                onDragEnd={() => { setDragId(null); setDragOverId(null); }}
+                                                                                title={th ? 'ลากเพื่อสลับตำแหน่ง' : 'Drag to reorder'}
+                                                                                className="cursor-grab touch-none rounded p-1 text-gray-300! hover:bg-gray-100 hover:text-gray-500! active:cursor-grabbing">
+                                                                                <Bars3Icon className="h-4 w-4" />
+                                                                            </span>
+                                                                        ) : (
+                                                                            <span className="w-6 shrink-0" />
+                                                                        )}
+                                                                        <button type="button" onClick={() => openAward(award)}
+                                                                            className="flex min-w-0 flex-1 items-center gap-2.5 rounded-md px-1.5 py-1 text-left transition hover:bg-blue-50/60">
+                                                                            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-600!">
+                                                                                <DocumentTextIcon className="h-5 w-5" />
+                                                                            </span>
+                                                                            <span className="min-w-0 flex-1">
+                                                                                <span className="block truncate text-sm font-semibold text-gray-900!">{award.name}</span>
+                                                                                <span className="block truncate text-xs text-gray-500!">{awardSubtitle(award)}</span>
+                                                                            </span>
+                                                                            {unsaved && (
+                                                                                <span className="shrink-0 rounded-md border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700!">
+                                                                                    {th ? 'ยังไม่บันทึก' : 'Unsaved'}
+                                                                                </span>
+                                                                            )}
+                                                                            <ChevronRightIcon className="h-4 w-4 shrink-0 text-gray-400!" />
+                                                                        </button>
+                                                                        <button type="button" onClick={() => editAward(award)} title={th ? 'แก้ไข' : 'Edit'}
+                                                                            className={`shrink-0 rounded-md p-1.5 transition hover:bg-blue-50 hover:text-blue-600! ${isEditing ? 'text-blue-600!' : 'text-gray-400!'}`}>
+                                                                            <PencilSquareIcon className="h-4 w-4" />
+                                                                        </button>
+                                                                        <button type="button" onClick={() => void deleteAward(award, unsaved)} disabled={saving} title={th ? 'ลบ' : 'Delete'}
+                                                                            className="shrink-0 rounded-md p-1.5 text-gray-400! transition hover:bg-red-50 hover:text-red-600! disabled:opacity-50">
+                                                                            <TrashIcon className="h-4 w-4" />
+                                                                        </button>
+                                                                    </div>
+                                                                );
+                                                            })}
+                                                            <div className={`mt-auto flex items-center gap-2 ${list.length ? 'justify-end' : 'justify-between py-1'}`}>
                                                                 {list.length === 0 && <span className="text-sm text-gray-500!">{th ? 'ยังไม่มีรางวัลสำหรับระยะนี้' : 'No award for this distance yet'}</span>}
                                                                 <button type="button" onClick={() => addAwardFor(c.name)} className="inline-flex shrink-0 items-center gap-1 text-xs font-semibold text-blue-600! hover:text-blue-700!">
                                                                     <PlusIcon className="h-3.5 w-3.5" /> {th ? 'เพิ่มรางวัลใหม่' : 'Add award'}
@@ -686,12 +778,12 @@ export default function AwardBuilderPage() {
                                             })}
                                         </div>
                                     ) : (
-                                        <div className="flex h-full flex-col items-center justify-center gap-4 px-4 text-center">
-                                            <div className="text-sm font-semibold text-gray-700!">{th ? 'ยังไม่มีผลลัพธ์' : 'No results yet'}</div>
+                                        <div className="flex flex-col items-center justify-center gap-4 px-4 py-10 text-center">
+                                            <div className="text-sm font-semibold text-gray-700!">{th ? 'ยังไม่มีรายการรางวัล' : 'No awards yet'}</div>
                                             <ol className="space-y-2 text-left text-sm text-gray-600!">
                                                 {(th
-                                                    ? ['ตั้งเงื่อนไขรางวัล (ระยะ ประเภท จำนวน)', 'ติ๊กข้อมูลที่อยากให้แสดง', 'กดปุ่ม "ค้นหาข้อมูล" ด้านล่างซ้าย']
-                                                    : ['Set the award (distance, type, places)', 'Tick the columns to show', 'Press "Query" at the bottom left']
+                                                    ? ['ตั้งเงื่อนไขรางวัล (ระยะ ประเภท จำนวน)', 'ติ๊กข้อมูลที่อยากให้แสดง', 'กดปุ่ม "ค้นหาข้อมูล" แล้วกด "บันทึกรายการ"']
+                                                    : ['Set the award (distance, type, places)', 'Tick the columns to show', 'Press "Query", then "Save list"']
                                                 ).map((t, k) => (
                                                     <li key={k} className="flex items-center gap-2">
                                                         <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-blue-50 text-xs font-bold text-blue-700!">{k + 1}</span>
