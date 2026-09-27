@@ -21,6 +21,7 @@ interface Applicant {
     category?: string;
     team?: string;
     challenge?: string;
+    wave?: string;
 }
 
 function genderLabel(g?: string): string {
@@ -141,6 +142,12 @@ export default function ApplicantStatusPage() {
         [results],
     );
 
+    // Wave (start group) only exists for some events — same rule as /admin/applicants-import.
+    const hasWave = useMemo(
+        () => results.some(r => (r.wave || '').trim() !== ''),
+        [results],
+    );
+
     return (
         <div style={{ minHeight: '100vh', background: COLORS.surface, fontFamily: "'Inter','Hanken Grotesk',sans-serif" }}>
             {/* Header */}
@@ -248,6 +255,7 @@ export default function ApplicantStatusPage() {
                                         <th style={thStyle}>BIB</th>
                                         <th style={{ ...thStyle, textAlign: 'left' }}>ชื่อ-นามสกุล</th>
                                         {hasCategory && <th style={thStyle}>ประเภท</th>}
+                                        {hasWave && <th style={thStyle}>Wave</th>}
                                         <th style={thStyle}>อายุ</th>
                                         <th style={thStyle}>เพศ</th>
                                         <th style={thStyle}>กลุ่มอายุ</th>
@@ -267,6 +275,7 @@ export default function ApplicantStatusPage() {
                                                 {r.team ? <span style={{ display: 'block', fontSize: 12, color: COLORS.label, fontWeight: 400 }}>{r.team}</span> : null}
                                             </td>
                                             {hasCategory && <td style={{ ...tdStyle, textAlign: 'center', fontWeight: 600 }}>{r.category || '-'}</td>}
+                                            {hasWave && <td style={{ ...tdStyle, textAlign: 'center', fontWeight: 600 }}>{r.wave || '-'}</td>}
                                             <td style={{ ...tdStyle, textAlign: 'center' }}>{r.age != null && r.age > 0 ? `${r.age} ปี` : '-'}</td>
                                             <td style={{ ...tdStyle, textAlign: 'center' }}>
                                                 <span style={{
@@ -302,6 +311,7 @@ export default function ApplicantStatusPage() {
                                         ),
                                     },
                                     ...(hasCategory ? [{ label: 'ประเภท', value: r.category || '-' }] : []),
+                                    ...(hasWave ? [{ label: 'Wave', value: r.wave || '-' }] : []),
                                     { label: 'อายุ', value: r.age != null && r.age > 0 ? `${r.age} ปี` : '-' },
                                     { label: 'กลุ่มอายุ', value: ageGroupLabel(r.ageGroup) },
                                     { label: 'ขนาดเสื้อ', value: r.shirtSize || '-' },
