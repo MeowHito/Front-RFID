@@ -76,7 +76,7 @@ const HEADER_MAP: { field: FieldKey; keywords: string[]; exclude?: string[] }[] 
     { field: 'printingCode', keywords: ['printcode', 'print code', 'printingcode', 'printing code'] },
     { field: 'chipCode', keywords: ['chipcode', 'chip code', 'chip', 'ชิป'] },
     { field: 'bloodType', keywords: ['blood', 'กรุ๊ปเลือด', 'หมู่เลือด', 'เลือด'] },
-    { field: 'wave', keywords: ['wavename', 'wave', 'กลุ่มปล่อยตัว', 'รอบปล่อยตัว', 'start box'] },
+    { field: 'wave', keywords: ['wavename', 'wave', 'กลุ่มปล่อยตัว', 'รอบปล่อยตัว', 'start box', 'block start', 'start block', 'blockstart', 'block', 'บล็อก', 'บล๊อก'] },
     { field: 'nationality', keywords: ['countryregion', 'country', 'nationality', 'สัญชาติ', 'ประเทศ'] },
     { field: 'birthDate', keywords: ['birthdate', 'birth date', 'date of birth', 'birthday', 'dob', 'วันเกิด', 'วัน/เดือน/ปีเกิด', 'วันเดือนปีเกิด'] },
     { field: 'idCard', keywords: ['เลขบัตร', 'บัตรประชาชน', 'ประชาชน', 'เลขประจำตัว', 'idcard', 'id card', 'citizen', 'cid', 'national'] },
@@ -672,6 +672,16 @@ export default function ApplicantsImportPage() {
     const existingFrom = existingPageClamped * existingPageSizeNum;
     const pagedExisting = filteredExisting.slice(existingFrom, existingFrom + existingPageSizeNum);
 
+    // Wave only exists for some events — hide the column when no row has one.
+    const existingCols = useMemo(() => {
+        const hasWave = existingRows.some(r => cellText(r.wave));
+        return PREVIEW_COLS.filter(c => c.field !== 'wave' || hasWave);
+    }, [existingRows]);
+    const previewCols = useMemo(() => {
+        const hasWave = rows.some(r => cellText(r.wave));
+        return PREVIEW_COLS.filter(c => c.field !== 'wave' || hasWave);
+    }, [rows]);
+
     const downloadTemplate = () => {
         const ws = XLSX.utils.aoa_to_sheet([
             ['เลขบัตรประชาชน', 'BIB', 'ชื่อ', 'นามสกุล', 'First Name', 'Last Name', 'เบอร์โทร', 'อายุ', 'เพศ', 'กลุ่มอายุ', 'ขนาดเสื้อ', 'ประเภท', 'วันเกิด', 'Chip Code', 'Print Code', 'กรุ๊ปเลือด', 'Wave', 'สัญชาติ'],
@@ -929,7 +939,7 @@ export default function ApplicantsImportPage() {
                                         <thead>
                                             <tr>
                                                 <th style={{ position: 'sticky', top: 0, zIndex: 2, background: '#f1f5f9' }}>#</th>
-                                                {PREVIEW_COLS.map(c => (
+                                                {existingCols.map(c => (
                                                     <th key={c.field} style={{ position: 'sticky', top: 0, zIndex: 2, background: '#f1f5f9' }}>
                                                         {language === 'th' ? c.th : c.en}
                                                     </th>
@@ -941,7 +951,7 @@ export default function ApplicantsImportPage() {
                                             {pagedExisting.map((r, idx) => (
                                                 <tr key={r._id}>
                                                     <td>{existingFrom + idx + 1}</td>
-                                                    {PREVIEW_COLS.map(c => {
+                                                    {existingCols.map(c => {
                                                         const isEditing = editingCell?.id === r._id && editingCell.field === c.field;
                                                         return (
                                                             <td
@@ -1063,14 +1073,14 @@ export default function ApplicantsImportPage() {
                                     <thead>
                                         <tr>
                                             <th>#</th>
-                                            {PREVIEW_COLS.map(c => <th key={c.field}>{language === 'th' ? c.th : c.en}</th>)}
+                                            {previewCols.map(c => <th key={c.field}>{language === 'th' ? c.th : c.en}</th>)}
                                         </tr>
                                     </thead>
                                     <tbody>
                                         {rows.slice(0, 50).map((r, idx) => (
                                             <tr key={idx}>
                                                 <td>{idx + 1}</td>
-                                                {PREVIEW_COLS.map(c => (
+                                                {previewCols.map(c => (
                                                     <td key={c.field} style={c.field === 'bib' ? { fontWeight: 700, color: '#2563eb' } : undefined}>
                                                         {r[c.field] || '-'}
                                                     </td>
