@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useParams } from 'next/navigation';
+import { useLanguage } from '@/lib/language-context';
 
 interface Applicant {
     _id: string;
@@ -24,31 +25,86 @@ interface Applicant {
     wave?: string;
 }
 
-function genderLabel(g?: string): string {
-    if (!g) return '-';
+type Lang = 'th' | 'en';
+
+// Page text in both languages — the TH/EN switch in the header picks one.
+const TEXT = {
+    th: {
+        title: 'ตรวจสอบข้อมูลการสมัคร',
+        hint: 'ค้นหาด้วย เลขบัตรประชาชน / BIB / ชื่อ / นามสกุล / เบอร์โทร',
+        search: 'ค้นหา',
+        searchFailed: 'ค้นหาไม่สำเร็จ ลองใหม่อีกครั้ง',
+        searchError: 'เกิดข้อผิดพลาด ลองใหม่อีกครั้ง',
+        results: (n: number) => `ผลการค้นหา (${n} รายการ)`,
+        clear: '↻ ล้างการค้นหา',
+        notFound: 'ไม่พบข้อมูลสำหรับ',
+        notFoundHint: 'ลองค้นหาด้วยชื่อ นามสกุล BIB หรือเลขบัตรประชาชน',
+        name: 'ชื่อ-นามสกุล',
+        category: 'ประเภท',
+        age: 'อายุ',
+        gender: 'เพศ',
+        ageGroup: 'กลุ่มอายุ',
+        shirt: 'ขนาดเสื้อ',
+        years: 'ปี',
+        male: 'ชาย',
+        female: 'หญิง',
+        footnote: 'ระบบแสดงทุกรายการที่ตรงกับคำค้น รวมถึงชื่อที่ซ้ำกัน',
+    },
+    en: {
+        title: 'Check Your Registration',
+        hint: 'Search by ID card / BIB / first name / last name / phone',
+        search: 'Search',
+        searchFailed: 'Search failed. Please try again.',
+        searchError: 'Something went wrong. Please try again.',
+        results: (n: number) => `Results (${n})`,
+        clear: '↻ Clear search',
+        notFound: 'No results for',
+        notFoundHint: 'Try searching by first name, last name, BIB or ID card number',
+        name: 'Name',
+        category: 'Category',
+        age: 'Age',
+        gender: 'Gender',
+        ageGroup: 'Age Group',
+        shirt: 'Shirt Size',
+        years: 'yrs',
+        male: 'Male',
+        female: 'Female',
+        footnote: 'All matching entries are shown, including duplicate names.',
+    },
+};
+
+function genderKey(g?: string): 'male' | 'female' | null {
+    if (!g) return null;
     const v = g.trim().toLowerCase();
-    if (v === 'm' || v === 'male' || g.includes('ชาย')) return 'ชาย';
-    if (v === 'f' || v === 'female' || g.includes('หญิง')) return 'หญิง';
-    return g;
+    if (v === 'm' || v === 'male' || g.includes('ชาย')) return 'male';
+    if (v === 'f' || v === 'female' || g.includes('หญิง')) return 'female';
+    return null;
+}
+
+function genderLabel(g: string | undefined, lang: Lang): string {
+    const k = genderKey(g);
+    return k ? TEXT[lang][k] : (g || '-');
 }
 
 // Roster age groups arrive as e.g. "(กลุ่มอายุ 30-39 ปี ชาย)" — show just the
 // numeric range "30-39 ปี". "ไม่มีการแข่งขันกลุ่มอายุ" and blanks become "-".
-function ageGroupLabel(g?: string): string {
+function ageGroupLabel(g: string | undefined, lang: Lang): string {
     if (!g) return '-';
     const range = g.match(/\d+\s*-\s*\d+/);
-    if (range) return `${range[0].replace(/\s+/g, '')} ปี`;
+    if (range) return `${range[0].replace(/\s+/g, '')} ${TEXT[lang].years}`;
     if (/ไม่มี/.test(g)) return '-';
-    return g.replace(/[()]/g, '').replace(/กลุ่มอายุ/g, '').replace(/ชาย|หญิง|male|female/gi, '').trim() || '-';
+    return g.replace(/[()]/g, '').replace(/กลุ่มอายุ/g, '').replace(/ปี/g, lang === 'en' ? 'yrs' : 'ปี').replace(/ชาย|หญิง|male|female/gi, '').trim() || '-';
 }
 
-/** Thai (primary) and English (secondary) name lines for a result row. */
-function nameLines(r: Applicant): { th: string; en: string } {
+/** Primary and secondary name lines for a result row — the chosen language's
+ *  spelling first, the other one underneath. */
+function nameLines(r: Applicant, lang: Lang): { th: string; en: string } {
     const th = (r.fullName || `${r.firstName || ''} ${r.lastName || ''}`.trim()).trim();
     const en = (r.fullNameEn || `${r.firstNameEn || ''} ${r.lastNameEn || ''}`.trim()).trim();
-    // Rosters with only an English name still get one visible line
-    if (!th && en) return { th: en, en: '' };
-    return { th: th || '-', en };
+    const [first, second] = lang === 'en' ? [en, th] : [th, en];
+    // Rosters with only one spelling still get one visible line
+    if (!first && second) return { th: second, en: '' };
+    return { th: first || '-', en: second };
 }
 
 const COLORS = {
@@ -63,6 +119,9 @@ const COLORS = {
 };
 
 export default function ApplicantStatusPage() {
+    const { language, setLanguage } = useLanguage();
+    const lang: Lang = language === 'en' ? 'en' : 'th';
+    const L = TEXT[lang];
     const { slug: rawSlug } = useParams<{ slug: string }>();
     // useParams can return a still-percent-encoded segment for non-ASCII (Thai)
     // slugs. Decode it fully so we encode exactly once when calling the API —
@@ -78,7 +137,8 @@ export default function ApplicantStatusPage() {
         } catch { /* leave as-is on malformed input */ }
         return s;
     }, [rawSlug]);
-    const [campaignName, setCampaignName] = useState('');
+    const [campaignNames, setCampaignNames] = useState<{ th: string; en: string }>({ th: '', en: '' });
+    const campaignName = lang === 'en' ? (campaignNames.en || campaignNames.th) : (campaignNames.th || campaignNames.en);
     const [query, setQuery] = useState('');
     const [results, setResults] = useState<Applicant[]>([]);
     const [searching, setSearching] = useState(false);
@@ -92,7 +152,10 @@ export default function ApplicantStatusPage() {
                 const res = await fetch(`/api/campaigns/${encodeURIComponent(slug)}`, { cache: 'no-store' });
                 if (res.ok) {
                     const data = await res.json();
-                    setCampaignName(data?.nameTh || data?.nameEn || data?.name || '');
+                    setCampaignNames({
+                        th: data?.nameTh || data?.name || '',
+                        en: data?.nameEn || data?.name || '',
+                    });
                 }
             } catch { /* */ }
         })();
@@ -109,13 +172,13 @@ export default function ApplicantStatusPage() {
         try {
             const res = await fetch(`/api/applicants/search?campaign=${encodeURIComponent(slug)}&q=${encodeURIComponent(term)}`, { cache: 'no-store' });
             if (!res.ok) {
-                setError('ค้นหาไม่สำเร็จ ลองใหม่อีกครั้ง');
+                setError('failed');
                 return;
             }
             const data = await res.json();
             setResults(data?.results || []);
         } catch {
-            setError('เกิดข้อผิดพลาด ลองใหม่อีกครั้ง');
+            setError('error');
         } finally {
             setSearching(false);
         }
@@ -160,8 +223,26 @@ export default function ApplicantStatusPage() {
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                     <div style={{ width: 40, height: 40, borderRadius: 12, background: 'rgba(0,63,177,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22 }}>🏃</div>
                     <h1 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: COLORS.primary, letterSpacing: '-0.02em' }}>
-                        {campaignName || 'ตรวจสอบข้อมูลการสมัคร'}
+                        {campaignName || L.title}
                     </h1>
+                </div>
+                <div role="group" aria-label="Language" style={{ display: 'flex', flexShrink: 0, border: `1px solid ${COLORS.border}`, borderRadius: 999, padding: 3, background: COLORS.surface }}>
+                    {(['th', 'en'] as const).map(code => (
+                        <button
+                            key={code}
+                            type="button"
+                            onClick={() => setLanguage(code)}
+                            aria-pressed={lang === code}
+                            style={{
+                                border: 'none', borderRadius: 999, padding: '6px 14px', fontSize: 13, fontWeight: 700,
+                                cursor: 'pointer',
+                                background: lang === code ? COLORS.primary : 'transparent',
+                                color: lang === code ? '#fff' : COLORS.textMuted,
+                            }}
+                        >
+                            {code.toUpperCase()}
+                        </button>
+                    ))}
                 </div>
             </header>
 
@@ -169,10 +250,10 @@ export default function ApplicantStatusPage() {
             <div style={{ background: `linear-gradient(135deg, ${COLORS.primary}, ${COLORS.primaryDark})`, padding: '40px 20px 56px' }}>
                 <div style={{ maxWidth: 720, margin: '0 auto', textAlign: 'center' }}>
                     <h2 style={{ margin: 0, color: '#fff', fontSize: 30, fontWeight: 800, lineHeight: 1.2, letterSpacing: '-0.02em' }}>
-                        ตรวจสอบข้อมูลการสมัคร
+                        {L.title}
                     </h2>
                     <p style={{ margin: '10px 0 0', color: 'rgba(255,255,255,0.85)', fontSize: 15 }}>
-                        ค้นหาด้วย เลขบัตรประชาชน / BIB / ชื่อ / นามสกุล / เบอร์โทร
+                        {L.hint}
                     </p>
                 </div>
             </div>
@@ -189,7 +270,7 @@ export default function ApplicantStatusPage() {
                     <input
                         value={query}
                         onChange={(e) => setQuery(e.target.value)}
-                        placeholder="ค้นหาด้วย เลขบัตรประชาชน / BIB / ชื่อ / นามสกุล / เบอร์โทร"
+                        placeholder={L.hint}
                         style={{
                             flex: 1, border: 'none', outline: 'none', fontSize: 16,
                             color: COLORS.text, padding: '12px 4px', background: 'transparent',
@@ -201,7 +282,7 @@ export default function ApplicantStatusPage() {
                         cursor: searching ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap',
                         opacity: searching ? 0.7 : 1,
                     }}>
-                        {searching ? '...' : 'ค้นหา'}
+                        {searching ? '...' : L.search}
                     </button>
                 </form>
 
@@ -209,10 +290,10 @@ export default function ApplicantStatusPage() {
                 {searched && !searching && (
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '24px 4px 12px' }}>
                         <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: COLORS.text }}>
-                            ผลการค้นหา ({results.length} รายการ)
+                            {L.results(results.length)}
                         </h3>
                         <button onClick={clearSearch} style={{ background: 'none', border: 'none', color: COLORS.primary, fontWeight: 600, fontSize: 14, cursor: 'pointer' }}>
-                            ↻ ล้างการค้นหา
+                            {L.clear}
                         </button>
                     </div>
                 )}
@@ -220,17 +301,17 @@ export default function ApplicantStatusPage() {
                 {/* Error / empty */}
                 {searched && !searching && error && (
                     <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 12, padding: 16, color: '#dc2626', fontWeight: 600, fontSize: 14 }}>
-                        {error}
+                        {error === 'failed' ? L.searchFailed : L.searchError}
                     </div>
                 )}
                 {searched && !searching && !error && results.length === 0 && (
                     <div style={{ background: COLORS.card, border: `1px solid ${COLORS.border}`, borderRadius: 16, padding: '36px 20px', textAlign: 'center' }}>
                         <div style={{ fontSize: 40, marginBottom: 8 }}>🔎</div>
                         <p style={{ margin: 0, color: COLORS.textMuted, fontSize: 15, fontWeight: 600 }}>
-                            ไม่พบข้อมูลสำหรับ &ldquo;{query}&rdquo;
+                            {L.notFound} &ldquo;{query}&rdquo;
                         </p>
                         <p style={{ margin: '6px 0 0', color: COLORS.label, fontSize: 13 }}>
-                            ลองค้นหาด้วยชื่อ นามสกุล BIB หรือเลขบัตรประชาชน
+                            {L.notFoundHint}
                         </p>
                     </div>
                 )}
@@ -253,19 +334,20 @@ export default function ApplicantStatusPage() {
                                 <thead>
                                     <tr style={{ background: '#f3f4f6', borderBottom: `2px solid ${COLORS.border}` }}>
                                         <th style={thStyle}>BIB</th>
-                                        <th style={{ ...thStyle, textAlign: 'left' }}>ชื่อ-นามสกุล</th>
-                                        {hasCategory && <th style={thStyle}>ประเภท</th>}
+                                        <th style={{ ...thStyle, textAlign: 'left' }}>{L.name}</th>
+                                        {hasCategory && <th style={thStyle}>{L.category}</th>}
                                         {hasWave && <th style={thStyle}>Wave</th>}
-                                        <th style={thStyle}>อายุ</th>
-                                        <th style={thStyle}>เพศ</th>
-                                        <th style={thStyle}>กลุ่มอายุ</th>
-                                        <th style={thStyle}>ขนาดเสื้อ</th>
+                                        <th style={thStyle}>{L.age}</th>
+                                        <th style={thStyle}>{L.gender}</th>
+                                        <th style={thStyle}>{L.ageGroup}</th>
+                                        <th style={thStyle}>{L.shirt}</th>
                                         {hasChallenge && <th style={thStyle}>Challenge</th>}
                                     </tr>
                                 </thead>
                                 <tbody>
                                     {results.map((r, idx) => {
-                                        const nm = nameLines(r);
+                                        const nm = nameLines(r, lang);
+                                        const female = genderKey(r.gender) === 'female';
                                         return (
                                         <tr key={r._id || idx} style={{ borderBottom: `1px solid #f1f5f9` }}>
                                             <td style={{ ...tdStyle, fontWeight: 700, color: COLORS.primary, textAlign: 'center' }}>{r.bib || '-'}</td>
@@ -276,17 +358,17 @@ export default function ApplicantStatusPage() {
                                             </td>
                                             {hasCategory && <td style={{ ...tdStyle, textAlign: 'center', fontWeight: 600 }}>{r.category || '-'}</td>}
                                             {hasWave && <td style={{ ...tdStyle, textAlign: 'center', fontWeight: 600 }}>{r.wave || '-'}</td>}
-                                            <td style={{ ...tdStyle, textAlign: 'center' }}>{r.age != null && r.age > 0 ? `${r.age} ปี` : '-'}</td>
+                                            <td style={{ ...tdStyle, textAlign: 'center' }}>{r.age != null && r.age > 0 ? `${r.age} ${L.years}` : '-'}</td>
                                             <td style={{ ...tdStyle, textAlign: 'center' }}>
                                                 <span style={{
                                                     padding: '3px 12px', borderRadius: 12, fontSize: 12, fontWeight: 600,
-                                                    background: genderLabel(r.gender) === 'หญิง' ? '#fce7f3' : '#dbeafe',
-                                                    color: genderLabel(r.gender) === 'หญิง' ? '#be185d' : '#1d4ed8',
+                                                    background: female ? '#fce7f3' : '#dbeafe',
+                                                    color: female ? '#be185d' : '#1d4ed8',
                                                 }}>
-                                                    {genderLabel(r.gender)}
+                                                    {genderLabel(r.gender, lang)}
                                                 </span>
                                             </td>
-                                            <td style={{ ...tdStyle, textAlign: 'center' }}>{ageGroupLabel(r.ageGroup)}</td>
+                                            <td style={{ ...tdStyle, textAlign: 'center' }}>{ageGroupLabel(r.ageGroup, lang)}</td>
                                             <td style={{ ...tdStyle, textAlign: 'center', fontWeight: 600 }}>{r.shirtSize || '-'}</td>
                                             {hasChallenge && <td style={{ ...tdStyle, textAlign: 'center', fontWeight: 600 }}>{r.challenge || '-'}</td>}
                                         </tr>
@@ -299,22 +381,22 @@ export default function ApplicantStatusPage() {
                         {/* Mobile — vertical key/value table per result, fits one screen, no scroll */}
                         <div className="aps-mobile-table" style={{ display: 'none', flexDirection: 'column', gap: 14 }}>
                             {results.map((r, idx) => {
-                                const { th: nameTh, en: nameEn } = nameLines(r);
-                                const female = genderLabel(r.gender) === 'หญิง';
+                                const { th: nameTh, en: nameEn } = nameLines(r, lang);
+                                const female = genderKey(r.gender) === 'female';
                                 const rows: { label: string; value: React.ReactNode }[] = [
                                     { label: 'BIB', value: <span style={{ color: COLORS.primary, fontWeight: 800 }}>{r.bib || '-'}</span> },
                                     {
-                                        label: 'เพศ', value: (
+                                        label: L.gender, value: (
                                             <span style={{ padding: '2px 12px', borderRadius: 12, fontWeight: 600, background: female ? '#fce7f3' : '#dbeafe', color: female ? '#be185d' : '#1d4ed8' }}>
-                                                {genderLabel(r.gender)}
+                                                {genderLabel(r.gender, lang)}
                                             </span>
                                         ),
                                     },
-                                    ...(hasCategory ? [{ label: 'ประเภท', value: r.category || '-' }] : []),
+                                    ...(hasCategory ? [{ label: L.category, value: r.category || '-' }] : []),
                                     ...(hasWave ? [{ label: 'Wave', value: r.wave || '-' }] : []),
-                                    { label: 'อายุ', value: r.age != null && r.age > 0 ? `${r.age} ปี` : '-' },
-                                    { label: 'กลุ่มอายุ', value: ageGroupLabel(r.ageGroup) },
-                                    { label: 'ขนาดเสื้อ', value: r.shirtSize || '-' },
+                                    { label: L.age, value: r.age != null && r.age > 0 ? `${r.age} ${L.years}` : '-' },
+                                    { label: L.ageGroup, value: ageGroupLabel(r.ageGroup, lang) },
+                                    { label: L.shirt, value: r.shirtSize || '-' },
                                     ...(hasChallenge ? [{ label: 'Challenge', value: r.challenge || '-' }] : []),
                                 ];
                                 return (
@@ -342,7 +424,7 @@ export default function ApplicantStatusPage() {
                         </div>
 
                         <p style={{ fontSize: 12, color: COLORS.label, marginTop: 12, textAlign: 'center' }}>
-                            ระบบแสดงทุกรายการที่ตรงกับคำค้น รวมถึงชื่อที่ซ้ำกัน
+                            {L.footnote}
                         </p>
                     </>
                 )}
