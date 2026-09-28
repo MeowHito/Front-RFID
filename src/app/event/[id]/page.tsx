@@ -16,6 +16,7 @@ import { stripHiddenAgeGroups } from '@/lib/age-group-award-toggle';
 import { isNationalitySplitCategory } from '@/lib/nationality';
 import { type AgeGroupBucket, buildCanonicalAgeGroups, canonicalizeAgeGroup, normalizeAgeGroupLabel } from '@/lib/age-groups';
 import RankingMenuDropdown from '@/components/RankingMenuDropdown';
+import CustomAwardMenu from '@/components/CustomAwardMenu';
 import CourseProfileModal, { type CourseRunner } from '@/components/CourseProfileModal';
 import CheckpointBarsModal from '@/components/CheckpointBarsModal';
 import { ETA_SLOWDOWN, cutoffAtMs, estimatePaceEtaMs } from '@/lib/routeProgress';
@@ -70,6 +71,8 @@ interface Campaign {
     excludeAgeGroupTop?: number;
     separateOverallNationalityCategories?: string[];
     rankingMenuVisibility?: RankingMenuVisibility[];
+    /** Awards built on /admin/award-builder (see lib/custom-awards). */
+    customAwards?: unknown;
 }
 
 interface RaceCategory {
@@ -937,14 +940,17 @@ export default function EventLivePage() {
         let cats;
         if (!campaignCategories.length) {
             const runnerCategories = new Set(runners.map(r => r.category).filter(Boolean));
-            cats = Array.from(runnerCategories).map(v => ({ key: v, label: v, categoryName: v, normalizedName: normalizeComparableText(v), normalizedDistance: normalizeComparableText(v), distanceValue: parseDistanceValue(v) }));
+            cats = Array.from(runnerCategories).map(v => ({ key: v, label: v, distanceLabel: v, categoryName: v, normalizedName: normalizeComparableText(v), normalizedDistance: normalizeComparableText(v), distanceValue: parseDistanceValue(v) }));
         } else {
             cats = campaignCategories.map((cat, i) => {
                 const distance = String(cat?.distance || '').trim();
                 const name = String(cat?.name || '').trim();
                 const nd = normalizeComparableText(distance);
                 const nn = normalizeComparableText(name);
-                return { key: `${nd || nn || i + 1}-${i}`, label: distance || name || `Category ${i + 1}`, categoryName: name, normalizedDistance: nd, normalizedName: nn, distanceValue: parseDistanceValue(distance || name) };
+                // The tab shows the category name (the "Badge" column on the event form, e.g.
+                // "Mini marathon") — several categories can share one distance ("5 KM").
+                // `key` still comes from the distance so existing ?cat= links keep working.
+                return { key: `${nd || nn || i + 1}-${i}`, label: name || distance || `Category ${i + 1}`, distanceLabel: distance || name, categoryName: name, normalizedDistance: nd, normalizedName: nn, distanceValue: parseDistanceValue(distance || name) };
             }).filter(c => Boolean(c.label));
         }
         // Sort by distance descending
@@ -2164,9 +2170,10 @@ export default function EventLivePage() {
     // A route is filed under the campaign category name, but older events have it
     // under the distance label, so both count as a match.
     const currentCategoryLabel = categories.find(c => c.key === filterCategory)?.label || '';
+    const currentDistanceLabel = categories.find(c => c.key === filterCategory)?.distanceLabel || '';
     const courseProfileKeys = useMemo(
-        () => [currentCategoryName, currentCategoryLabel].filter(Boolean),
-        [currentCategoryName, currentCategoryLabel],
+        () => [currentCategoryName, currentDistanceLabel].filter(Boolean),
+        [currentCategoryName, currentDistanceLabel],
     );
 
     // ── Checkpoint bar charts popup ──
@@ -2421,6 +2428,18 @@ export default function EventLivePage() {
         />
     ) : null;
 
+    // "Result(demo)" — awards built on /admin/award-builder for the selected distance, admin only
+    const customAwardMenuEl = isAdmin && currentCategoryName ? (
+        <CustomAwardMenu
+            customAwards={campaign.customAwards}
+            categoryName={currentCategoryName}
+            campaignSlugOrId={campaign.slug || campaign._id}
+            language={language}
+            align="right"
+            compact={isMobile}
+        />
+    ) : null;
+
     // Sort incomplete-checkpoint alerts to the top — admin only
     const adminSortEl = isAdmin ? (
         <button
@@ -2597,6 +2616,7 @@ export default function EventLivePage() {
                             {courseProfileEl}
                             {checkpointBarsEl}
                             <div className="ml-auto flex items-center gap-0.5">
+                                {customAwardMenuEl}
                                 {rankingMenuEl}
                                 {slidersEl}
                             </div>
@@ -2637,6 +2657,7 @@ export default function EventLivePage() {
                         {checkpointBarsEl}
                         {slidersEl}
                         {rankingMenuEl}
+                        {customAwardMenuEl}
                         {adminSortEl}
                     </div>
                 )}

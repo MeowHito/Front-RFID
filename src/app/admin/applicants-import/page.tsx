@@ -288,6 +288,23 @@ const RACETIGER_COLS: { header: string; width: number; value: (r: ApplicantRow, 
 // Distance bucket for applicants whose category matches none of the campaign's distances.
 const UNMATCHED_DISTANCE = '__unmatched__';
 
+// Sheet that "ดาวน์โหลดข้อมูลเดิม" gives applicants matching no distance. Its name is
+// not a distance, so re-importing the file must not copy it into `category`.
+const UNMATCHED_SHEET_LABEL = { th: 'ไม่ตรงระยะไหน', en: 'No matching distance' };
+const UNMATCHED_SHEET_NAMES = new Set(Object.values(UNMATCHED_SHEET_LABEL).map(v => v.toLowerCase()));
+
+// Excel sheet names: max 31 chars, none of \ / ? * [ ] :, unique (case-insensitive), not blank.
+function uniqueSheetName(label: string, used: Set<string>): string {
+    const base = (label.replace(/[\\/?*[\]:]/g, '-').replace(/^'+|'+$/g, '').trim() || 'Sheet').slice(0, 31);
+    let name = base;
+    for (let n = 2; used.has(name.toLowerCase()); n++) {
+        const suffix = ` (${n})`;
+        name = `${base.slice(0, 31 - suffix.length)}${suffix}`;
+    }
+    used.add(name.toLowerCase());
+    return name;
+}
+
 export default function ApplicantsImportPage() {
     const { language } = useLanguage();
     const [campaign, setCampaign] = useState<Campaign | null>(null);
@@ -396,7 +413,7 @@ export default function ApplicantsImportPage() {
                     if (!row[field]) (row[field] as string) = str;
                 });
                 // In multi-sheet exports the sheet name is the distance/category
-                if (!row.category && multiSheet) row.category = sheetName.trim();
+                if (!row.category && multiSheet && !UNMATCHED_SHEET_NAMES.has(sheetName.trim().toLowerCase())) row.category = sheetName.trim();
                 // Compose fullName / split if needed
                 if (!row.fullName && (row.firstName || row.lastName)) {
                     row.fullName = `${row.firstName} ${row.lastName}`.trim();
@@ -607,7 +624,8 @@ export default function ApplicantsImportPage() {
                 const key = catKey(c);
                 if (seen.has(key)) continue;
                 seen.add(key);
-                groups.push({ key, label: categoryDistanceLabel(c), count: counts.get(key) || 0 });
+                // Category name first, same as the /event tabs — two categories can share one distance ("5 KM").
+                groups.push({ key, label: String(c.name || '').trim() || categoryDistanceLabel(c), count: counts.get(key) || 0 });
             }
         } else {
             [...counts.keys()]
@@ -708,15 +726,43 @@ export default function ApplicantsImportPage() {
                 showToast(language === 'th' ? 'ยังไม่มีข้อมูลในระบบ' : 'No data to export', 'error');
                 return;
             }
+            // One sheet per distance (same buckets as the distance chips below), in the
+            // campaign's distance order; applicants matching no distance get their own sheet.
+            // The importer reads every sheet back, so the file still re-imports as-is.
+            const cats = (campaign.categories || []).filter(c => c && (c.name || c.distance));
+            const catKey = (c: { name?: string; distance?: string }) => c.name || c.distance || '';
+            const buckets = new Map<string, Record<string, unknown>[]>();
+            for (const r of list) {
+                let key: string;
+                if (cats.length) {
+                    const m = findRunnerCategory(cellText(r.category), cats);
+                    key = m ? catKey(m) : UNMATCHED_DISTANCE;
+                } else {
+                    key = cellText(r.category) || UNMATCHED_DISTANCE;
+                }
+                const bucket = buckets.get(key);
+                if (bucket) bucket.push(r); else buckets.set(key, [r]);
+            }
+            const order = cats.length
+                ? [...new Set(cats.map(catKey))]
+                : [...buckets.keys()].filter(k => k !== UNMATCHED_DISTANCE).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+            order.push(UNMATCHED_DISTANCE);
+
             const header = EXPORT_COLS.map(c => c.th);
-            const body = list.map(r => EXPORT_COLS.map(c => {
-                const v = r[c.field];
-                return v === null || v === undefined ? '' : String(v);
-            }));
-            const ws = XLSX.utils.aoa_to_sheet([header, ...body]);
-            ws['!cols'] = EXPORT_COLS.map(c => ({ wch: c.width }));
             const wb = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(wb, ws, 'Applicants');
+            const usedNames = new Set<string>();
+            for (const key of order) {
+                const rowsOfDistance = buckets.get(key);
+                if (!rowsOfDistance?.length) continue;
+                const body = rowsOfDistance.map(r => EXPORT_COLS.map(c => {
+                    const v = r[c.field];
+                    return v === null || v === undefined ? '' : String(v);
+                }));
+                const ws = XLSX.utils.aoa_to_sheet([header, ...body]);
+                ws['!cols'] = EXPORT_COLS.map(c => ({ wch: c.width }));
+                const label = key === UNMATCHED_DISTANCE ? (language === 'th' ? UNMATCHED_SHEET_LABEL.th : UNMATCHED_SHEET_LABEL.en) : key;
+                XLSX.utils.book_append_sheet(wb, ws, uniqueSheetName(label, usedNames));
+            }
             const safeName = (campaign.nameTh || campaign.nameEn || campaign.name || 'campaign').replace(/[\\/:*?"<>|]/g, '-').trim();
             XLSX.writeFile(wb, `applicants-${safeName}-${list.length}.xlsx`);
             showToast(language === 'th' ? `ดาวน์โหลด ${list.length.toLocaleString()} รายการ` : `Exported ${list.length.toLocaleString()} rows`, 'success');
