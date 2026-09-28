@@ -138,6 +138,7 @@ export default function ApplicantStatusPage() {
         return s;
     }, [rawSlug]);
     const [campaignNames, setCampaignNames] = useState<{ th: string; en: string }>({ th: '', en: '' });
+    const [bannerUrl, setBannerUrl] = useState('');
     const campaignName = lang === 'en' ? (campaignNames.en || campaignNames.th) : (campaignNames.th || campaignNames.en);
     const [query, setQuery] = useState('');
     const [results, setResults] = useState<Applicant[]>([]);
@@ -156,6 +157,15 @@ export default function ApplicantStatusPage() {
                         th: data?.nameTh || data?.name || '',
                         en: data?.nameEn || data?.name || '',
                     });
+                    // The banner (pictureUrl) is stripped from the campaign payload
+                    // because it's a large base64 string — fetch it on its own.
+                    if (data?._id) {
+                        const img = await fetch(`/api/campaigns/${data._id}/image`);
+                        if (img.ok) {
+                            const imgData = await img.json();
+                            if (imgData?.pictureUrl) setBannerUrl(imgData.pictureUrl);
+                        }
+                    }
                 }
             } catch { /* */ }
         })();
@@ -220,9 +230,9 @@ export default function ApplicantStatusPage() {
                 display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                 padding: '0 20px',
             }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                    <div style={{ width: 40, height: 40, borderRadius: 12, background: 'rgba(0,63,177,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22 }}>🏃</div>
-                    <h1 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: COLORS.primary, letterSpacing: '-0.02em' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
+                    <div style={{ width: 40, height: 40, flexShrink: 0, borderRadius: 12, background: 'rgba(0,63,177,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22 }}>🏃</div>
+                    <h1 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: COLORS.primary, letterSpacing: '-0.02em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                         {campaignName || L.title}
                     </h1>
                 </div>
@@ -246,20 +256,53 @@ export default function ApplicantStatusPage() {
                 </div>
             </header>
 
-            {/* Hero */}
-            <div style={{ background: `linear-gradient(135deg, ${COLORS.primary}, ${COLORS.primaryDark})`, padding: '40px 20px 56px' }}>
-                <div style={{ maxWidth: 720, margin: '0 auto', textAlign: 'center' }}>
-                    <h2 style={{ margin: 0, color: '#fff', fontSize: 30, fontWeight: 800, lineHeight: 1.2, letterSpacing: '-0.02em' }}>
+            {/* Hero — with a banner, the banner fills the whole hero edge to edge
+                (object-fit: cover) under a grey wash, so the white text stays readable
+                while the event artwork is still clearly visible. */}
+            <style>{`
+                @keyframes apsFadeIn { from { opacity: 0; } to { opacity: 1; } }
+                .aps-hero-title { font-size: clamp(22px, 6vw, 34px); }
+                .aps-hero-hint { font-size: clamp(13px, 3.6vw, 16px); }
+                .aps-hero-banner { min-height: clamp(230px, 48vw, 460px); }
+            `}</style>
+            <div
+                className={bannerUrl ? 'aps-hero-banner' : undefined}
+                style={{
+                    position: 'relative', overflow: 'hidden',
+                    background: bannerUrl ? '#334155' : `linear-gradient(135deg, ${COLORS.primary}, ${COLORS.primaryDark})`,
+                    padding: bannerUrl ? '24px 16px 56px' : '40px 20px 56px',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}
+            >
+                {bannerUrl && (
+                    <>
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={bannerUrl} alt={campaignName || L.title} style={{
+                            position: 'absolute', inset: 0, width: '100%', height: '100%',
+                            objectFit: 'cover', objectPosition: 'center',
+                            filter: 'saturate(0.85)',
+                            animation: 'apsFadeIn 0.4s ease-out',
+                        }} />
+                        <div aria-hidden style={{
+                            position: 'absolute', inset: 0,
+                            // Soft dark patch right behind the text + an overall grey wash, so
+                            // busy artwork (big logos, lettering) never fights the heading.
+                            background: 'radial-gradient(ellipse 60% 45% at 50% 50%, rgba(15,23,42,0.55) 0%, rgba(15,23,42,0) 100%), linear-gradient(180deg, rgba(30,41,59,0.30) 0%, rgba(30,41,59,0.45) 50%, rgba(15,23,42,0.70) 100%)',
+                        }} />
+                    </>
+                )}
+                <div style={{ position: 'relative', maxWidth: 720, width: '100%', margin: '0 auto', textAlign: 'center' }}>
+                    <h2 className="aps-hero-title" style={{ margin: 0, color: '#fff', fontWeight: 800, lineHeight: 1.2, letterSpacing: '-0.02em', textShadow: bannerUrl ? '0 2px 14px rgba(0,0,0,0.55)' : undefined }}>
                         {L.title}
                     </h2>
-                    <p style={{ margin: '10px 0 0', color: 'rgba(255,255,255,0.85)', fontSize: 15 }}>
+                    <p className="aps-hero-hint" style={{ margin: '8px 0 0', color: 'rgba(255,255,255,0.95)', lineHeight: 1.5, fontWeight: bannerUrl ? 500 : undefined, textShadow: bannerUrl ? '0 1px 10px rgba(0,0,0,0.6)' : undefined }}>
                         {L.hint}
                     </p>
                 </div>
             </div>
 
             {/* Search + Results */}
-            <main style={{ maxWidth: results.length > 0 ? 1040 : 720, margin: '-32px auto 0', padding: '0 16px 48px', transition: 'max-width 0.2s' }}>
+            <main style={{ position: 'relative', zIndex: 1, maxWidth: results.length > 0 ? 1040 : 720, margin: '-32px auto 0', padding: '0 16px 48px', transition: 'max-width 0.2s' }}>
                 {/* Search box */}
                 <form onSubmit={handleSearch} style={{
                     background: COLORS.card, border: `1px solid ${COLORS.border}`, borderRadius: 16,
