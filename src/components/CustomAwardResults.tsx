@@ -82,6 +82,12 @@ export default function CustomAwardResults({ award, groups, th, splits }: {
     const cols = PERSONAL_FIELDS.filter(f => award.personalFields.includes(f.key));
     const scols = SPLIT_FIELDS.filter(f => award.splitFields.includes(f.key));
     const colCount = 1 + cols.length + (scols.length > 0 ? 1 : 0);
+    // Fixed column widths so every group table (men / women / each age group) lines up
+    // column-for-column — with auto layout each table sized its columns to its own content.
+    const colWeight = (key: string) => (key === 'name' ? 3 : 1);
+    const totalWeight = cols.reduce((sum, c) => sum + colWeight(c.key), 0) + (scols.length > 0 ? 1 : 0);
+    const colPct = (w: number) => `${(w / Math.max(totalWeight, 1)) * 100}%`;
+    const tableMinWidth = 72 + cols.reduce((sum, c) => sum + colWeight(c.key) * 110, 0) + (scols.length > 0 ? 110 : 0);
 
     const renderPersonalCell = (key: string, row: RankedAwardRunner) => {
         const v = personalFieldValue(key, row, th ? 'th' : 'en');
@@ -109,11 +115,16 @@ export default function CustomAwardResults({ award, groups, th, splits }: {
                             </div>
                         )}
                         <div className="overflow-x-auto rounded-lg border border-gray-200">
-                            <table className="w-full min-w-[520px] text-sm">
+                            <table className="w-full table-fixed text-sm" style={{ minWidth: Math.max(520, tableMinWidth) }}>
+                                <colgroup>
+                                    <col style={{ width: 72 }} />
+                                    {cols.map(c => <col key={c.key} style={{ width: colPct(colWeight(c.key)) }} />)}
+                                    {scols.length > 0 && <col style={{ width: colPct(1) }} />}
+                                </colgroup>
                                 <thead className="bg-gray-50 text-left text-xs uppercase text-gray-500!">
                                     <tr>
                                         <th className="px-3 py-2 text-center">{th ? 'อันดับ' : 'Place'}</th>
-                                        {cols.map(c => <th key={c.key} className="whitespace-nowrap px-3 py-2">{c.label}</th>)}
+                                        {cols.map(c => <th key={c.key} className="truncate px-3 py-2">{c.label}</th>)}
                                         {scols.length > 0 && <th className="px-3 py-2">Splits</th>}
                                     </tr>
                                 </thead>
@@ -128,7 +139,7 @@ export default function CustomAwardResults({ award, groups, th, splits }: {
                                             <RowGroup key={r._id}>
                                                 <tr className="border-t border-gray-100 hover:bg-blue-50/40">
                                                     <td className="px-3 py-2 text-center font-bold text-slate-900!">{row.place}</td>
-                                                    {cols.map(c => <td key={c.key} className="whitespace-nowrap px-3 py-2">{renderPersonalCell(c.key, row)}</td>)}
+                                                    {cols.map(c => <td key={c.key} className="break-words px-3 py-2">{renderPersonalCell(c.key, row)}</td>)}
                                                     {scols.length > 0 && (
                                                         <td className="px-3 py-2">
                                                             <button type="button" onClick={() => toggleSplits(r)}

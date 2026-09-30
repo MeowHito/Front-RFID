@@ -10,13 +10,12 @@ import { useParams, useSearchParams } from 'next/navigation';
 import AuthGuard from '@/components/AuthGuard';
 import { useLanguage } from '@/lib/language-context';
 import {
-    AWARD_TYPE_OPTIONS,
     computeCustomAward,
     normalizeCustomAwards,
     type CustomAwardRunner,
 } from '@/lib/custom-awards';
 import CustomAwardResults, { useAwardSplits } from '@/components/CustomAwardResults';
-import { ArrowPathIcon, CalendarDaysIcon, MapPinIcon, TableCellsIcon } from '@heroicons/react/24/outline';
+import { ArrowPathIcon, TableCellsIcon } from '@heroicons/react/24/outline';
 
 interface Campaign {
     _id: string;
@@ -34,13 +33,6 @@ interface Campaign {
 }
 
 const normCat = (v?: string | null) => String(v || '').trim().toLowerCase();
-
-const formatDateOnly = (value?: string) => {
-    if (!value) return '';
-    const d = new Date(value);
-    if (Number.isNaN(d.getTime())) return '';
-    return d.toISOString().slice(0, 10);
-};
 
 export default function AwardResultsPage() {
     return (
@@ -100,9 +92,6 @@ function AwardResultsContent() {
     }, [award, allAwards, runners, campaign?.genderSplitEnabled]);
 
     const eventName = (th ? campaign?.nameTh : campaign?.nameEn) || campaign?.name || '';
-    const eventProvince = (th ? campaign?.locationTh : campaign?.locationEn) || campaign?.location || '';
-    const eventDate = formatDateOnly(campaign?.eventDate);
-    const typeOpt = award ? AWARD_TYPE_OPTIONS.find(o => o.value === award.type) : undefined;
     const categoryRow = award ? campaign?.categories?.find(c => normCat(c.name) === normCat(award.category)) : undefined;
     const eventHref = `/event/${encodeURIComponent(campaign?.slug || slug)}`;
 
@@ -146,20 +135,14 @@ function AwardResultsContent() {
 
                 <div className="overflow-hidden rounded-xl bg-white shadow-sm ring-1 ring-gray-200">
                     <div className="flex flex-wrap items-start justify-between gap-3 bg-slate-900 px-5 py-4 text-white">
-                        <div className="min-w-0">
-                            {award && (
-                                <div className="text-xs uppercase tracking-wide opacity-80">
-                                    {award.category}{categoryRow?.distance ? ` (${categoryRow.distance})` : ''} · {typeOpt ? (th ? typeOpt.labelTh : typeOpt.label) : award.type} · {award.rankBy === 'gun' ? 'Gun Time' : 'Net Time'}
-                                    {award.nationality !== 'all' && ` · ${award.nationality === 'thai' ? (th ? 'เฉพาะคนไทย' : 'Thai only') : (th ? 'เฉพาะต่างชาติ' : 'Foreign only')}`}
-                                </div>
-                            )}
-                            <h1 className="text-xl font-extrabold md:text-2xl">{award ? award.name : (th ? 'ไม่พบรางวัล' : 'Award not found')}</h1>
-                            <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs opacity-80">
-                                <span>{eventName}</span>
-                                {eventDate && <span className="inline-flex items-center gap-1"><CalendarDaysIcon className="h-3.5 w-3.5" />{eventDate}</span>}
-                                {eventProvince && <span className="inline-flex items-center gap-1"><MapPinIcon className="h-3.5 w-3.5" />{eventProvince}</span>}
-                            </div>
-                        </div>
+                        <h1 className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1 self-center text-xl font-extrabold md:text-2xl">
+                            {award ? (
+                                <>
+                                    <span className="text-amber-300">{award.category}{categoryRow?.distance ? ` (${categoryRow.distance})` : ''}</span>
+                                    <span>{award.name}</span>
+                                </>
+                            ) : (th ? 'ไม่พบรางวัล' : 'Award not found')}
+                        </h1>
                         {award && (
                             <div className="flex shrink-0 items-center gap-2">
                                 <button type="button" onClick={() => void load(true)} disabled={refreshing}

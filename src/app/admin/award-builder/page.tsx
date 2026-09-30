@@ -646,10 +646,16 @@ export default function AwardBuilderPage() {
                                 <div className="flex shrink-0 flex-wrap items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 shadow-sm">
                                     <button type="button" onClick={() => void handleCreateOrUpdate()} disabled={saving}
                                         className={`inline-flex flex-1 items-center justify-center gap-2 rounded-lg px-5 py-2 text-sm font-bold text-white! disabled:opacity-50 sm:flex-none ${editingSaved ? 'bg-blue-600 hover:bg-blue-700' : 'bg-gray-900 hover:bg-gray-800'}`}>
-                                        {editingSaved ? <CheckIcon className="h-4 w-4 text-white" /> : <PlusIcon className="h-4 w-4 text-white" />}
-                                        {saving
-                                            ? (th ? 'กำลังบันทึก...' : 'Saving...')
-                                            : editingSaved ? (th ? 'บันทึกการแก้ไข' : 'Save changes') : (th ? 'สร้าง' : 'Create')}
+                                        {/* Both icons stay mounted and the label sits in its own <span>: swapping an
+                                            icon in front of a bare text node crashed the page ("insertBefore ... not a
+                                            child") once a translator/extension had rewrapped that text node. */}
+                                        <CheckIcon className={`h-4 w-4 text-white ${editingSaved ? '' : 'hidden'}`} />
+                                        <PlusIcon className={`h-4 w-4 text-white ${editingSaved ? 'hidden' : ''}`} />
+                                        <span>
+                                            {saving
+                                                ? (th ? 'กำลังบันทึก...' : 'Saving...')
+                                                : editingSaved ? (th ? 'บันทึกการแก้ไข' : 'Save changes') : (th ? 'สร้าง' : 'Create')}
+                                        </span>
                                     </button>
                                     {editingSaved && (
                                         <>
