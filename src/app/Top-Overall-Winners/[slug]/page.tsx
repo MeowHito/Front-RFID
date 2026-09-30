@@ -125,7 +125,7 @@ export default function TopOverallWinnersBySlugPage() {
     const countdownRef = useRef<NodeJS.Timeout | null>(null);
     const [isMobile, setIsMobile] = useState(false);
     const [isPortrait, setIsPortrait] = useState(false);
-    const [autoMode, setAutoMode] = useState(true);
+    const [autoMode, setAutoMode] = useState(false);
     const [autoCountdown, setAutoCountdown] = useState(5);
     const autoTimerRef = useRef<NodeJS.Timeout | null>(null);
     const autoCountdownRef = useRef<NodeJS.Timeout | null>(null);

@@ -15,7 +15,7 @@ import {
     type CustomAwardRunner,
 } from '@/lib/custom-awards';
 import CustomAwardResults, { useAwardSplits } from '@/components/CustomAwardResults';
-import { ArrowPathIcon, TableCellsIcon } from '@heroicons/react/24/outline';
+import { ArrowPathIcon, ComputerDesktopIcon } from '@heroicons/react/24/outline';
 
 interface Campaign {
     _id: string;
@@ -53,7 +53,6 @@ function AwardResultsContent() {
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
     const [error, setError] = useState('');
-    const [exporting, setExporting] = useState(false);
     const splits = useAwardSplits();
     const { reset: resetSplits } = splits;
 
@@ -99,18 +98,6 @@ function AwardResultsContent() {
         document.title = award ? `${award.name} · ${eventName}` : 'Award result';
     }, [award, eventName]);
 
-    const handleDownloadExcel = async () => {
-        if (!award) return;
-        setExporting(true);
-        try {
-            await splits.downloadExcel({ award, groups, language: th ? 'th' : 'en', eventName });
-        } catch {
-            window.alert(th ? 'ดาวน์โหลด Excel ไม่สำเร็จ' : 'Excel download failed');
-        } finally {
-            setExporting(false);
-        }
-    };
-
     if (loading) {
         return <div className="flex min-h-screen items-center justify-center bg-slate-50 text-sm text-gray-400">{th ? 'กำลังโหลด...' : 'Loading...'}</div>;
     }
@@ -119,7 +106,7 @@ function AwardResultsContent() {
         return <div className="flex min-h-screen items-center justify-center bg-slate-50 text-sm text-gray-500">{error || (th ? 'ไม่พบข้อมูลกิจกรรม' : 'Event not found')}</div>;
     }
 
-    const empty = groups.every(g => g.runners.length === 0);
+    const displayHref = `/Award-Results/${encodeURIComponent(campaign.slug || slug)}/display?award=${encodeURIComponent(awardId)}`;
 
     return (
         <div className="min-h-screen bg-slate-50 text-gray-900">
@@ -150,11 +137,13 @@ function AwardResultsContent() {
                                     <ArrowPathIcon className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
                                     {th ? 'รีเฟรช' : 'Refresh'}
                                 </button>
-                                <button type="button" onClick={handleDownloadExcel} disabled={exporting || empty}
-                                    className="inline-flex items-center gap-1.5 rounded-md bg-emerald-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50">
-                                    <TableCellsIcon className="h-4 w-4" />
-                                    {exporting ? (th ? 'กำลังสร้างไฟล์...' : 'Building file...') : (th ? 'ดาวน์โหลด Excel' : 'Download Excel')}
-                                </button>
+                                {/* Big-screen board of this award (and the same award on the other distances). */}
+                                <Link href={displayHref} target="_blank" rel="noopener"
+                                    title={th ? 'ดูผลแบบบนหน้าจอ' : 'Show on screen'}
+                                    className="inline-flex items-center gap-1.5 rounded-md bg-emerald-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-emerald-700">
+                                    <ComputerDesktopIcon className="h-4 w-4" />
+                                    <span>{th ? 'แสดงบนหน้าจอ' : 'Show on screen'}</span>
+                                </Link>
                             </div>
                         )}
                     </div>
