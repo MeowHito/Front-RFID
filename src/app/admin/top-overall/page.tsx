@@ -21,12 +21,14 @@ import {
     clampTopRunnersRange,
     isTopRunnersExcludeOverall,
     resolveTopRunnersRange,
-    sliceTopRunners,
+    resolveTopRunnersRankBy,
+    selectTopRunners,
     topRunnersRangeMapFromConfig,
     topRunnersRangeMapToEntries,
     type TopRunnersRange,
     type TopRunnersRangeEntry,
 } from '@/lib/top-runners-range';
+import { sortForTopRunners } from '@/lib/awards';
 import { LinkIcon, ArrowTopRightOnSquareIcon } from '@heroicons/react/24/outline';
 
 interface Runner {
@@ -41,6 +43,8 @@ interface Runner {
     gunTime?: number;
     elapsedTime?: number;
     netTimeStr?: string;
+    gunTimeStr?: string;
+    lastPassTime?: string;
 }
 
 interface FeaturedCampaignSettings {
@@ -53,6 +57,7 @@ interface FeaturedCampaignSettings {
     overallDisabledCategories?: string[];
     topRunnersRangeByCategory?: TopRunnersRangeEntry[];
     topRunnersExcludeOverallCategories?: string[];
+    topRunnersNetCategories?: string[];
     topRunnersEnabled?: boolean;
     bestOfDisplayCount?: number;
     separateOverallNationalityCategories?: string[];
@@ -82,6 +87,8 @@ export default function TopOverallPage() {
     const [topRunnersRanges, setTopRunnersRanges] = useState<Record<string, TopRunnersRange>>({});
     // Distances whose Top Runners board drops the Overall winners.
     const [topRunnersCutCategories, setTopRunnersCutCategories] = useState<string[]>([]);
+    // Distances whose Top Runners board is ranked by NET time (default GUN).
+    const [topRunnersNetCategories, setTopRunnersNetCategories] = useState<string[]>([]);
     // Master switch — events that simply don't run a Top Runners board turn it off,
     // which also hides the public board and the "TOP n" label in the AWARD column.
     const [topRunnersEnabled, setTopRunnersEnabled] = useState(true);
@@ -116,6 +123,7 @@ export default function TopOverallPage() {
                 setOverallCountByCategory(overallCountMapFromConfig(data, categoryNames));
                 setTopRunnersRanges(topRunnersRangeMapFromConfig(data, categoryNames));
                 setTopRunnersCutCategories(Array.isArray(data?.topRunnersExcludeOverallCategories) ? data.topRunnersExcludeOverallCategories : []);
+                setTopRunnersNetCategories(Array.isArray(data?.topRunnersNetCategories) ? data.topRunnersNetCategories : []);
                 setTopRunnersEnabled(data?.topRunnersEnabled !== false);
                 setOverallDisabledCategories(data?.overallEnabled === false
                     ? categoryNames
@@ -198,6 +206,15 @@ export default function TopOverallPage() {
         selectedCategory,
     );
     const topRunnersCut = selectedCategoryCutsOverall && selectedOverallOn ? overallDisplayCount : 0;
+    const topRunnersRankBy = resolveTopRunnersRankBy({ topRunnersNetCategories }, selectedCategory);
+
+    const setTopRunnersRankByForSelected = (rankBy: 'gun' | 'net') => {
+        if (!selectedCategory) return;
+        setTopRunnersNetCategories(prev => {
+            const rest = prev.filter(c => c !== selectedCategory);
+            return rankBy === 'net' ? [...rest, selectedCategory] : rest;
+        });
+    };
 
     const toggleOverallForSelected = () => {
         if (!selectedCategory) return;
@@ -234,10 +251,17 @@ export default function TopOverallPage() {
 
     // Top Runners preview — the plain rank slice, no nationality split, matching
     // what /Top-Overall-Winners renders.
-    const topRunnersPreview = useMemo(() => ({
-        male: sliceTopRunners(sortedFinishedRunners.filter(r => r.gender !== 'F'), topRunnersRange, topRunnersCut),
-        female: sliceTopRunners(sortedFinishedRunners.filter(r => r.gender === 'F'), topRunnersRange, topRunnersCut),
-    }), [sortedFinishedRunners, topRunnersRange.start, topRunnersRange.end, topRunnersCut]); // eslint-disable-line react-hooks/exhaustive-deps
+    const topRunnersPreview = useMemo(() => {
+        const pick = (list: Runner[]) => selectTopRunners(
+            sortForTopRunners(list, 'gun'),
+            topRunnersRankBy === 'net' ? sortForTopRunners(list, 'net') : [],
+            topRunnersRankBy, topRunnersRange, topRunnersCut,
+        );
+        return {
+            male: pick(sortedFinishedRunners.filter(r => r.gender !== 'F')),
+            female: pick(sortedFinishedRunners.filter(r => r.gender === 'F')),
+        };
+    }, [sortedFinishedRunners, topRunnersRankBy, topRunnersRange.start, topRunnersRange.end, topRunnersCut]); // eslint-disable-line react-hooks/exhaustive-deps
 
     // Nationality-split overall winners (top N per gender × Thai/foreign group).
     const overallByNationality = useMemo(() => {
@@ -302,9 +326,13 @@ export default function TopOverallPage() {
             <div className={`overflow-hidden rounded-t-lg ${headerClass}`} style={{ color: '#ffffff' }}>
                 <div className="px-3 py-2 text-center text-xs font-bold">{title}</div>
                 <div className="px-4 py-1.5 text-center text-[11px] font-bold">
-                    {language === 'th'
-                        ? `อันดับ ${topRunnersCut + topRunnersRange.start}-${topRunnersCut + topRunnersRange.end}`
-                        : `Ranks ${topRunnersCut + topRunnersRange.start}-${topRunnersCut + topRunnersRange.end}`}
+                    {topRunnersRankBy === 'net'
+                        ? (rows.length
+                            ? `${language === 'th' ? 'อันดับ' : 'Ranks'} ${rows[0].rank}-${rows[rows.length - 1].rank} · NET TIME`
+                            : 'NET TIME')
+                        : (language === 'th'
+                            ? `อันดับ ${topRunnersCut + topRunnersRange.start}-${topRunnersCut + topRunnersRange.end} · GUN TIME`
+                            : `Ranks ${topRunnersCut + topRunnersRange.start}-${topRunnersCut + topRunnersRange.end} · GUN TIME`)}
                 </div>
             </div>
             <div className="rounded-b-lg border border-t-0 border-gray-200 bg-white overflow-hidden">
@@ -323,7 +351,9 @@ export default function TopOverallPage() {
                                 <p className="text-[10px] text-gray-500">BIB {runner.bib}</p>
                             </div>
                             <div className="shrink-0 text-[11px] font-bold text-gray-800">
-                                {runner.netTimeStr || formatTime(runner.netTime || runner.gunTime || runner.elapsedTime)}
+                                {topRunnersRankBy === 'net'
+                                    ? (runner.netTimeStr || formatTime(runner.netTime || runner.gunTime || runner.elapsedTime))
+                                    : (runner.gunTimeStr || formatTime(runner.gunTime || runner.netTime || runner.elapsedTime))}
                             </div>
                         </div>
                     )) : (
@@ -451,6 +481,7 @@ export default function TopOverallPage() {
                     overallDisabledCategories,
                     topRunnersRangeByCategory: topRunnersRangeMapToEntries(topRunnersRanges),
                     topRunnersExcludeOverallCategories: topRunnersCutCategories,
+                    topRunnersNetCategories,
                     topRunnersEnabled,
                     bestOfDisplayCount: bestOfDisplayCount,
                     separateOverallNationalityCategories: natSplitCategories,
@@ -693,6 +724,33 @@ export default function TopOverallPage() {
                                                 ? 'ปิดอยู่ — งานนี้ไม่มี Top Runners: ซ่อนหน้าบอร์ด เมนูอันดับ และป้าย TOP ในช่อง AWARD'
                                                 : 'Off — this event has no Top Runners: the board, its menu entry and the TOP award label are hidden')}
                                     </p>
+                                    {/* Which time orders this distance's board */}
+                                    <div className={`mt-2 flex flex-wrap items-center gap-2 ${topRunnersEnabled ? '' : 'pointer-events-none opacity-40'}`}>
+                                        <span className="text-[13px] font-bold" style={{ color: '#6d28d9' }}>
+                                            {language === 'th' ? 'จัดอันดับจากเวลา' : 'Rank by'}
+                                        </span>
+                                        <div className="inline-flex rounded-lg bg-white p-1 shadow-sm ring-1 ring-violet-200">
+                                            {(['gun', 'net'] as const).map(v => (
+                                                <button
+                                                    key={v}
+                                                    type="button"
+                                                    disabled={!selectedCategory}
+                                                    onClick={() => setTopRunnersRankByForSelected(v)}
+                                                    className="rounded-md px-4 py-1.5 text-[13px] font-extrabold tracking-wide transition-colors disabled:opacity-50"
+                                                    style={topRunnersRankBy === v
+                                                        ? { backgroundColor: '#7c3aed', color: '#ffffff' }
+                                                        : { backgroundColor: 'transparent', color: '#6d28d9' }}
+                                                >
+                                                    {v === 'gun' ? 'GUN TIME' : 'NET TIME'}
+                                                </button>
+                                            ))}
+                                        </div>
+                                        <span className="text-[11px] font-semibold text-gray-500">
+                                            {topRunnersRankBy === 'net'
+                                                ? (language === 'th' ? 'เรียงตามเวลาชิป (Net) — ใช้กับบอร์ดและป้าย TOP' : 'ordered by chip (net) time — board and TOP label')
+                                                : (language === 'th' ? 'เรียงตามเวลาปืน (Gun) — ค่าเริ่มต้น' : 'ordered by gun time — default')}
+                                        </span>
+                                    </div>
                                     <div className={`mt-2 flex flex-wrap items-center gap-2 ${topRunnersEnabled ? '' : 'pointer-events-none opacity-40'}`}>
                                         <span className="text-[13px] font-bold" style={{ color: '#6d28d9' }}>
                                             {language === 'th' ? 'แสดงอันดับที่' : 'Show ranks'}

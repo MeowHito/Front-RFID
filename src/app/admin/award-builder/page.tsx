@@ -12,6 +12,7 @@ import {
     RESULT_FIELDS,
     SPLIT_FIELDS,
     MAX_AWARD_COUNT,
+    NATIONALITY_OPTIONS,
     clampAwardCount,
     computeCustomAward,
     newAwardId,
@@ -21,6 +22,7 @@ import {
     type CustomAwardRunner,
     type CustomAwardType,
     type CustomAwardRankBy,
+    type CustomAwardNationality,
 } from '@/lib/custom-awards';
 import CustomAwardResults, { useAwardSplits } from '@/components/CustomAwardResults';
 import {
@@ -64,6 +66,8 @@ interface AwardForm {
     name: string;
     count: string;
     rankBy: CustomAwardRankBy;
+    nationality: CustomAwardNationality;
+    excludeAwardIds: string[];
     personalFields: string[];
     splitFields: string[];
 }
@@ -75,6 +79,8 @@ const emptyForm = (category: string): AwardForm => ({
     name: AWARD_TYPE_OPTIONS[0].defaultName,
     count: '3',
     rankBy: 'gun',
+    nationality: 'all',
+    excludeAwardIds: [],
     personalFields: [...DEFAULT_PERSONAL_FIELDS],
     splitFields: [],
 });
@@ -191,6 +197,9 @@ export default function AwardBuilderPage() {
             type: form.type,
             count,
             rankBy: form.rankBy,
+            nationality: form.nationality,
+            // Only awards of the same distance can be excluded (the ranking pool is per distance).
+            excludeAwardIds: form.excludeAwardIds.filter(id => id !== form.id && savedAwards.some(a => a.id === id && normCat(a.category) === normCat(category))),
             personalFields: PERSONAL_FIELDS.map(f => f.key).filter(k => form.personalFields.includes(k)),
             splitFields: SPLIT_FIELDS.map(f => f.key).filter(k => form.splitFields.includes(k)),
         };
@@ -204,6 +213,8 @@ export default function AwardBuilderPage() {
             name: award.name,
             count: String(award.count),
             rankBy: award.rankBy,
+            nationality: award.nationality,
+            excludeAwardIds: [...award.excludeAwardIds],
             personalFields: [...award.personalFields],
             splitFields: [...award.splitFields],
         });
@@ -211,6 +222,9 @@ export default function AwardBuilderPage() {
 
     const togglePersonal = (key: string) =>
         setForm(f => ({ ...f, personalFields: f.personalFields.includes(key) ? f.personalFields.filter(k => k !== key) : [...f.personalFields, key] }));
+
+    const toggleExclude = (id: string) =>
+        setForm(f => ({ ...f, excludeAwardIds: f.excludeAwardIds.includes(id) ? f.excludeAwardIds.filter(x => x !== id) : [...f.excludeAwardIds, id] }));
 
     const toggleSplit = (key: string) =>
         setForm(f => ({ ...f, splitFields: f.splitFields.includes(key) ? f.splitFields.filter(k => k !== key) : [...f.splitFields, key] }));
@@ -311,11 +325,14 @@ export default function AwardBuilderPage() {
     const deleteAward = async (award: CustomAward) => {
         const confirmed = window.confirm(th ? `ลบรางวัล "${award.name}" ของระยะ ${award.category} ?` : `Delete "${award.name}" (${award.category})?`);
         if (!confirmed) return;
-        const next = savedAwards.filter(a => a.id !== award.id);
+        // Also drop it from other awards' "skip winners of" lists.
+        const next = savedAwards
+            .filter(a => a.id !== award.id)
+            .map(a => (a.excludeAwardIds.includes(award.id) ? { ...a, excludeAwardIds: a.excludeAwardIds.filter(x => x !== award.id) } : a));
         const ok = await persist(next);
         if (!ok) return;
         setSavedAwards(next);
-        if (form.id === award.id) setForm(f => ({ ...f, id: null }));
+        setForm(f => ({ ...f, id: f.id === award.id ? null : f.id, excludeAwardIds: f.excludeAwardIds.filter(x => x !== award.id) }));
         showToast(th ? 'ลบรางวัลแล้ว' : 'Award deleted', 'success');
     };
 
@@ -339,6 +356,7 @@ export default function AwardBuilderPage() {
     const openAward = (award: CustomAward) => {
         const groups = computeCustomAward(poolFor(award.category), award, {
             genderSplitEnabled: campaign?.genderSplitEnabled !== false,
+            allAwards: savedAwards,
         });
         setViewing({ award, groups });
         splits.reset();
@@ -406,9 +424,24 @@ export default function AwardBuilderPage() {
 
     const awardSubtitle = (a: CustomAward) => {
         const rank = a.rankBy === 'gun' ? 'Gun Time' : 'Net Time';
-        if (a.type === 'overall') return th ? `อันดับ 1 - ${a.count} • ${rank}` : `Places 1 - ${a.count} • ${rank}`;
-        return `${typeLabel(a.type)} • ${th ? `${a.count} อันดับ/กลุ่ม` : `${a.count} per group`} • ${rank}`;
+        const extras: string[] = [];
+        if (a.nationality !== 'all') {
+            const o = NATIONALITY_OPTIONS.find(x => x.value === a.nationality);
+            if (o) extras.push(th ? o.labelTh : o.label);
+        }
+        const skipped = a.excludeAwardIds.filter(id => savedAwards.some(x => x.id === id)).length;
+        if (skipped) extras.push(th ? `ตัดผู้ได้รางวัล ${skipped} รายการ` : `skips ${skipped} award${skipped > 1 ? 's' : ''}`);
+        const tail = extras.length ? ` • ${extras.join(' • ')}` : '';
+        if (a.type === 'overall') return (th ? `อันดับ 1 - ${a.count} • ${rank}` : `Places 1 - ${a.count} • ${rank}`) + tail;
+        return `${typeLabel(a.type)} • ${th ? `${a.count} อันดับ/กลุ่ม` : `${a.count} per group`} • ${rank}${tail}`;
     };
+
+    // Other saved awards of the selected distance whose winners this award can skip.
+    // Awards that already skip this one's winners are left out, so two awards can't skip each other.
+    const excludeCandidates = savedAwards.filter(a =>
+        a.id !== form.id
+        && normCat(a.category) === normCat(form.category)
+        && !(form.id && a.excludeAwardIds.includes(form.id)));
 
     const athleteSelected = ATHLETE_FIELDS.filter(f => form.personalFields.includes(f.key)).length;
     const resultSelected = RESULT_FIELDS.filter(f => form.personalFields.includes(f.key)).length;
@@ -529,6 +562,41 @@ export default function AwardBuilderPage() {
                                                         </button>
                                                     ))}
                                                 </div>
+                                            </div>
+                                        </div>
+                                        <div className="grid gap-3 border-t border-dashed border-gray-200 px-4 pb-3 pt-3 md:grid-cols-[minmax(0,0.9fr)_minmax(0,1.6fr)]">
+                                            <div>
+                                                <span className={labelCls} title={th ? 'อิงจากช่อง COUNTRYREGION (สัญชาติ) ของนักกีฬา — ว่าง = นับเป็นคนไทย' : 'Uses the athlete COUNTRYREGION column — empty counts as Thai'}>
+                                                    {th ? 'สัญชาติที่มีสิทธิ์' : 'Eligible nationality'}
+                                                </span>
+                                                <div className="flex rounded-lg bg-gray-100 p-1">
+                                                    {NATIONALITY_OPTIONS.map(o => (
+                                                        <button key={o.value} type="button" onClick={() => setForm(f => ({ ...f, nationality: o.value }))}
+                                                            className={`flex-1 whitespace-nowrap rounded-md px-2 py-1 text-sm transition ${form.nationality === o.value ? 'bg-white font-semibold text-gray-900! shadow-sm' : 'text-gray-500! hover:text-gray-700!'}`}>
+                                                            {th ? o.labelTh : o.label}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                            <div className="min-w-0">
+                                                <span className={labelCls}>
+                                                    {th ? 'ไม่รวมผู้ที่ได้รางวัลแล้วจาก' : 'Skip runners who already won'}
+                                                    <span className="ml-1.5 font-normal text-gray-400!">{th ? 'คนถัดไปจะได้เลื่อนขึ้นมาแทน' : 'the next runner moves up'}</span>
+                                                </span>
+                                                {excludeCandidates.length > 0 ? (
+                                                    <div className="flex flex-wrap gap-1.5">
+                                                        {excludeCandidates.map(a => (
+                                                            <FieldTile key={a.id} tone="blue" label={a.name} sub={`${a.category} · ${typeLabel(a.type)}`}
+                                                                checked={form.excludeAwardIds.includes(a.id)} onChange={() => toggleExclude(a.id)} />
+                                                        ))}
+                                                    </div>
+                                                ) : (
+                                                    <div className="rounded-lg border border-dashed border-gray-200 px-3 py-2 text-xs text-gray-400!">
+                                                        {form.category
+                                                            ? (th ? `ยังไม่มีรางวัลอื่นในระยะ ${form.category} — สร้างรางวัล Overall ก่อน แล้วค่อยมาติ๊กตรงนี้` : `No other award for ${form.category} yet — create the Overall award first`)
+                                                            : (th ? 'เลือกระยะก่อน' : 'Pick a distance first')}
+                                                    </div>
+                                                )}
                                             </div>
                                         </div>
                                     </div>
@@ -717,7 +785,8 @@ export default function AwardBuilderPage() {
                     <div className="flex max-h-[85vh] w-full max-w-5xl flex-col overflow-hidden rounded-xl bg-white shadow-2xl" onClick={e => e.stopPropagation()}>
                         <div className="flex shrink-0 items-start justify-between gap-3 border-b border-gray-200 bg-slate-900 px-5 py-3 text-white!">
                             <div>
-                                <div className="text-xs uppercase tracking-wide opacity-80">{viewing.award.category} · {typeLabel(viewing.award.type)} · {viewing.award.rankBy === 'gun' ? 'Gun Time' : 'Net Time'}</div>
+                                <div className="text-xs uppercase tracking-wide opacity-80">{viewing.award.category} · {typeLabel(viewing.award.type)} · {viewing.award.rankBy === 'gun' ? 'Gun Time' : 'Net Time'}
+                                    {viewing.award.nationality !== 'all' && ` · ${(() => { const o = NATIONALITY_OPTIONS.find(x => x.value === viewing.award.nationality); return o ? (th ? o.labelTh : o.label) : ''; })()}`}</div>
                                 <h3 className="text-xl font-extrabold">{viewing.award.name}</h3>
                                 <div className="text-xs opacity-80">{eventName}{eventDate ? ` · ${eventDate}` : ''}</div>
                             </div>

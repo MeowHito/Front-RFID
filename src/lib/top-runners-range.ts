@@ -34,6 +34,8 @@ export interface TopRunnersRangeConfig extends OverallDisplayCountConfig {
      *  don't want the same runner awarded twice). The skipped slots are backfilled,
      *  so the board keeps the row count the range asks for. */
     topRunnersExcludeOverallCategories?: string[];
+    /** Distances whose board is ordered by NET time instead of GUN time. */
+    topRunnersNetCategories?: string[];
     /** Master switch for the whole feature. `false` means this campaign has no Top
      *  Runners board at all — the board, its ranking-menu entry and the "TOP n"
      *  award label all disappear. Undefined means on (existing campaigns). */
@@ -146,4 +148,39 @@ export function sliceTopRunners<T>(
     return sorted
         .slice(offset + range.start - 1, offset + range.end)
         .map((runner, i) => ({ runner, rank: offset + range.start + i }));
+}
+
+export type TopRunnersRankBy = 'gun' | 'net';
+
+/** Which time orders the given distance's Top Runners board. Default GUN. */
+export function resolveTopRunnersRankBy(
+    config: TopRunnersRangeConfig | null | undefined,
+    category?: string | null,
+): TopRunnersRankBy {
+    const list = config?.topRunnersNetCategories;
+    if (!Array.isArray(list) || list.length === 0) return 'gun';
+    const target = normalizeCategoryName(category);
+    if (!target) return 'gun';
+    return list.some(name => normalizeCategoryName(name) === target) ? 'net' : 'gun';
+}
+
+/** Board slice for either ranking time.
+ *
+ *  `gunSorted` is the gender pool ordered by gun time — the Overall winners the cut
+ *  drops are always the first `cut` of it (Overall is a gun-time award). By GUN the
+ *  result is exactly `sliceTopRunners`. By NET the board walks `netSorted` with those
+ *  same Overall winners removed, and each rank is the runner's true net position. */
+export function selectTopRunners<T>(
+    gunSorted: T[],
+    netSorted: T[],
+    rankBy: TopRunnersRankBy,
+    range: TopRunnersRange,
+    cut = 0,
+): { runner: T; rank: number }[] {
+    if (rankBy !== 'net') return sliceTopRunners(gunSorted, range, cut);
+    const skipped = new Set(gunSorted.slice(0, Math.max(0, cut)));
+    return netSorted
+        .map((runner, i) => ({ runner, rank: i + 1 }))
+        .filter(row => !skipped.has(row.runner))
+        .slice(range.start - 1, range.end);
 }

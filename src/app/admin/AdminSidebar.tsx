@@ -51,6 +51,7 @@ const menuSections: MenuSection[] = [
             { href: '/admin/categories', label: 'ประเภทกลุ่มอายุ', labelEn: 'Age Groups', icon: 'layer-group' },
             { href: '/admin/bib-check', label: 'เช็คบิบ', labelEn: 'Check BIB', icon: 'magnifying-glass' },
             { href: '/admin/bib-check-2', label: 'เช็คบิบ2', labelEn: 'Checkbib2', icon: 'paint-brush', iconColor: '#0ea5e9' },
+            { href: '/admin/finish-time', label: 'สแกนโชว์เวลา (Gun Time)', labelEn: 'Finish Time Display', icon: 'stopwatch', iconColor: '#eab308' },
         ]
     },
     {

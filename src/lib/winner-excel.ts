@@ -27,6 +27,10 @@ export interface ExcelSection {
      *  slice that does not start at rank 1 (Top Runners "ranks 21-40"), so the
      *  POS column prints the real overall rank instead of restarting at 1. */
     rankOffset?: number;
+    /** Explicit POS per row (overrides `rankOffset`) — for slices whose ranks aren't
+     *  contiguous, e.g. a Net-time Top Runners board with the Overall winners cut. */
+    maleRanks?: number[];
+    femaleRanks?: number[];
 }
 
 function fmtDownloadedAt(d: Date): string {
@@ -223,8 +227,8 @@ export async function buildWinnersExcel(
     };
 
     // ── Helper: data row ──────────────────────────────────────────────────────
-    const addDataRow = (runner: ExcelRunner | null, idx: number, startCol: number, rankOffset = 0) => {
-        const pos = idx + rankOffset + 1;
+    const addDataRow = (runner: ExcelRunner | null, idx: number, startCol: number, rankOffset = 0, ranks?: number[]) => {
+        const pos = ranks?.[idx] ?? idx + rankOffset + 1;
         const bg = pos === 1 ? CLR.ROW_GOLD : idx % 2 === 0 ? CLR.ROW_EVEN : CLR.WHITE;
 
         // Columns: POS · BIB · NAME · GUN · NET · เบอร์โทร (from data) · เซ็นชื่อ (blank to sign)
@@ -294,8 +298,8 @@ export async function buildWinnersExcel(
 
             const maxR = Math.max(sec.maleRunners.length, sec.femaleRunners.length, 1);
             for (let i = 0; i < maxR; i++) {
-                addDataRow(sec.maleRunners[i] ?? null, i, 1, sec.rankOffset ?? 0);
-                addDataRow(sec.femaleRunners[i] ?? null, i, femaleStart, sec.rankOffset ?? 0);
+                addDataRow(sec.maleRunners[i] ?? null, i, 1, sec.rankOffset ?? 0, sec.maleRanks);
+                addDataRow(sec.femaleRunners[i] ?? null, i, femaleStart, sec.rankOffset ?? 0, sec.femaleRanks);
                 clearSpacer();
                 row++;
             }
@@ -307,7 +311,7 @@ export async function buildWinnersExcel(
             row++;
             const runners = sec.maleRunners;
             for (let i = 0; i < Math.max(runners.length, 1); i++) {
-                addDataRow(runners[i] ?? null, i, 1, sec.rankOffset ?? 0);
+                addDataRow(runners[i] ?? null, i, 1, sec.rankOffset ?? 0, sec.maleRanks);
                 row++;
             }
         } else {
@@ -317,7 +321,7 @@ export async function buildWinnersExcel(
             row++;
             const runners = sec.femaleRunners;
             for (let i = 0; i < Math.max(runners.length, 1); i++) {
-                addDataRow(runners[i] ?? null, i, 1, sec.rankOffset ?? 0);
+                addDataRow(runners[i] ?? null, i, 1, sec.rankOffset ?? 0, sec.femaleRanks);
                 row++;
             }
         }

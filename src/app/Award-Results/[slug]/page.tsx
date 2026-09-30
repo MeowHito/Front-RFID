@@ -90,16 +90,14 @@ function AwardResultsContent() {
 
     useEffect(() => { void load(false); }, [slug]); // eslint-disable-line react-hooks/exhaustive-deps
 
-    const award = useMemo(
-        () => normalizeCustomAwards(campaign?.customAwards).find(a => a.id === awardId) || null,
-        [campaign?.customAwards, awardId],
-    );
+    const allAwards = useMemo(() => normalizeCustomAwards(campaign?.customAwards), [campaign?.customAwards]);
+    const award = useMemo(() => allAwards.find(a => a.id === awardId) || null, [allAwards, awardId]);
 
     const groups = useMemo(() => {
         if (!award) return [];
         const pool = runners.filter(r => normCat(r.category) === normCat(award.category));
-        return computeCustomAward(pool, award, { genderSplitEnabled: campaign?.genderSplitEnabled !== false });
-    }, [award, runners, campaign?.genderSplitEnabled]);
+        return computeCustomAward(pool, award, { genderSplitEnabled: campaign?.genderSplitEnabled !== false, allAwards });
+    }, [award, allAwards, runners, campaign?.genderSplitEnabled]);
 
     const eventName = (th ? campaign?.nameTh : campaign?.nameEn) || campaign?.name || '';
     const eventProvince = (th ? campaign?.locationTh : campaign?.locationEn) || campaign?.location || '';
@@ -152,6 +150,7 @@ function AwardResultsContent() {
                             {award && (
                                 <div className="text-xs uppercase tracking-wide opacity-80">
                                     {award.category}{categoryRow?.distance ? ` (${categoryRow.distance})` : ''} · {typeOpt ? (th ? typeOpt.labelTh : typeOpt.label) : award.type} · {award.rankBy === 'gun' ? 'Gun Time' : 'Net Time'}
+                                    {award.nationality !== 'all' && ` · ${award.nationality === 'thai' ? (th ? 'เฉพาะคนไทย' : 'Thai only') : (th ? 'เฉพาะต่างชาติ' : 'Foreign only')}`}
                                 </div>
                             )}
                             <h1 className="text-xl font-extrabold md:text-2xl">{award ? award.name : (th ? 'ไม่พบรางวัล' : 'Award not found')}</h1>

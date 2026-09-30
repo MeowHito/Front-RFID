@@ -80,6 +80,7 @@ export interface CampaignData {
     /** Top Runners board config — drives the "Top N" fallback award on the slip. */
     topRunnersRangeByCategory?: { category: string; start: number; end: number }[];
     topRunnersExcludeOverallCategories?: string[];
+    topRunnersNetCategories?: string[];
     /** `false` when the event has no Top Runners board at all (admin/top-overall). */
     topRunnersEnabled?: boolean;
     ageGroupDisplayCount?: number;

@@ -231,6 +231,7 @@ export default function BibLinkPage() {
                             separateOverallByNationality: isNationalitySplitCategory(c.separateOverallNationalityCategories, r.category),
                             topRunnersRangeByCategory: c.topRunnersRangeByCategory,
                             topRunnersExcludeOverallCategories: c.topRunnersExcludeOverallCategories,
+                            topRunnersNetCategories: c.topRunnersNetCategories,
                             topRunnersEnabled: c.topRunnersEnabled,
                             includeTopRunners: true,
                         });

@@ -24,6 +24,8 @@ import {
     isTopRunnersEnabled,
     resolveTopRunnersCut,
     resolveTopRunnersRange,
+    resolveTopRunnersRankBy,
+    selectTopRunners,
     type TopRunnersRangeEntry,
 } from './top-runners-range';
 
@@ -56,6 +58,8 @@ export interface AwardConfig extends GenderSplitConfig, AgeGroupAwardConfig {
      *  runner gets one, which is the behavior on surfaces that predate the board. */
     topRunnersRangeByCategory?: TopRunnersRangeEntry[];
     topRunnersExcludeOverallCategories?: string[];
+    /** Distances whose Top Runners board is ranked by NET time. */
+    topRunnersNetCategories?: string[];
     /** `false` when the campaign has no Top Runners board — no runner gets a
      *  `topRunners` placing even with `includeTopRunners` on. */
     topRunnersEnabled?: boolean;
@@ -146,6 +150,21 @@ const compareAgeGroupByNet = (a: AwardRunnerLike, b: AwardRunnerLike) => {
     return String(a.bib || '').localeCompare(String(b.bib || ''), undefined, { numeric: true });
 };
 
+// Top Runners board ranked by NET time: same tie-break chain as the gun board
+// (finish crossing, then bib) so admin preview, public board and label agree.
+const compareTopRunnersByNet = (a: AwardRunnerLike, b: AwardRunnerLike) => {
+    const n = netTimeOf(a) - netTimeOf(b);
+    if (n !== 0) return n;
+    const f = finishMsOf(a) - finishMsOf(b);
+    if (f !== 0) return f;
+    return String(a.bib || '').localeCompare(String(b.bib || ''), undefined, { numeric: true });
+};
+
+/** Sort a finisher pool the way the Top Runners board does for `rankBy`. */
+export function sortForTopRunners<T extends AwardRunnerLike>(runners: T[], rankBy: 'gun' | 'net'): T[] {
+    return [...runners].sort(rankBy === 'net' ? compareTopRunnersByNet : compareOverallByGun);
+}
+
 /**
  * Gun-time overall placing across the whole category pool (all finishers combined,
  * both genders). When `separateByNationality` is set, the placing is scoped to the
@@ -200,6 +219,7 @@ export function computeAwardsForCategory(
     // on a slip always matches the board the runner just looked at.
     const topRunnersRange = resolveTopRunnersRange(cfg, cfg.category);
     const topRunnersCut = resolveTopRunnersCut(cfg, cfg.category);
+    const topRunnersRankBy = resolveTopRunnersRankBy(cfg, cfg.category);
 
     const finished = runners.filter(r => r.status === 'finished' && (r.netTime || r.gunTime || r.elapsedTime));
     // RaceTiger occasionally tags a handful of runners with a differently-shaped
@@ -249,11 +269,10 @@ export function computeAwardsForCategory(
         }
 
         if (cfg.includeTopRunners && isTopRunnersEnabled(cfg)) {
-            const from = topRunnersCut + topRunnersRange.start - 1;
-            const to = topRunnersCut + topRunnersRange.end;
-            byGun.slice(from, to).forEach((r, i) => {
-                ensure(r._id).topRunners = from + i + 1;
-            });
+            const byNetTop = topRunnersRankBy === 'net' ? [...group].sort(compareTopRunnersByNet) : byGun;
+            for (const { runner, rank } of selectTopRunners(byGun, byNetTop, topRunnersRankBy, topRunnersRange, topRunnersCut)) {
+                ensure(runner._id).topRunners = rank;
+            }
         }
 
         // Age-group winners (per gender) — ranked by NET time. Overall winners stay

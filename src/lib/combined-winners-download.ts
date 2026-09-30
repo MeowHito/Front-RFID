@@ -87,12 +87,12 @@ export async function downloadSelectedDistance<T extends ExcelRunner>(params: {
     nameLang: 'th' | 'en';
     /** `true` when the campaign has no gender split — see `downloadAllDistances`. */
     combined?: boolean;
-    computeWinners: (runners: T[], categoryName: string) => { maleRunners: T[]; femaleRunners: T[]; rankOffset?: number };
+    computeWinners: (runners: T[], categoryName: string) => { maleRunners: T[]; femaleRunners: T[]; rankOffset?: number; maleRanks?: number[]; femaleRanks?: number[] };
 }): Promise<Blob | null> {
     const { campaignName, selectedCategory, distance, currentRunners, gender, nameLang, combined, computeWinners } = params;
-    const { maleRunners, femaleRunners, rankOffset } = computeWinners(currentRunners, selectedCategory);
+    const { maleRunners, femaleRunners, rankOffset, maleRanks, femaleRanks } = computeWinners(currentRunners, selectedCategory);
     const distanceSuffix = distance ? ` (${distance})` : '';
-    const sections: ExcelSection[] = [{ categoryLabel: `${selectedCategory}${distanceSuffix}`, maleRunners, femaleRunners, rankOffset }];
+    const sections: ExcelSection[] = [{ categoryLabel: `${selectedCategory}${distanceSuffix}`, maleRunners, femaleRunners, rankOffset, maleRanks, femaleRanks }];
     const { gender: g, opts } = excelArgs(gender, nameLang, combined);
     return buildWinnersExcel(campaignName, '', sections, g, opts);
 }

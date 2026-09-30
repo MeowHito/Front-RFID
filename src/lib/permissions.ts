@@ -42,6 +42,7 @@ export const ROUTE_TO_MODULE: Record<string, string> = {
     '/admin/categories': 'participants',
     '/admin/bib-check': 'participants',
     '/admin/bib-check-2': 'participants',
+    '/admin/finish-time': 'participants',
     '/admin/id-card-import': 'participants',
     '/admin/live-monitor': 'rfidCheckin',
     '/admin/checkpoint-monitor': 'checkpoints',

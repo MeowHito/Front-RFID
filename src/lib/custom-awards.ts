@@ -6,10 +6,13 @@
 // live runner pool every time, so the list always reflects the real results.
 
 import { buildCanonicalAgeGroups, canonicalizeAgeGroup } from './age-groups';
+import { isThaiNationality } from './nationality';
 import { formatTime } from './utils';
 
 export type CustomAwardType = 'overall' | 'gender' | 'ageGroup';
 export type CustomAwardRankBy = 'gun' | 'net';
+/** Who may win: everyone, Thai runners only, or foreign runners only. */
+export type CustomAwardNationality = 'all' | 'thai' | 'foreign';
 
 export interface CustomAward {
     id: string;
@@ -18,6 +21,11 @@ export interface CustomAward {
     type: CustomAwardType;
     count: number;
     rankBy: CustomAwardRankBy;
+    nationality: CustomAwardNationality;
+    /** Ids of other awards (same distance) whose winners can't win this one —
+     *  e.g. an age-group award that skips the Overall winners, so the next
+     *  runner moves up instead. */
+    excludeAwardIds: string[];
     personalFields: string[];
     splitFields: string[];
 }
@@ -98,6 +106,12 @@ export const AWARD_TYPE_OPTIONS: { value: CustomAwardType; label: string; labelT
     { value: 'ageGroup', label: 'By age group', labelTh: 'แยกกลุ่มอายุ (Age Group)', defaultName: 'Age Group Result' },
 ];
 
+export const NATIONALITY_OPTIONS: { value: CustomAwardNationality; label: string; labelTh: string }[] = [
+    { value: 'all', label: 'All nationalities', labelTh: 'ทุกสัญชาติ' },
+    { value: 'thai', label: 'Thai only', labelTh: 'เฉพาะคนไทย' },
+    { value: 'foreign', label: 'Foreign only', labelTh: 'เฉพาะต่างชาติ' },
+];
+
 export const MAX_AWARD_COUNT = 500;
 
 const PERSONAL_KEYS = new Set(PERSONAL_FIELDS.map(f => f.key));
@@ -122,6 +136,10 @@ export function normalizeCustomAwards(raw: unknown): CustomAward[] {
             type: a.type === 'gender' || a.type === 'ageGroup' ? a.type : 'overall',
             count: clampAwardCount(a.count),
             rankBy: a.rankBy === 'net' ? 'net' : 'gun',
+            nationality: a.nationality === 'thai' || a.nationality === 'foreign' ? a.nationality : 'all',
+            excludeAwardIds: Array.isArray(a.excludeAwardIds)
+                ? a.excludeAwardIds.filter((x): x is string => typeof x === 'string' && !!x && x !== a.id)
+                : [],
             personalFields: Array.isArray(a.personalFields) && a.personalFields.length
                 ? a.personalFields.filter((f): f is string => typeof f === 'string' && PERSONAL_KEYS.has(f))
                 : [...DEFAULT_PERSONAL_FIELDS],
@@ -210,6 +228,19 @@ export interface ComputeAwardOptions {
     /** `false` on campaigns whose genders race together (dog races etc.) —
      *  the age-group award then takes the whole field, not per gender. */
     genderSplitEnabled?: boolean;
+    /** Every saved award of the campaign — needed to resolve `excludeAwardIds`. */
+    allAwards?: CustomAward[];
+}
+
+/** Nationality as the athlete template has it (COUNTRYREGION), runner field first. */
+export function runnerNationality(r: CustomAwardRunner): string {
+    return r.nationality || bioValue(r, ['CountryRegion', 'Country', 'Nationality']);
+}
+
+function matchesNationality(r: CustomAwardRunner, filter: CustomAwardNationality): boolean {
+    if (filter === 'all') return true;
+    const thai = isThaiNationality(runnerNationality(r));
+    return filter === 'thai' ? thai : !thai;
 }
 
 const gunTimeOf = (r: CustomAwardRunner) => r.gunTime || r.netTime || r.elapsedTime || Infinity;
@@ -280,10 +311,44 @@ export function computeCustomAward(
     award: CustomAward,
     opts: ComputeAwardOptions = {},
 ): CustomAwardGroup[] {
-    const finishers = pool.filter(isFinisher);
+    return computeWithExclusions(pool, award, opts, new Set([award.id]));
+}
+
+/** Runner ids that won any of `award.excludeAwardIds` (resolved recursively, cycle-safe). */
+function excludedRunnerIds(
+    pool: CustomAwardRunner[],
+    award: CustomAward,
+    opts: ComputeAwardOptions,
+    visiting: Set<string>,
+): Set<string> {
+    const out = new Set<string>();
+    if (!award.excludeAwardIds?.length || !opts.allAwards?.length) return out;
+    const sameCat = (c: string) => c.trim().toLowerCase() === award.category.trim().toLowerCase();
+    for (const id of award.excludeAwardIds) {
+        if (visiting.has(id)) continue;
+        const other = opts.allAwards.find(a => a.id === id);
+        // Only awards of the same distance — `pool` is that distance's runners.
+        if (!other || !sameCat(other.category)) continue;
+        const groups = computeWithExclusions(pool, other, opts, new Set([...visiting, id]));
+        for (const g of groups) for (const row of g.runners) out.add(row.runner._id);
+    }
+    return out;
+}
+
+function computeWithExclusions(
+    pool: CustomAwardRunner[],
+    award: CustomAward,
+    opts: ComputeAwardOptions,
+    visiting: Set<string>,
+): CustomAwardGroup[] {
+    // Pool-wide positions use every finisher; the filters below only decide who can win.
+    const allFinishers = pool.filter(isFinisher);
+    const excluded = excludedRunnerIds(pool, award, opts, visiting);
+    const nationality = award.nationality || 'all';
+    const finishers = allFinishers.filter(r => !excluded.has(r._id) && matchesNationality(r, nationality));
     const compare = award.rankBy === 'net' ? compareByNet : compareByGun;
     const timeOf = award.rankBy === 'net' ? netTimeOf : gunTimeOf;
-    const pos = positionMaps(finishers);
+    const pos = positionMaps(allFinishers);
     const count = clampAwardCount(award.count);
     const genderSplit = opts.genderSplitEnabled !== false;
 

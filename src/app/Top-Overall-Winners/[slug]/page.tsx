@@ -12,10 +12,12 @@ import { type OverallCountByCategoryEntry } from '@/lib/overall-display-count';
 import {
     resolveTopRunnersCut,
     resolveTopRunnersRange,
-    sliceTopRunners,
+    resolveTopRunnersRankBy,
+    selectTopRunners,
     topRunnersRangeSize,
     type TopRunnersRangeEntry,
 } from '@/lib/top-runners-range';
+import { sortForTopRunners } from '@/lib/awards';
 
 interface Runner {
     _id: string;
@@ -52,11 +54,28 @@ interface Campaign {
     overallDisplayCountByCategory?: OverallCountByCategoryEntry[];
     topRunnersRangeByCategory?: TopRunnersRangeEntry[];
     topRunnersExcludeOverallCategories?: string[];
+    topRunnersNetCategories?: string[];
     /** `false` when the organizer has no Top Runners board for this event. */
     topRunnersEnabled?: boolean;
 }
 
 const REFRESH_INTERVAL = 10;
+
+/** Per-gender board slice, ranked by gun or net time (see selectTopRunners). */
+function topRunnersBoard(
+    runners: Runner[],
+    rankBy: 'gun' | 'net',
+    range: { start: number; end: number },
+    cut: number,
+) {
+    const finished = runners.filter(r => r.status === 'finished' && (r.netTime || r.gunTime || r.elapsedTime));
+    const pick = (list: Runner[]) =>
+        selectTopRunners(sortForTopRunners(list, 'gun'), rankBy === 'net' ? sortForTopRunners(list, 'net') : [], rankBy, range, cut);
+    return {
+        maleWinners: pick(finished.filter(r => r.gender !== 'F')),
+        femaleWinners: pick(finished.filter(r => r.gender === 'F')),
+    };
+}
 
 function formatTime(ms: number | undefined | null): string {
     if (ms === undefined || ms === null || ms <= 0) return '-';
@@ -249,21 +268,15 @@ export default function TopOverallWinnersBySlugPage() {
     // Distances configured to drop the Overall winners skip that many leading
     // finishers first; the range then fills its rows from further down the field.
     const cut = resolveTopRunnersCut(campaign, selectedCategory);
+    // Gun time by default; distances set to Net on admin/top-overall rank by chip time.
+    const rankBy = resolveTopRunnersRankBy(campaign, selectedCategory);
 
     // The slice of the standings the range covers, per gender, each row carrying
     // its real overall rank so a range like 21-40 still prints 21, 22, 23…
-    const { maleWinners, femaleWinners } = useMemo(() => {
-        const finished = displayedRunners.filter(r => r.status === 'finished' && (r.netTime || r.gunTime || r.elapsedTime));
-        const sorted = [...finished].sort((a, b) => {
-            const at = a.gunTime || a.netTime || a.elapsedTime || Infinity; // Overall = gun time
-            const bt = b.gunTime || b.netTime || b.elapsedTime || Infinity;
-            return at - bt;
-        });
-        return {
-            maleWinners: sliceTopRunners(sorted.filter(r => r.gender !== 'F'), range, cut),
-            femaleWinners: sliceTopRunners(sorted.filter(r => r.gender === 'F'), range, cut),
-        };
-    }, [displayedRunners, range.start, range.end, cut]); // eslint-disable-line react-hooks/exhaustive-deps
+    const { maleWinners, femaleWinners } = useMemo(
+        () => topRunnersBoard(displayedRunners, rankBy, range, cut),
+        [displayedRunners, rankBy, range.start, range.end, cut], // eslint-disable-line react-hooks/exhaustive-deps
+    );
 
     // Exports only the currently-selected distance (not every distance in the campaign).
     const downloadGroup = useCallback(async (
@@ -283,17 +296,13 @@ export default function TopOverallWinnersBySlugPage() {
                 computeWinners: (runners, categoryName) => {
                     const catRange = resolveTopRunnersRange(campaign, categoryName);
                     const catCut = resolveTopRunnersCut(campaign, categoryName);
-                    const finished = runners.filter(r => r.status === 'finished' && (r.netTime || r.gunTime || r.elapsedTime));
-                    const sorted = [...finished].sort((a, b) => {
-                        const at = a.gunTime || a.netTime || a.elapsedTime || Infinity; // Overall = gun time
-                        const bt = b.gunTime || b.netTime || b.elapsedTime || Infinity;
-                        return at - bt;
-                    });
+                    const board = topRunnersBoard(runners, resolveTopRunnersRankBy(campaign, categoryName), catRange, catCut);
                     return {
-                        maleRunners: sorted.filter(r => r.gender !== 'F').slice(catCut + catRange.start - 1, catCut + catRange.end),
-                        femaleRunners: sorted.filter(r => r.gender === 'F').slice(catCut + catRange.start - 1, catCut + catRange.end),
-                        // POS column must print the real overall rank, not 1..N
-                        rankOffset: catCut + catRange.start - 1,
+                        maleRunners: board.maleWinners.map(w => w.runner),
+                        femaleRunners: board.femaleWinners.map(w => w.runner),
+                        // POS column must print the real rank, not 1..N
+                        maleRanks: board.maleWinners.map(w => w.rank),
+                        femaleRanks: board.femaleWinners.map(w => w.rank),
                     };
                 },
             });
@@ -348,7 +357,9 @@ export default function TopOverallWinnersBySlugPage() {
                 {fullName}
             </span>
             <span style={{ fontFamily: 'monospace', fontWeight: 800, fontSize: isMobile ? 11 : '1.5vh', color: '#1e293b', flexShrink: 0, minWidth: isMobile ? 60 : '7vh', textAlign: 'right' }}>
-                {runner.gunTimeStr || formatTime(runner.gunTime)}
+                {rankBy === 'net'
+                    ? (runner.netTimeStr || formatTime(runner.netTime || runner.gunTime))
+                    : (runner.gunTimeStr || formatTime(runner.gunTime))}
             </span>
         </div>
         );

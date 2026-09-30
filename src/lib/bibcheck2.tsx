@@ -24,6 +24,7 @@ export type BibField =
     | 'team' | 'shirtSize' | 'wave'
     | 'chipCode' | 'printingCode' | 'rfidTag'
     | 'medical' | 'status'
+    | 'gunTime' | 'netTime'
     | 'static';
 
 export type BibElementType = 'text' | 'image' | 'photo' | 'qr' | 'shape';
@@ -115,6 +116,10 @@ export interface BibRunner {
     wave?: string;
     medical?: string;
     photoUrl?: string;
+    gunTime?: number;
+    netTime?: number;
+    gunTimeStr?: string;
+    netTimeStr?: string;
 }
 
 export interface BibCampaign {
@@ -148,6 +153,8 @@ export const BIB_FIELD_PALETTE: { field: BibField; label: string; sample: string
     { field: 'rfidTag', label: 'RFID Tag', sample: 'E28011700000021' },
     { field: 'medical', label: '⚕ ข้อมูลการแพทย์', sample: 'แพ้อาหารทะเล' },
     { field: 'status', label: 'สถานะ', sample: 'registered' },
+    { field: 'gunTime', label: '⏱ Gun Time', sample: '00:42:18' },
+    { field: 'netTime', label: '⏱ Net Time', sample: '00:41:55' },
     { field: 'static', label: 'ข้อความ Static', sample: 'ยืนยันข้อมูล' },
 ];
 
@@ -156,11 +163,11 @@ export const BIB_MOCK: Record<BibField, string> = BIB_FIELD_PALETTE.reduce((acc,
     return acc;
 }, {} as Record<BibField, string>);
 
-export const BIB_FONTS = ['Prompt', 'Lexend', 'Inter', 'Roboto Slab'] as const;
+export const BIB_FONTS = ['Prompt', 'Lexend', 'Inter', 'Roboto Slab', 'Orbitron', 'Share Tech Mono'] as const;
 
 /** Google-fonts + FontAwesome link tags used by both the editor and live page. */
 export const BIB_FONT_HREF =
-    'https://fonts.googleapis.com/css2?family=Prompt:wght@400;500;600;700;800;900&family=Lexend:wght@300;400;600;700;800;900&family=Inter:wght@400;500;600;700;800;900&family=Roboto+Slab:wght@400;600;700;800;900&display=swap';
+    'https://fonts.googleapis.com/css2?family=Prompt:wght@400;500;600;700;800;900&family=Lexend:wght@300;400;600;700;800;900&family=Inter:wght@400;500;600;700;800;900&family=Roboto+Slab:wght@400;600;700;800;900&family=Orbitron:wght@500;700;900&family=Share+Tech+Mono&display=swap';
 
 // ─── Nationality → flag emoji ─────────────────────────────────────────────────
 
@@ -188,6 +195,14 @@ function medicalText(raw?: string): string {
     const v = (raw || '').trim();
     if (!v || v === 'ไม่มี' || v === '-' || v.toLowerCase() === 'none') return '';
     return v;
+}
+
+/** ms → "HH:MM:SS"; no time yet → "--:--:--" (never blank, so the clock box stays filled). */
+function clockText(ms?: number): string {
+    if (!ms || ms <= 0) return '--:--:--';
+    const t = Math.floor(ms / 1000);
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${pad(Math.floor(t / 3600))}:${pad(Math.floor((t % 3600) / 60))}:${pad(t % 60)}`;
 }
 
 export function resolveBibField(
@@ -222,6 +237,8 @@ export function resolveBibField(
         case 'rfidTag': return runner.rfidTag || '';
         case 'medical': return medicalText(runner.medical);
         case 'status': return runner.status || '';
+        case 'gunTime': return runner.gunTimeStr || clockText(runner.gunTime);
+        case 'netTime': return runner.netTimeStr || clockText(runner.netTime || runner.gunTime);
         default: return '';
     }
 }
@@ -385,6 +402,58 @@ export function defaultBibCheck2Layout(): BibCheck2Layout {
     };
 }
 
+// ─── Finish Time display default (scan → BIB + Gun Time on a finisher banner) ──
+// Mirrors a typical 3.6 × 2.4 m (3:2) finisher backdrop: a digital clock box on
+// top, the BIB under it. Admins usually upload their banner as the background
+// and just drag these two boxes onto it.
+
+function finishLandscape(): BibCheck2Canvas {
+    return {
+        canvasWidth: 1800,
+        canvasHeight: 1200,
+        background: { type: 'color', color: '#facc15', imageData: '', imageOpacity: 1 },
+        elements: [
+            el({ type: 'shape', field: 'static', x: 450, y: 520, width: 900, height: 680, backgroundColor: '#dc2626', borderRadius: 0, zIndex: 1 }),
+            el({ type: 'text', field: 'eventName', x: 90, y: 50, width: 1620, height: 90, fontSize: 56, fontWeight: '900', color: '#b91c1c', align: 'center', uppercase: true, autoFit: true, zIndex: 10 }),
+            el({ type: 'shape', field: 'static', x: 460, y: 170, width: 880, height: 250, backgroundColor: '#0a0a0a', borderRadius: 10, zIndex: 5 }),
+            el({ type: 'text', field: 'gunTime', x: 480, y: 180, width: 840, height: 230, fontSize: 190, fontWeight: '700', color: '#fde047', align: 'center', fontFamily: 'Orbitron', autoFit: true, zIndex: 10 }),
+            el({ type: 'text', field: 'static', staticText: 'GUN TIME', x: 460, y: 424, width: 880, height: 50, fontSize: 32, fontWeight: '800', color: '#0f172a', align: 'center', letterSpacing: 10, zIndex: 10 }),
+            el({ type: 'text', field: 'static', staticText: 'BIB', x: 600, y: 560, width: 600, height: 60, fontSize: 44, fontWeight: '800', color: '#fef08a', align: 'center', letterSpacing: 12, zIndex: 10 }),
+            el({ type: 'text', field: 'bib', x: 500, y: 620, width: 800, height: 240, fontSize: 220, fontWeight: '900', color: '#ffffff', align: 'center', autoFit: true, zIndex: 10 }),
+            el({ type: 'text', field: 'nameEn', x: 500, y: 870, width: 800, height: 80, fontSize: 54, fontWeight: '700', color: '#ffffff', align: 'center', uppercase: true, autoFit: true, hideIfEmpty: true, zIndex: 10 }),
+            el({ type: 'text', field: 'static', staticText: 'FINISHER', x: 450, y: 1000, width: 900, height: 160, fontSize: 150, fontWeight: '900', color: '#ffffff', align: 'center', italic: true, letterSpacing: 4, zIndex: 10 }),
+        ],
+    };
+}
+
+function finishPortrait(): BibCheck2Canvas {
+    return {
+        canvasWidth: 1080,
+        canvasHeight: 1620,
+        background: { type: 'color', color: '#facc15', imageData: '', imageOpacity: 1 },
+        elements: [
+            el({ type: 'shape', field: 'static', x: 140, y: 760, width: 800, height: 860, backgroundColor: '#dc2626', zIndex: 1 }),
+            el({ type: 'text', field: 'eventName', x: 60, y: 60, width: 960, height: 90, fontSize: 50, fontWeight: '900', color: '#b91c1c', align: 'center', uppercase: true, autoFit: true, zIndex: 10 }),
+            el({ type: 'shape', field: 'static', x: 70, y: 210, width: 940, height: 260, backgroundColor: '#0a0a0a', borderRadius: 10, zIndex: 5 }),
+            el({ type: 'text', field: 'gunTime', x: 90, y: 220, width: 900, height: 240, fontSize: 180, fontWeight: '700', color: '#fde047', align: 'center', fontFamily: 'Orbitron', autoFit: true, zIndex: 10 }),
+            el({ type: 'text', field: 'static', staticText: 'GUN TIME', x: 70, y: 480, width: 940, height: 50, fontSize: 32, fontWeight: '800', color: '#0f172a', align: 'center', letterSpacing: 10, zIndex: 10 }),
+            el({ type: 'text', field: 'static', staticText: 'BIB', x: 240, y: 800, width: 600, height: 60, fontSize: 44, fontWeight: '800', color: '#fef08a', align: 'center', letterSpacing: 12, zIndex: 10 }),
+            el({ type: 'text', field: 'bib', x: 160, y: 860, width: 760, height: 240, fontSize: 220, fontWeight: '900', color: '#ffffff', align: 'center', autoFit: true, zIndex: 10 }),
+            el({ type: 'text', field: 'nameEn', x: 160, y: 1110, width: 760, height: 80, fontSize: 50, fontWeight: '700', color: '#ffffff', align: 'center', uppercase: true, autoFit: true, hideIfEmpty: true, zIndex: 10 }),
+            el({ type: 'text', field: 'static', staticText: 'FINISHER', x: 140, y: 1340, width: 800, height: 160, fontSize: 140, fontWeight: '900', color: '#ffffff', align: 'center', italic: true, letterSpacing: 4, zIndex: 10 }),
+        ],
+    };
+}
+
+export function defaultFinishTimeLayout(): BibCheck2Layout {
+    return {
+        version: 1,
+        stageColor: '#000000',
+        landscape: finishLandscape(),
+        portrait: finishPortrait(),
+    };
+}
+
 type RawRecord = Record<string, unknown>;
 
 function asRecord(v: unknown): RawRecord | null {
@@ -392,8 +461,8 @@ function asRecord(v: unknown): RawRecord | null {
 }
 
 /** Fill in anything a stored layout is missing (older saves, hand-edited JSON). */
-export function normalizeLayout(input: unknown): BibCheck2Layout {
-    const base = defaultBibCheck2Layout();
+export function normalizeLayout(input: unknown, fallback?: BibCheck2Layout): BibCheck2Layout {
+    const base = fallback ?? defaultBibCheck2Layout();
     const raw = asRecord(input);
     if (!raw) return base;
 
