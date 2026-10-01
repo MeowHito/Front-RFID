@@ -46,6 +46,9 @@ const PLAY_SECONDS = 10;
 const REFRESH_MS = 60_000;
 const GRID_OPTIONS = ['1x1', '1x2', '1x3', '2x1', '2x2', '2x3', '3x2', '3x3', '3x4', '4x2', '4x3', '4x4', '6x2'];
 const GRID_STORAGE_KEY = 'award-grid';
+// A long list (Top 100) is cut into side-by-side columns: 5 → 1–20, 21–40, … Saved per award.
+const SPLIT_OPTIONS = [1, 2, 3, 4, 5, 6, 8];
+const SPLIT_STORAGE_PREFIX = 'award-split:';
 
 /** Award groups → board cards: age-group M/F pairs share one card, one panel per gender. */
 function buildCards(award: CustomAward, groups: CustomAwardGroup[], lang: 'th' | 'en'): BoardCard[] {
@@ -90,6 +93,25 @@ function autoGrid(n: number, w: number, h: number): [number, number] {
     return best;
 }
 
+/** How many side-by-side columns one panel's list should flow into to keep rows readable. */
+function autoSplit(n: number, w: number, h: number): number {
+    if (!w || !h || n <= 1) return 1;
+    let best = 1;
+    let score = -Infinity;
+    for (let c = 1; c <= 8; c++) {
+        const r = Math.ceil(n / c);
+        const v = Math.min(w / c / 300, h / r / 30) - (c * r - n) * 0.001;
+        if (v > score) { score = v; best = c; }
+    }
+    return best;
+}
+
+const chunk = <T,>(list: T[], size: number): T[][] => {
+    const out: T[][] = [];
+    for (let i = 0; i < list.length; i += size) out.push(list.slice(i, i + size));
+    return out.length ? out : [[]];
+};
+
 export default function AwardDisplayPage() {
     return (
         <AuthGuard requireAdmin>
@@ -115,6 +137,7 @@ function AwardDisplayContent() {
     const [groupFilter, setGroupFilter] = useState('all');
     const [sex, setSex] = useState<Sex>('all');
     const [gridSize, setGridSize] = useState('auto');
+    const [splitSize, setSplitSize] = useState('auto');
     const [page, setPage] = useState(0);
     const [skipped, setSkipped] = useState<string[]>([]);
     const [playing, setPlaying] = useState(false);
@@ -189,6 +212,12 @@ function AwardDisplayContent() {
         return () => ro.disconnect();
     }, [loading]);
 
+    useEffect(() => {
+        let saved = 'auto';
+        try { saved = localStorage.getItem(SPLIT_STORAGE_PREFIX + awardId) || 'auto'; } catch { /* storage blocked */ }
+        setSplitSize(saved === 'auto' || SPLIT_OPTIONS.includes(Number(saved)) ? saved : 'auto');
+    }, [awardId]);
+
     const allAwards = useMemo(() => normalizeCustomAwards(campaign?.customAwards), [campaign?.customAwards]);
     const award = useMemo(() => allAwards.find(a => a.id === awardId) || null, [allAwards, awardId]);
 
@@ -230,8 +259,16 @@ function AwardDisplayContent() {
     const pageCount = Math.max(1, Math.ceil(visibleCards.length / capacity));
     const safePage = Math.min(page, pageCount - 1);
     const pageCards = isMobile ? visibleCards : visibleCards.slice(safePage * capacity, (safePage + 1) * capacity);
-    // Every row on the page gets the same height, sized for the longest list shown.
-    const rowSlots = Math.max(3, ...pageCards.flatMap(c => c.panels.map(p => p.rows.length)));
+    const longestList = Math.max(0, ...pageCards.flatMap(c => c.panels.map(p => p.rows.length)));
+    const split = useMemo(() => {
+        if (isMobile) return 1;
+        if (splitSize !== 'auto') return Number(splitSize) || 1;
+        const panels = Math.max(1, ...pageCards.map(c => c.panels.length));
+        // Room for one panel: its share of a grid cell, minus the card bar and gender heading.
+        return autoSplit(longestList, boardSize.w / cols / panels - 16, boardSize.h / rows - 54);
+    }, [isMobile, splitSize, pageCards, longestList, boardSize.w, boardSize.h, cols, rows]);
+    // Every row on the page gets the same height, sized for the longest column shown.
+    const rowSlots = Math.max(3, Math.ceil(longestList / split));
 
     const eventName = (th ? campaign?.nameTh : campaign?.nameEn) || campaign?.name || '';
     const categoryRow = award ? campaign?.categories?.find(c => normCat(c.name) === normCat(award.category)) : undefined;
@@ -391,6 +428,20 @@ function AwardDisplayContent() {
                             <option value="auto">{th ? 'อัตโนมัติ' : 'Auto'}</option>
                             {GRID_OPTIONS.map(o => <option key={o} value={o}>{o.replace('x', ' × ')} · {th ? 'คอลัมน์ × แถว' : 'cols × rows'}</option>)}
                         </select>
+                        <select className="awb-grid-select" value={splitSize} aria-label={th ? 'แบ่งรายชื่อเป็นกี่คอลัมน์' : 'Split list into columns'}
+                            onChange={e => {
+                                pause(); setSplitSize(e.target.value);
+                                try { localStorage.setItem(SPLIT_STORAGE_PREFIX + awardId, e.target.value); } catch { /* storage blocked */ }
+                            }}>
+                            <option value="auto">{th ? 'แบ่งคอลัมน์: อัตโนมัติ' : 'Split: auto'}</option>
+                            {SPLIT_OPTIONS.map(n => (
+                                <option key={n} value={String(n)}>
+                                    {n === 1
+                                        ? (th ? 'ไม่แบ่งคอลัมน์' : 'No split')
+                                        : (th ? `แบ่ง ${n} คอลัมน์ (คอลัมน์ละ ${Math.ceil(longestList / n)})` : `${n} columns (${Math.ceil(longestList / n)} each)`)}
+                                </option>
+                            ))}
+                        </select>
                         <div className="awb-playbar">
                             {siblings.length > 1 && <span className="awb-playbar-label">{th ? 'เล่นวนระยะ' : 'Loop distances'}</span>}
                             {siblings.length > 1 && siblings.map(a => (
@@ -448,22 +499,30 @@ function AwardDisplayContent() {
                                     return (
                                         <section key={p.sex} className={`awb-gender ${p.sex}`} aria-label={sexText(p.sex)}>
                                             <h3><span className="awb-dot" /><span>{sexText(p.sex)}</span></h3>
-                                            {shown.length ? shown.map(r => (
-                                                <div key={r.id} className={`awb-row${r.place === 1 ? ' first' : ''}`}>
-                                                    <span className="awb-rank">{r.place}</span>
-                                                    <div>
-                                                        <div className="awb-name" title={r.name}>{r.name}</div>
-                                                        <div className="awb-meta">
-                                                            <span className="awb-bib">BIB {r.bib}</span>
-                                                            <span>{r.country ? ` · ${r.country}` : ''}</span>
+                                            {shown.length ? (
+                                                <div className="awb-cols" style={{ '--split': split } as CSSProperties}>
+                                                    {chunk(shown, Math.max(1, Math.ceil(p.rows.length / split))).map((col, ci) => (
+                                                        <div key={ci} className="awb-col">
+                                                            {col.map(r => (
+                                                                <div key={r.id} className={`awb-row${r.place === 1 ? ' first' : ''}`}>
+                                                                    <span className="awb-rank">{r.place}</span>
+                                                                    <div>
+                                                                        <div className="awb-name" title={r.name}>{r.name}</div>
+                                                                        <div className="awb-meta">
+                                                                            <span className="awb-bib">BIB {r.bib}</span>
+                                                                            <span>{r.country ? ` · ${r.country}` : ''}</span>
+                                                                        </div>
+                                                                    </div>
+                                                                    <div className="awb-time">
+                                                                        <span>{r.time || '—'}</span>
+                                                                        <small>{timeLabel}</small>
+                                                                    </div>
+                                                                </div>
+                                                            ))}
                                                         </div>
-                                                    </div>
-                                                    <div className="awb-time">
-                                                        <span>{r.time || '—'}</span>
-                                                        <small>{timeLabel}</small>
-                                                    </div>
+                                                    ))}
                                                 </div>
-                                            )) : (
+                                            ) : (
                                                 <div className="awb-empty">
                                                     {q ? (th ? 'ไม่พบชื่อหรือ BIB ที่ค้นหา' : 'No matching name or BIB') : (th ? 'ยังไม่มีผู้เข้าเส้นชัย' : 'No finishers yet')}
                                                 </div>
@@ -540,6 +599,8 @@ const BOARD_CSS = `
 .awb-gender.all .awb-dot{background:#ee9b12}
 .awb-gender.male h3{color:#075d9c}
 .awb-gender.female h3{color:#a12e64}
+.awb-cols{display:grid;grid-template-columns:1fr}
+.awb-col{min-width:0}
 .awb-row{display:grid;grid-template-columns:30px minmax(0,1fr) auto;align-items:center;gap:10px;padding:15px 0;border-top:1px solid #edf0f4}
 .awb-row>div{min-width:0}
 .awb-rank{background:#eef1f5;border-radius:8px;height:30px;display:grid;place-items:center;font-weight:800;font-size:13px}
@@ -583,7 +644,10 @@ const BOARD_CSS = `
  .awb-gender+.awb-gender{border-top:0;border-left:1px solid var(--line)}
  .awb-gender h3{flex:none;font-size:clamp(11px,4.5cqh,22px);line-height:1.6;margin:0;white-space:nowrap;overflow:hidden}
  .awb-dot{width:.45em;height:.45em}
- .awb-row{flex:none;height:calc((100cqh - clamp(11px,4.5cqh,22px) * 1.6) / var(--n,5));font-size:clamp(9px,min(calc((100cqh - 30px) / var(--n,5) * .3),3.6cqw),48px);grid-template-columns:1.6em minmax(0,1fr) 5.4em;gap:.5em;padding:0;overflow:hidden}
+ .awb-cols{flex:1;min-height:0;grid-template-columns:repeat(var(--split,1),minmax(0,1fr));column-gap:14px}
+ .awb-col{container-type:size;min-height:0;overflow:hidden}
+ .awb-col+.awb-col{border-left:1px solid var(--line);padding-left:14px}
+ .awb-row{flex:none;height:calc(100cqh / var(--n,5));font-size:clamp(9px,min(calc(100cqh / var(--n,5) * .3),3.6cqw),48px);grid-template-columns:1.6em minmax(0,1fr) 5.4em;gap:.5em;padding:0;overflow:hidden}
  .awb-rank{width:1.5em;height:1.5em;font-size:.85em;border-radius:4px}
  .awb-name{font-size:1em;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
  .awb-meta{font-size:.72em;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:.15em}

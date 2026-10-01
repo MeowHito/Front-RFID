@@ -557,7 +557,7 @@ export default function AwardBuilderPage() {
                                                 <div className="flex rounded-lg bg-gray-100 p-1">
                                                     {(['gun', 'net'] as CustomAwardRankBy[]).map(v => (
                                                         <button key={v} type="button" onClick={() => setForm(f => ({ ...f, rankBy: v }))}
-                                                            className={`flex-1 rounded-md px-2 py-1 text-sm transition ${form.rankBy === v ? 'bg-white font-semibold text-gray-900! shadow-sm' : 'text-gray-500! hover:text-gray-700!'}`}>
+                                                            className={`flex-1 rounded-md px-2 py-1 text-sm transition ${form.rankBy === v ? 'bg-emerald-600 font-semibold text-white! shadow-sm' : 'text-gray-500! hover:text-gray-700!'}`}>
                                                             {v === 'gun' ? 'Gun Time' : 'Net Time'}
                                                         </button>
                                                     ))}
@@ -572,7 +572,7 @@ export default function AwardBuilderPage() {
                                                 <div className="flex rounded-lg bg-gray-100 p-1">
                                                     {NATIONALITY_OPTIONS.map(o => (
                                                         <button key={o.value} type="button" onClick={() => setForm(f => ({ ...f, nationality: o.value }))}
-                                                            className={`flex-1 whitespace-nowrap rounded-md px-2 py-1 text-sm transition ${form.nationality === o.value ? 'bg-white font-semibold text-gray-900! shadow-sm' : 'text-gray-500! hover:text-gray-700!'}`}>
+                                                            className={`flex-1 whitespace-nowrap rounded-md px-2 py-1 text-sm transition ${form.nationality === o.value ? 'bg-emerald-600 font-semibold text-white! shadow-sm' : 'text-gray-500! hover:text-gray-700!'}`}>
                                                             {th ? o.labelTh : o.label}
                                                         </button>
                                                     ))}
