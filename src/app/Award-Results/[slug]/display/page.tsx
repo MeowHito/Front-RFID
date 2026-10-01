@@ -133,6 +133,8 @@ function AwardDisplayContent() {
     const [error, setError] = useState('');
 
     const [awardId, setAwardId] = useState(initialAwardId);
+    // Frozen on first render: switchAward rewrites ?award=, which useSearchParams follows.
+    const [anchorId] = useState(initialAwardId);
     const [search, setSearch] = useState('');
     const [groupFilter, setGroupFilter] = useState('all');
     const [sex, setSex] = useState<Sex>('all');
@@ -221,17 +223,31 @@ function AwardDisplayContent() {
     const allAwards = useMemo(() => normalizeCustomAwards(campaign?.customAwards), [campaign?.customAwards]);
     const award = useMemo(() => allAwards.find(a => a.id === awardId) || null, [allAwards, awardId]);
 
-    // The same award on the other distances ("Overall THAI" on 5K, 10K, 21K…),
-    // in the campaign's distance order — the distance selector and the play loop.
+    // The award the board was opened on; switching distance never moves it, so
+    // 10K → 5K → 10K lands back on the same award.
+    const anchor = useMemo(() => allAwards.find(a => a.id === anchorId) || award, [allAwards, anchorId, award]);
+
+    // Every distance of the campaign, in its order, with the anchor award's counterpart
+    // there: same name ("Overall THAI" on 5K, 10K, 21K…), else the same type and
+    // nationality, else the same type, else none — the distance selector and the play loop.
     const siblings = useMemo(() => {
-        if (!award) return [];
-        const cats = campaign?.categories || [];
-        const orderOf = (c: string) => { const i = cats.findIndex(x => normCat(x.name) === normCat(c)); return i < 0 ? 999 : i; };
-        return allAwards
-            .filter(a => normCat(a.name) === normCat(award.name))
-            .sort((a, b) => orderOf(a.category) - orderOf(b.category));
-    }, [allAwards, award, campaign?.categories]);
-    const playlist = useMemo(() => siblings.filter(a => !skipped.includes(a.id)), [siblings, skipped]);
+        if (!anchor) return [] as { category: string; award: CustomAward | null }[];
+        const names = (campaign?.categories || []).map(c => c.name);
+        if (!names.some(n => normCat(n) === normCat(anchor.category))) names.unshift(anchor.category);
+        return names.map(category => {
+            if (normCat(category) === normCat(anchor.category)) return { category, award: anchor };
+            const pool = allAwards.filter(a => normCat(a.category) === normCat(category));
+            const match = pool.find(a => normCat(a.name) === normCat(anchor.name))
+                || pool.find(a => a.type === anchor.type && a.nationality === anchor.nationality)
+                || pool.find(a => a.type === anchor.type)
+                || null;
+            return { category, award: match };
+        });
+    }, [allAwards, anchor, campaign?.categories]);
+    const playlist = useMemo(
+        () => siblings.flatMap(s => (s.award && !skipped.includes(s.award.id) ? [s.award] : [])),
+        [siblings, skipped],
+    );
 
     const cards = useMemo(() => {
         if (!award) return [];
@@ -394,10 +410,14 @@ function AwardDisplayContent() {
 
                 {award && (
                     <div className="awb-toolbar">
-                        {siblings.length > 1 && (
+                        {siblings.length > 0 && (
                             <select value={awardId} aria-label={th ? 'เลือกระยะ' : 'Distance'}
                                 onChange={e => { pause(); switchAward(e.target.value, 'all'); }}>
-                                {siblings.map(a => <option key={a.id} value={a.id}>{a.category}</option>)}
+                                {siblings.map(s => (
+                                    <option key={s.category} value={s.award?.id || `none:${s.category}`} disabled={!s.award}>
+                                        {s.category}{s.award ? (normCat(s.award.name) === normCat(award.name) ? '' : ` · ${s.award.name}`) : (th ? ' (ไม่มีรางวัลนี้)' : ' (no such award)')}
+                                    </option>
+                                ))}
                             </select>
                         )}
                         <div className="awb-search">
@@ -420,35 +440,42 @@ function AwardDisplayContent() {
                                 <option value="female">{th ? 'หญิง' : 'Female'}</option>
                             </select>
                         )}
-                        <select className="awb-grid-select" value={gridSize} aria-label={th ? 'จำนวนคอลัมน์และแถว' : 'Columns × rows'}
-                            onChange={e => {
-                                pause(); setPage(0); setGridSize(e.target.value);
-                                try { localStorage.setItem(GRID_STORAGE_KEY, e.target.value); } catch { /* storage blocked */ }
-                            }}>
-                            <option value="auto">{th ? 'อัตโนมัติ' : 'Auto'}</option>
-                            {GRID_OPTIONS.map(o => <option key={o} value={o}>{o.replace('x', ' × ')} · {th ? 'คอลัมน์ × แถว' : 'cols × rows'}</option>)}
-                        </select>
-                        <select className="awb-grid-select" value={splitSize} aria-label={th ? 'แบ่งรายชื่อเป็นกี่คอลัมน์' : 'Split list into columns'}
-                            onChange={e => {
-                                pause(); setSplitSize(e.target.value);
-                                try { localStorage.setItem(SPLIT_STORAGE_PREFIX + awardId, e.target.value); } catch { /* storage blocked */ }
-                            }}>
-                            <option value="auto">{th ? 'แบ่งคอลัมน์: อัตโนมัติ' : 'Split: auto'}</option>
-                            {SPLIT_OPTIONS.map(n => (
-                                <option key={n} value={String(n)}>
-                                    {n === 1
-                                        ? (th ? 'ไม่แบ่งคอลัมน์' : 'No split')
-                                        : (th ? `แบ่ง ${n} คอลัมน์ (คอลัมน์ละ ${Math.ceil(longestList / n)})` : `${n} columns (${Math.ceil(longestList / n)} each)`)}
-                                </option>
-                            ))}
-                        </select>
+                        <label className="awb-field">
+                            <span>{th ? 'จัดการ์ด' : 'Cards'}</span>
+                            <select value={gridSize} title={th ? 'จำนวนการ์ดต่อหน้า (คอลัมน์ × แถว)' : 'Cards per page (columns × rows)'}
+                                onChange={e => {
+                                    pause(); setPage(0); setGridSize(e.target.value);
+                                    try { localStorage.setItem(GRID_STORAGE_KEY, e.target.value); } catch { /* storage blocked */ }
+                                }}>
+                                <option value="auto">{th ? 'อัตโนมัติ' : 'Auto'}</option>
+                                {GRID_OPTIONS.map(o => <option key={o} value={o}>{o.replace('x', ' × ')} {th ? '(คอลัมน์ × แถว)' : '(cols × rows)'}</option>)}
+                            </select>
+                        </label>
+                        <label className="awb-field">
+                            <span>{th ? 'แบ่งรายชื่อ' : 'Split list'}</span>
+                            <select value={splitSize} title={th ? 'รายชื่อยาว ๆ แบ่งเป็นกี่คอลัมน์ (เช่น 5 = 1–20, 21–40, …)' : 'Columns for a long list (e.g. 5 = 1–20, 21–40, …)'}
+                                onChange={e => {
+                                    pause(); setSplitSize(e.target.value);
+                                    try { localStorage.setItem(SPLIT_STORAGE_PREFIX + awardId, e.target.value); } catch { /* storage blocked */ }
+                                }}>
+                                <option value="auto">{th ? `อัตโนมัติ (${split} คอลัมน์)` : `Auto (${split} col)`}</option>
+                                {SPLIT_OPTIONS.map(n => (
+                                    <option key={n} value={String(n)}>
+                                        {n === 1
+                                            ? (th ? 'ไม่แบ่ง' : 'No split')
+                                            : (th ? `${n} คอลัมน์ · ละ ${Math.ceil(longestList / n)} คน` : `${n} cols · ${Math.ceil(longestList / n)} each`)}
+                                    </option>
+                                ))}
+                            </select>
+                        </label>
                         <div className="awb-playbar">
-                            {siblings.length > 1 && <span className="awb-playbar-label">{th ? 'เล่นวนระยะ' : 'Loop distances'}</span>}
-                            {siblings.length > 1 && siblings.map(a => (
-                                <label key={a.id}>
-                                    <input type="checkbox" checked={!skipped.includes(a.id)}
-                                        onChange={e => setSkipped(prev => (e.target.checked ? prev.filter(x => x !== a.id) : [...prev, a.id]))} />
-                                    <span>{a.category}</span>
+                            {siblings.length > 0 && <span className="awb-playbar-label">{th ? 'เล่นวนระยะ' : 'Loop distances'}</span>}
+                            {siblings.map(({ category, award: a }) => (
+                                <label key={category} className={a ? undefined : 'off'}
+                                    title={a ? a.name : (th ? 'ระยะนี้ยังไม่มีรางวัลนี้ — สร้างได้ที่ Award Builder' : 'No such award on this distance — add one in Award Builder')}>
+                                    <input type="checkbox" disabled={!a} checked={!!a && !skipped.includes(a.id)}
+                                        onChange={e => { if (a) setSkipped(prev => (e.target.checked ? prev.filter(x => x !== a.id) : [...prev, a.id])); }} />
+                                    <span>{category}</span>
                                 </label>
                             ))}
                             <button type="button" className="awb-play" disabled={!playlist.length} onClick={startPlay}>
@@ -568,7 +595,8 @@ const BOARD_CSS = `
 .awb-toolbar select:disabled{opacity:.6}
 .awb-search{flex:1 1 100%}
 .awb-search input{width:100%}
-.awb-grid-select{display:none}
+.awb-field{display:none}
+.awb-playbar label.off{opacity:.4;cursor:not-allowed}
 .awb-playbar{flex-basis:100%;display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:7px 10px;border:1px solid var(--line);border-radius:8px;background:#fff;font-size:13px}
 .awb-playbar label{display:flex;align-items:center;gap:4px;cursor:pointer}
 .awb-playbar input{width:16px;height:16px;min-height:0;padding:0;accent-color:#ca8309}
@@ -625,7 +653,9 @@ const BOARD_CSS = `
  .awb-toolbar input,.awb-toolbar select{padding:5px 10px;min-height:32px;font-size:12px}
  .awb-toolbar select{flex:0 1 auto;max-width:160px;font-size:11px;padding:5px 7px}
  .awb-search{flex:0 1 175px;min-width:100px;max-width:175px}
- .awb-grid-select{display:block}
+ .awb-field{display:flex;align-items:center;gap:6px;flex:none;font-size:11px;color:var(--muted);white-space:nowrap}
+ .awb-field+.awb-field{margin-left:10px;padding-left:12px;border-left:1px solid #d5dce5}
+ .awb-toolbar .awb-field select{max-width:170px}
  .awb-playbar{flex:0 1 auto;margin-left:auto;padding:4px 0;gap:7px;flex-wrap:nowrap;font-size:11px;border:0;background:transparent;min-width:0}
  .awb-playbar button{min-height:30px;padding:4px 8px;white-space:nowrap;font-size:11px}
  .awb-playbar label,.awb-playbar-label{white-space:nowrap}
