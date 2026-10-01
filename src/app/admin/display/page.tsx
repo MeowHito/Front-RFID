@@ -13,7 +13,9 @@ const MARATHON_COLUMNS: ColDef[] = [
     { key: 'rank', thLabel: 'Rank', thLabelTh: 'อันดับ', width: '3%', align: 'center', fixed: true },
     { key: 'genRank', thLabel: 'Gen', thLabelTh: 'Gen', width: '3%', align: 'center' },
     { key: 'catRank', thLabel: 'Cat', thLabelTh: 'Cat', width: '3%', align: 'center' },
-    { key: 'award', thLabel: 'Award', thLabelTh: 'รางวัล', width: '6%', align: 'center' },
+    { key: 'award', thLabel: 'Award', thLabelTh: 'Award', width: '6%', align: 'center' },
+    // Awards built on /admin/award-builder whose trophy is on (Award = the older Top-Overall / age-group setup).
+    { key: 'awards', thLabel: 'Awards', thLabelTh: 'Awards', width: '7%', align: 'center' },
     { key: 'runner', thLabel: 'Runner', thLabelTh: 'นักวิ่ง', width: '15%', align: 'left', fixed: true },
     { key: 'sex', thLabel: 'Sex', thLabelTh: 'เพศ', width: '3%', align: 'center' },
     { key: 'status', thLabel: 'Status', thLabelTh: 'สถานะ', width: '8%', align: 'left', fixed: true },
@@ -55,6 +57,14 @@ const MARATHON_TOGGLEABLE = MARATHON_COLUMNS.filter(c => !c.fixed).map(c => c.ke
 const LAB_TOGGLEABLE = LAB_COLUMNS.filter(c => !c.fixed).map(c => c.key);
 
 const MARATHON_PUBLIC_DEFAULT_KEYS = ['genRank', 'catRank', 'award', 'sex', 'gunTime', 'netTime', 'distFromStart'];
+// Columns a viewer without login can see when switched on — the defaults plus "awards",
+// which starts off (it only has data once an award has its trophy on in Award Builder).
+const MARATHON_PUBLIC_KEYS = [...MARATHON_PUBLIC_DEFAULT_KEYS.slice(0, 3), 'awards', ...MARATHON_PUBLIC_DEFAULT_KEYS.slice(3)];
+// What each award column shows — under the public column chips.
+const AWARD_COLUMN_HINTS: Record<string, { th: string; en: string }> = {
+    award: { th: 'Award = รางวัลแบบเดิม (ตั้งค่าที่ Top Runners / อันดับกลุ่มอายุ) เช่น OVERALL THA 1, Age Group 1, TOP 1', en: 'Award = the original awards (Top Runners / age-group ranking settings), e.g. OVERALL THA 1, Age Group 1, TOP 1' },
+    awards: { th: 'Awards = รางวัลจากหน้า "สร้างรายการรางวัล" ที่กดรูปถ้วย 🏆 ไว้ เช่น Overall Result 1, TOP 100 3', en: 'Awards = awards from the Award Builder with the trophy 🏆 on, e.g. Overall Result 1, TOP 100 3' },
+};
 
 type DisplayMode = 'marathon' | 'lab';
 
@@ -213,7 +223,7 @@ export default function DisplaySettingsPage() {
 
     // Sample data per mode
     const marathonSample: Record<string, string> = {
-        rank: '1', genRank: '1', catRank: '1', award: 'Overall 1', runner: 'John Doe', sex: 'M',
+        rank: '1', genRank: '1', catRank: '1', award: 'Overall 1', awards: 'Overall Result 1', runner: 'John Doe', sex: 'M',
         status: 'FINISH', gunTime: '1:23:45', netTime: '1:22:30', genNet: '1',
         gunPace: '5:30', netPace: '5:25', finish: '120', genFin: '55', progress: '100%',
         chipCode: '026F86D3', printingCode: 'AF755693', splitNo: '3',
@@ -237,7 +247,7 @@ export default function DisplaySettingsPage() {
         const isActive = displayMode === mode;
         const columns = mode === 'marathon' ? MARATHON_COLUMNS : LAB_COLUMNS;
         const toggleableKeys = mode === 'marathon' ? MARATHON_TOGGLEABLE : LAB_TOGGLEABLE;
-        const quickDefaultKeys = mode === 'marathon' ? MARATHON_PUBLIC_DEFAULT_KEYS.filter(key => toggleableKeys.includes(key)) : [];
+        const quickDefaultKeys = mode === 'marathon' ? MARATHON_PUBLIC_KEYS.filter(key => toggleableKeys.includes(key)) : [];
         const dropdownKeys = mode === 'marathon' ? toggleableKeys.filter(key => !quickDefaultKeys.includes(key)) : toggleableKeys;
         const currentOrder = mode === 'marathon' ? colOrder : colOrderLab;
         const currentSelected = mode === 'marathon' ? selectedCols : selectedColsLab;
@@ -592,7 +602,7 @@ export default function DisplaySettingsPage() {
                                 {language === 'th' ? 'คอลัมน์เริ่มต้นสำหรับผู้ชมทั่วไป (ไม่ต้อง Login)' : 'Default public columns (visible without login)'}
                             </div>
                             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                                {MARATHON_PUBLIC_DEFAULT_KEYS.map((key) => {
+                                {MARATHON_PUBLIC_KEYS.map((key) => {
                                     const col = MARATHON_COLUMNS.find(item => item.key === key);
                                     if (!col) return null;
                                     const isOn = selectedCols.includes(key);
@@ -622,6 +632,16 @@ export default function DisplaySettingsPage() {
                                         </button>
                                     );
                                 })}
+                            </div>
+                            <div style={{ margin: '10px 0 0', padding: '8px 10px', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8, fontSize: 11, color: '#78350f', lineHeight: 1.6 }}>
+                                <div style={{ fontWeight: 800, marginBottom: 2 }}>
+                                    {language === 'th' ? 'คอลัมน์รางวัล — เลือกแบบที่จะให้ผู้ชมเห็น (เปิดแบบเดียวหรือทั้งสองแบบก็ได้)' : 'Award columns — pick which one viewers see (one or both)'}
+                                </div>
+                                {(['award', 'awards'] as const).map(k => (
+                                    <div key={k}>
+                                        <strong>{selectedCols.includes(k) ? '✓' : '○'}</strong> {language === 'th' ? AWARD_COLUMN_HINTS[k].th : AWARD_COLUMN_HINTS[k].en}
+                                    </div>
+                                ))}
                             </div>
                             <p style={{ fontSize: 11, color: '#64748b', margin: '8px 0 0' }}>
                                 {language === 'th' ? 'คอลัมน์อื่นนอกเหนือจากนี้ จะแสดงเฉพาะผู้ใช้ที่ Login แล้วเท่านั้น' : 'Any extra columns beyond these will be shown only to logged-in users.'}

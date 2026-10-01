@@ -324,7 +324,7 @@ export default function AwardBuilderPage() {
         scrollToSettings();
     };
 
-    /** Trophy on a row: show / stop showing this award's placings in /event's "Award (demo)" column. */
+    /** Trophy on a row: show / stop showing this award's placings in /event's "Awards" column. */
     const toggleShowOnEvent = async (award: CustomAward) => {
         const on = !award.showOnEvent;
         const next = savedAwards.map(a => (a.id === award.id ? { ...a, showOnEvent: on } : a));
@@ -333,8 +333,8 @@ export default function AwardBuilderPage() {
         setSavedAwards(next);
         showToast(
             on
-                ? (th ? `แสดง "${award.name}" ในคอลัมน์ Award (demo) แล้ว` : `"${award.name}" now shows in the Award (demo) column`)
-                : (th ? `เลิกแสดง "${award.name}" ในคอลัมน์ Award (demo)` : `"${award.name}" no longer shows in the Award (demo) column`),
+                ? (th ? `แสดง "${award.name}" ในคอลัมน์ Awards แล้ว (เปิดคอลัมน์ Awards ได้ที่หน้า "การแสดงผล")` : `"${award.name}" now shows in the Awards column (switch the column on in Display settings)`)
+                : (th ? `เลิกแสดง "${award.name}" ในคอลัมน์ Awards` : `"${award.name}" no longer shows in the Awards column`),
             'success',
         );
     };
@@ -776,8 +776,8 @@ export default function AwardBuilderPage() {
                                                                         <button type="button" onClick={() => void toggleShowOnEvent(award)} disabled={saving}
                                                                             aria-pressed={!!award.showOnEvent}
                                                                             title={award.showOnEvent
-                                                                                ? (th ? 'แสดงในคอลัมน์ Award (demo) บนหน้าผล — กดเพื่อเลิกแสดง' : 'Shown in the Award (demo) column on the results page — click to hide')
-                                                                                : (th ? 'กดเพื่อแสดงอันดับรางวัลนี้ในคอลัมน์ Award (demo) บนหน้าผล' : 'Show this award\'s placings in the Award (demo) column on the results page')}
+                                                                                ? (th ? 'แสดงในคอลัมน์ Awards บนหน้าผล — กดเพื่อเลิกแสดง' : 'Shown in the Awards column on the results page — click to hide')
+                                                                                : (th ? 'กดเพื่อแสดงอันดับรางวัลนี้ในคอลัมน์ Awards บนหน้าผล' : 'Show this award\'s placings in the Awards column on the results page')}
                                                                             className={`shrink-0 rounded-md p-1.5 transition hover:bg-amber-50 hover:text-amber-500! disabled:opacity-50 ${award.showOnEvent ? 'text-amber-500!' : 'text-gray-400!'}`}>
                                                                             {award.showOnEvent ? <TrophySolidIcon className="h-4 w-4" /> : <TrophyIcon className="h-4 w-4" />}
                                                                         </button>

@@ -29,7 +29,7 @@ export interface CustomAward {
     personalFields: string[];
     splitFields: string[];
     /** Trophy on /admin/award-builder: this award's placings show in the
-     *  "Award (demo)" column on /event/[slug]. */
+     *  "Awards" column on /event/[slug]. */
     showOnEvent?: boolean;
 }
 

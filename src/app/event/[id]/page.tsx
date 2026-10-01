@@ -239,9 +239,9 @@ const COL_DEFS: ColDef[] = [
     { key: 'genRank', label: 'Gen', w: '3%', mw: '4%', align: 'center' },
     { key: 'catRank', label: 'Age', w: '6%', mw: '9%', align: 'center' },
     { key: 'award', label: 'Award', w: '7%', mw: '12%', align: 'center' },
-    // Not chosen in /admin/display: shown (admin only) next to Award whenever an award
-    // on /admin/award-builder has its trophy on — see visibleColumns.
-    { key: 'awardDemo', label: 'Award (demo)', w: '8%', mw: '13%', align: 'center' },
+    // Placings of the /admin/award-builder awards whose trophy is on (Award above is
+    // the older Top-Overall / age-group setup). Each is switched on in /admin/display.
+    { key: 'awards', label: 'Awards', w: '8%', mw: '13%', align: 'center' },
     { key: 'runner', label: 'Runner', w: '15%', mw: '22%', align: 'left', fixed: true },
     { key: 'sex', label: 'Sex', w: '3%', mw: '5%', align: 'center' },
     { key: 'status', label: 'Status', w: '8%', mw: '10%', align: 'left', fixed: true },
@@ -275,6 +275,9 @@ const COL_DEFS: ColDef[] = [
 ];
 const TOGGLEABLE_KEYS = COL_DEFS.filter(c => !c.fixed).map(c => c.key);
 const MARATHON_PUBLIC_DEFAULT_KEYS = ['genRank', 'catRank', 'award', 'sex', 'gunTime', 'netTime', 'distFromStart', 'nextStation'];
+// Columns a viewer without login may see (when /admin/display has them on). "awards"
+// is public too but not on by default — it only has data once an award has its trophy on.
+const MARATHON_PUBLIC_KEYS = [...MARATHON_PUBLIC_DEFAULT_KEYS, 'awards'];
 // Default visible toggleable columns (only columns that typically have data from RaceTiger)
 const DEFAULT_VISIBLE_KEYS = MARATHON_PUBLIC_DEFAULT_KEYS;
 
@@ -431,9 +434,7 @@ function FollowHeartIcon({ filled, size = 14, color }: { filled: boolean; size?:
 export default function EventLivePage() {
     const { language } = useLanguage();
     const { theme } = useTheme();
-    const { isAdmin, isAuthenticated, user } = useAuth();
-    // Staff = any logged-in role except a plain runner account ('user').
-    const isStaff = isAuthenticated && !!user?.role && user.role !== 'user';
+    const { isAdmin, isAuthenticated } = useAuth();
     const params = useParams();
     const router = useRouter();
     const searchParams = useSearchParams();
@@ -1235,21 +1236,21 @@ export default function EventLivePage() {
         return map;
     }, [runners, resolveRunnerCategoryKey, categories, campaign?.overallDisplayCount, campaign?.overallDisplayCountByCategory, campaign?.overallEnabled, campaign?.overallDisabledCategories, campaign?.ageGroupDisabledCategories, campaign?.categories, campaign?.ageGroupDisplayCount, campaign?.genderSplitEnabled, campaign?.excludeOverallFromAgeGroup, campaign?.excludeOverallThaiFromAgeGroup, campaign?.excludeOverallForeignFromAgeGroup, campaign?.excludeAgeGroupTop, campaign?.topRunnersRangeByCategory, campaign?.topRunnersExcludeOverallCategories, campaign?.topRunnersNetCategories, campaign?.topRunnersEnabled, natSplitAwardKeys]);
 
-    // "Award (demo)" — placings of the awards whose trophy is on in /admin/award-builder,
+    // AWARDS column — placings of the awards whose trophy is on in /admin/award-builder,
     // ranked exactly like the award's own result page, in the builder's list order.
-    const demoAwards = useMemo(
+    const customAwards = useMemo(
         () => normalizeCustomAwards(campaign?.customAwards),
         [campaign?.customAwards],
     );
-    const showAwardDemo = isAdmin && !isLabMode && demoAwards.some(a => a.showOnEvent);
-    const awardDemoByRunnerId = useMemo(() => {
+    const hasTrophyAwards = !isLabMode && customAwards.some(a => a.showOnEvent);
+    const customAwardsByRunnerId = useMemo(() => {
         const map = new Map<string, { order: number; name: string; place: number }[]>();
-        if (!showAwardDemo) return map;
+        if (!hasTrophyAwards) return map;
         const norm = (v?: string | null) => String(v || '').trim().toLowerCase();
-        demoAwards.forEach((award, order) => {
+        customAwards.forEach((award, order) => {
             if (!award.showOnEvent) return;
             const pool = runners.filter(r => norm(r.category) === norm(award.category));
-            const groups = computeCustomAward(pool, award, { genderSplitEnabled: campaign?.genderSplitEnabled !== false, allAwards: demoAwards });
+            const groups = computeCustomAward(pool, award, { genderSplitEnabled: campaign?.genderSplitEnabled !== false, allAwards: customAwards });
             for (const g of groups) {
                 for (const row of g.runners) {
                     const list = map.get(row.runner._id) || [];
@@ -1259,7 +1260,7 @@ export default function EventLivePage() {
             }
         });
         return map;
-    }, [showAwardDemo, demoAwards, runners, campaign?.genderSplitEnabled]);
+    }, [hasTrophyAwards, customAwards, runners, campaign?.genderSplitEnabled]);
 
     // Build ordered list of visible columns based on admin displayColumns + mobile
     const visibleColumns = useMemo(() => {
@@ -1278,7 +1279,7 @@ export default function EventLivePage() {
         // disabled it).
         const publicToggleKeys = isLabMode
             ? configuredToggleKeys
-            : MARATHON_PUBLIC_DEFAULT_KEYS.filter(k => configuredToggleKeys.includes(k));
+            : MARATHON_PUBLIC_KEYS.filter(k => configuredToggleKeys.includes(k));
         const allowedToggleKeys = isAuthenticated ? configuredToggleKeys : publicToggleKeys;
         // Rebuild the full column order from admin settings. /admin/display can now
         // drag the fixed columns (Rank / Runner / Status / Progress) too, and when it
@@ -1290,16 +1291,12 @@ export default function EventLivePage() {
         );
 
         // Filter to only visible columns
-        const shown = fullOrder.filter(key => {
+        return fullOrder.filter(key => {
             const def = activeColDefs.find(c => c.key === key)!;
             if (!def) return false;
-            if (key === 'awardDemo') return false; // slotted in below
             if (key === 'progress' && !isAdmin) return false;
             if (def.fixed) return true;
             if (!allowedToggleKeys.includes(key)) return false;
-            // AWARD placings are for staff only (not announced yet) — never shown to
-            // the public, even when /admin/display has the column switched on.
-            if (key === 'award' && !isStaff) return false;
             if (!isLabMode) {
                 if (key === 'genRank' && !showGenRank) return false;
                 if (key === 'catRank' && !showCatRank) return false;
@@ -1311,13 +1308,7 @@ export default function EventLivePage() {
             }
             return true;
         });
-        // "Award (demo)" sits right before Award (or before Runner when Award is off).
-        if (showAwardDemo && !(isMobile && !showAllColumns)) {
-            const at = shown.indexOf('award') >= 0 ? shown.indexOf('award') : shown.indexOf('runner');
-            shown.splice(at >= 0 ? at : shown.length, 0, 'awardDemo');
-        }
-        return shown;
-    }, [isAdmin, isAuthenticated, isStaff, isMobile, showAllColumns, campaign?.displayColumns, campaign?.displayColumnsLab, campaign?.displayMode, showGenRank, showCatRank, isLabMode, activeColDefs, activeToggleableKeys, currentCategoryHasAgeGroups, showAwardDemo]);
+    }, [isAdmin, isAuthenticated, isMobile, showAllColumns, campaign?.displayColumns, campaign?.displayColumnsLab, campaign?.displayMode, showGenRank, showCatRank, isLabMode, activeColDefs, activeToggleableKeys, currentCategoryHasAgeGroups]);
 
     // Compute median finish time per category for real progress estimation
     const categoryMedianTime = useMemo(() => {
@@ -1740,8 +1731,8 @@ export default function EventLivePage() {
                 if (award?.topRunners) return 2000 + award.topRunners;
                 return null;
             }
-            case 'awardDemo': {
-                const first = awardDemoByRunnerId.get(runner._id)?.[0];
+            case 'awards': {
+                const first = customAwardsByRunnerId.get(runner._id)?.[0];
                 return first ? first.order * 10000 + first.place : null;
             }
             case 'runner':
@@ -1848,7 +1839,7 @@ export default function EventLivePage() {
                 return cmp !== 0 ? cmp * dir : a.i - b.i;
             })
             .map(x => x.runner);
-    }, [isAdmin, columnSort, visibleColumns, filteredRunners, sortAlertsFirst, liveRanks, awardByRunnerId, awardDemoByRunnerId, language, isMobile, showAllColumns, filterAgeGroup, filterGender, cpDistanceLookup, categoryMedianTime, isRaceFinished]); // eslint-disable-line react-hooks/exhaustive-deps
+    }, [isAdmin, columnSort, visibleColumns, filteredRunners, sortAlertsFirst, liveRanks, awardByRunnerId, customAwardsByRunnerId, language, isMobile, showAllColumns, filterAgeGroup, filterGender, cpDistanceLookup, categoryMedianTime, isRaceFinished]); // eslint-disable-line react-hooks/exhaustive-deps
 
     /** Header click: ascending → descending → back to the normal rank order. */
     function toggleColumnSort(key: string) {
@@ -2896,8 +2887,8 @@ export default function EventLivePage() {
                                                     </td>
                                                 );
                                             }
-                                            case 'awardDemo': {
-                                                const wins = awardDemoByRunnerId.get(runner._id);
+                                            case 'awards': {
+                                                const wins = customAwardsByRunnerId.get(runner._id);
                                                 const textCls = isMobile ? 'text-[11px] font-bold' : 'text-xs font-bold';
                                                 const textColor = isMobile ? '#0f172a' : themeStyles.textMuted;
                                                 return (
