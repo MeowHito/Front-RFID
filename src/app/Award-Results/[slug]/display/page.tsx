@@ -4,7 +4,8 @@
 // screen button on /Award-Results/[slug]. Same ranking as the result page
 // (computeCustomAward over the live runner pool); the layout follows the
 // "Age Group Awards" board design: on desktop every group fits one viewport, a pager
-// and a play loop cycle genders → pages → the same award on the other distances.
+// and a play loop cycle pages → the same award on the ticked distances, keeping the
+// toolbar settings (gender, group, cards, split) exactly as the admin set them.
 // Admin only, like the result page.
 
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
@@ -148,6 +149,8 @@ function AwardDisplayContent() {
     const [isMobile, setIsMobile] = useState(false);
     const [isFullscreen, setIsFullscreen] = useState(false);
     const boardRef = useRef<HTMLDivElement | null>(null);
+    // Set by the play loop so the next distance keeps the split shown now instead of its own saved one.
+    const keepSplitRef = useRef(false);
     const [boardSize, setBoardSize] = useState({ w: 0, h: 0 });
 
     const loadRunners = useCallback(async (campaignId: string) => {
@@ -215,6 +218,7 @@ function AwardDisplayContent() {
     }, [loading]);
 
     useEffect(() => {
+        if (keepSplitRef.current) { keepSplitRef.current = false; return; }
         let saved = 'auto';
         try { saved = localStorage.getItem(SPLIT_STORAGE_PREFIX + awardId) || 'auto'; } catch { /* storage blocked */ }
         setSplitSize(saved === 'auto' || SPLIT_OPTIONS.includes(Number(saved)) ? saved : 'auto');
@@ -257,10 +261,12 @@ function AwardDisplayContent() {
     }, [award, allAwards, runners, campaign?.genderSplitEnabled, lang]);
 
     const gendered = cards.some(c => c.panels.some(p => p.sex !== 'all'));
+    // The picked group survives a distance switch; a distance without it shows every group.
+    const activeGroup = groupFilter !== 'all' && cards.some(c => c.key === groupFilter) ? groupFilter : 'all';
     const visibleCards = useMemo(() => cards
-        .filter(c => groupFilter === 'all' || c.key === groupFilter)
+        .filter(c => activeGroup === 'all' || c.key === activeGroup)
         .map(c => ({ ...c, panels: c.panels.filter(p => sex === 'all' || p.sex === 'all' || p.sex === sex) })),
-    [cards, groupFilter, sex]);
+    [cards, activeGroup, sex]);
 
     const [cols, rows] = useMemo<[number, number]>(() => {
         const n = Math.max(1, visibleCards.length);
@@ -295,29 +301,28 @@ function AwardDisplayContent() {
         document.title = award ? `${award.category} ${award.name} · ${th ? 'จอแสดงผล' : 'Display'}` : 'Award display';
     }, [award, th]);
 
-    const switchAward = useCallback((id: string, keepSex: Sex) => {
+    // Gender and group filters stay as set; only the play loop also carries the split over.
+    const switchAward = useCallback((id: string, keepSplit = false) => {
+        keepSplitRef.current = keepSplit;
         setAwardId(id);
         setPage(0);
-        setGroupFilter('all');
-        setSex(keepSex);
         window.history.replaceState(null, '', `?award=${encodeURIComponent(id)}`);
     }, []);
 
     const pause = () => setPlaying(false);
 
-    // One step of the loop: all → male → female, then the next page, then the next distance.
+    // One step of the loop: the next page, then the next ticked distance. The gender,
+    // group, cards and split settings are never touched — "ชาย/หญิง side by side" stays
+    // side by side, "male only" stays male only.
     const nextFrame = useCallback(() => {
         deadlineRef.current = Date.now() + PLAY_SECONDS * 1000;
         if (!playlist.length) { setPlaying(false); return; }
         const idx = playlist.findIndex(a => a.id === awardId);
-        if (idx < 0) { switchAward(playlist[0].id, 'male'); return; }
-        if (gendered && sex === 'all') { setSex('male'); setPage(0); return; }
-        if (gendered && sex === 'male') { setSex('female'); return; }
-        if (gendered) setSex('male');
+        if (idx < 0) { switchAward(playlist[0].id, true); return; }
         if (safePage + 1 < pageCount) { setPage(safePage + 1); return; }
-        if (playlist.length > 1) switchAward(playlist[(idx + 1) % playlist.length].id, 'male');
+        if (playlist.length > 1) switchAward(playlist[(idx + 1) % playlist.length].id, true);
         else setPage(0);
-    }, [playlist, awardId, gendered, sex, safePage, pageCount, switchAward]);
+    }, [playlist, awardId, safePage, pageCount, switchAward]);
 
     const nextFrameRef = useRef(nextFrame);
     useEffect(() => { nextFrameRef.current = nextFrame; }, [nextFrame]);
@@ -336,10 +341,8 @@ function AwardDisplayContent() {
         if (playing) { pause(); return; }
         if (!playlist.length) return;
         setSearch('');
-        setGroupFilter('all');
         setPage(0);
-        setSex('male');
-        if (!playlist.some(a => a.id === awardId)) switchAward(playlist[0].id, 'male');
+        if (!playlist.some(a => a.id === awardId)) switchAward(playlist[0].id, true);
         deadlineRef.current = Date.now() + PLAY_SECONDS * 1000;
         setNow(Date.now());
         setPlaying(true);
@@ -412,7 +415,7 @@ function AwardDisplayContent() {
                     <div className="awb-toolbar">
                         {siblings.length > 0 && (
                             <select value={awardId} aria-label={th ? 'เลือกระยะ' : 'Distance'}
-                                onChange={e => { pause(); switchAward(e.target.value, 'all'); }}>
+                                onChange={e => { pause(); switchAward(e.target.value); }}>
                                 {siblings.map(s => (
                                     <option key={s.category} value={s.award?.id || `none:${s.category}`} disabled={!s.award}>
                                         {s.category}{s.award ? (normCat(s.award.name) === normCat(award.name) ? '' : ` · ${s.award.name}`) : (th ? ' (ไม่มีรางวัลนี้)' : ' (no such award)')}
@@ -426,14 +429,14 @@ function AwardDisplayContent() {
                                 placeholder={th ? 'ค้นหาชื่อนักวิ่ง หรือ BIB' : 'Search runner name or BIB'} />
                         </div>
                         {cards.length > 1 && (
-                            <select value={groupFilter} aria-label={th ? 'เลือกกลุ่ม' : 'Group'}
+                            <select value={activeGroup} aria-label={th ? 'เลือกกลุ่ม' : 'Group'}
                                 onChange={e => { pause(); setPage(0); setGroupFilter(e.target.value); }}>
                                 <option value="all">{award.type === 'ageGroup' ? (th ? 'ทุกรุ่นอายุ' : 'All age groups') : (th ? 'ทุกกลุ่ม' : 'All groups')}</option>
                                 {cards.map(c => <option key={c.key} value={c.key}>{c.title}</option>)}
                             </select>
                         )}
                         {gendered && (
-                            <select value={sex} disabled={playing} aria-label={th ? 'เลือกเพศ' : 'Gender'}
+                            <select value={sex} aria-label={th ? 'เลือกเพศ' : 'Gender'}
                                 onChange={e => { pause(); setPage(0); setSex(e.target.value as Sex); }}>
                                 <option value="all">{th ? 'ทุกเพศ' : 'All genders'}</option>
                                 <option value="male">{th ? 'ชาย' : 'Male'}</option>
