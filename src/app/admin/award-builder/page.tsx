@@ -39,7 +39,9 @@ import {
     PlusIcon,
     Bars3Icon,
     PencilSquareIcon,
+    TrophyIcon,
 } from '@heroicons/react/24/outline';
+import { TrophyIcon as TrophySolidIcon } from '@heroicons/react/24/solid';
 
 interface RaceCategory { name: string; distance?: string; badgeColor?: string; raceType?: string; }
 
@@ -285,7 +287,8 @@ export default function AwardBuilderPage() {
         const built = buildAward();
         if (!built) return;
         const award = editingSaved ? built : { ...built, id: newAwardId() };
-        const next = editingSaved ? savedAwards.map(a => (a.id === award.id ? award : a)) : [...savedAwards, award];
+        // The trophy isn't part of the form — editing an award keeps it.
+        const next = editingSaved ? savedAwards.map(a => (a.id === award.id ? { ...award, showOnEvent: a.showOnEvent } : a)) : [...savedAwards, award];
         const ok = await persist(next);
         if (!ok) return;
         setSavedAwards(next);
@@ -319,6 +322,21 @@ export default function AwardBuilderPage() {
     const editAward = (award: CustomAward) => {
         loadTemplate(award);
         scrollToSettings();
+    };
+
+    /** Trophy on a row: show / stop showing this award's placings in /event's "Award (demo)" column. */
+    const toggleShowOnEvent = async (award: CustomAward) => {
+        const on = !award.showOnEvent;
+        const next = savedAwards.map(a => (a.id === award.id ? { ...a, showOnEvent: on } : a));
+        const ok = await persist(next);
+        if (!ok) return;
+        setSavedAwards(next);
+        showToast(
+            on
+                ? (th ? `แสดง "${award.name}" ในคอลัมน์ Award (demo) แล้ว` : `"${award.name}" now shows in the Award (demo) column`)
+                : (th ? `เลิกแสดง "${award.name}" ในคอลัมน์ Award (demo)` : `"${award.name}" no longer shows in the Award (demo) column`),
+            'success',
+        );
     };
 
     /** Trash on a row: remove the award and persist. */
@@ -706,7 +724,7 @@ export default function AwardBuilderPage() {
 
                                 <div className="p-3">
                                     {categories.length > 0 ? (
-                                        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                                        <div className="grid gap-3 md:grid-cols-2">
                                             {visibleCategories.map(c => {
                                                 const list = awardsByCategory.get(normCat(c.name)) || [];
                                                 return (
@@ -754,6 +772,14 @@ export default function AwardBuilderPage() {
                                                                         <button type="button" onClick={() => editAward(award)} title={th ? 'แก้ไข' : 'Edit'}
                                                                             className={`shrink-0 rounded-md p-1.5 transition hover:bg-blue-50 hover:text-blue-600! ${isEditing ? 'text-blue-600!' : 'text-gray-400!'}`}>
                                                                             <PencilSquareIcon className="h-4 w-4" />
+                                                                        </button>
+                                                                        <button type="button" onClick={() => void toggleShowOnEvent(award)} disabled={saving}
+                                                                            aria-pressed={!!award.showOnEvent}
+                                                                            title={award.showOnEvent
+                                                                                ? (th ? 'แสดงในคอลัมน์ Award (demo) บนหน้าผล — กดเพื่อเลิกแสดง' : 'Shown in the Award (demo) column on the results page — click to hide')
+                                                                                : (th ? 'กดเพื่อแสดงอันดับรางวัลนี้ในคอลัมน์ Award (demo) บนหน้าผล' : 'Show this award\'s placings in the Award (demo) column on the results page')}
+                                                                            className={`shrink-0 rounded-md p-1.5 transition hover:bg-amber-50 hover:text-amber-500! disabled:opacity-50 ${award.showOnEvent ? 'text-amber-500!' : 'text-gray-400!'}`}>
+                                                                            {award.showOnEvent ? <TrophySolidIcon className="h-4 w-4" /> : <TrophyIcon className="h-4 w-4" />}
                                                                         </button>
                                                                         <button type="button" onClick={() => void deleteAward(award)} disabled={saving} title={th ? 'ลบ' : 'Delete'}
                                                                             className="shrink-0 rounded-md p-1.5 text-gray-400! transition hover:bg-red-50 hover:text-red-600! disabled:opacity-50">

@@ -12,6 +12,7 @@ import CutoffDateTimePicker from '@/components/CutoffDateTimePicker';
 import { getFollowedRunnersForEvent, isRunnerFollowed, loadFollowedRunners, subscribeFollowedRunners, type FollowedRunner } from '@/lib/followed-runners';
 import { isPlaceholderRunner } from '@/lib/placeholder-runners';
 import { computeAwardsForCategory, type AwardResult } from '@/lib/awards';
+import { computeCustomAward, normalizeCustomAwards } from '@/lib/custom-awards';
 import { stripHiddenAgeGroups } from '@/lib/age-group-award-toggle';
 import { isNationalitySplitCategory } from '@/lib/nationality';
 import { type AgeGroupBucket, buildCanonicalAgeGroups, canonicalizeAgeGroup, normalizeAgeGroupLabel } from '@/lib/age-groups';
@@ -238,6 +239,9 @@ const COL_DEFS: ColDef[] = [
     { key: 'genRank', label: 'Gen', w: '3%', mw: '4%', align: 'center' },
     { key: 'catRank', label: 'Age', w: '6%', mw: '9%', align: 'center' },
     { key: 'award', label: 'Award', w: '7%', mw: '12%', align: 'center' },
+    // Not chosen in /admin/display: shown (admin only) next to Award whenever an award
+    // on /admin/award-builder has its trophy on — see visibleColumns.
+    { key: 'awardDemo', label: 'Award (demo)', w: '8%', mw: '13%', align: 'center' },
     { key: 'runner', label: 'Runner', w: '15%', mw: '22%', align: 'left', fixed: true },
     { key: 'sex', label: 'Sex', w: '3%', mw: '5%', align: 'center' },
     { key: 'status', label: 'Status', w: '8%', mw: '10%', align: 'left', fixed: true },
@@ -1229,6 +1233,32 @@ export default function EventLivePage() {
         return map;
     }, [runners, resolveRunnerCategoryKey, categories, campaign?.overallDisplayCount, campaign?.overallDisplayCountByCategory, campaign?.overallEnabled, campaign?.overallDisabledCategories, campaign?.ageGroupDisabledCategories, campaign?.categories, campaign?.ageGroupDisplayCount, campaign?.genderSplitEnabled, campaign?.excludeOverallFromAgeGroup, campaign?.excludeOverallThaiFromAgeGroup, campaign?.excludeOverallForeignFromAgeGroup, campaign?.excludeAgeGroupTop, campaign?.topRunnersRangeByCategory, campaign?.topRunnersExcludeOverallCategories, campaign?.topRunnersNetCategories, campaign?.topRunnersEnabled, natSplitAwardKeys]);
 
+    // "Award (demo)" — placings of the awards whose trophy is on in /admin/award-builder,
+    // ranked exactly like the award's own result page, in the builder's list order.
+    const demoAwards = useMemo(
+        () => normalizeCustomAwards(campaign?.customAwards),
+        [campaign?.customAwards],
+    );
+    const showAwardDemo = isAdmin && !isLabMode && demoAwards.some(a => a.showOnEvent);
+    const awardDemoByRunnerId = useMemo(() => {
+        const map = new Map<string, { order: number; name: string; place: number }[]>();
+        if (!showAwardDemo) return map;
+        const norm = (v?: string | null) => String(v || '').trim().toLowerCase();
+        demoAwards.forEach((award, order) => {
+            if (!award.showOnEvent) return;
+            const pool = runners.filter(r => norm(r.category) === norm(award.category));
+            const groups = computeCustomAward(pool, award, { genderSplitEnabled: campaign?.genderSplitEnabled !== false, allAwards: demoAwards });
+            for (const g of groups) {
+                for (const row of g.runners) {
+                    const list = map.get(row.runner._id) || [];
+                    list.push({ order, name: award.name, place: row.place });
+                    map.set(row.runner._id, list);
+                }
+            }
+        });
+        return map;
+    }, [showAwardDemo, demoAwards, runners, campaign?.genderSplitEnabled]);
+
     // Build ordered list of visible columns based on admin displayColumns + mobile
     const visibleColumns = useMemo(() => {
         const adminCols = isLabMode ? campaign?.displayColumnsLab : campaign?.displayColumns;
@@ -1258,9 +1288,10 @@ export default function EventLivePage() {
         );
 
         // Filter to only visible columns
-        return fullOrder.filter(key => {
+        const shown = fullOrder.filter(key => {
             const def = activeColDefs.find(c => c.key === key)!;
             if (!def) return false;
+            if (key === 'awardDemo') return false; // slotted in below
             if (key === 'progress' && !isAdmin) return false;
             if (def.fixed) return true;
             if (!allowedToggleKeys.includes(key)) return false;
@@ -1275,7 +1306,13 @@ export default function EventLivePage() {
             }
             return true;
         });
-    }, [isAdmin, isAuthenticated, isMobile, showAllColumns, campaign?.displayColumns, campaign?.displayColumnsLab, campaign?.displayMode, showGenRank, showCatRank, isLabMode, activeColDefs, activeToggleableKeys, currentCategoryHasAgeGroups]);
+        // "Award (demo)" sits right before Award (or before Runner when Award is off).
+        if (showAwardDemo && !(isMobile && !showAllColumns)) {
+            const at = shown.indexOf('award') >= 0 ? shown.indexOf('award') : shown.indexOf('runner');
+            shown.splice(at >= 0 ? at : shown.length, 0, 'awardDemo');
+        }
+        return shown;
+    }, [isAdmin, isAuthenticated, isMobile, showAllColumns, campaign?.displayColumns, campaign?.displayColumnsLab, campaign?.displayMode, showGenRank, showCatRank, isLabMode, activeColDefs, activeToggleableKeys, currentCategoryHasAgeGroups, showAwardDemo]);
 
     // Compute median finish time per category for real progress estimation
     const categoryMedianTime = useMemo(() => {
@@ -1698,6 +1735,10 @@ export default function EventLivePage() {
                 if (award?.topRunners) return 2000 + award.topRunners;
                 return null;
             }
+            case 'awardDemo': {
+                const first = awardDemoByRunnerId.get(runner._id)?.[0];
+                return first ? first.order * 10000 + first.place : null;
+            }
             case 'runner':
                 return text(language === 'th' && runner.firstNameTh
                     ? `${runner.firstNameTh} ${runner.lastNameTh || ''}`
@@ -1802,7 +1843,7 @@ export default function EventLivePage() {
                 return cmp !== 0 ? cmp * dir : a.i - b.i;
             })
             .map(x => x.runner);
-    }, [isAdmin, columnSort, visibleColumns, filteredRunners, sortAlertsFirst, liveRanks, awardByRunnerId, language, isMobile, showAllColumns, filterAgeGroup, filterGender, cpDistanceLookup, categoryMedianTime, isRaceFinished]); // eslint-disable-line react-hooks/exhaustive-deps
+    }, [isAdmin, columnSort, visibleColumns, filteredRunners, sortAlertsFirst, liveRanks, awardByRunnerId, awardDemoByRunnerId, language, isMobile, showAllColumns, filterAgeGroup, filterGender, cpDistanceLookup, categoryMedianTime, isRaceFinished]); // eslint-disable-line react-hooks/exhaustive-deps
 
     /** Header click: ascending → descending → back to the normal rank order. */
     function toggleColumnSort(key: string) {
@@ -2843,6 +2884,22 @@ export default function EventLivePage() {
                                                                 {award.overall ? <span className={textCls} style={{ color: textColor }}>{award.overallNat ? `OVERALL ${award.overallNat === 'thai' ? 'THA' : 'INT'}` : 'Overall'} {award.overall}</span> : null}
                                                                 {award.ageGroup ? <span className={textCls} style={{ color: textColor }}>Age Group {award.ageGroup}</span> : null}
                                                                 {award.topRunners ? <span className={textCls} style={{ color: textColor }}>TOP {award.topRunners}</span> : null}
+                                                            </span>
+                                                        ) : (
+                                                            <span className={textCls} style={{ color: textColor }}>-</span>
+                                                        )}
+                                                    </td>
+                                                );
+                                            }
+                                            case 'awardDemo': {
+                                                const wins = awardDemoByRunnerId.get(runner._id);
+                                                const textCls = isMobile ? 'text-[11px] font-bold' : 'text-xs font-bold';
+                                                const textColor = isMobile ? '#0f172a' : themeStyles.textMuted;
+                                                return (
+                                                    <td key={key} className={isMobile ? 'px-0.5 py-1 text-center' : 'px-1.5 py-1.5 text-center'}>
+                                                        {wins?.length ? (
+                                                            <span className="inline-flex flex-col items-center leading-tight whitespace-nowrap">
+                                                                {wins.map(w => <span key={w.order} className={textCls} style={{ color: textColor }}>{w.name} {w.place}</span>)}
                                                             </span>
                                                         ) : (
                                                             <span className={textCls} style={{ color: textColor }}>-</span>

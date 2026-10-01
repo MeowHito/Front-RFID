@@ -28,6 +28,9 @@ export interface CustomAward {
     excludeAwardIds: string[];
     personalFields: string[];
     splitFields: string[];
+    /** Trophy on /admin/award-builder: this award's placings show in the
+     *  "Award (demo)" column on /event/[slug]. */
+    showOnEvent?: boolean;
 }
 
 export type PersonalFieldGroup = 'athlete' | 'result';
@@ -146,6 +149,7 @@ export function normalizeCustomAwards(raw: unknown): CustomAward[] {
             splitFields: Array.isArray(a.splitFields)
                 ? a.splitFields.filter((f): f is string => typeof f === 'string' && SPLIT_KEYS.has(f))
                 : [],
+            showOnEvent: a.showOnEvent === true,
         });
     }
     return out;
