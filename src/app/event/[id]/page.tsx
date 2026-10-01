@@ -431,7 +431,9 @@ function FollowHeartIcon({ filled, size = 14, color }: { filled: boolean; size?:
 export default function EventLivePage() {
     const { language } = useLanguage();
     const { theme } = useTheme();
-    const { isAdmin, isAuthenticated } = useAuth();
+    const { isAdmin, isAuthenticated, user } = useAuth();
+    // Staff = any logged-in role except a plain runner account ('user').
+    const isStaff = isAuthenticated && !!user?.role && user.role !== 'user';
     const params = useParams();
     const router = useRouter();
     const searchParams = useSearchParams();
@@ -1295,6 +1297,9 @@ export default function EventLivePage() {
             if (key === 'progress' && !isAdmin) return false;
             if (def.fixed) return true;
             if (!allowedToggleKeys.includes(key)) return false;
+            // AWARD placings are for staff only (not announced yet) — never shown to
+            // the public, even when /admin/display has the column switched on.
+            if (key === 'award' && !isStaff) return false;
             if (!isLabMode) {
                 if (key === 'genRank' && !showGenRank) return false;
                 if (key === 'catRank' && !showCatRank) return false;
@@ -1312,7 +1317,7 @@ export default function EventLivePage() {
             shown.splice(at >= 0 ? at : shown.length, 0, 'awardDemo');
         }
         return shown;
-    }, [isAdmin, isAuthenticated, isMobile, showAllColumns, campaign?.displayColumns, campaign?.displayColumnsLab, campaign?.displayMode, showGenRank, showCatRank, isLabMode, activeColDefs, activeToggleableKeys, currentCategoryHasAgeGroups, showAwardDemo]);
+    }, [isAdmin, isAuthenticated, isStaff, isMobile, showAllColumns, campaign?.displayColumns, campaign?.displayColumnsLab, campaign?.displayMode, showGenRank, showCatRank, isLabMode, activeColDefs, activeToggleableKeys, currentCategoryHasAgeGroups, showAwardDemo]);
 
     // Compute median finish time per category for real progress estimation
     const categoryMedianTime = useMemo(() => {
