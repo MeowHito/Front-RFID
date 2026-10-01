@@ -232,18 +232,26 @@ function AwardDisplayContent() {
     const anchor = useMemo(() => allAwards.find(a => a.id === anchorId) || award, [allAwards, anchorId, award]);
 
     // Every distance of the campaign, in its order, with the anchor award's counterpart
-    // there: same name ("Overall THAI" on 5K, 10K, 21K…), else the same type and
-    // nationality, else the same type, else none — the distance selector and the play loop.
+    // there — the distance selector and the play loop. Same name first ("Overall Result"
+    // on 5K, 10K, 21K…); otherwise the award in the same slot of the Award Builder list
+    // among its own kind: 10K "TOP 100" is the 2nd gender award there, so it pairs with
+    // 5K's 2nd gender award "TOP 50", never with the 1st one ("Gender Result").
+    // Nothing in that slot → none (disabled) rather than repeating another award.
     const siblings = useMemo(() => {
         if (!anchor) return [] as { category: string; award: CustomAward | null }[];
         const names = (campaign?.categories || []).map(c => c.name);
         if (!names.some(n => normCat(n) === normCat(anchor.category))) names.unshift(anchor.category);
+        const home = allAwards.filter(a => normCat(a.category) === normCat(anchor.category));
+        const sameKind = (a: CustomAward) => a.type === anchor.type && a.nationality === anchor.nationality;
+        const sameType = (a: CustomAward) => a.type === anchor.type;
+        const kindSlot = home.filter(sameKind).findIndex(a => a.id === anchor.id);
+        const typeSlot = home.filter(sameType).findIndex(a => a.id === anchor.id);
         return names.map(category => {
             if (normCat(category) === normCat(anchor.category)) return { category, award: anchor };
             const pool = allAwards.filter(a => normCat(a.category) === normCat(category));
             const match = pool.find(a => normCat(a.name) === normCat(anchor.name))
-                || pool.find(a => a.type === anchor.type && a.nationality === anchor.nationality)
-                || pool.find(a => a.type === anchor.type)
+                || pool.filter(sameKind)[kindSlot]
+                || pool.filter(sameType)[typeSlot]
                 || null;
             return { category, award: match };
         });
