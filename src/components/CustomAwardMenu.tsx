@@ -1,7 +1,8 @@
 'use client';
 
-// "Result" on /event/[slug] — admin only, shown while the AWARDS column is on in /admin/display. Lists the awards built on
-// /admin/award-builder for the selected distance; each name opens its result page.
+// "Result" on /event/[slug] — shown while the AWARDS column is on in /admin/display.
+// Lists the awards built on /admin/award-builder for the selected distance; each name
+// opens its result page. Admins see every award, everyone else only the trophy ones.
 
 import Link from 'next/link';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -9,7 +10,7 @@ import { normalizeCustomAwards } from '@/lib/custom-awards';
 
 const normCat = (v?: string | null) => String(v || '').trim().toLowerCase();
 
-export default function CustomAwardMenu({ customAwards, categoryName, campaignSlugOrId, language, align = 'right', compact = false }: {
+export default function CustomAwardMenu({ customAwards, categoryName, campaignSlugOrId, language, align = 'right', compact = false, trophyOnly = false }: {
     /** Raw campaign.customAwards. */
     customAwards: unknown;
     /** campaign.categories[].name of the selected distance (what awards are keyed by). */
@@ -18,6 +19,8 @@ export default function CustomAwardMenu({ customAwards, categoryName, campaignSl
     language: string;
     align?: 'left' | 'right';
     compact?: boolean;
+    /** Public viewers: list only the awards whose trophy is on (hidden when there are none). */
+    trophyOnly?: boolean;
 }) {
     const [open, setOpen] = useState(false);
     const rootRef = useRef<HTMLDivElement>(null);
@@ -32,16 +35,19 @@ export default function CustomAwardMenu({ customAwards, categoryName, campaignSl
     }, []);
 
     const awards = useMemo(
-        () => normalizeCustomAwards(customAwards).filter(a => normCat(a.category) === normCat(categoryName)),
-        [customAwards, categoryName],
+        () => normalizeCustomAwards(customAwards)
+            .filter(a => normCat(a.category) === normCat(categoryName) && (!trophyOnly || a.showOnEvent)),
+        [customAwards, categoryName, trophyOnly],
     );
+
+    if (trophyOnly && awards.length === 0) return null;
 
     return (
         <div ref={rootRef} className="relative shrink-0">
             <button
                 onClick={() => setOpen(o => !o)}
                 className={`flex items-center gap-1.5 whitespace-nowrap rounded-full border border-[var(--border)] bg-[var(--card-solid)] font-bold text-[var(--muted-foreground)] ${compact ? 'px-2.5 py-1 text-[11px]' : 'px-3.5 py-1.5 text-xs'}`}
-                title={th ? 'ผลรางวัลจากหน้า Award Builder (เห็นเฉพาะแอดมิน)' : 'Awards built on Award Builder (admin only)'}
+                title={th ? 'ผลรางวัล' : 'Award results'}
             >
                 <svg aria-hidden width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#2563eb" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
                     <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />

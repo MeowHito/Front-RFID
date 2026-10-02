@@ -86,6 +86,16 @@ export const RESULT_FIELDS: PersonalFieldDef[] = [
 /** All tickable runner columns, athlete template first. */
 export const PERSONAL_FIELDS: PersonalFieldDef[] = [...ATHLETE_FIELDS, ...RESULT_FIELDS];
 
+/** Columns a viewer without admin rights never sees on a published award list,
+ *  even when the award has them ticked. */
+export const PRIVATE_PERSONAL_FIELDS = new Set(['phone', 'birthDate']);
+
+/** Is the AWARDS column on in /admin/display? (It is never on by default.) This is
+ *  what publishes the trophy awards: the "Result" menu on /event and their result pages. */
+export function isAwardsColumnOn(displayColumns: unknown): boolean {
+    return Array.isArray(displayColumns) && displayColumns.includes('awards');
+}
+
 /** Per-checkpoint columns the admin can tick under "Split times". */
 export const SPLIT_FIELDS: { key: string; label: string; labelTh: string }[] = [
     { key: 'tpid', label: 'TPID', labelTh: 'TPID' },

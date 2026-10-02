@@ -2438,7 +2438,7 @@ export default function EventLivePage() {
         </div>
     );
 
-    // Each award column in /admin/display brings its own menu, for admins too:
+    // Each award column in /admin/display brings its own menu, for everyone (admins too):
     // AWARD (the original setup) → "อันดับ/รางวัล", AWARDS (Award Builder) → "Result".
     // Both off → neither. Lab mode has no award columns, so its menu is left as it was.
     const savedDisplayCols = campaign.displayColumns;
@@ -2475,9 +2475,11 @@ export default function EventLivePage() {
         />
     ) : null;
 
-    // "Result" — awards built on /admin/award-builder for the selected distance, admin only
-    const customAwardMenuEl = isAdmin && showResultMenu && currentCategoryName ? (
+    // "Result" — awards built on /admin/award-builder for the selected distance
+    // (admins: all of them, everyone else: the trophy ones)
+    const customAwardMenuEl = showResultMenu && currentCategoryName ? (
         <CustomAwardMenu
+            trophyOnly={!isAdmin}
             customAwards={campaign.customAwards}
             categoryName={currentCategoryName}
             campaignSlugOrId={campaign.slug || campaign._id}

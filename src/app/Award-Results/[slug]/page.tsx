@@ -1,16 +1,20 @@
 'use client';
 
 // Result page of one admin-built award (/admin/award-builder), opened from the
-// "Result" menu on /event/[slug]. Admin only. The ranking is recomputed from
-// the live runner pool exactly like the award-builder popup does.
+// "Result" menu on /event/[slug]. The ranking is recomputed from the live runner pool
+// exactly like the award-builder popup does. Admins can open any award; everyone else
+// only a published one — trophy on + the AWARDS column on in /admin/display — read
+// only: no screen-board button and no private columns (phone, birth date).
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useSearchParams } from 'next/navigation';
-import AuthGuard from '@/components/AuthGuard';
+import { useAuth } from '@/lib/auth-context';
 import { useLanguage } from '@/lib/language-context';
 import {
+    PRIVATE_PERSONAL_FIELDS,
     computeCustomAward,
+    isAwardsColumnOn,
     normalizeCustomAwards,
     type CustomAwardRunner,
 } from '@/lib/custom-awards';
@@ -30,20 +34,14 @@ interface Campaign {
     categories?: { name: string; distance?: string }[];
     genderSplitEnabled?: boolean;
     customAwards?: unknown;
+    displayColumns?: string[];
 }
 
 const normCat = (v?: string | null) => String(v || '').trim().toLowerCase();
 
 export default function AwardResultsPage() {
-    return (
-        <AuthGuard requireAdmin>
-            <AwardResultsContent />
-        </AuthGuard>
-    );
-}
-
-function AwardResultsContent() {
     const { slug } = useParams<{ slug: string }>();
+    const { isAdmin, isLoading: authLoading } = useAuth();
     const awardId = useSearchParams().get('award') || '';
     const { language } = useLanguage();
     const th = language === 'th';
@@ -82,7 +80,14 @@ function AwardResultsContent() {
     useEffect(() => { void load(false); }, [slug]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const allAwards = useMemo(() => normalizeCustomAwards(campaign?.customAwards), [campaign?.customAwards]);
-    const award = useMemo(() => allAwards.find(a => a.id === awardId) || null, [allAwards, awardId]);
+    const found = useMemo(() => allAwards.find(a => a.id === awardId) || null, [allAwards, awardId]);
+    const published = !!found?.showOnEvent && isAwardsColumnOn(campaign?.displayColumns);
+    // Public viewers get the published award without its private columns.
+    const award = useMemo(() => {
+        if (!found || isAdmin) return found;
+        if (!published) return null;
+        return { ...found, personalFields: found.personalFields.filter(k => !PRIVATE_PERSONAL_FIELDS.has(k)) };
+    }, [found, isAdmin, published]);
 
     const groups = useMemo(() => {
         if (!award) return [];
@@ -98,7 +103,7 @@ function AwardResultsContent() {
         document.title = award ? `${award.name} · ${eventName}` : 'Award result';
     }, [award, eventName]);
 
-    if (loading) {
+    if (loading || authLoading) {
         return <div className="flex min-h-screen items-center justify-center bg-slate-50 text-sm text-gray-400">{th ? 'กำลังโหลด...' : 'Loading...'}</div>;
     }
 
@@ -115,9 +120,13 @@ function AwardResultsContent() {
                     <Link href={eventHref} className="text-sm font-semibold text-blue-600 hover:underline">
                         ← {th ? 'กลับไปหน้าผลการแข่งขัน' : 'Back to results'}
                     </Link>
-                    <span className="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-0.5 text-[11px] font-bold text-amber-700">
-                        Result (demo) · {th ? 'เห็นเฉพาะแอดมิน' : 'admin only'}
-                    </span>
+                    {isAdmin && (
+                        <span className="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-0.5 text-[11px] font-bold text-amber-700">
+                            {published
+                                ? (th ? 'เผยแพร่แล้ว · ผู้ชมทั่วไปเห็นหน้านี้' : 'Published · visible to the public')
+                                : (th ? 'ยังไม่เผยแพร่ · เห็นเฉพาะแอดมิน' : 'Not published · admin only')}
+                        </span>
+                    )}
                 </div>
 
                 <div className="overflow-hidden rounded-xl bg-white shadow-sm ring-1 ring-gray-200">
@@ -137,13 +146,15 @@ function AwardResultsContent() {
                                     <ArrowPathIcon className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
                                     {th ? 'รีเฟรช' : 'Refresh'}
                                 </button>
-                                {/* Big-screen board of this award (and the same award on the other distances). */}
-                                <Link href={displayHref} target="_blank" rel="noopener"
-                                    title={th ? 'ดูผลแบบบนหน้าจอ' : 'Show on screen'}
-                                    className="inline-flex items-center gap-1.5 rounded-md bg-emerald-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-emerald-700">
-                                    <ComputerDesktopIcon className="h-4 w-4" />
-                                    <span>{th ? 'แสดงบนหน้าจอ' : 'Show on screen'}</span>
-                                </Link>
+                                {/* Big-screen board of this award (and the same award on the other distances) — admin only. */}
+                                {isAdmin && (
+                                    <Link href={displayHref} target="_blank" rel="noopener"
+                                        title={th ? 'ดูผลแบบบนหน้าจอ' : 'Show on screen'}
+                                        className="inline-flex items-center gap-1.5 rounded-md bg-emerald-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-emerald-700">
+                                        <ComputerDesktopIcon className="h-4 w-4" />
+                                        <span>{th ? 'แสดงบนหน้าจอ' : 'Show on screen'}</span>
+                                    </Link>
+                                )}
                             </div>
                         )}
                     </div>
@@ -152,7 +163,9 @@ function AwardResultsContent() {
                             <CustomAwardResults award={award} groups={groups} th={th} splits={splits} />
                         ) : (
                             <div className="py-10 text-center text-sm text-gray-500">
-                                {th ? 'รางวัลนี้ถูกลบหรือไม่มีอยู่แล้ว — สร้าง/แก้ไขรางวัลได้ที่หน้า Award Builder' : 'This award was deleted or does not exist — manage awards on the Award Builder page.'}
+                                {isAdmin
+                                    ? (th ? 'รางวัลนี้ถูกลบหรือไม่มีอยู่แล้ว — สร้าง/แก้ไขรางวัลได้ที่หน้า Award Builder' : 'This award was deleted or does not exist — manage awards on the Award Builder page.')
+                                    : (th ? 'ยังไม่มีผลรางวัลนี้ให้ดู' : 'This award result is not available.')}
                             </div>
                         )}
                     </div>
