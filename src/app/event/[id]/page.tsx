@@ -2438,8 +2438,16 @@ export default function EventLivePage() {
         </div>
     );
 
+    // Each award column in /admin/display brings its own menu, for admins too:
+    // AWARD (the original setup) → "อันดับ/รางวัล", AWARDS (Award Builder) → "Result".
+    // Both off → neither. Lab mode has no award columns, so its menu is left as it was.
+    const savedDisplayCols = campaign.displayColumns;
+    const enabledCols = Array.isArray(savedDisplayCols) && savedDisplayCols.length > 0 ? savedDisplayCols : DEFAULT_VISIBLE_KEYS;
+    const showRankingMenu = isLabMode || enabledCols.includes('award');
+    const showResultMenu = !isLabMode && enabledCols.includes('awards');
+
     // Ranking menu — General / Best of / Nationality / Age Group for the selected distance
-    const rankingMenuEl = currentCategoryName ? (
+    const rankingMenuEl = showRankingMenu && currentCategoryName ? (
         <RankingMenuDropdown
             campaignId={campaign._id}
             campaignSlugOrId={campaign.slug || campaign._id}
@@ -2467,8 +2475,8 @@ export default function EventLivePage() {
         />
     ) : null;
 
-    // "Result(demo)" — awards built on /admin/award-builder for the selected distance, admin only
-    const customAwardMenuEl = isAdmin && currentCategoryName ? (
+    // "Result" — awards built on /admin/award-builder for the selected distance, admin only
+    const customAwardMenuEl = isAdmin && showResultMenu && currentCategoryName ? (
         <CustomAwardMenu
             customAwards={campaign.customAwards}
             categoryName={currentCategoryName}

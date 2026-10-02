@@ -1,6 +1,6 @@
 'use client';
 
-// "Result(demo)" on /event/[slug] — admin only. Lists the awards built on
+// "Result" on /event/[slug] — admin only, shown while the AWARDS column is on in /admin/display. Lists the awards built on
 // /admin/award-builder for the selected distance; each name opens its result page.
 
 import Link from 'next/link';
@@ -49,7 +49,7 @@ export default function CustomAwardMenu({ customAwards, categoryName, campaignSl
                     <path d="M8 13h8" />
                     <path d="M8 17h5" />
                 </svg>
-                Result(demo)
+                Result
                 {awards.length > 0 && <span className="rounded-full bg-blue-600 px-1.5 text-[10px] leading-4 text-white">{awards.length}</span>}
                 <span className="text-xs opacity-60">▾</span>
             </button>

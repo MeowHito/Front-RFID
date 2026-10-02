@@ -1,7 +1,7 @@
 'use client';
 
 // Result page of one admin-built award (/admin/award-builder), opened from the
-// "Result(demo)" menu on /event/[slug]. Admin only. The ranking is recomputed from
+// "Result" menu on /event/[slug]. Admin only. The ranking is recomputed from
 // the live runner pool exactly like the award-builder popup does.
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
