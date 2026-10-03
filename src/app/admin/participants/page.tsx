@@ -1542,6 +1542,7 @@ export default function ParticipantsPage() {
                                         { key: 'no_nat', label: 'ไม่มี สัญชาติ', labelEn: 'No Nat.', bg: 'bg-orange-50', text: 'text-orange-800', border: 'border-orange-400', countColor: 'text-orange-600' },
                                         { key: 'dup_chip', label: 'ChipCode ซ้ำ', labelEn: 'Dup Chip', bg: 'bg-amber-50', text: 'text-amber-800', border: 'border-amber-400', countColor: 'text-amber-600' },
                                         { key: 'no_chip', label: 'ไม่มี ChipCode', labelEn: 'No Chip', bg: 'bg-amber-50', text: 'text-amber-800', border: 'border-amber-400', countColor: 'text-amber-600' },
+                                        { key: 'no_wave', label: 'ไม่มี wave', labelEn: 'No Wave', bg: 'bg-indigo-50', text: 'text-indigo-800', border: 'border-indigo-400', countColor: 'text-indigo-600' },
                                     ].map(f => {
                                         const active = listRunnerStatus.includes(f.key);
                                         const cnt = statusCounts[f.key] || 0;
