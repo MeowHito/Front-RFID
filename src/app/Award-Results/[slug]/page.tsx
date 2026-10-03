@@ -19,7 +19,8 @@ import {
     type CustomAwardRunner,
 } from '@/lib/custom-awards';
 import CustomAwardResults, { useAwardSplits } from '@/components/CustomAwardResults';
-import { ArrowPathIcon, ComputerDesktopIcon } from '@heroicons/react/24/outline';
+import { downloadCustomAwardPdf } from '@/lib/award-pdf';
+import { ArrowDownTrayIcon, ArrowPathIcon, ComputerDesktopIcon } from '@heroicons/react/24/outline';
 
 interface Campaign {
     _id: string;
@@ -51,6 +52,7 @@ export default function AwardResultsPage() {
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
     const [error, setError] = useState('');
+    const [pdfBusy, setPdfBusy] = useState(false);
     const splits = useAwardSplits();
     const { reset: resetSplits } = splits;
 
@@ -99,6 +101,21 @@ export default function AwardResultsPage() {
     const categoryRow = award ? campaign?.categories?.find(c => normCat(c.name) === normCat(award.category)) : undefined;
     const eventHref = `/event/${encodeURIComponent(campaign?.slug || slug)}`;
 
+    const categoryTitle = award ? `${award.category}${categoryRow?.distance ? ` (${categoryRow.distance})` : ''}` : '';
+
+    const downloadPdf = async () => {
+        if (!award || pdfBusy) return;
+        setPdfBusy(true);
+        try {
+            await downloadCustomAwardPdf({ award, groups, language: th ? 'th' : 'en', eventName, categoryTitle, eventDate: campaign?.eventDate });
+        } catch (err) {
+            console.error('Award PDF export failed', err);
+            window.alert(th ? 'สร้าง PDF ไม่สำเร็จ ลองใหม่อีกครั้ง' : 'Could not create the PDF — please try again.');
+        } finally {
+            setPdfBusy(false);
+        }
+    };
+
     useEffect(() => {
         document.title = award ? `${award.name} · ${eventName}` : 'Award result';
     }, [award, eventName]);
@@ -134,17 +151,22 @@ export default function AwardResultsPage() {
                         <h1 className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1 self-center text-xl font-extrabold md:text-2xl">
                             {award ? (
                                 <>
-                                    <span className="text-amber-300">{award.category}{categoryRow?.distance ? ` (${categoryRow.distance})` : ''}</span>
+                                    <span className="text-amber-300">{categoryTitle}</span>
                                     <span>{award.name}</span>
                                 </>
                             ) : (th ? 'ไม่พบรางวัล' : 'Award not found')}
                         </h1>
                         {award && (
-                            <div className="flex shrink-0 items-center gap-2">
+                            <div className="flex flex-wrap items-center gap-2">
                                 <button type="button" onClick={() => void load(true)} disabled={refreshing}
                                     className="inline-flex items-center gap-1.5 rounded-md bg-white/10 px-3 py-1.5 text-sm font-semibold text-white hover:bg-white/20 disabled:opacity-50">
                                     <ArrowPathIcon className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
                                     {th ? 'รีเฟรช' : 'Refresh'}
+                                </button>
+                                <button type="button" onClick={() => void downloadPdf()} disabled={pdfBusy || refreshing}
+                                    className="inline-flex items-center gap-1.5 rounded-md bg-rose-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-rose-700 disabled:opacity-60">
+                                    <ArrowDownTrayIcon className={`h-4 w-4 ${pdfBusy ? 'animate-bounce' : ''}`} />
+                                    {pdfBusy ? (th ? 'กำลังสร้าง PDF...' : 'Creating PDF...') : (th ? 'ดาวน์โหลด PDF' : 'Download PDF')}
                                 </button>
                                 {/* Big-screen board of this award (and the same award on the other distances) — admin only. */}
                                 {isAdmin && (
