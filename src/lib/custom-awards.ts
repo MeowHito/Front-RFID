@@ -428,7 +428,9 @@ function computeWithExclusions(
     }
 
     // Age group: bucket labels are unified across spellings ("30-39" vs "30 - 39").
-    const { buckets, canonicalLabelOf } = buildCanonicalAgeGroups(finishers.map(r => r.ageGroup));
+    // Buckets come from every entrant in the distance, not just finishers, so each
+    // age group's (empty) table is already on screen before the first finisher.
+    const { buckets, canonicalLabelOf } = buildCanonicalAgeGroups(pool.map(r => r.ageGroup));
     const byBucket = new Map<string, CustomAwardRunner[]>();
     for (const r of finishers) {
         const label = canonicalizeAgeGroup(r.ageGroup, canonicalLabelOf);
