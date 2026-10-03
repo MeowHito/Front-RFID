@@ -105,7 +105,6 @@ export default function CustomAwardResults({ award, groups, th, splits }: {
                 <div className="py-8 text-center text-sm text-gray-400!">{th ? 'ยังไม่มีผู้เข้าเส้นชัยในระยะนี้' : 'No finishers in this distance yet'}</div>
             )}
             {groups.map(g => {
-                if (g.runners.length === 0 && award.type === 'ageGroup') return null;
                 return (
                     <div key={g.key}>
                         {award.type !== 'overall' && (

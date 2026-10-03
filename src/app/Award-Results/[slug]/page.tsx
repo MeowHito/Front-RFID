@@ -164,9 +164,10 @@ export default function AwardResultsPage() {
                                     {th ? 'รีเฟรช' : 'Refresh'}
                                 </button>
                                 <button type="button" onClick={() => void downloadPdf()} disabled={pdfBusy || refreshing}
+                                    title={th ? 'ดาวน์โหลด PDF' : 'Download PDF'}
                                     className="inline-flex items-center gap-1.5 rounded-md bg-rose-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-rose-700 disabled:opacity-60">
                                     <ArrowDownTrayIcon className={`h-4 w-4 ${pdfBusy ? 'animate-bounce' : ''}`} />
-                                    {pdfBusy ? (th ? 'กำลังสร้าง PDF...' : 'Creating PDF...') : (th ? 'ดาวน์โหลด PDF' : 'Download PDF')}
+                                    {pdfBusy ? (th ? 'กำลังสร้าง PDF...' : 'Creating PDF...') : 'PDF'}
                                 </button>
                                 {/* Big-screen board of this award (and the same award on the other distances) — admin only. */}
                                 {isAdmin && (
