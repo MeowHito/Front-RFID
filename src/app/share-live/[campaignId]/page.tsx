@@ -115,7 +115,8 @@ export default function ShareLiveMonitorPage() {
     const [search, setSearch] = useState('');
     const [sortBy, setSortBy] = useState<'arrival' | 'bib' | 'name' | 'elapsed' | 'pace'>('arrival');
     const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
-    const [statusFilter, setStatusFilter] = useState<string | null>('passed');
+    // Always one summary chip selected — this page never shows passed and not-yet-passed mixed.
+    const [statusFilter, setStatusFilter] = useState<string>('passed');
     const [rankDeltas, setRankDeltas] = useState<Map<string, number>>(new Map());
     const intervalRef = useRef<NodeJS.Timeout | null>(null);
     const prevRanksRef = useRef<Map<string, number>>(new Map());
@@ -163,7 +164,7 @@ export default function ShareLiveMonitorPage() {
         if (!campaignId || !selectedCp) return;
         setDataLoading(true);
         try {
-            const res = await fetch(`/api/timing/checkpoint-by-campaign/${campaignId}?cp=${encodeURIComponent(selectedCp)}`, { cache: 'no-store' });
+            const res = await fetch(`/api/timing/checkpoint-by-campaign/${campaignId}?cp=${encodeURIComponent(selectedCp)}&strict=1`, { cache: 'no-store' });
             if (!res.ok) throw new Error();
             const data = await res.json();
             const newRunners = Array.isArray(data) ? dedupeRunners(data) : [];
@@ -351,14 +352,13 @@ export default function ShareLiveMonitorPage() {
     const filteredRunners = runners.filter(r => {
         const runnerStatus = normalizeRunnerStatus(r.status);
         const isStopped = ['dnf', 'dns', 'dq'].includes(runnerStatus);
-        if (statusFilter) {
-            if (statusFilter === 'passed') {
-                if (isStopped || !r.scanTime) return false;
-            } else if (statusFilter === 'coming') {
-                if (isStopped || !!r.scanTime) return false;
-            } else if (statusFilter === 'dns' || statusFilter === 'dnf' || statusFilter === 'dq') {
-                if (runnerStatus !== statusFilter) return false;
-            }
+        if (statusFilter === 'passed') {
+            if (isStopped || !r.scanTime) return false;
+        } else if (statusFilter === 'coming') {
+            // Same rule as the "มา" count — a finished runner with no read here is not on their way.
+            if (isStopped || runnerStatus === 'finished' || !!r.scanTime) return false;
+        } else if (statusFilter === 'dns' || statusFilter === 'dnf' || statusFilter === 'dq') {
+            if (runnerStatus !== statusFilter) return false;
         }
         if (!search) return true;
         const term = search.toLowerCase();
@@ -458,7 +458,7 @@ export default function ShareLiveMonitorPage() {
                             { key: 'dq', label: 'DQ', count: runners.filter(r => normalizeRunnerStatus(r.status) === 'dq').length, bg: 'text-pink-800 bg-pink-200', bgActive: 'bg-pink-600 text-white' },
                         ].map(item => (
                             <button key={item.key ?? 'all'}
-                                onClick={() => setStatusFilter(prev => prev === item.key ? null : item.key)}
+                                onClick={() => setStatusFilter(prev => (prev === item.key ? 'passed' : item.key))}
                                 className={`flex-shrink-0 whitespace-nowrap min-h-[32px] px-2 sm:px-3 py-1.5 rounded-lg text-[11px] sm:text-[12px] font-bold cursor-pointer border-none transition-all ${statusFilter === item.key ? item.bgActive : item.bg
                                     } hover:opacity-80`}
                             >
