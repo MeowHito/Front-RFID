@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { authHeaders } from '@/lib/authHeaders';
 import { useRouter } from 'next/navigation';
 
 /** /scanning-custom with no slug → jump to the starred campaign's display. */
@@ -11,7 +12,7 @@ export default function ScanningCustomRedirectPage() {
     useEffect(() => {
         (async () => {
             try {
-                const res = await fetch('/api/campaigns/featured');
+                const res = await fetch('/api/campaigns/featured', { cache: 'no-store', headers: authHeaders() });
                 if (res.ok) {
                     const data = await res.json();
                     if (data?.slug) { router.replace(`/scanning-custom/${data.slug}`); return; }

@@ -365,7 +365,7 @@ export default function ApplicantsImportPage() {
     useEffect(() => {
         (async () => {
             try {
-                const res = await fetch('/api/campaigns/featured', { cache: 'no-store' });
+                const res = await fetch('/api/campaigns/featured', { cache: 'no-store', headers: authHeaders() });
                 if (res.ok) {
                     const data = await res.json();
                     if (data?._id) {
@@ -377,7 +377,7 @@ export default function ApplicantsImportPage() {
             } catch { /* */ }
             finally { setLoading(false); }
         })();
-    }, [loadCount, loadExisting]);
+    }, [authHeaders, loadCount, loadExisting]);
 
     // Parse every sheet in the workbook (rosters often split distances across
     // sheets, e.g. 100K / 50K / 25K / 10K) and merge them into one roster.

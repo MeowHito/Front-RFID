@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { authHeaders } from '@/lib/authHeaders';
 import { useRouter } from 'next/navigation';
 
 export default function OverallWinnersRedirectPage() {
@@ -10,7 +11,7 @@ export default function OverallWinnersRedirectPage() {
     useEffect(() => {
         (async () => {
             try {
-                const res = await fetch('/api/campaigns/featured', { cache: 'no-store' });
+                const res = await fetch('/api/campaigns/featured', { cache: 'no-store', headers: authHeaders() });
                 if (res.ok) {
                     const data = await res.json();
                     if (data?.slug) {

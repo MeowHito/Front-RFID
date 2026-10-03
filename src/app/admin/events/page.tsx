@@ -157,7 +157,7 @@ export default function EventsPage() {
         let cancelled = false;
         (async () => {
             try {
-                const res = await fetch('/api/campaigns/featured', { cache: 'no-store' });
+                const res = await fetch('/api/campaigns/featured', { cache: 'no-store', headers: authHeaders() });
                 if (res.ok && !cancelled) {
                     const data = await res.json();
                     setFeaturedId(data?._id ?? null);

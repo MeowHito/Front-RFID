@@ -283,7 +283,7 @@ export default function EditHistoryPage() {
     useEffect(() => {
         (async () => {
             try {
-                const res = await fetch('/api/campaigns/featured', { cache: 'no-store' });
+                const res = await fetch('/api/campaigns/featured', { cache: 'no-store', headers: authHeaders() });
                 if (!res.ok) throw new Error('no featured campaign');
                 const data = await res.json();
                 if (data?._id) {
@@ -295,7 +295,7 @@ export default function EditHistoryPage() {
             setCampaign(null);
             setLoading(false);
         })();
-    }, [load]);
+    }, [load, authHeaders]);
 
     // ── Derived ──
     const events = useMemo(() => {

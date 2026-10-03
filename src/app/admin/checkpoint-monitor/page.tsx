@@ -157,7 +157,7 @@ export default function CheckpointMonitorPage() {
     useEffect(() => {
         async function load() {
             try {
-                const res = await fetch('/api/campaigns/featured', { cache: 'no-store' });
+                const res = await fetch('/api/campaigns/featured', { cache: 'no-store', headers: authHeaders() });
                 if (!res.ok) throw new Error();
                 const data = await res.json();
                 if (data?._id) setCampaign(data);

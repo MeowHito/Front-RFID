@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { authHeaders } from '@/lib/authHeaders';
 import { useLanguage } from '@/lib/language-context';
 import AdminLayout from '../AdminLayout';
 import { io, Socket } from 'socket.io-client';
@@ -38,7 +39,7 @@ export default function CctvLivePage() {
 
     // Load featured campaign
     useEffect(() => {
-        fetch('/api/campaigns/featured', { cache: 'no-store' })
+        fetch('/api/campaigns/featured', { cache: 'no-store', headers: authHeaders() })
             .then(r => r.ok ? r.json() : null)
             .then(data => {
                 if (data?._id) {

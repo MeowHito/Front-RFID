@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { authHeaders } from '@/lib/authHeaders';
 import { useParams } from 'next/navigation';
 import { io, Socket } from 'socket.io-client';
 
@@ -89,7 +90,7 @@ export default function CameraPage() {
                     }
                 }
 
-                const featuredRes = await fetch('/api/campaigns/featured', { cache: 'no-store' });
+                const featuredRes = await fetch('/api/campaigns/featured', { cache: 'no-store', headers: authHeaders() });
                 if (!featuredRes.ok) return;
                 const featured = await featuredRes.json();
                 if (featured?._id) {

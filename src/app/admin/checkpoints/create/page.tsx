@@ -400,7 +400,7 @@ export default function RouteMappingPage() {
     useEffect(() => {
         async function loadFeatured() {
             try {
-                const fRes = await fetch('/api/campaigns/featured', { cache: 'no-store' });
+                const fRes = await fetch('/api/campaigns/featured', { cache: 'no-store', headers: authHeaders() });
                 if (!fRes.ok) throw new Error('No featured');
                 const data = await fRes.json();
                 if (data && data._id) {

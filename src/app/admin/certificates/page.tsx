@@ -711,7 +711,7 @@ export default function CertificatesPage() {
     useEffect(() => {
         async function loadFeatured() {
             try {
-                const res = await fetch('/api/campaigns/featured?full=true', { cache: 'no-store' });
+                const res = await fetch('/api/campaigns/featured?full=true', { cache: 'no-store', headers: authHeaders() });
                 if (!res.ok) throw new Error('no featured');
                 const data = await res.json();
                 if (data?._id) {

@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback, useMemo } from 'react';
+import { authHeaders } from '@/lib/authHeaders';
 import * as XLSX from 'xlsx';
 import { useLanguage } from '@/lib/language-context';
 import { buildCanonicalAgeGroups, canonicalizeAgeGroup, normalizeAgeGroupLabel } from '@/lib/age-groups';
@@ -209,7 +210,7 @@ export default function ExportPage() {
     useEffect(() => {
         async function loadFeatured() {
             try {
-                const res = await fetch('/api/campaigns/featured', { cache: 'no-store' });
+                const res = await fetch('/api/campaigns/featured', { cache: 'no-store', headers: authHeaders() });
                 if (!res.ok) throw new Error('No featured');
                 const data = await res.json();
                 if (data && data._id) setCampaign(data);

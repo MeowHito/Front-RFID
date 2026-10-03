@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
+import { authHeaders } from '@/lib/authHeaders';
 import Link from 'next/link';
 import { useLanguage } from '@/lib/language-context';
 
@@ -131,7 +132,7 @@ export default function ScanPage() {
 
     // ----- load the featured (starred) campaign -----
     useEffect(() => {
-        fetch('/api/campaigns/featured', { cache: 'no-store' })
+        fetch('/api/campaigns/featured', { cache: 'no-store', headers: authHeaders() })
             .then(r => r.json())
             .then(data => setCampaign(data && data._id ? data : null))
             .catch(() => setCampaign(null));

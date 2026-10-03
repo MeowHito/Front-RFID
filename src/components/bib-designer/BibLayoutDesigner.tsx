@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { authHeaders } from '@/lib/authHeaders';
 import { useRouter } from 'next/navigation';
 import AdminLayout from '@/app/admin/AdminLayout';
 import { useAuth } from '@/lib/auth-context';
@@ -185,7 +186,7 @@ export default function BibLayoutDesigner({ config }: { config: BibDesignerConfi
     useEffect(() => {
         (async () => {
             try {
-                const res = await fetch('/api/campaigns/featured?full=true', { cache: 'no-store' });
+                const res = await fetch('/api/campaigns/featured?full=true', { cache: 'no-store', headers: authHeaders() });
                 if (res.ok) {
                     const data = await res.json();
                     setCampaign(data);

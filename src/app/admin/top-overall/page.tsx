@@ -113,7 +113,7 @@ export default function TopOverallPage() {
 
     const fetchCampaign = async () => {
         try {
-            const res = await fetch('/api/campaigns/featured');
+            const res = await fetch('/api/campaigns/featured', { cache: 'no-store', headers: authHeaders() });
             if (res.ok) {
                 const data = await res.json();
                 setCampaign(data);

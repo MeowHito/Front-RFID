@@ -58,7 +58,7 @@ export default function CctvCamerasPage() {
 
     // Load featured campaign
     useEffect(() => {
-        fetch('/api/campaigns/featured', { cache: 'no-store' })
+        fetch('/api/campaigns/featured', { cache: 'no-store', headers: authHeaders() })
             .then(r => r.ok ? r.json() : null)
             .then(data => {
                 if (data?._id) {

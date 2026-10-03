@@ -1553,7 +1553,7 @@ export function GeneralChartView({ monitor }: { monitor?: MonitorRequest }) {
                 const url = wantedCampaignId
                     ? `/api/campaigns/${wantedCampaignId}`
                     : '/api/campaigns/featured';
-                const res = await fetch(url, { cache: 'no-store' });
+                const res = await fetch(url, { cache: 'no-store', headers: authHeaders() });
                 if (!res.ok) throw new Error();
                 const data = await res.json();
                 if (data?._id) setCampaign(data);

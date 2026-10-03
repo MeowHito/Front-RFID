@@ -76,7 +76,7 @@ export default function CctvBetaCamerasPage() {
   const [editSaving, setEditSaving] = useState(false);
 
   useEffect(() => {
-    fetch("/api/campaigns/featured", { cache: "no-store" })
+    fetch('/api/campaigns/featured', { cache: 'no-store', headers: authHeaders() })
       .then((r) => r.json())
       .then((d) => {
         if (d?._id) {

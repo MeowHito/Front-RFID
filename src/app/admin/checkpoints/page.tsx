@@ -98,7 +98,7 @@ export default function ManageCheckpointsPage() {
         let cancelled = false;
         Promise.all([
             fetch('/api/campaigns', { cache: 'no-store' }).then(r => r.json()),
-            fetch('/api/campaigns/featured', { cache: 'no-store' }).then(r => r.ok ? r.json() : null),
+            fetch('/api/campaigns/featured', { cache: 'no-store', headers: authHeaders() }).then(r => r.ok ? r.json() : null),
         ])
             .then(([json, featured]) => {
                 if (cancelled) return;

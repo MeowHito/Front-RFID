@@ -107,7 +107,7 @@ export default function CctvBetaRecordingsPage() {
     const [timeSearching, setTimeSearching] = useState(false);
 
     useEffect(() => {
-        fetch('/api/campaigns/featured', { cache: 'no-store' })
+        fetch('/api/campaigns/featured', { cache: 'no-store', headers: authHeaders() })
             .then(r => r.json())
             .then(d => { if (d?._id) setSelectedCampaign(d._id); }).catch(() => {});
 

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { authHeaders } from '@/lib/authHeaders';
 import AdminLayout from '../AdminLayout';
 import { useLanguage } from '@/lib/language-context';
 import SharedHlsPlayer from '@/components/HlsPlayer';
@@ -112,7 +113,7 @@ export default function CctvBetaLivePage() {
     const [autoRefresh, setAutoRefresh] = useState(true);
 
     useEffect(() => {
-        fetch('/api/campaigns/featured', { cache: 'no-store' })
+        fetch('/api/campaigns/featured', { cache: 'no-store', headers: authHeaders() })
             .then(r => r.json())
             .then(d => { if (d?._id) setSelectedCampaign(d._id); }).catch(() => {});
     }, []);

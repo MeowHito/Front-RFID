@@ -29,6 +29,14 @@ export async function GET(request: NextRequest) {
         }
 
         const data = await res.json();
+        // A logged-in caller gets THEIR OWN selected campaign — never let the nginx
+        // proxy cache store it, or every account gets served one shared copy (the
+        // "star jumps to another event" bug). Anonymous (global) stays cacheable.
+        if (authHeader || cookieToken) {
+            return NextResponse.json(data, {
+                headers: { 'Cache-Control': 'private, no-store', 'X-Accel-Expires': '0' },
+            });
+        }
         return NextResponse.json(data);
     } catch (error) {
         console.error('Error fetching featured campaign:', error);

@@ -519,7 +519,7 @@ export default function ESlip2EditorPage() {
     useEffect(() => {
         (async () => {
             try {
-                const res = await fetch('/api/campaigns/featured?full=true');
+                const res = await fetch('/api/campaigns/featured?full=true', { cache: 'no-store', headers: authHeaders() });
                 if (res.ok) {
                     const data = await res.json();
                     setCampaign(data);

@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { authHeaders } from '@/lib/authHeaders';
 import { useLanguage } from '@/lib/language-context';
 import { useAuth } from '@/lib/auth-context';
 import { useState, useRef, useEffect } from 'react';
@@ -25,7 +26,7 @@ export default function AdminHeader({ onToggleSidebar }: AdminHeaderProps) {
     useEffect(() => {
         async function loadFeatured() {
             try {
-                const res = await fetch('/api/campaigns/featured', { cache: 'no-store' });
+                const res = await fetch('/api/campaigns/featured', { cache: 'no-store', headers: authHeaders() });
                 if (res.ok) {
                     const data = await res.json();
                     setFeatured(data && data._id ? data : null);

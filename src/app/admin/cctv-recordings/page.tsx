@@ -226,7 +226,7 @@ export default function CctvRecordingsPage() {
     }, [campaignId, recordings, load]);
 
     useEffect(() => {
-        fetch('/api/campaigns/featured', { cache: 'no-store' })
+        fetch('/api/campaigns/featured', { cache: 'no-store', headers: authHeaders() })
             .then(r => r.ok ? r.json() : null)
             .then(d => { if (d?._id) { setCampaignId(d._id); setCampaignName(d.name || d.nameTh || ''); } })
             .catch(() => {});

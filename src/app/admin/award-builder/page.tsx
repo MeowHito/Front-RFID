@@ -134,7 +134,7 @@ export default function AwardBuilderPage() {
     useEffect(() => {
         (async () => {
             try {
-                const res = await fetch('/api/campaigns/featured');
+                const res = await fetch('/api/campaigns/featured', { cache: 'no-store', headers: authHeaders() });
                 if (res.ok) {
                     const data: Campaign | null = await res.json();
                     if (data) {

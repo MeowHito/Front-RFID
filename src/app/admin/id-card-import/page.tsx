@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback, useRef } from 'react';
+import { authHeaders } from '@/lib/authHeaders';
 import { useLanguage } from '@/lib/language-context';
 import AdminLayout from '../AdminLayout';
 import '../admin.css';
@@ -154,7 +155,7 @@ export default function IdCardImportPage() {
     useEffect(() => {
         async function loadFeatured() {
             try {
-                const res = await fetch('/api/campaigns/featured', { cache: 'no-store' });
+                const res = await fetch('/api/campaigns/featured', { cache: 'no-store', headers: authHeaders() });
                 if (!res.ok) throw new Error('No featured');
                 const data = await res.json();
                 if (data && data._id) {
