@@ -59,6 +59,10 @@ export interface CampaignData {
     name: string;
     /** Campaign distances — carries the per-distance "no age groups" switch. */
     categories?: { name: string; distance?: string; ageGroupEnabled?: boolean }[];
+    /** Award Builder awards + /admin/display columns — with the "awards" column on,
+     *  the AWARD line prints the Award Builder placings (lib/custom-awards). */
+    customAwards?: unknown;
+    displayColumns?: string[];
     eventDate: string;
     location?: string;
     slug?: string;

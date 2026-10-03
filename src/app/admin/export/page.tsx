@@ -12,6 +12,7 @@ import {
     makeCompareRunnerRankOrder,
     type LiveRank,
 } from '@/lib/live-ranking';
+import { ageGroupRankByFor } from '@/lib/custom-awards';
 import AdminLayout from '../AdminLayout';
 import '../admin.css';
 
@@ -24,6 +25,9 @@ interface Campaign {
     categories?: RaceCategory[];
     raceFinished?: boolean;
     separateOverallNationalityCategories?: string[];
+    customAwards?: unknown;
+    displayColumns?: string[];
+    genderSplitEnabled?: boolean;
 }
 
 interface Runner {
@@ -322,9 +326,15 @@ export default function ExportPage() {
     // Pooled by category — the same key the distance filter below uses — so a runner
     // whose category was moved without moving eventId still ranks inside the distance
     // it is exported under (matches /event/[id]).
+    // AGE follows the distance's Award Builder age-group award (Gun/Net), like /event.
     const liveRanks = useMemo(
-        () => computeLiveRanks(rankedRunners, canonicalAgeGroupOf, (r) => r.category || r.eventId || '_'),
-        [rankedRunners, canonicalAgeGroupOf],
+        () => computeLiveRanks(
+            rankedRunners,
+            canonicalAgeGroupOf,
+            (r) => r.category || r.eventId || '_',
+            (r) => ageGroupRankByFor(campaign, r.category),
+        ),
+        [rankedRunners, canonicalAgeGroupOf, campaign],
     );
 
     const rankOf = useCallback(

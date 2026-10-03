@@ -319,22 +319,24 @@ export function computeGenderRanks(runners: AwardRunnerLike[]): Map<string, numb
 }
 
 /**
- * Age-group placing scoped to (gender, age-group), by NET time. Age groups are
- * canonicalized the same way as the award computation so labels group consistently.
+ * Age-group placing scoped to (gender, age-group), by NET time — or GUN time when
+ * `rankBy: 'gun'` (the distance's Award Builder age-group award ranks by gun, see
+ * `ageGroupRankByFor` in lib/custom-awards). Age groups are canonicalized the same
+ * way as the award computation so labels group consistently.
  * Returns a map of runnerId → rank within the runner's gender + age group.
  */
 export function computeAgeGroupRanks(
     runners: AwardRunnerLike[],
-    opts?: { genderSplit?: boolean },
+    opts?: { genderSplit?: boolean; rankBy?: 'gun' | 'net' },
 ): Map<string, number> {
     // Gender split off → one ranking per age group across the whole field.
     const genderSplit = opts?.genderSplit !== false;
     const finished = runners.filter(r => r.status === 'finished' && (r.netTime || r.gunTime || r.elapsedTime));
     const { canonicalLabelOf } = buildCanonicalAgeGroups(finished.map(r => r.ageGroup));
-    const byNet = [...finished].sort(compareAgeGroupByNet);
+    const ordered = [...finished].sort(opts?.rankBy === 'gun' ? compareOverallByGun : compareAgeGroupByNet);
     const counters: Record<string, number> = {};
     const result = new Map<string, number>();
-    for (const r of byNet) {
+    for (const r of ordered) {
         const ag = canonicalizeAgeGroup(r.ageGroup, canonicalLabelOf);
         const key = genderSplit ? `${String(r.gender || '_')}::${ag || '_'}` : `${ag || '_'}`;
         counters[key] = (counters[key] || 0) + 1;

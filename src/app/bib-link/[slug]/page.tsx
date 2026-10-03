@@ -14,6 +14,7 @@ import {
     computeTargetBandLabel,
 } from '@/components/eslip/eslip-templates';
 import { computeAwardsForCategory, formatAwardLabel } from '@/lib/awards';
+import { customAwardPlacingsFor, formatCustomAwardPlacings, usesCustomAwards } from '@/lib/custom-awards';
 import { isNationalitySplitCategory } from '@/lib/nationality';
 
 /** Roles that get the auto-print E-Slip receipt flow instead of the link/QR card. */
@@ -236,7 +237,10 @@ export default function BibLinkPage() {
                             includeTopRunners: true,
                         });
                         const mine = awards.get(r._id);
-                        award = mine ? formatAwardLabel(mine) : null;
+                        // AWARDS column on in /admin/display → Award Builder placings, as on /event.
+                        award = usesCustomAwards(c)
+                            ? formatCustomAwardPlacings(customAwardPlacingsFor(r._id, pool, c, r.category))
+                            : (mine ? formatAwardLabel(mine) : null);
                     }
                 } catch { /* award is best-effort; slip still prints without it */ }
             }

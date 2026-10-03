@@ -6,7 +6,7 @@
 // live runner pool every time, so the list always reflects the real results.
 
 import { buildCanonicalAgeGroups, canonicalizeAgeGroup } from './age-groups';
-import { isThaiNationality } from './nationality';
+import { isThaiNationality, normalizeCategoryName } from './nationality';
 import { formatTime } from './utils';
 
 export type CustomAwardType = 'overall' | 'gender' | 'ageGroup';
@@ -94,6 +94,39 @@ export const PRIVATE_PERSONAL_FIELDS = new Set(['phone', 'birthDate']);
  *  what publishes the trophy awards: the "Result" menu on /event and their result pages. */
 export function isAwardsColumnOn(displayColumns: unknown): boolean {
     return Array.isArray(displayColumns) && displayColumns.includes('awards');
+}
+
+/** The campaign fields that decide which award system an event uses. */
+export interface CustomAwardCampaignLike {
+    customAwards?: unknown;
+    displayColumns?: unknown;
+    genderSplitEnabled?: boolean | null;
+}
+
+/** Does this event hand out its awards from /admin/award-builder? That is the case
+ *  while the AWARDS column is on in /admin/display; with only the old AWARD column
+ *  on, lib/awards.ts (Overall / Age-group config) stays in charge. */
+export function usesCustomAwards(campaign: CustomAwardCampaignLike | null | undefined): boolean {
+    return isAwardsColumnOn(campaign?.displayColumns);
+}
+
+/**
+ * Gun or Net for the age-group (AGE) placings of one distance. NET by default; an
+ * event on Award Builder awards follows that distance's age-group award — a trophy
+ * award first, else the first one listed — so the AGE number is ranked on the same
+ * clock as the prize. Mirrors backend common/age-group-rank-by.util.ts.
+ */
+export function ageGroupRankByFor(
+    campaign: CustomAwardCampaignLike | null | undefined,
+    category?: string | null,
+): CustomAwardRankBy {
+    if (!usesCustomAwards(campaign)) return 'net';
+    const target = normalizeCategoryName(category);
+    if (!target) return 'net';
+    const ageGroupAwards = normalizeCustomAwards(campaign?.customAwards)
+        .filter(a => a.type === 'ageGroup' && normalizeCategoryName(a.category) === target);
+    const award = ageGroupAwards.find(a => a.showOnEvent) || ageGroupAwards[0];
+    return award ? award.rankBy : 'net';
 }
 
 /** Per-checkpoint columns the admin can tick under "Split times". */
@@ -417,6 +450,58 @@ function computeWithExclusions(
         }
     }
     return groups;
+}
+
+/** One trophy-award placing of a runner, e.g. { name: 'Age Group Result', place: 2 }. */
+export interface CustomAwardPlacing {
+    name: string;
+    place: number;
+    type: CustomAwardType;
+    nationality: CustomAwardNationality;
+}
+
+/**
+ * The trophy-award placings (`showOnEvent`) a runner holds, in the builder's list
+ * order — exactly what the AWARDS column on /event prints for that runner. `pool`
+ * is the runner's distance (every runner of `category`).
+ */
+export function customAwardPlacingsFor(
+    runnerId: string,
+    pool: CustomAwardRunner[],
+    campaign: CustomAwardCampaignLike | null | undefined,
+    category?: string | null,
+): CustomAwardPlacing[] {
+    const allAwards = normalizeCustomAwards(campaign?.customAwards);
+    const norm = (v?: string | null) => String(v || '').trim().toLowerCase();
+    const out: CustomAwardPlacing[] = [];
+    for (const award of allAwards) {
+        if (!award.showOnEvent || norm(award.category) !== norm(category)) continue;
+        const groups = computeCustomAward(pool, award, { genderSplitEnabled: campaign?.genderSplitEnabled !== false, allAwards });
+        for (const g of groups) {
+            const row = g.runners.find(x => x.runner._id === runnerId);
+            if (row) out.push({ name: award.name, place: row.place, type: award.type, nationality: award.nationality });
+        }
+    }
+    return out;
+}
+
+/** "Overall 1, Age Group Result 2" — or null when the runner won nothing. */
+export function formatCustomAwardPlacings(placings: CustomAwardPlacing[]): string | null {
+    return placings.length ? placings.map(p => `${p.name} ${p.place}`).join(', ') : null;
+}
+
+/** The same placings split the way certificate fields are ({{award_overall}},
+ *  {{award_age_group}}, {{award_overall_thai}} …): overall + gender awards count as
+ *  "overall", the Thai/foreign ones by the award's nationality filter. */
+export function customAwardPlacingsByKind(placings: CustomAwardPlacing[]) {
+    const overallish = placings.filter(p => p.type !== 'ageGroup');
+    return {
+        all: formatCustomAwardPlacings(placings),
+        overall: formatCustomAwardPlacings(overallish),
+        ageGroup: formatCustomAwardPlacings(placings.filter(p => p.type === 'ageGroup')),
+        overallThai: formatCustomAwardPlacings(overallish.filter(p => p.nationality === 'thai')),
+        overallForeign: formatCustomAwardPlacings(overallish.filter(p => p.nationality === 'foreign')),
+    };
 }
 
 export function runnerDisplayName(r: CustomAwardRunner, language: 'th' | 'en'): string {

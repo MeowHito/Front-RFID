@@ -8,6 +8,7 @@ import { isRunnerFollowed, loadFollowedRunners, saveFollowedRunners, subscribeFo
 import { computeAwardsForCategory, computeOverallRanks, computeGenderRanks, computeAgeGroupRanks, formatOverallAwardLabel, formatTopRunnersLabel, type AwardResult } from '@/lib/awards';
 import { stripHiddenAgeGroup } from '@/lib/age-group-award-toggle';
 import { bestOfProvinceAwardFor } from '@/lib/thai-provinces';
+import { ageGroupRankByFor, customAwardPlacingsFor, formatCustomAwardPlacings, usesCustomAwards } from '@/lib/custom-awards';
 import { isNationalitySplitCategory } from '@/lib/nationality';
 import { dedupeTimings } from '@/lib/timing-dedupe';
 import { useLanguage } from '@/lib/language-context';
@@ -99,6 +100,10 @@ interface CampaignData {
     excludeAgeGroupTop?: number;
     separateOverallNationalityCategories?: string[];
     targetTimeBands?: TargetTimeBandGroup[];
+    /** Award Builder awards — they replace the Overall/Age-group config above while
+     *  the "awards" column is on in /admin/display. */
+    customAwards?: unknown;
+    displayColumns?: string[];
 }
 
 interface TargetTimeBand {
@@ -350,6 +355,9 @@ export default function RunnerProfilePage() {
     const [timings, setTimings] = useState<TimingRecord[]>([]);
     const [campaign, setCampaign] = useState<CampaignData | null>(null);
     const [award, setAward] = useState<AwardResult | null>(null);
+    // Award Builder placings ("Age Group Result 2") — used instead of `award` when the
+    // event's AWARDS column is on, so this badge reads exactly like /event.
+    const [customAwardText, setCustomAwardText] = useState<string | null>(null);
     const [bestOfProvince, setBestOfProvince] = useState<string | null>(null);
     // Gun-time placings computed from the category pool. Overall is a single combined
     // list (no gender / nationality split); Gender and Age-group are also by gun time —
@@ -434,7 +442,7 @@ export default function RunnerProfilePage() {
     // event table and winner boards do — fetch the whole category pool, then run
     // the shared award algorithm and keep only this runner's result.
     useEffect(() => {
-        if (!runner || !campaign?._id || !runner.category) { setAward(null); setBestOfProvince(null); setGunOverallRank(null); setGunGenderRank(null); setGunAgeGroupRank(null); return; }
+        if (!runner || !campaign?._id || !runner.category) { setAward(null); setCustomAwardText(null); setBestOfProvince(null); setGunOverallRank(null); setGunGenderRank(null); setGunAgeGroupRank(null); return; }
         let cancelled = false;
         (async () => {
             try {
@@ -445,7 +453,7 @@ export default function RunnerProfilePage() {
                     skipStatusCounts: 'true',
                 });
                 const res = await fetch(`/api/runners/paged?${params.toString()}`, { cache: 'no-store' });
-                if (!res.ok) { if (!cancelled) { setAward(null); setBestOfProvince(null); setGunOverallRank(null); setGunGenderRank(null); setGunAgeGroupRank(null); } return; }
+                if (!res.ok) { if (!cancelled) { setAward(null); setCustomAwardText(null); setBestOfProvince(null); setGunOverallRank(null); setGunGenderRank(null); setGunAgeGroupRank(null); } return; }
                 const data = await res.json();
                 const pool = Array.isArray(data?.data) ? data.data : [];
                 // "Best of Province" — same top-N-per-gender local award as the board.
@@ -474,20 +482,26 @@ export default function RunnerProfilePage() {
                     includeTopRunners: true,
                 });
                 // Overall is now a single combined placing (no nationality split); Gender
-                // and Age-group placings are also by gun time.
+                // is by gun time; Age-group by net — or by gun when the distance's
+                // Award Builder age-group award says so.
                 const overallRanks = computeOverallRanks(pool, { separateByNationality: false });
                 const genderRanks = computeGenderRanks(pool);
-                const ageGroupRanks = computeAgeGroupRanks(pool, { genderSplit: campaign.genderSplitEnabled !== false });
+                const ageGroupRanks = computeAgeGroupRanks(pool, {
+                    genderSplit: campaign.genderSplitEnabled !== false,
+                    rankBy: ageGroupRankByFor(campaign, runner.category),
+                });
+                const customOn = usesCustomAwards(campaign);
                 if (!cancelled) {
-                    setAward(awards.get(runner._id) || null);
+                    setAward(customOn ? null : awards.get(runner._id) || null);
+                    setCustomAwardText(customOn ? formatCustomAwardPlacings(customAwardPlacingsFor(runner._id, pool, campaign, runner.category)) : null);
                     setGunOverallRank(overallRanks.get(runner._id) || null);
                     setGunGenderRank(genderRanks.get(runner._id) || null);
                     setGunAgeGroupRank(ageGroupRanks.get(runner._id) || null);
                 }
-            } catch { if (!cancelled) { setAward(null); setBestOfProvince(null); setGunOverallRank(null); setGunGenderRank(null); setGunAgeGroupRank(null); } }
+            } catch { if (!cancelled) { setAward(null); setCustomAwardText(null); setBestOfProvince(null); setGunOverallRank(null); setGunGenderRank(null); setGunAgeGroupRank(null); } }
         })();
         return () => { cancelled = true; };
-    }, [runner, campaign?._id, campaign?.overallDisplayCount, campaign?.overallDisplayCountByCategory, campaign?.overallEnabled, campaign?.overallDisabledCategories, campaign?.ageGroupDisabledCategories, campaign?.categories, campaign?.ageGroupDisplayCount, campaign?.genderSplitEnabled, campaign?.bestOfProvinceEnabled, campaign?.bestOfProvinces, campaign?.excludeOverallFromAgeGroup, campaign?.excludeOverallThaiFromAgeGroup, campaign?.excludeOverallForeignFromAgeGroup, campaign?.separateOverallNationalityCategories, campaign?.topRunnersRangeByCategory, campaign?.topRunnersExcludeOverallCategories, campaign?.topRunnersNetCategories, campaign?.topRunnersEnabled]);
+    }, [runner, campaign?._id, campaign?.customAwards, campaign?.displayColumns, campaign?.overallDisplayCount, campaign?.overallDisplayCountByCategory, campaign?.overallEnabled, campaign?.overallDisabledCategories, campaign?.ageGroupDisabledCategories, campaign?.categories, campaign?.ageGroupDisplayCount, campaign?.genderSplitEnabled, campaign?.bestOfProvinceEnabled, campaign?.bestOfProvinces, campaign?.excludeOverallFromAgeGroup, campaign?.excludeOverallThaiFromAgeGroup, campaign?.excludeOverallForeignFromAgeGroup, campaign?.separateOverallNationalityCategories, campaign?.topRunnersRangeByCategory, campaign?.topRunnersExcludeOverallCategories, campaign?.topRunnersNetCategories, campaign?.topRunnersEnabled]);
 
     useEffect(() => {
         setFollowedRunners(loadFollowedRunners());
@@ -1002,10 +1016,11 @@ export default function RunnerProfilePage() {
                     same way as the public event table + winner boards. Only shown when the
                     runner actually places into an award slot. Age Group placings also show
                     the runner's age group in parentheses. */}
-                {((award && (award.overall || award.ageGroup || award.topRunners)) || bestOfProvince) && (() => {
+                {((award && (award.overall || award.ageGroup || award.topRunners)) || customAwardText || bestOfProvince) && (() => {
                     // "Best of <province>" leads (when earned), then the Overall / Age-group
-                    // award — the two are separated by " | ".
+                    // award (or the Award Builder placings) — separated by " | ".
                     const awardParts: string[] = [];
+                    if (customAwardText) awardParts.push(customAwardText);
                     if (award?.overall) awardParts.push(formatOverallAwardLabel(award));
                     if (award?.ageGroup) awardParts.push(`Age Group ${award.ageGroup}${runner.ageGroup ? ` (${runner.ageGroup})` : ''}`);
                     if (award?.topRunners) awardParts.push(formatTopRunnersLabel(award));

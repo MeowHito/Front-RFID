@@ -8,6 +8,7 @@ import { computeAwardsForCategory, computeOverallRanks, formatAwardLabel } from 
 import { stripHiddenAgeGroup } from '@/lib/age-group-award-toggle';
 import { bestOfProvinceAwardFor } from '@/lib/thai-provinces';
 import { isNationalitySplitCategory } from '@/lib/nationality';
+import { customAwardPlacingsFor, formatCustomAwardPlacings, usesCustomAwards } from '@/lib/custom-awards';
 import { useLanguage } from '@/lib/language-context';
 import {
     RunnerData,
@@ -164,14 +165,19 @@ export default function ESlipView({ apiUrl }: { apiUrl: string }) {
                 });
                 const overallRanks = computeOverallRanks(pool, { separateByNationality: false });
                 const mine = awards.get(runner._id);
+                // AWARDS column on in /admin/display → the slip prints the Award Builder
+                // placings, same as /event; otherwise the Overall / Age-group award.
+                const label = usesCustomAwards(campaign)
+                    ? formatCustomAwardPlacings(customAwardPlacingsFor(runner._id, pool, campaign, runner.category))
+                    : (mine ? formatAwardLabel(mine) : null);
                 if (!cancelled) {
-                    setAwardLabel(mine ? formatAwardLabel(mine) : null);
+                    setAwardLabel(label);
                     setGunOverallRank(overallRanks.get(runner._id) || null);
                 }
             } catch { if (!cancelled) { setAwardLabel(null); setBestOfProvince(null); setGunOverallRank(null); } }
         })();
         return () => { cancelled = true; };
-    }, [runner, campaign?._id, campaign?.overallDisplayCount, campaign?.overallDisplayCountByCategory, campaign?.overallEnabled, campaign?.overallDisabledCategories, campaign?.ageGroupDisabledCategories, campaign?.categories, campaign?.ageGroupDisplayCount, campaign?.bestOfProvinceEnabled, campaign?.bestOfProvinces, campaign?.excludeOverallFromAgeGroup, campaign?.excludeOverallThaiFromAgeGroup, campaign?.excludeOverallForeignFromAgeGroup, campaign?.excludeAgeGroupTop, campaign?.separateOverallNationalityCategories, campaign?.topRunnersRangeByCategory, campaign?.topRunnersExcludeOverallCategories, campaign?.topRunnersNetCategories, campaign?.topRunnersEnabled]);
+    }, [runner, campaign?._id, campaign?.customAwards, campaign?.displayColumns, campaign?.overallDisplayCount, campaign?.overallDisplayCountByCategory, campaign?.overallEnabled, campaign?.overallDisabledCategories, campaign?.ageGroupDisabledCategories, campaign?.categories, campaign?.ageGroupDisplayCount, campaign?.bestOfProvinceEnabled, campaign?.bestOfProvinces, campaign?.excludeOverallFromAgeGroup, campaign?.excludeOverallThaiFromAgeGroup, campaign?.excludeOverallForeignFromAgeGroup, campaign?.excludeAgeGroupTop, campaign?.separateOverallNationalityCategories, campaign?.topRunnersRangeByCategory, campaign?.topRunnersExcludeOverallCategories, campaign?.topRunnersNetCategories, campaign?.topRunnersEnabled]);
 
     const handleBgUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const input = e.currentTarget;

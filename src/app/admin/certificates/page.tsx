@@ -8,6 +8,7 @@ import { stripHiddenAgeGroup } from '@/lib/age-group-award-toggle';
 import { isNationalitySplitCategory } from '@/lib/nationality';
 import { categoryDistanceLabel, resolveRunnerDistanceLabel } from '@/lib/category-distance';
 import { bestOfProvinceAwardFor } from '@/lib/thai-provinces';
+import { customAwardPlacingsByKind, customAwardPlacingsFor, usesCustomAwards } from '@/lib/custom-awards';
 import AdminLayout from '../AdminLayout';
 
 // ============= TYPES =============
@@ -121,6 +122,10 @@ interface Campaign {
     bestOfDisplayCount?: number;
     bestOfProvinceEnabled?: boolean;
     bestOfProvinces?: { province: string; count: number }[];
+    /** Award Builder awards — used instead of the config above while the "awards"
+     *  column is on in /admin/display. */
+    customAwards?: unknown;
+    displayColumns?: string[];
 }
 
 interface AwardLabels {
@@ -835,6 +840,20 @@ export default function CertificatesPage() {
                 });
                 const mine = awardMap.get(selectedRunner._id);
                 const bestOfProvinceLabel = bestOfProvinceAwardFor(selectedRunner._id, pool, !!campaign.bestOfProvinceEnabled, campaign.bestOfProvinces);
+                // AWARDS column on → Award Builder placings, same as /runner/[id]/certificate.
+                if (usesCustomAwards(campaign)) {
+                    const kinds = customAwardPlacingsByKind(customAwardPlacingsFor(selectedRunner._id, pool, campaign, selectedRunner.category));
+                    if (!cancelled) setAwards({
+                        combined: [bestOfProvinceLabel, kinds.all].filter(Boolean).join(' | ') || null,
+                        overall: kinds.overall,
+                        gender: kinds.overall,
+                        ageGroup: kinds.ageGroup,
+                        overallThai: kinds.overallThai,
+                        overallForeign: kinds.overallForeign,
+                        bestOfBrr: bestOfProvinceLabel,
+                    });
+                    return;
+                }
                 const overallLabel = mine?.overall ? formatOverallAwardLabel(mine) : null;
                 const ageGroupLabel = mine?.ageGroup ? `Age Group ${mine.ageGroup}` : null;
                 if (!cancelled) setAwards({
@@ -849,7 +868,7 @@ export default function CertificatesPage() {
             } catch { if (!cancelled) setAwards(EMPTY_AWARDS); }
         })();
         return () => { cancelled = true; };
-    }, [selectedRunner, campaign?._id, campaign?.overallDisplayCount, campaign?.overallDisplayCountByCategory, campaign?.overallEnabled, campaign?.overallDisabledCategories, campaign?.ageGroupDisabledCategories, campaign?.categories, campaign?.ageGroupDisplayCount, campaign?.genderSplitEnabled, campaign?.excludeOverallFromAgeGroup, campaign?.excludeOverallThaiFromAgeGroup, campaign?.excludeOverallForeignFromAgeGroup, campaign?.separateOverallNationalityCategories, campaign?.bestOfProvinceEnabled, campaign?.bestOfProvinces]);
+    }, [selectedRunner, campaign?._id, campaign?.customAwards, campaign?.displayColumns, campaign?.overallDisplayCount, campaign?.overallDisplayCountByCategory, campaign?.overallEnabled, campaign?.overallDisabledCategories, campaign?.ageGroupDisabledCategories, campaign?.categories, campaign?.ageGroupDisplayCount, campaign?.genderSplitEnabled, campaign?.excludeOverallFromAgeGroup, campaign?.excludeOverallThaiFromAgeGroup, campaign?.excludeOverallForeignFromAgeGroup, campaign?.separateOverallNationalityCategories, campaign?.bestOfProvinceEnabled, campaign?.bestOfProvinces]);
 
     useEffect(() => {
         const handler = (e: KeyboardEvent) => {

@@ -4,6 +4,7 @@ import { useEffect, useState, useRef, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import { computeAwardsForCategory, formatAwardLabel } from '@/lib/awards';
 import { stripHiddenAgeGroup } from '@/lib/age-group-award-toggle';
+import { customAwardPlacingsFor, formatCustomAwardPlacings, usesCustomAwards } from '@/lib/custom-awards';
 import { isNationalitySplitCategory } from '@/lib/nationality';
 import {
     RunnerData,
@@ -126,7 +127,11 @@ export default function ScanningSlipPhotoPage() {
                     includeTopRunners: true,
                 });
                 const mine = awards.get(runner._id);
-                if (!cancelled) setAwardLabel(mine ? formatAwardLabel(mine) : null);
+                // AWARDS column on in /admin/display → Award Builder placings, as on /event.
+                const label = usesCustomAwards(campaign)
+                    ? formatCustomAwardPlacings(customAwardPlacingsFor(runner._id, pool, campaign, runner.category))
+                    : (mine ? formatAwardLabel(mine) : null);
+                if (!cancelled) setAwardLabel(label);
             } catch { if (!cancelled) setAwardLabel(null); }
         })();
         return () => { cancelled = true; };

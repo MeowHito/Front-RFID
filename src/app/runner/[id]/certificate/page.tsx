@@ -13,6 +13,7 @@ import { stripHiddenAgeGroup } from '@/lib/age-group-award-toggle';
 import { isNationalitySplitCategory } from '@/lib/nationality';
 import { resolveRunnerDistanceLabel, type RaceCategoryLike } from '@/lib/category-distance';
 import { bestOfProvinceAwardFor } from '@/lib/thai-provinces';
+import { customAwardPlacingsByKind, customAwardPlacingsFor, usesCustomAwards } from '@/lib/custom-awards';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -119,6 +120,10 @@ interface CampaignData {
     bestOfDisplayCount?: number;
     bestOfProvinceEnabled?: boolean;
     bestOfProvinces?: { province: string; count: number }[];
+    /** Award Builder awards — used instead of the config above while the "awards"
+     *  column is on in /admin/display. */
+    customAwards?: unknown;
+    displayColumns?: string[];
 }
 
 interface AwardLabels {
@@ -495,6 +500,21 @@ export default function CertificatePage() {
                 if (!cancelled) setGunOverallRank(overallRanks.get(runner._id) || null);
                 const mine = awardMap.get(runner._id);
                 const bestOfProvinceLabel = bestOfProvinceAwardFor(runner._id, pool, !!campaign.bestOfProvinceEnabled, campaign.bestOfProvinces);
+                // AWARDS column on → the certificate prints the Award Builder placings,
+                // the same ones /event, /runner and the e-slip show.
+                if (usesCustomAwards(campaign)) {
+                    const kinds = customAwardPlacingsByKind(customAwardPlacingsFor(runner._id, pool, campaign, category));
+                    if (!cancelled) setAwards({
+                        combined: [bestOfProvinceLabel, kinds.all].filter(Boolean).join(' | ') || null,
+                        overall: kinds.overall,
+                        gender: kinds.overall,
+                        ageGroup: kinds.ageGroup,
+                        overallThai: kinds.overallThai,
+                        overallForeign: kinds.overallForeign,
+                        bestOfBrr: bestOfProvinceLabel,
+                    });
+                    return;
+                }
                 const overallLabel = mine?.overall ? formatOverallAwardLabel(mine) : null;
                 const ageGroupLabel = mine?.ageGroup ? `Age Group ${mine.ageGroup}` : null;
                 if (!cancelled) setAwards({
@@ -509,7 +529,7 @@ export default function CertificatePage() {
             } catch { if (!cancelled) { setAwards(EMPTY_AWARDS); setGunOverallRank(null); } }
         })();
         return () => { cancelled = true; };
-    }, [runner, campaign?._id, campaign?.overallDisplayCount, campaign?.overallDisplayCountByCategory, campaign?.overallEnabled, campaign?.overallDisabledCategories, campaign?.ageGroupDisabledCategories, campaign?.categories, campaign?.ageGroupDisplayCount, campaign?.genderSplitEnabled, campaign?.excludeOverallFromAgeGroup, campaign?.excludeOverallThaiFromAgeGroup, campaign?.excludeOverallForeignFromAgeGroup, campaign?.separateOverallNationalityCategories, campaign?.bestOfProvinceEnabled, campaign?.bestOfProvinces]);
+    }, [runner, campaign?._id, campaign?.customAwards, campaign?.displayColumns, campaign?.overallDisplayCount, campaign?.overallDisplayCountByCategory, campaign?.overallEnabled, campaign?.overallDisabledCategories, campaign?.ageGroupDisabledCategories, campaign?.categories, campaign?.ageGroupDisplayCount, campaign?.genderSplitEnabled, campaign?.excludeOverallFromAgeGroup, campaign?.excludeOverallThaiFromAgeGroup, campaign?.excludeOverallForeignFromAgeGroup, campaign?.separateOverallNationalityCategories, campaign?.bestOfProvinceEnabled, campaign?.bestOfProvinces]);
 
     // Runner with the gun-time overall rank applied, used for token substitution so
     // the certificate's Overall rank matches the /event RANK column.

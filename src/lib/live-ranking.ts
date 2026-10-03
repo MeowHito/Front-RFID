@@ -189,6 +189,17 @@ export function compareRunnerNetRankOrder(a: RankableRunner, b: RankableRunner):
     return compareStableBibOrder(a, b);
 }
 
+const compareRunnerGunOrderNoStoredRank = makeCompareRunnerRankOrder(false);
+
+/**
+ * Age-group (AGE) running order on the given clock: NET by default (above), or GUN
+ * for a distance whose Award Builder age-group award ranks by gun (see
+ * `ageGroupRankByFor` in lib/custom-awards). Both put course progress first.
+ */
+export function compareRunnerAgeGroupOrder(rankBy: 'gun' | 'net') {
+    return rankBy === 'gun' ? compareRunnerGunOrderNoStoredRank : compareRunnerNetRankOrder;
+}
+
 /** Derive effective status from actual RaceTiger timing data. */
 export function deriveEffectiveStatus<T extends RankableRunner>(runner: T): T {
     // Preserve explicit statuses from backend (finished/dq/dnf/dns) — the backend
@@ -231,11 +242,16 @@ export function isRankableRunner(runner: RankableRunner): boolean {
  *                    (see MEMORY: project_category_move_event) is displayed in one
  *                    distance but counted in another, which duplicates a rank number
  *                    inside the table (two rows both showing e.g. RANK 24).
+ * @param ageGroupRankByOf clock of a runner's distance for the AGE rank — NET unless
+ *                    the distance's Award Builder age-group award ranks by gun.
+ *                    Read once per pool (from its first runner) so a pool is never
+ *                    split across two orders.
  */
 export function computeLiveRanks<T extends RankableRunner>(
     rankOrdered: T[],
     ageGroupOf: (runner: T) => string,
     poolKeyOf: (runner: T) => string = (runner) => runner.eventId || '_',
+    ageGroupRankByOf: (runner: T) => 'gun' | 'net' = () => 'net',
 ): Map<string, LiveRank> {
     const eligible = rankOrdered.filter(isRankableRunner);
     const ranks = new Map<string, LiveRank>();
@@ -257,15 +273,26 @@ export function computeLiveRanks<T extends RankableRunner>(
         entry.genRank = genderCounters[genderKey];
     }
 
-    // Age-group (AGE) — by NET time, progress-ordered first (see compareRunnerNetRankOrder).
+    // Age-group (AGE) — by NET time (or GUN, per distance — see ageGroupRankByOf),
+    // progress-ordered first (see compareRunnerAgeGroupOrder).
     // Only count runners that will actually display an age-group rank: DNF/DNS/DQ/
     // not_started render '-' for AGE, yet a DNF-with-progress runner can carry a bogus
     // small net time (a partial leg time) that sorts to the front of its bucket and
     // pushes every finisher +1.
     const hidesCatRank = (status: string) => ['dnf', 'dns', 'dq', 'not_started'].includes(status);
-    const byNet = [...eligible].sort(compareRunnerNetRankOrder);
+    const poolRankBy = new Map<string, 'gun' | 'net'>();
+    for (const runner of eligible) {
+        const eventKey = poolKeyOf(runner) || '_';
+        if (!poolRankBy.has(eventKey)) poolRankBy.set(eventKey, ageGroupRankByOf(runner));
+    }
+    const byGunPool = eligible.filter(r => poolRankBy.get(poolKeyOf(r) || '_') === 'gun');
+    const byNetPool = eligible.filter(r => poolRankBy.get(poolKeyOf(r) || '_') !== 'gun');
+    const ageGroupOrdered = [
+        ...byGunPool.sort(compareRunnerAgeGroupOrder('gun')),
+        ...byNetPool.sort(compareRunnerAgeGroupOrder('net')),
+    ];
     const categoryCounters: Record<string, number> = {};
-    for (const runner of byNet) {
+    for (const runner of ageGroupOrdered) {
         if (hidesCatRank(runner.status)) continue;
         const eventKey = poolKeyOf(runner) || '_';
         const catKey = `${eventKey}::${runner.gender || '_'}::${ageGroupOf(runner) || '_'}`;

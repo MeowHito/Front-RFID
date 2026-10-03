@@ -12,7 +12,7 @@ import CutoffDateTimePicker from '@/components/CutoffDateTimePicker';
 import { getFollowedRunnersForEvent, isRunnerFollowed, loadFollowedRunners, subscribeFollowedRunners, type FollowedRunner } from '@/lib/followed-runners';
 import { isPlaceholderRunner } from '@/lib/placeholder-runners';
 import { computeAwardsForCategory, type AwardResult } from '@/lib/awards';
-import { computeCustomAward, normalizeCustomAwards } from '@/lib/custom-awards';
+import { ageGroupRankByFor, computeCustomAward, normalizeCustomAwards } from '@/lib/custom-awards';
 import { stripHiddenAgeGroups } from '@/lib/age-group-award-toggle';
 import { isNationalitySplitCategory } from '@/lib/nationality';
 import { type AgeGroupBucket, buildCanonicalAgeGroups, canonicalizeAgeGroup, normalizeAgeGroupLabel } from '@/lib/age-groups';
@@ -24,7 +24,7 @@ import { ETA_SLOWDOWN, cutoffAtMs, estimatePaceEtaMs } from '@/lib/routeProgress
 import { countryName, countryToFlag } from '@/lib/country-flags';
 import { buildColumnOrder } from '@/lib/display-columns';
 import {
-    compareRunnerNetRankOrder,
+    compareRunnerAgeGroupOrder,
     computeLiveRanks,
     deriveEffectiveStatus,
     makeCompareRunnerRankOrder,
@@ -1639,6 +1639,13 @@ export default function EventLivePage() {
         [followedRunnersForEvent]
     );
 
+    // AGE is ranked on the clock of the distance's Award Builder age-group award
+    // (Gun/Net) when the event uses those awards — NET otherwise.
+    const ageGroupRankByForCategoryKey = useCallback(
+        (key: string) => ageGroupRankByFor(campaign, categories.find(c => c.key === key)?.categoryName || key),
+        [campaign?.customAwards, campaign?.displayColumns, categories], // eslint-disable-line react-hooks/exhaustive-deps
+    );
+
     const allRankedRunners = useMemo(() => {
         return [...runners].sort(compareRunnerRankOrder);
     }, [runners, campaign?.separateOverallNationalityCategories]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -1667,12 +1674,13 @@ export default function EventLivePage() {
         //   • Gender filter → GEN comes from `liveRanks`, counted down
         //     `allRankedRunners` (progress → gun time). `filtered` already preserves
         //     that order, so leave it alone — re-sorting by time here was the bug.
-        //   • Age-group filter → AGE comes from the net-time counter below, which is
-        //     progress-ordered too, so reuse its exact comparator.
+        //   • Age-group filter → AGE comes from the age-group counter below (net, or
+        //     gun per Award Builder), which is progress-ordered too, so reuse its
+        //     exact comparator.
         const subRankOrder = isMobile && !showAllColumns && !!filterAgeGroup;
         let ordered = filtered;
         if (subRankOrder) {
-            ordered = [...filtered].sort(compareRunnerNetRankOrder);
+            ordered = [...filtered].sort(compareRunnerAgeGroupOrder(ageGroupRankByForCategoryKey(filterCategory)));
         }
         if (!sortAlertsFirst) return ordered;
         // Stable sort: pull the rows worth a look (incomplete checkpoints, DQ) to
@@ -1681,7 +1689,7 @@ export default function EventLivePage() {
             .map((runner, i) => ({ runner, i, alert: runnerNeedsAttention(runner) }))
             .sort((a, b) => (a.alert === b.alert ? a.i - b.i : a.alert ? -1 : 1))
             .map(x => x.runner);
-    }, [allRankedRunners, searchQuery, isSearching, filterGender, followedRunnerIds, filterCategory, filterStatus, filterAgeGroup, resolveRunnerCategoryKey, canonicalAgeGroupOf, getDisplayStatus, sortAlertsFirst, cpDistanceLookup, isMobile, showAllColumns]); // eslint-disable-line react-hooks/exhaustive-deps
+    }, [allRankedRunners, searchQuery, isSearching, filterGender, followedRunnerIds, filterCategory, filterStatus, filterAgeGroup, resolveRunnerCategoryKey, canonicalAgeGroupOf, getDisplayStatus, sortAlertsFirst, cpDistanceLookup, isMobile, showAllColumns, ageGroupRankByForCategoryKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
     // Live overall + gender + age-group ranks — see @/lib/live-ranking for the
     // convention (RANK/GEN by GUN time, AGE by NET time, Overall combined).
@@ -1695,8 +1703,13 @@ export default function EventLivePage() {
     );
 
     const liveRanks = useMemo(
-        () => computeLiveRanks(allRankedRunners, canonicalAgeGroupOf, rankPoolKeyOf),
-        [allRankedRunners, canonicalAgeGroupOf, rankPoolKeyOf],
+        () => computeLiveRanks(
+            allRankedRunners,
+            canonicalAgeGroupOf,
+            rankPoolKeyOf,
+            (runner) => ageGroupRankByForCategoryKey(rankPoolKeyOf(runner)),
+        ),
+        [allRankedRunners, canonicalAgeGroupOf, rankPoolKeyOf, ageGroupRankByForCategoryKey],
     );
 
     /**
