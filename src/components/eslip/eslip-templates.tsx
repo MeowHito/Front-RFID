@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { dedupeTimings } from '@/lib/timing-dedupe';
+import { findRunnerCategory } from '@/lib/category-distance';
 
 // ─── Shared E-Slip types ──────────────────────────────────────────────────────
 
@@ -185,16 +186,33 @@ export function effectiveFinishMs(runner: RunnerData): number | undefined {
     return runner.gunTime || runner.netTime || undefined;
 }
 
-export function effectivePace(runner: RunnerData): string {
+/**
+ * Race distance (km) of the runner. A category is often named, not numbered
+ * ("Mini Marathon", "FUNRUN บุคคลทั่วไป"), so the category string alone isn't
+ * enough: take the campaign's own distance for that category ("10 KM") first,
+ * then a number inside the category name, then the furthest checkpoint distance.
+ */
+export function runnerDistanceKm(runner: RunnerData, campaign?: CampaignData | null, timings?: TimingRecord[] | null): number | null {
+    const cat = findRunnerCategory(runner.category, campaign?.categories);
+    const fromCampaign = parseDistanceValue(cat?.distance) ?? parseDistanceValue(cat?.name);
+    if (fromCampaign && fromCampaign > 0) return fromCampaign;
+    const fromCategory = parseDistanceValue(runner.category);
+    if (fromCategory && fromCategory > 0) return fromCategory;
+    const furthest = Math.max(0, ...(timings || []).map(t => Number(t.distanceFromStart) || 0));
+    return furthest > 0 ? furthest : null;
+}
+
+/** Imported pace when there is one, else finish time ÷ `distKm` (see runnerDistanceKm). */
+export function effectivePace(runner: RunnerData, distKm?: number | null): string {
     if (runner.netPace) return runner.netPace;
     if (runner.gunPace) return runner.gunPace;
-    const dist = parseDistanceValue(runner.category);
+    const dist = distKm ?? parseDistanceValue(runner.category);
     const ms = runner.gunTime || runner.netTime;
     if (ms && ms > 0 && dist && dist > 0) {
         const paceMin = (ms / 60000) / dist;
         const pM = Math.floor(paceMin);
         const pS = Math.round((paceMin - pM) * 60);
-        return `${pM}:${pS.toString().padStart(2, '0')}`;
+        return `${String(pM).padStart(2, '0')}:${pS.toString().padStart(2, '0')}`;
     }
     return '-';
 }
@@ -250,8 +268,8 @@ export function FitName({ children, className, style, maxSize = 28 }: { children
 export function Template1({ runner, timings, campaign, bgImage, slipRef, showField, awardLabel, targetBandLabel, language = 'en' }: TemplateProps) {
     const displayName = resolveRunnerName(runner, language);
     const genderLabel = runner.gender === 'M' ? 'Male' : 'Female';
-    const dist = parseDistanceValue(runner.category);
-    const pace = effectivePace(runner);
+    const dist = runnerDistanceKm(runner, campaign, timings);
+    const pace = effectivePace(runner, dist);
     const gunTimeStr = runner.gunTimeStr || formatTime(effectiveFinishMs(runner));
     const netTimeStr = runner.netTimeStr || formatTime(runner.netTime);
     // Sort by scanTime ascending — order is unreliable when admin manually adds a
@@ -398,8 +416,8 @@ export function Template1({ runner, timings, campaign, bgImage, slipRef, showFie
 export function Template2({ runner, timings, campaign, bgImage, slipRef, showField, textColorMode = 'dark', awardLabel, targetBandLabel, language = 'en' }: TemplateProps) {
     const displayName = resolveRunnerName(runner, language);
     const genderLabel = runner.gender === 'M' ? 'Male' : 'Female';
-    const dist = parseDistanceValue(runner.category);
-    const pace = effectivePace(runner);
+    const dist = runnerDistanceKm(runner, campaign, timings);
+    const pace = effectivePace(runner, dist);
     const gunTimeStr = runner.gunTimeStr || formatTime(effectiveFinishMs(runner));
     const netTimeStr = runner.netTimeStr || formatTime(runner.netTime);
     // Sort by scanTime ascending — order is unreliable when admin manually adds a
@@ -564,8 +582,8 @@ export function Template2({ runner, timings, campaign, bgImage, slipRef, showFie
 function DefaultCard({ runner, timings, campaign, slipRef, showField, awardLabel, targetBandLabel, language = 'en', withLogo = false }: TemplateProps & { withLogo?: boolean }) {
     const displayName = resolveRunnerName(runner, language);
     const genderLabel = runner.gender === 'M' ? 'Male' : 'Female';
-    const dist = parseDistanceValue(runner.category);
-    const pace = effectivePace(runner);
+    const dist = runnerDistanceKm(runner, campaign, timings);
+    const pace = effectivePace(runner, dist);
     const gunTimeStr = runner.gunTimeStr || formatTime(effectiveFinishMs(runner));
     const netTimeStr = runner.netTimeStr || formatTime(runner.netTime);
     // Sort by scanTime ascending — order is unreliable when admin manually adds a
@@ -734,7 +752,7 @@ export function resolveFieldValue(field: FieldKey, staticText: string, runner: R
         case 'categoryRank':return runner.ageGroup ? String(runner.categoryRank ?? runner.categoryNetRank ?? '-') : '';
         case 'gunTime':     return runner.gunTimeStr ?? fmt(effectiveFinishMs(runner));
         case 'netTime':     return runner.netTimeStr ?? fmt(runner.netTime);
-        case 'pace':        return effectivePace(runner);
+        case 'pace':        return effectivePace(runner, runnerDistanceKm(runner, campaign));
         case 'award':       return awardLabel ?? '';
         case 'targetBand':  return targetBandLabel ?? '';
         case 'eventDate':   return campaign?.eventDate ? new Date(campaign.eventDate).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' }) : '';

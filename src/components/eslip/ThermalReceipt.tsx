@@ -10,7 +10,7 @@ import {
     effectivePace,
     effectiveFinishMs,
     resolveRunnerName,
-    parseDistanceValue,
+    runnerDistanceKm,
 } from '@/components/eslip/eslip-templates';
 
 /**
@@ -38,8 +38,8 @@ export default function ThermalReceipt({
 }) {
     const displayName = resolveRunnerName(runner, 'en');
     const genderLabel = runner.gender === 'M' ? 'Male' : runner.gender === 'F' ? 'Female' : '-';
-    const dist = parseDistanceValue(runner.category);
-    const pace = effectivePace(runner);
+    const dist = runnerDistanceKm(runner, campaign, timings);
+    const pace = effectivePace(runner, dist);
     const gunTimeStr = runner.gunTimeStr || formatTime(effectiveFinishMs(runner));
     const netTimeStr = runner.netTimeStr || formatTime(runner.netTime);
 
