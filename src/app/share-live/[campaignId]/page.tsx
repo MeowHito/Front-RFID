@@ -533,7 +533,7 @@ export default function ShareLiveMonitorPage() {
         );
     }
 
-    const renderSoundButton = (dark: boolean) => (
+    const renderSoundButton = () => (
         <button
             onClick={toggleSound}
             title={soundEnabled ? 'ปิดเสียงประกาศ' : 'เปิดเสียงประกาศ'}
@@ -541,8 +541,8 @@ export default function ShareLiveMonitorPage() {
             style={{
                 background: soundEnabled
                     ? 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)'
-                    : dark ? 'rgba(255,255,255,0.05)' : '#fff',
-                borderColor: soundEnabled ? '#15803d' : dark ? 'rgba(255,255,255,0.15)' : '#e2e8f0',
+                    : '#fff',
+                borderColor: soundEnabled ? '#15803d' : '#e2e8f0',
                 color: soundEnabled ? '#fff' : '#64748b',
             }}
         >
@@ -594,7 +594,7 @@ export default function ShareLiveMonitorPage() {
                 notableOnly={notableOnly}
                 onNotableOnly={setNotableOnly}
                 isVisible={isVisible}
-                soundButton={renderSoundButton(true)}
+                soundButton={renderSoundButton()}
             />
         );
     }
@@ -669,7 +669,7 @@ export default function ShareLiveMonitorPage() {
                                 placeholder="ค้นหา BIB, ชื่อ..."
                                 className="py-1.5 pr-2 pl-[26px] rounded-[10px] border-[1.5px] border-slate-200 text-[12px] w-[110px] sm:w-[250px] outline-none focus:border-slate-400 transition-colors" />
                         </div>
-                        {renderSoundButton(false)}
+                        {renderSoundButton()}
                     </div>
                 </div>
             </div>
