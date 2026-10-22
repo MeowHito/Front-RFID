@@ -14,7 +14,7 @@ import type { FeedEntry } from './useArrivalPacer';
  */
 
 export interface AnnouncerRunner {
-    _id: string;
+    _id?: string;
     bib: string;
     firstName: string;
     lastName: string;

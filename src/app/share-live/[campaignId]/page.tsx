@@ -11,8 +11,10 @@ import { useArrivalPacer } from './useArrivalPacer';
 interface Campaign { _id: string; name: string; slug?: string; nameTh?: string; nameEn?: string; categories?: { name: string; distance?: string }[]; }
 interface Checkpoint { _id: string; name: string; type?: string; kmCumulative?: number; }
 
+// The `slim=1` row from checkpoint-by-campaign (backend slimCheckpointRows) — empty fields
+// are left out, and `_id` only comes when the row has no BIB.
 interface RunnerAtCheckpoint {
-    _id: string;
+    _id?: string;
     bib: string;
     firstName: string;
     lastName: string;
@@ -22,21 +24,13 @@ interface RunnerAtCheckpoint {
     category: string;
     ageGroup?: string;
     status: string;
-    overallRank: number;
-    genderRank: number;
-    categoryRank: number;
-    checkpoint?: string;
     scanTime?: string;
     elapsedTime?: number;
-    splitTime?: number;
     netTime?: number;
     gunTime?: number;
     netPace?: string;
     gunPace?: string;
-    statusNote?: string;
     statusCheckpoint?: string;
-    splitNo?: number;
-    distanceFromStart?: number;
 }
 
 const REFRESH_MS = 10000;
@@ -200,7 +194,11 @@ export default function ShareLiveMonitorPage() {
         inFlightRef.current = true;
         if (!background) setDataLoading(true);
         try {
-            const res = await fetch(`/api/timing/checkpoint-by-campaign/${campaignId}?cp=${encodeURIComponent(cp)}&strict=1`, { cache: 'no-store' });
+            const res = await fetch(`/api/timing/checkpoint-by-campaign/${campaignId}?cp=${encodeURIComponent(cp)}&strict=1&slim=1`, {
+                // Revalidate instead of no-store: between syncs the list has not changed and
+                // the browser gets an empty 304 back and reuses the copy it already has.
+                cache: 'no-cache',
+            });
             if (!res.ok) throw new Error();
             const data = await res.json();
             if (selectedCpRef.current !== cp) return;
