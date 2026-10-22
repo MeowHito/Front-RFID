@@ -1,12 +1,15 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useParams, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
+import { computeCheckpointPlacings, distanceKeyOf, hasPassedCheckpoint, isNotablePlacing } from '@/lib/checkpoint-placings';
+import AnnouncerView, { type DistanceOption } from './AnnouncerView';
+import { useArrivalPacer } from './useArrivalPacer';
 
 interface Campaign { _id: string; name: string; slug?: string; nameTh?: string; nameEn?: string; categories?: { name: string; distance?: string }[]; }
-interface Checkpoint { _id: string; name: string; kmCumulative?: number; }
+interface Checkpoint { _id: string; name: string; type?: string; kmCumulative?: number; }
 
 interface RunnerAtCheckpoint {
     _id: string;
@@ -17,6 +20,7 @@ interface RunnerAtCheckpoint {
     lastNameTh?: string;
     gender: string;
     category: string;
+    ageGroup?: string;
     status: string;
     overallRank: number;
     genderRank: number;
@@ -34,6 +38,16 @@ interface RunnerAtCheckpoint {
     splitNo?: number;
     distanceFromStart?: number;
 }
+
+const REFRESH_MS = 10000;
+const ROW_PAGE_SIZE = 200;
+// A notable runner (or one tapped by the announcer) stays in the big card this long even
+// while others keep arriving underneath.
+const SPOTLIGHT_HOLD_NOTABLE_MS = 8000;
+const SPOTLIGHT_HOLD_PINNED_MS = 15000;
+const DISTANCE_COLORS = ['#a78bfa', '#38bdf8', '#34d399', '#fb923c', '#f472b6', '#facc15', '#2dd4bf', '#f87171'];
+
+type ViewMode = 'mc' | 'list';
 
 function formatMs(ms?: number): string {
     if (ms === undefined || ms === null) return '-';
@@ -57,7 +71,7 @@ function getStoppedStatusText(status: string, checkpoint?: string): string {
     return '-';
 }
 
-function getRunnerDedupKey(runner: RunnerAtCheckpoint): string {
+function getRunnerDedupKey(runner: { bib?: string; _id?: string }): string {
     const bib = (runner.bib || '').trim().toLowerCase();
     if (bib) return bib;
     return runner._id || 'unknown-runner';
@@ -105,6 +119,7 @@ export default function ShareLiveMonitorPage() {
     const searchParams = useSearchParams();
     const campaignId = params.campaignId as string;
     const cpParam = searchParams.get('cp') || '';
+    const viewParam: ViewMode = searchParams.get('view') === 'list' ? 'list' : 'mc';
 
     const [campaign, setCampaign] = useState<Campaign | null>(null);
     const [checkpoints, setCheckpoints] = useState<Checkpoint[]>([]);
@@ -117,19 +132,34 @@ export default function ShareLiveMonitorPage() {
     const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
     // Always one summary chip selected — this page never shows passed and not-yet-passed mixed.
     const [statusFilter, setStatusFilter] = useState<string>('passed');
-    const [rankDeltas, setRankDeltas] = useState<Map<string, number>>(new Map());
     const intervalRef = useRef<NodeJS.Timeout | null>(null);
-    const prevRanksRef = useRef<Map<string, number>>(new Map());
+    // The checkpoint whose list `runners` currently holds — '' until its first answer lands,
+    // so the arrival pacer never mistakes another checkpoint's list for news.
+    const [loadedCp, setLoadedCp] = useState('');
+    const [view, setView] = useState<ViewMode>(viewParam);
+    const [distanceFilter, setDistanceFilter] = useState('');
+    const [notableOnly, setNotableOnly] = useState(false);
+    const [paused, setPaused] = useState(false);
+    const [spotlightKey, setSpotlightKey] = useState<string | null>(null);
+    const spotlightHoldUntilRef = useRef(0);
+    // Auto-refresh bookkeeping: one request at a time, and drop answers for a checkpoint
+    // that is no longer selected.
+    const inFlightRef = useRef(false);
+    const selectedCpRef = useRef(selectedCp);
+    selectedCpRef.current = selectedCp;
+    const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+    const [refreshFailed, setRefreshFailed] = useState(false);
+    // Rendering all ~3,000 rows every 10 s froze slow phones — draw them in pages instead.
+    const [visibleCount, setVisibleCount] = useState(ROW_PAGE_SIZE);
 
     // ===== TTS Announcer State =====
     const [soundEnabled, setSoundEnabled] = useState(false);
     const [isSpeaking, setIsSpeaking] = useState(false);
-    const announcedBibsRef = useRef<Set<string>>(new Set());
     const ttsQueueRef = useRef<string[]>([]);
     const ttsSpeakingRef = useRef(false);
     const ttsAudioRef = useRef<HTMLAudioElement | null>(null);
-    const prevRunnerBibsRef = useRef<Set<string>>(new Set());
-    const isFirstLoadRef = useRef(true);
+    const soundEnabledRef = useRef(soundEnabled);
+    soundEnabledRef.current = soundEnabled;
 
     // Load campaign info
     useEffect(() => {
@@ -155,57 +185,58 @@ export default function ShareLiveMonitorPage() {
                 const list = Array.isArray(data) ? data : [];
                 setCheckpoints(list);
                 if (list.length > 0 && !selectedCp) setSelectedCp(list[0].name);
+                // Reads are stored under the exact checkpoint name — "?cp=finish" would find nobody.
+                const canonical = list.find((c: Checkpoint) => c.name.toUpperCase() === selectedCp.toUpperCase());
+                if (canonical && canonical.name !== selectedCp) setSelectedCp(canonical.name);
             })
             .catch(() => setCheckpoints([]));
     }, [campaignId]);
 
     // Fetch runners
-    const fetchRunners = useCallback(async () => {
+    const fetchRunners = useCallback(async (background = false) => {
         if (!campaignId || !selectedCp) return;
-        setDataLoading(true);
+        if (background && (inFlightRef.current || document.hidden)) return;
+        const cp = selectedCp;
+        inFlightRef.current = true;
+        if (!background) setDataLoading(true);
         try {
-            const res = await fetch(`/api/timing/checkpoint-by-campaign/${campaignId}?cp=${encodeURIComponent(selectedCp)}&strict=1`, { cache: 'no-store' });
+            const res = await fetch(`/api/timing/checkpoint-by-campaign/${campaignId}?cp=${encodeURIComponent(cp)}&strict=1`, { cache: 'no-store' });
             if (!res.ok) throw new Error();
             const data = await res.json();
+            if (selectedCpRef.current !== cp) return;
             const newRunners = Array.isArray(data) ? dedupeRunners(data) : [];
-            const currentRanks = new Map<string, number>();
-            newRunners.forEach((r) => {
-                if (r.bib && r.overallRank > 0) currentRanks.set(r.bib, r.overallRank);
-            });
-
-            // Update rank deltas — persistent until rank changes again
-            const prev = prevRanksRef.current;
-            if (prev.size > 0) {
-                setRankDeltas(existing => {
-                    const updated = new Map<string, number>(existing);
-                    currentRanks.forEach((currentRank, bib) => {
-                        const prevRank = prev.get(bib);
-                        if (prevRank !== undefined && prevRank > 0) {
-                            const delta = prevRank - currentRank;
-                            if (delta !== 0) {
-                                updated.set(bib, delta);
-                            }
-                            // delta === 0 → keep existing delta (persistent)
-                        }
-                    });
-                    return updated;
-                });
-            }
-            prevRanksRef.current = currentRanks;
             setRunners(newRunners);
-        } catch { setRunners([]); }
-        finally { setDataLoading(false); }
+            setLoadedCp(cp);
+            setLastUpdated(new Date());
+            setRefreshFailed(false);
+        } catch {
+            // A failed auto-refresh keeps the list on screen; only a fresh load empties it.
+            if (selectedCpRef.current === cp) {
+                if (!background) setRunners([]);
+                setRefreshFailed(true);
+            }
+        } finally {
+            inFlightRef.current = false;
+            if (!background) setDataLoading(false);
+        }
     }, [campaignId, selectedCp]);
 
     useEffect(() => { if (campaignId && selectedCp) fetchRunners(); }, [campaignId, selectedCp, fetchRunners]);
 
-    // Auto-refresh 10s (always on)
+    // Auto-refresh every 10 s while the tab is visible; catch up as soon as it is shown again.
     useEffect(() => {
-        if (campaignId && selectedCp) {
-            intervalRef.current = setInterval(fetchRunners, 10000);
-        }
-        return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
+        if (!campaignId || !selectedCp) return;
+        intervalRef.current = setInterval(() => fetchRunners(true), REFRESH_MS);
+        const onVisible = () => { if (!document.hidden) fetchRunners(true); };
+        document.addEventListener('visibilitychange', onVisible);
+        return () => {
+            if (intervalRef.current) clearInterval(intervalRef.current);
+            document.removeEventListener('visibilitychange', onVisible);
+        };
     }, [campaignId, selectedCp, fetchRunners]);
+
+    // Back to the first page whenever the list being looked at changes.
+    useEffect(() => { setVisibleCount(ROW_PAGE_SIZE); }, [selectedCp, statusFilter, search, sortBy, sortDir]);
 
     // ===== TTS: Speak text via Gemini API with browser fallback =====
     const speakText = useCallback((text: string): Promise<void> => {
@@ -257,61 +288,8 @@ export default function ShareLiveMonitorPage() {
         }
     }, [speakText]);
 
-    // ===== TTS: Detect new runners and announce =====
+    // ===== TTS: Stop and forget everything when the checkpoint changes =====
     useEffect(() => {
-        if (!soundEnabled) return;
-
-        // Get bibs of runners who have scanTime (actually passed this checkpoint)
-        const currentBibs = new Set(
-            runners
-                .filter(r => r.scanTime && r.bib)
-                .map(r => r.bib)
-        );
-
-        // On first load, just record the bibs without announcing
-        if (isFirstLoadRef.current) {
-            isFirstLoadRef.current = false;
-            prevRunnerBibsRef.current = currentBibs;
-            announcedBibsRef.current = new Set(currentBibs);
-            return;
-        }
-
-        // Find newly arrived runners (bibs in current but not previously announced)
-        const newArrivals = runners.filter(r => {
-            if (!r.scanTime || !r.bib) return false;
-            return !announcedBibsRef.current.has(r.bib);
-        });
-
-        if (newArrivals.length === 0) return;
-
-        // Mark as announced and queue speech
-        const updatedAnnounced = new Set(announcedBibsRef.current);
-        for (const runner of newArrivals) {
-            updatedAnnounced.add(runner.bib);
-            const name = `${runner.firstNameTh || runner.firstName || ''} ${runner.lastNameTh || runner.lastName || ''}`.trim();
-            const displayName = name || `BIB ${runner.bib}`;
-            const cpName = selectedCp || 'checkpoint';
-            const isFinish = cpName.toUpperCase() === 'FINISH';
-
-            let announcement: string;
-            if (isFinish) {
-                announcement = `หมายเลข ${runner.bib} คุณ${displayName} เข้าเส้นชัยแล้วครับ`;
-            } else {
-                announcement = `หมายเลข ${runner.bib} คุณ${displayName} ผ่านจุด ${cpName} แล้วครับ`;
-            }
-
-            ttsQueueRef.current.push(announcement);
-        }
-        announcedBibsRef.current = updatedAnnounced;
-        prevRunnerBibsRef.current = currentBibs;
-        processQueue();
-    }, [runners, soundEnabled, selectedCp, processQueue]);
-
-    // ===== TTS: Reset announced bibs when checkpoint changes =====
-    useEffect(() => {
-        announcedBibsRef.current = new Set();
-        prevRunnerBibsRef.current = new Set();
-        isFirstLoadRef.current = true;
         ttsQueueRef.current = [];
         if (ttsAudioRef.current) {
             ttsAudioRef.current.pause();
@@ -322,6 +300,8 @@ export default function ShareLiveMonitorPage() {
     }, [selectedCp]);
 
     // ===== TTS: Toggle sound =====
+    // Only runners released by the pacer from now on are announced, so turning it on mid-race
+    // never reads out the backlog.
     const toggleSound = useCallback(() => {
         setSoundEnabled(prev => {
             if (prev) {
@@ -334,22 +314,165 @@ export default function ShareLiveMonitorPage() {
                 window.speechSynthesis?.cancel?.();
                 setIsSpeaking(false);
                 ttsSpeakingRef.current = false;
-            } else {
-                // Turning on — mark current runners as already announced so we only announce NEW ones
-                const currentBibs = new Set(
-                    runners
-                        .filter(r => r.scanTime && r.bib)
-                        .map(r => r.bib)
-                );
-                announcedBibsRef.current = new Set(currentBibs);
-                prevRunnerBibsRef.current = new Set(currentBibs);
-                isFirstLoadRef.current = false;
             }
             return !prev;
         });
-    }, [runners]);
+    }, []);
 
-    const filteredRunners = runners.filter(r => {
+    // ===== Per-checkpoint derived data =====
+    const cpDoc = checkpoints.find(c => c.name === selectedCp);
+    const isFinishCp = String(cpDoc?.type || '').toLowerCase() === 'finish' || selectedCp.toUpperCase() === 'FINISH';
+    const isStartCp = String(cpDoc?.type || '').toLowerCase() === 'start' || selectedCp.toUpperCase() === 'START';
+    const isCurrentList = loadedCp === selectedCp;
+
+    const runnerByKey = useMemo(() => new Map(runners.map(r => [getRunnerDedupKey(r), r])), [runners]);
+    // Placing AT this checkpoint (not the runner's live race position) — see checkpoint-placings.ts.
+    const placings = useMemo(() => computeCheckpointPlacings(runners, getRunnerDedupKey), [runners]);
+    const arrivals = useMemo(() => {
+        if (!isCurrentList) return null;
+        return runners
+            .filter(hasPassedCheckpoint)
+            .sort((a, b) => getScanTimeValue(a.scanTime) - getScanTimeValue(b.scanTime))
+            .map(getRunnerDedupKey);
+    }, [runners, isCurrentList]);
+
+    const distances = useMemo<DistanceOption[]>(() => {
+        const counts = new Map<string, number>();
+        const labels = new Map<string, string>();
+        for (const r of runners) {
+            if (!hasPassedCheckpoint(r)) continue;
+            const k = distanceKeyOf(r);
+            counts.set(k, (counts.get(k) || 0) + 1);
+            if (!labels.has(k)) labels.set(k, r.category || '-');
+        }
+        const order = (campaign?.categories || []).map(c => String(c.name || '').trim().toUpperCase());
+        const keys = [...counts.keys()].sort((a, b) => {
+            const ia = order.indexOf(a), ib = order.indexOf(b);
+            return (ia < 0 ? 999 : ia) - (ib < 0 ? 999 : ib) || a.localeCompare(b);
+        });
+        return keys.map(k => {
+            const i = order.indexOf(k);
+            return {
+                key: k,
+                label: labels.get(k) || k,
+                color: DISTANCE_COLORS[(i < 0 ? keys.indexOf(k) : i) % DISTANCE_COLORS.length],
+                count: counts.get(k) || 0,
+            };
+        });
+    }, [runners, campaign?.categories]);
+
+    // What the announcer screen shows; the table view hides nothing, so its TTS follows everyone.
+    const isVisible = useCallback((key: string) => {
+        if (view !== 'mc') return true;
+        const r = runnerByKey.get(key);
+        if (!r) return false;
+        if (distanceFilter && distanceKeyOf(r) !== distanceFilter) return false;
+        if (notableOnly && !isStartCp && !isNotablePlacing(placings.get(key))) return false;
+        return true;
+    }, [view, runnerByKey, distanceFilter, notableOnly, isStartCp, placings]);
+
+    const runnerByKeyRef = useRef(runnerByKey);
+    runnerByKeyRef.current = runnerByKey;
+    const placingsRef = useRef(placings);
+    placingsRef.current = placings;
+    const isFinishRef = useRef(isFinishCp);
+    isFinishRef.current = isFinishCp;
+
+    const showInSpotlight = useCallback((key: string, mode: 'arrival' | 'pinned') => {
+        const now = Date.now();
+        const notable = isNotablePlacing(placingsRef.current.get(key));
+        // A runner worth calling out keeps the big card for a few seconds; ordinary
+        // arrivals behind them still stream into the feed.
+        if (mode === 'arrival' && !notable && now < spotlightHoldUntilRef.current) return;
+        setSpotlightKey(key);
+        spotlightHoldUntilRef.current = mode === 'pinned'
+            ? now + SPOTLIGHT_HOLD_PINNED_MS
+            : notable ? now + SPOTLIGHT_HOLD_NOTABLE_MS : 0;
+    }, []);
+
+    const announce = useCallback((key: string) => {
+        const runner = runnerByKeyRef.current.get(key);
+        if (!runner) return;
+        const placing = placingsRef.current.get(key);
+        const notable = isNotablePlacing(placing);
+        // Speech is slower than a finish funnel — announce everyone while it keeps up,
+        // and only the placed runners once it falls behind.
+        if (ttsQueueRef.current.length >= 2 && !notable) return;
+        if (ttsQueueRef.current.length >= 6) ttsQueueRef.current.shift();
+        const name = `${runner.firstNameTh || runner.firstName || ''} ${runner.lastNameTh || runner.lastName || ''}`.trim();
+        const displayName = name || `BIB ${runner.bib}`;
+        const cpName = selectedCpRef.current || 'checkpoint';
+        const genderLabel = String(runner.gender || '').toUpperCase() === 'F' ? 'หญิง' : 'ชาย';
+        const placed = notable && placing && placing.gender > 0 ? ` อันดับ ${placing.gender} ${genderLabel} ${runner.category || ''}`.trimEnd() : '';
+        const announcement = isFinishRef.current
+            ? `หมายเลข ${runner.bib} คุณ${displayName} เข้าเส้นชัยแล้วครับ${placed}`
+            : `หมายเลข ${runner.bib} คุณ${displayName} ผ่านจุด ${cpName} แล้วครับ${placed}`;
+        ttsQueueRef.current.push(announcement);
+        processQueue();
+    }, [processQueue]);
+
+    const viewRef = useRef(view);
+    viewRef.current = view;
+    const handleReveal = useCallback((key: string) => {
+        if (viewRef.current === 'mc') showInSpotlight(key, 'arrival');
+        if (soundEnabledRef.current) announce(key);
+    }, [showInSpotlight, announce]);
+
+    const pacer = useArrivalPacer(arrivals, `${campaignId}::${selectedCp}`, { isVisible, paused, onReveal: handleReveal });
+
+    useEffect(() => {
+        setSpotlightKey(null);
+        spotlightHoldUntilRef.current = 0;
+        setPaused(false);
+    }, [selectedCp]);
+
+    const changeCheckpoint = (cp: string) => {
+        if (cp === selectedCp) return;
+        // Never leave the previous checkpoint's runners on screen under the new name.
+        setRunners([]);
+        setLoadedCp('');
+        setSelectedCp(cp);
+    };
+
+    // Keep the address bar shareable: it always reopens this checkpoint in this view.
+    useEffect(() => {
+        if (!selectedCp) return;
+        const url = new URL(window.location.href);
+        url.searchParams.set('cp', selectedCp);
+        if (view === 'list') url.searchParams.set('view', 'list'); else url.searchParams.delete('view');
+        if (url.href !== window.location.href) window.history.replaceState(window.history.state, '', url.href);
+    }, [selectedCp, view]);
+
+    // Announcer screen: Space pauses the feed, and the screen must not sleep mid-race.
+    useEffect(() => {
+        if (view !== 'mc') return;
+        const onKey = (e: KeyboardEvent) => {
+            if (e.code !== 'Space') return;
+            const el = e.target as HTMLElement | null;
+            if (el && (el.tagName === 'INPUT' || el.tagName === 'SELECT' || el.tagName === 'TEXTAREA' || el.tagName === 'BUTTON' || el.isContentEditable)) return;
+            e.preventDefault();
+            setPaused(v => !v);
+        };
+        window.addEventListener('keydown', onKey);
+        let lock: { release: () => Promise<void> } | null = null;
+        const requestLock = async () => {
+            try {
+                const wl = (navigator as Navigator & { wakeLock?: { request: (t: 'screen') => Promise<{ release: () => Promise<void> }> } }).wakeLock;
+                if (wl && !document.hidden) lock = await wl.request('screen');
+            } catch { /* not supported / denied */ }
+        };
+        const onVisible = () => { if (!document.hidden) requestLock(); };
+        requestLock();
+        document.addEventListener('visibilitychange', onVisible);
+        return () => {
+            window.removeEventListener('keydown', onKey);
+            document.removeEventListener('visibilitychange', onVisible);
+            lock?.release().catch(() => { /* */ });
+        };
+    }, [view]);
+
+    // Memoized: the arrival pacer re-renders the page about once a second.
+    const sortedRunners = useMemo(() => runners.filter(r => {
         const runnerStatus = normalizeRunnerStatus(r.status);
         const isStopped = ['dnf', 'dns', 'dq'].includes(runnerStatus);
         if (statusFilter === 'passed') {
@@ -364,7 +487,17 @@ export default function ShareLiveMonitorPage() {
         const term = search.toLowerCase();
         const name = `${r.firstName} ${r.lastName}`.toLowerCase();
         return r.bib?.toLowerCase().includes(term) || name.includes(term);
-    });
+    }).sort((a, b) => {
+        let cmp = 0;
+        switch (sortBy) {
+            case 'bib': cmp = (a.bib || '').localeCompare(b.bib || '', undefined, { numeric: true }); break;
+            case 'name': cmp = `${a.firstName} ${a.lastName}`.localeCompare(`${b.firstName} ${b.lastName}`); break;
+            case 'elapsed': cmp = (a.elapsedTime || a.netTime || a.gunTime || 0) - (b.elapsedTime || b.netTime || b.gunTime || 0); break;
+            case 'pace': cmp = (a.netPace || a.gunPace || 'zz').localeCompare(b.netPace || b.gunPace || 'zz'); break;
+            default: cmp = new Date(a.scanTime || 0).getTime() - new Date(b.scanTime || 0).getTime(); break;
+        }
+        return sortDir === 'asc' ? cmp : -cmp;
+    }), [runners, statusFilter, search, sortBy, sortDir]);
 
     // Sort toggle helper
     const toggleSort = (col: typeof sortBy) => {
@@ -379,18 +512,6 @@ export default function ShareLiveMonitorPage() {
         }
         return <span className="ml-0.5 text-[9px] text-slate-300">▲▼</span>;
     };
-
-    const sortedRunners = [...filteredRunners].sort((a, b) => {
-        let cmp = 0;
-        switch (sortBy) {
-            case 'bib': cmp = (a.bib || '').localeCompare(b.bib || '', undefined, { numeric: true }); break;
-            case 'name': cmp = `${a.firstName} ${a.lastName}`.localeCompare(`${b.firstName} ${b.lastName}`); break;
-            case 'elapsed': cmp = (a.elapsedTime || a.netTime || a.gunTime || 0) - (b.elapsedTime || b.netTime || b.gunTime || 0); break;
-            case 'pace': cmp = (a.netPace || a.gunPace || 'zz').localeCompare(b.netPace || b.gunPace || 'zz'); break;
-            default: cmp = new Date(a.scanTime || 0).getTime() - new Date(b.scanTime || 0).getTime(); break;
-        }
-        return sortDir === 'asc' ? cmp : -cmp;
-    });
 
     if (loading) {
         return (
@@ -409,6 +530,72 @@ export default function ShareLiveMonitorPage() {
                     <div className="text-slate-400 text-sm mt-1">ไม่พบกิจกรรมนี้</div>
                 </div>
             </div>
+        );
+    }
+
+    const renderSoundButton = (dark: boolean) => (
+        <button
+            onClick={toggleSound}
+            title={soundEnabled ? 'ปิดเสียงประกาศ' : 'เปิดเสียงประกาศ'}
+            className="relative px-2.5 py-2 rounded-lg border text-xs font-semibold cursor-pointer transition-all"
+            style={{
+                background: soundEnabled
+                    ? 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)'
+                    : dark ? 'rgba(255,255,255,0.05)' : '#fff',
+                borderColor: soundEnabled ? '#15803d' : dark ? 'rgba(255,255,255,0.15)' : '#e2e8f0',
+                color: soundEnabled ? '#fff' : '#64748b',
+            }}
+        >
+            {soundEnabled ? (
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" fill="white" />
+                    <path d="M15.54 8.46a5 5 0 010 7.07" />
+                    <path d="M19.07 4.93a10 10 0 010 14.14" />
+                </svg>
+            ) : (
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" fill="#94a3b8" stroke="#94a3b8" />
+                    <line x1="23" y1="9" x2="17" y2="15" stroke="#ef4444" strokeWidth="2.5" />
+                    <line x1="17" y1="9" x2="23" y2="15" stroke="#ef4444" strokeWidth="2.5" />
+                </svg>
+            )}
+            {isSpeaking && soundEnabled && (
+                <span className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-yellow-400 border border-white animate-pulse" />
+            )}
+        </button>
+    );
+
+    if (view === 'mc') {
+        return (
+            <AnnouncerView
+                campaignName={campaign.nameTh || campaign.nameEn || campaign.name}
+                checkpoints={checkpoints}
+                selectedCp={selectedCp}
+                onSelectCp={changeCheckpoint}
+                onShowList={() => setView('list')}
+                isFinish={isFinishCp}
+                isStart={isStartCp}
+                loading={!isCurrentList && !refreshFailed}
+                refreshFailed={refreshFailed}
+                runners={runners}
+                runnerByKey={runnerByKey}
+                keyOf={getRunnerDedupKey}
+                placings={placings}
+                feed={pacer.feed}
+                spotlightKey={spotlightKey}
+                onPin={key => showInSpotlight(key, 'pinned')}
+                queued={pacer.queued}
+                paused={paused}
+                onTogglePause={() => setPaused(v => !v)}
+                onFlush={pacer.flush}
+                distances={distances}
+                distanceFilter={distanceFilter}
+                onDistanceFilter={setDistanceFilter}
+                notableOnly={notableOnly}
+                onNotableOnly={setNotableOnly}
+                isVisible={isVisible}
+                soundButton={renderSoundButton(true)}
+            />
         );
     }
 
@@ -433,15 +620,24 @@ export default function ShareLiveMonitorPage() {
                             {campaign.nameTh || campaign.nameEn || campaign.name}
                         </h1>
                     </div>
-                    <select value={selectedCp} onChange={e => setSelectedCp(e.target.value)}
-                        className="flex-shrink-0 px-2 sm:px-3.5 py-1.5 sm:py-2 rounded-lg border-2 border-green-400 bg-green-800 text-white text-[13px] sm:text-sm font-bold cursor-pointer max-w-[42vw] sm:max-w-none sm:min-w-[180px]">
-                        {checkpoints.length === 0 && <option value="">No checkpoints</option>}
-                        {checkpoints.map(cp => (
-                            <option key={cp._id} value={cp.name}>
-                                {cp.name}
-                            </option>
-                        ))}
-                    </select>
+                    <div className="flex items-center gap-1.5 sm:gap-2 flex-shrink-0">
+                        <button
+                            onClick={() => setView('mc')}
+                            title="หน้าจอสำหรับพิธีกร: นักวิ่งที่เพิ่งผ่าน ขึ้นทีละคน ตัวใหญ่"
+                            className="whitespace-nowrap px-2.5 py-1.5 sm:py-2 rounded-lg border-2 border-white/60 bg-white/10 text-white text-[12px] sm:text-sm font-bold cursor-pointer hover:bg-white/20"
+                        >
+                            📣<span className="hidden sm:inline"> โหมดพิธีกร</span>
+                        </button>
+                        <select value={selectedCp} onChange={e => changeCheckpoint(e.target.value)}
+                            className="flex-shrink-0 px-2 sm:px-3.5 py-1.5 sm:py-2 rounded-lg border-2 border-green-400 bg-green-800 text-white text-[13px] sm:text-sm font-bold cursor-pointer max-w-[34vw] sm:max-w-none sm:min-w-[180px]">
+                            {checkpoints.length === 0 && <option value="">No checkpoints</option>}
+                            {checkpoints.map(cp => (
+                                <option key={cp._id} value={cp.name}>
+                                    {cp.name}
+                                </option>
+                            ))}
+                        </select>
+                    </div>
                 </div>
             </div>
 
@@ -473,38 +669,7 @@ export default function ShareLiveMonitorPage() {
                                 placeholder="ค้นหา BIB, ชื่อ..."
                                 className="py-1.5 pr-2 pl-[26px] rounded-[10px] border-[1.5px] border-slate-200 text-[12px] w-[110px] sm:w-[250px] outline-none focus:border-slate-400 transition-colors" />
                         </div>
-                        <button
-                            onClick={toggleSound}
-                            title={soundEnabled ? 'ปิดเสียงประกาศ' : 'เปิดเสียงประกาศ'}
-                            className="relative px-2.5 py-2 rounded-lg border text-xs font-semibold cursor-pointer transition-all"
-                            style={{
-                                background: soundEnabled
-                                    ? 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)'
-                                    : '#fff',
-                                borderColor: soundEnabled ? '#15803d' : '#e2e8f0',
-                                color: soundEnabled ? '#fff' : '#64748b',
-                            }}
-                        >
-                            {soundEnabled ? (
-                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                    <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" fill="white" />
-                                    <path d="M15.54 8.46a5 5 0 010 7.07" />
-                                    <path d="M19.07 4.93a10 10 0 010 14.14" />
-                                </svg>
-                            ) : (
-                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                    <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" fill="#94a3b8" stroke="#94a3b8" />
-                                    <line x1="23" y1="9" x2="17" y2="15" stroke="#ef4444" strokeWidth="2.5" />
-                                    <line x1="17" y1="9" x2="23" y2="15" stroke="#ef4444" strokeWidth="2.5" />
-                                </svg>
-                            )}
-                            {isSpeaking && soundEnabled && (
-                                <span
-                                    className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-yellow-400 border border-white"
-                                    style={{ animation: 'pulse 1s infinite' }}
-                                />
-                            )}
-                        </button>
+                        {renderSoundButton(false)}
                     </div>
                 </div>
             </div>
@@ -557,8 +722,11 @@ export default function ShareLiveMonitorPage() {
                                     <tr><td colSpan={9} className="p-10 text-center text-slate-400">กำลังโหลด...</td></tr>
                                 ) : sortedRunners.length === 0 ? (
                                     <tr><td colSpan={9} className="p-10 text-center text-slate-400">ยังไม่มีนักกีฬาถึงจุดนี้</td></tr>
-                                ) : sortedRunners.map((r, idx) => {
-                                    const rowKey = r._id ? `${r._id}-${idx}` : `row-${idx}`;
+                                ) : sortedRunners.slice(0, visibleCount).map((r) => {
+                                    // Stable per runner (the list is deduped by BIB) — an index in the key
+                                    // made React rebuild every row whenever a new arrival landed on top.
+                                    const rowKey = getRunnerDedupKey(r);
+                                    const placing = placings.get(rowKey);
                                     const runnerStatus = normalizeRunnerStatus(r.status);
                                     const isStopped = ['dnf', 'dns', 'dq'].includes(runnerStatus);
                                     const rowCls = isStopped ? 'bg-red-50' : 'bg-white';
@@ -575,15 +743,14 @@ export default function ShareLiveMonitorPage() {
                                             </td>
                                             <td className="pl-0.5 pr-0.5 py-2.5 text-center">
                                                 <div className="inline-flex flex-col items-center leading-tight">
-                                                    <span className={`text-sm font-black ${isStopped ? 'text-slate-400' : 'text-emerald-700'}`}>{r.overallRank || '-'}</span>
-                                                    {(() => { const d = rankDeltas.get(r.bib); if (d === undefined || d === 0) return null; return <span className={`text-[10px] font-extrabold ${d > 0 ? 'text-green-600' : 'text-red-600'}`}>{d > 0 ? `▲${d}` : `▼${Math.abs(d)}`}</span>; })()}
+                                                    <span className={`text-sm font-black ${isStopped ? 'text-slate-400' : 'text-emerald-700'}`}>{placing?.overall || '-'}</span>
                                                 </div>
                                             </td>
                                             <td className={`pl-0.5 pr-0.5 py-2.5 text-center text-xs font-bold ${isStopped ? 'text-slate-400' : 'text-violet-700'}`}>
-                                                {r.genderRank || '-'}
+                                                {placing?.gender || '-'}
                                             </td>
                                             <td className={`pl-0.5 pr-0.5 py-2.5 text-center text-xs font-bold ${isStopped ? 'text-slate-400' : 'text-blue-700'}`}>
-                                                {r.categoryRank || '-'}
+                                                {placing?.ageGroup || '-'}
                                             </td>
                                             <td className="p-2 sm:p-2.5 text-center text-[11px] font-medium text-slate-500">
                                                 {r.category || '-'}
@@ -613,20 +780,30 @@ export default function ShareLiveMonitorPage() {
                     </div>
                 </div>
 
+                {sortedRunners.length > visibleCount && (
+                    <div className="mt-3 text-center">
+                        <button
+                            onClick={() => setVisibleCount(n => n + ROW_PAGE_SIZE)}
+                            className="px-4 py-2 rounded-lg border border-slate-200 bg-white text-[13px] font-bold text-slate-600 cursor-pointer hover:bg-slate-50"
+                        >
+                            แสดงเพิ่ม ({visibleCount.toLocaleString()} / {sortedRunners.length.toLocaleString()} คน)
+                        </button>
+                    </div>
+                )}
+
+                <div className={`mt-3 text-center text-[11px] ${refreshFailed ? 'text-red-500' : 'text-slate-400'}`}>
+                    {refreshFailed
+                        ? 'เชื่อมต่อไม่ได้ชั่วคราว — กำลังลองใหม่อัตโนมัติ'
+                        : 'อัปเดตอัตโนมัติทุก 10 วินาที'}
+                    {lastUpdated && ` · ล่าสุด ${lastUpdated.toLocaleTimeString('th-TH', { hour12: false })}`}
+                </div>
+
                 {/* Footer */}
                 <div className="mt-4 text-center text-xs text-slate-400">
                     Powered by RFID Timing System •
                 </div>
             </div>
 
-            {/* Pulse animation keyframes */}
-            <style dangerouslySetInnerHTML={{
-                __html: `
-                @keyframes pulse {
-                    0%, 100% { transform: scale(1); opacity: 1; }
-                    50% { transform: scale(1.3); opacity: 0.7; }
-                }
-            `}} />
         </div>
     );
 }
