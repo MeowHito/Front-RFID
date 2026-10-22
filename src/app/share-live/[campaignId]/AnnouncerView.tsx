@@ -98,6 +98,14 @@ function genderOf(r: AnnouncerRunner): { label: string; symbol: string; cls: str
     return { label: g || '-', symbol: '', cls: 'text-slate-500' };
 }
 
+// "42 วิ" / "5 นาที" / "3 ชม." / "18 วัน" — a finished race reopened weeks later read "26819 นาที".
+function formatAgo(sec: number): string {
+    if (sec < 120) return `${sec} วิ`;
+    if (sec < 2 * 3600) return `${Math.round(sec / 60)} นาที`;
+    if (sec < 2 * 86400) return `${Math.round(sec / 3600)} ชม.`;
+    return `${Math.round(sec / 86400)} วัน`;
+}
+
 function rankText(n?: number): string {
     if (!n || n <= 0) return '-';
     return n <= 3 ? `${MEDALS[n - 1]} ${n}` : String(n);
@@ -267,7 +275,7 @@ export default function AnnouncerView(p: Props) {
                                 {p.refreshFailed
                                     ? 'เชื่อมต่อไม่ได้ — กำลังลองใหม่'
                                     : agoSec !== null
-                                        ? <span>ผ่านล่าสุด <b className="tabular-nums text-slate-800">{formatClock(new Date(latestScanMs).toISOString())}</b><span> ({agoSec < 120 ? `${agoSec} วิ` : `${Math.round(agoSec / 60)} นาที`}ที่แล้ว)</span></span>
+                                        ? <span>ผ่านล่าสุด <b className="tabular-nums text-slate-800">{formatClock(new Date(latestScanMs).toISOString())}</b><span> ({formatAgo(agoSec)}ที่แล้ว)</span></span>
                                         : 'LIVE'}
                             </div>
                             <div className="ml-auto flex items-center gap-1.5 sm:ml-1">
