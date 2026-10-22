@@ -8,8 +8,10 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ camp
     const strict = req.nextUrl.searchParams.get('strict') === '1' ? '&strict=1' : '';
     try {
         const res = await fetch(`${API}/timing/checkpoint-by-campaign/${campaignId}?cp=${encodeURIComponent(cp)}${strict}`, { cache: 'no-store' });
-        const data = await res.json();
-        return NextResponse.json(data);
+        if (!res.ok) return NextResponse.json([], { status: 500 });
+        // Passed through as-is: a FINISH list is ~2 MB, and parsing then re-serialising it
+        // on every viewer's 10 s poll cost CPU for nothing.
+        return new NextResponse(await res.text(), { headers: { 'Content-Type': 'application/json' } });
     } catch {
         return NextResponse.json([], { status: 500 });
     }
