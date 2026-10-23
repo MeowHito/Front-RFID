@@ -47,7 +47,7 @@ interface Runner {
     netTime?: number; gunTime?: number; overallRank?: number;
     team?: string; teamName?: string; shirtSize?: string; age?: number;
     gunPace?: string; netPace?: string; photoUrl?: string;
-    wave?: string; medical?: string;
+    box?: string; wave?: string; medical?: string;
 }
 interface Campaign { _id: string; name: string; slug?: string; scanningTemplate?: string; scanningBgImage?: string; scanningBgImagePortrait?: string; subtitle?: string; categories?: { name: string; distance?: string; ageGroupEnabled?: boolean }[]; }
 
@@ -230,6 +230,8 @@ export default function ScanningBySlugPage() {
     const bibNum = r?.bib || '-';
     const genderLabel = r?.gender === 'M' ? 'Male' : r?.gender === 'F' ? 'Female' : (r?.gender || '-');
     const ageGroupLabel = r?.ageGroup || '-';
+    // Start wave — RaceTiger's WaveName is stored on the runner as `box`.
+    const waveLabel = (r?.box || r?.wave || '').trim();
     const flag = toFlag(r?.nationality);
     const hasMedical = !!(r?.medical && r.medical.trim() !== '' && r.medical !== 'ไม่มี');
 
@@ -281,6 +283,8 @@ export default function ScanningBySlugPage() {
                 .ce-info-value { font-size: clamp(1.35rem, min(3vw, 5vh), 4.3rem); font-weight: 800; color: #0f172a; line-height: 1; margin: 0; font-family: 'Prompt', sans-serif; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
                 .ce-info-item.highlight .ce-info-label { color: #16a34a; }
                 .ce-info-item.highlight .ce-info-value { color: #16a34a; font-size: clamp(1.55rem, min(3.2vw, 5.5vh), 4.8rem); }
+                .ce-info-bar.has-wave { grid-template-columns: repeat(3, 1fr); }
+                .ce-info-item.wave .ce-info-label, .ce-info-item.wave .ce-info-value { color: #1d4ed8; }
                 .ce-seal { position: absolute; bottom: clamp(8px, 2vh, 34px); right: clamp(12px, 2.5vw, 56px); font-size: clamp(0.42rem, 0.9vw, 1.1rem); color: #cbd5e1; font-weight: 700; letter-spacing: clamp(2px, 0.35vw, 4px); text-transform: uppercase; text-align: right; font-family: 'Prompt', sans-serif; line-height: 1.4; }
                 .ce-seal-mark { color: #94a3b8; }
 
@@ -323,6 +327,8 @@ export default function ScanningBySlugPage() {
                 .ce-portrait .ce-info-label { font-size: clamp(0.65rem, min(2.2vw, 1.6vh), 1.5rem); letter-spacing: 1.5px; }
                 .ce-portrait .ce-info-value { font-size: clamp(1.2rem, min(5vw, 3.8vh), 3.4rem); }
                 .ce-portrait .ce-info-item.highlight .ce-info-value { font-size: clamp(1.35rem, min(5.8vw, 4.2vh), 3.8rem); }
+                .ce-portrait .ce-info-bar.has-wave { grid-template-columns: repeat(2, 1fr); }
+                .ce-portrait .ce-info-item.wave { grid-column: 1 / -1; }
                 .ce-portrait .ce-medical { max-width: min(72vw, 520px); align-self: flex-end; padding: clamp(8px, 1.2vh, 14px) clamp(12px, 2vw, 22px); gap: 10px; margin-top: clamp(8px, 1.2vh, 16px); background: #ef4444; border: none; border-radius: 4px; box-shadow: 0 6px 14px rgba(127, 29, 29, 0.22); }
                 .ce-portrait .ce-medical-icon { font-size: clamp(1rem, 2vw, 1.45rem); color: white; }
                 .ce-portrait .ce-medical-label { font-size: clamp(0.56rem, 1.15vw, 0.9rem); color: white; letter-spacing: 1px; }
@@ -487,7 +493,7 @@ export default function ScanningBySlugPage() {
 
                         {/* Bottom */}
                         <div className="ce-bottom">
-                            <div className="ce-info-bar">
+                            <div className={`ce-info-bar${waveLabel ? ' has-wave' : ''}`}>
                                 <div className="ce-info-item">
                                     <p className="ce-info-label">Gender</p>
                                     <p className="ce-info-value">{genderLabel}</p>
@@ -496,6 +502,12 @@ export default function ScanningBySlugPage() {
                                     <p className="ce-info-label">Age Group</p>
                                     <p className="ce-info-value">{ageGroupLabel}</p>
                                 </div>
+                                {waveLabel && (
+                                    <div className="ce-info-item wave">
+                                        <p className="ce-info-label">Wave</p>
+                                        <p className="ce-info-value">{waveLabel}</p>
+                                    </div>
+                                )}
                             </div>
                         </div>
 

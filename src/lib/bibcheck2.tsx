@@ -113,6 +113,8 @@ export interface BibRunner {
     team?: string;
     teamName?: string;
     shirtSize?: string;
+    /** Start wave — RaceTiger's WaveName is stored on the runner as `box`. */
+    box?: string;
     wave?: string;
     medical?: string;
     photoUrl?: string;
@@ -231,7 +233,7 @@ export function resolveBibField(
         case 'flag': return toFlagEmoji(runner.nationality);
         case 'team': return runner.team || runner.teamName || '';
         case 'shirtSize': return runner.shirtSize || '';
-        case 'wave': return runner.wave || '';
+        case 'wave': return runner.box || runner.wave || '';
         case 'chipCode': return runner.chipCode || '';
         case 'printingCode': return runner.printingCode || '';
         case 'rfidTag': return runner.rfidTag || '';

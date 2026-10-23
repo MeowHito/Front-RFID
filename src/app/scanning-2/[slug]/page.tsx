@@ -44,7 +44,7 @@ interface Runner {
     netTime?: number; gunTime?: number; overallRank?: number;
     team?: string; teamName?: string; shirtSize?: string; age?: number;
     gunPace?: string; netPace?: string; photoUrl?: string;
-    wave?: string; medical?: string;
+    box?: string; wave?: string; medical?: string;
 }
 interface Campaign { _id: string; name: string; slug?: string; scanningTemplate?: string; scanningBgImage?: string; scanningBgImagePortrait?: string; subtitle?: string; categories?: { name: string; distance?: string; ageGroupEnabled?: boolean }[]; }
 
@@ -174,6 +174,8 @@ export default function Scanning2BySlugPage() {
     const bibNum = r?.bib || '-';
     const genderLabel = r?.gender === 'M' ? 'Male' : r?.gender === 'F' ? 'Female' : (r?.gender || '-');
     const ageGroupLabel = r?.ageGroup || '-';
+    // Start wave — RaceTiger's WaveName is stored on the runner as `box`.
+    const waveLabel = (r?.box || r?.wave || '').trim();
     const flag = toFlag(r?.nationality);
     const hasMedical = !!(r?.medical && r.medical.trim() !== '' && r.medical !== 'ไม่มี');
 
@@ -357,6 +359,8 @@ export default function Scanning2BySlugPage() {
                 }
                 .s2-info-item.hl .s2-info-label { color: #16a34a; }
                 .s2-info-item.hl .s2-info-value { color: #16a34a; font-size: clamp(1.45rem, min(3vw, 5.2vh), 4.6rem); }
+                .s2-info-bar.has-wave { grid-template-columns: repeat(3, 1fr); }
+                .s2-info-item.wave .s2-info-label, .s2-info-item.wave .s2-info-value { color: #1d4ed8; }
 
                 /* Seal */
                 .s2-seal {
@@ -428,6 +432,8 @@ export default function Scanning2BySlugPage() {
                 .s2-portrait .s2-info-item:first-child { padding-left: clamp(10px, 2vw, 18px); }
                 .s2-portrait .s2-info-value { font-size: clamp(1.2rem, min(5vw, 3.8vh), 3.6rem); }
                 .s2-portrait .s2-info-item.hl .s2-info-value { font-size: clamp(1.35rem, min(5.5vw, 4.2vh), 4rem); }
+                .s2-portrait .s2-info-bar.has-wave { grid-template-columns: repeat(2, 1fr); }
+                .s2-portrait .s2-info-item.wave { grid-column: 1 / -1; }
                 .s2-portrait .s2-medical { align-self: stretch; }
 
                 @media (max-width: 900px), (max-height: 620px) {
@@ -575,7 +581,7 @@ export default function Scanning2BySlugPage() {
 
                         {/* Bottom */}
                         <div className="s2-bottom">
-                            <div className="s2-info-bar">
+                            <div className={`s2-info-bar${waveLabel ? ' has-wave' : ''}`}>
                                 <div className="s2-info-item">
                                     <p className="s2-info-label">Gender</p>
                                     <p className="s2-info-value">{genderLabel}</p>
@@ -584,6 +590,12 @@ export default function Scanning2BySlugPage() {
                                     <p className="s2-info-label">Age Group</p>
                                     <p className="s2-info-value">{ageGroupLabel}</p>
                                 </div>
+                                {waveLabel && (
+                                    <div className="s2-info-item wave">
+                                        <p className="s2-info-label">Wave</p>
+                                        <p className="s2-info-value">{waveLabel}</p>
+                                    </div>
+                                )}
                             </div>
                         </div>
 
